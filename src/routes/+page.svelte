@@ -5,13 +5,14 @@
 	import { theme, toggleTheme } from '$lib/themeStore';
 	import { page } from '$app/stores';
 	import '../app.css'; // Import global styles
+	import Dashboard from '$lib/components/Dashboard.svelte';
 
 	const user = writable(nhost.auth.getUser());
 	const showAuthOverlay = writable(false); // Store for overlay visibility
 
 	onMount(() => {
 		if ('serviceWorker' in navigator) {
-			navigator.service-worker.ready.then((reg) => {
+			navigator.serviceWorker.ready.then((reg) => {
 				reg.addEventListener('updatefound', () => {
 					// notify user to refresh
 				});
@@ -129,16 +130,15 @@
 </script>
 
 {#if $user}
-	<slot />
-	<nav>
+	<nav class="main-nav">
 		<button on:click={toggleTheme} aria-label="Toggle theme" class="theme-toggle">
 			{$theme === 'light' ? '🌙' : '☀️'}
 		</button>
-		<div>{$user.email}</div>
-		<button on:click={logout}>Logout</button>
+		<div class="user-email">{$user.email}</div>
+		<button on:click={logout} class="logout-button">Logout</button>
 	</nav>
+	<Dashboard user={$user} />
 {:else if $page.url.pathname === '/privacy' || $page.url.pathname === '/terms'}
-	<!-- Removed $ from $page -->
 	<slot />
 {:else}
 	<div class="landing-hero">
@@ -252,120 +252,41 @@
 {/if}
 
 <style>
-	/* Base styles for input, button, nav, .theme-toggle should remain as they are if they were working */
-	/* Assuming these are already present and correct from app.css or earlier in this style block */
-
-	.login-page-wrapper {
-		/* Reverted to overlay style */
-		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background-color: rgba(0, 0, 0, 0.6); /* Semi-transparent backdrop */
+	.main-nav {
 		display: flex;
-		justify-content: center;
+		justify-content: space-between;
 		align-items: center;
-		z-index: 1000; /* Ensure it's on top */
-		padding: 1rem; /* Padding for the backdrop, useful on small screens */
+		padding: 1rem;
+		margin-bottom: 2rem;
+		background: var(--color-surface);
+		color: var(--color-text-primary);
+		border-radius: var(--border-radius-sm);
 	}
-
-	.login-container {
-		position: relative; /* For positioning the close button */
-		margin: 0; /* Centered by flex wrapper */
-		max-width: 420px; /* Slightly wider */
-		width: 100%;
+	.theme-toggle {
+		background: transparent;
+		font-size: 1.5rem;
+		cursor: pointer;
+		border: 0;
+		padding: 0;
+		margin: 0;
+		color: var(--color-text-primary);
+	}
+	.theme-toggle:hover {
 		background-color: var(--color-surface);
-		padding: 2.5rem; /* Increased padding */
-		border-radius: var(--border-radius-md);
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* Softer, more modern shadow */
-		color: var(--color-text-primary);
-		display: flex;
-		flex-direction: column;
 	}
-
-	#auth-dialog-title {
-		text-align: center;
-		font-size: 1.75rem;
-		font-weight: 700;
-		color: var(--color-text-primary);
-		margin-bottom: 1.5rem;
-		font-family: var(--font-family-display);
-	}
-
-	.auth-primary-action {
-		width: 100%;
-		background-color: var(--color-accent);
+	.logout-button {
+		padding: 0.75rem;
+		border: none;
+		background: var(--color-cta);
 		color: var(--color-surface);
-		padding: 0.85rem;
-		font-size: 1rem;
-		font-weight: 500;
-		margin-top: 0.5rem;
-		margin-bottom: 1rem;
-		border-radius: var(--border-radius-sm); /* Ensure it uses theme variable */
+		border-radius: var(--border-radius-sm);
 		cursor: pointer;
 		transition: background-color var(--transition-speed) ease;
 	}
-	.auth-primary-action:hover {
-		background-color: var(--color-primary);
+	.logout-button:hover {
+		background: var(--color-primary);
 	}
 
-	.auth-method-buttons,
-	.oauth-buttons {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		margin-top: 1.5rem;
-	}
-
-	.oauth-buttons {
-		padding-top: 1.5rem;
-		border-top: 1px solid var(--color-border);
-	}
-
-	/* Ensure buttons within these containers don't have extra bottom margin if gap is used */
-	.auth-method-buttons button,
-	.auth-method-buttons .oauth-button,
-	.oauth-buttons .oauth-button {
-		margin-bottom: 0;
-	}
-
-	.toggle-auth-mode {
-		background: none;
-		border: none;
-		color: var(--color-accent);
-		cursor: pointer;
-		padding: 0.5rem 0;
-		margin-top: 1.5rem;
-		text-decoration: underline;
-		text-align: center;
-		width: 100%;
-	}
-	input {
-		margin-bottom: 1rem;
-	}
-
-	.toggle-auth-mode:hover {
-		color: var(--color-primary);
-	}
-
-	.close-auth-overlay {
-		position: absolute;
-		top: 0.75rem; /* Adjusted for new padding in .login-container */
-		right: 0.75rem;
-		background: transparent;
-		border: none;
-		font-size: 1.75rem; /* Made slightly larger */
-		color: var(--color-text-secondary);
-		cursor: pointer;
-		padding: 0.5rem;
-		line-height: 1;
-	}
-	.close-auth-overlay:hover {
-		color: var(--color-text-primary);
-	}
-
-	/* Styles for landing-hero, features-list, cta-button are assumed to be fine or styled elsewhere */
 	.landing-hero {
 		text-align: center;
 		padding: 2rem;
@@ -378,7 +299,7 @@
 	}
 	.landing-hero p {
 		max-width: 600px;
-		margin: 0 auto 1.5rem auto; /* Added bottom margin to paragraph */
+		margin: 0 auto 1.5rem auto;
 		font-size: 1rem;
 		color: var(--color-text-secondary);
 	}
@@ -413,97 +334,110 @@
 		background: var(--color-primary);
 	}
 
-	/* Logged-in header/nav styling */
-	nav {
+	.login-page-wrapper {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(0, 0, 0, 0.6);
 		display: flex;
-		justify-content: space-between;
-		width: 90%;
+		justify-content: center;
 		align-items: center;
+		z-index: 1000;
 		padding: 1rem;
-		margin-bottom: 2rem;
-		background: var(--color-surface);
-    border: 0px;
-		color: var(--color-text-primary);
-    border-radius: var(--border-radius-sm);
 	}
-
-	button {
-		padding: 0.75rem;
-		border: none;
-		background: var(--color-cta);
-		color: var(--color-surface);
-		border-radius: var(--border-radius-sm);
-		cursor: pointer;
-		transition: background-color var(--transition-speed) ease;
-	}
-
-	button:hover {
-		background: var(--color-primary);
-	}
-
-	.theme-toggle {
-		background: transparent;
-		font-size: 1.5rem;
-		cursor: pointer;
-		border: 0;
-		padding: 0;
+	.login-container {
+		position: relative;
 		margin: 0;
+		max-width: 420px;
+		width: 100%;
+		background-color: var(--color-surface);
+		padding: 2.5rem;
+		border-radius: var(--border-radius-md);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+		color: var(--color-text-primary);
+		display: flex;
+		flex-direction: column;
+	}
+	#auth-dialog-title {
+		text-align: center;
+		font-size: 1.75rem;
+		font-weight: 700;
+		color: var(--color-text-primary);
+		margin-bottom: 1.5rem;
+		font-family: var(--font-family-display);
+	}
+	.auth-method-buttons,
+	.oauth-buttons {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		margin-top: 1.5rem;
+	}
+	.oauth-buttons {
+		padding-top: 1.5rem;
+		border-top: 1px solid var(--color-border);
+	}
+	.auth-method-buttons button,
+	.auth-method-buttons .oauth-button,
+	.oauth-buttons .oauth-button {
+		margin-bottom: 0;
+	}
+	.toggle-auth-mode {
+		background: none;
+		border: none;
+		color: var(--color-accent);
+		cursor: pointer;
+		padding: 0.5rem 0;
+		margin-top: 1.5rem;
+		text-decoration: underline;
+		text-align: center;
+		width: 100%;
+	}
+	.toggle-auth-mode:hover {
+		color: var(--color-primary);
+	}
+	.close-auth-overlay {
+		position: absolute;
+		top: 0.75rem;
+		right: 0.75rem;
+		background: transparent;
+		border: none;
+		font-size: 1.75rem;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		padding: 0.5rem;
+		line-height: 1;
+	}
+	.close-auth-overlay:hover {
 		color: var(--color-text-primary);
 	}
-
-	.theme-toggle:hover {
-		background-color: var(--color-surface);
-	}
-
-	@media (max-width: 600px) {
-		.login-container {
-			padding: 2rem;
-			/* For overlay, ensure it doesn't get too tall and becomes scrollable */
-			max-height: 90vh;
-			overflow-y: auto;
-		}
-		#auth-dialog-title {
-			font-size: 1.5rem;
-		}
-		.landing-hero h1 {
-			font-size: 1.8rem;
-		}
-		.features-list {
-			grid-template-columns: 1fr;
-		}
-	}
-	/* General button styling from app.css will apply to .oauth-button if not overridden here */
-	/* Ensure .oauth-button specific styles are minimal if relying on global button styles */
 	.oauth-button {
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		gap: 0.5rem;
-		/* padding: 0.75rem; */ /* Consider if global button style is better */
 		border-radius: var(--border-radius-sm);
 		cursor: pointer;
 		transition: background-color var(--transition-speed) ease;
-		border: 0px solid var(--color-border);
+		border: 1px solid var(--color-border);
 		background-color: var(--color-surface);
 		color: var(--color-text-primary);
-		/* width: 100%; */ /* Make OAuth buttons full width like primary action */
 	}
 	.oauth-button:hover {
 		background-color: var(--color-input-bg);
 	}
-
 	.legal-links {
 		margin-top: 1.5rem;
 		text-align: center;
 		font-size: 0.875rem;
 	}
-
 	.legal-links a {
 		color: var(--color-text-secondary);
 		text-decoration: none;
 		margin: 0 0.5rem;
 	}
-
 	.legal-links a:hover {
 		text-decoration: underline;
 		color: var(--color-primary);
