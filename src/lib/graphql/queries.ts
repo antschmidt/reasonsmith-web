@@ -1,8 +1,8 @@
 import { gql } from '@apollo/client/core';
 
 // Fragments to reuse common field selections
-const USER_FIELDS = gql`
-  fragment UserFields on user {
+const CONTRIBUTOR_FIELDS = gql`
+  fragment ContributorFields on contributor {
     id
     display_name
     email
@@ -16,11 +16,11 @@ const POST_FIELDS = gql`
     content
     status
     created_at
-    author {
-      ...UserFields
+    contributor {
+      ...ContributorFields
     }
   }
-  ${USER_FIELDS}
+  ${CONTRIBUTOR_FIELDS}
 `;
 
 // Query for the main dashboard view
@@ -32,8 +32,8 @@ export const GET_DASHBOARD_DATA = gql`
       title
       description
       created_at
-      creator: user {
-        ...UserFields
+      contributor {
+        ...ContributorFields
       }
     }
 
@@ -51,7 +51,7 @@ export const GET_DASHBOARD_DATA = gql`
     # Pinned threads would require a separate table, e.g., user_pinned_discussion
     # For now, this is a placeholder.
   }
-  ${USER_FIELDS}
+  ${CONTRIBUTOR_FIELDS}
 `;
 
 // Query to get the details of a single discussion and its approved posts
@@ -62,22 +62,24 @@ export const GET_DISCUSSION_DETAILS = gql`
       title
       description
       created_at
-      creator: user {
-        ...UserFields
+      contributor {
+        ...ContributorFields
       }
       posts(where: { status: { _eq: "approved" } }, order_by: { created_at: asc }) {
         ...PostFields
       }
     }
   }
-  ${USER_FIELDS}
+  ${CONTRIBUTOR_FIELDS}
   ${POST_FIELDS}
 `;
 
-// Mutation to create a new discussion
+// Mutation to create a new discussion (created_by should be set by client or preset)
 export const CREATE_DISCUSSION = gql`
-  mutation CreateDiscussion($title: String!, $description: String, $userId: uuid!) {
-    insert_discussion_one(object: { title: $title, description: $description, created_by: $userId }) {
+  mutation CreateDiscussion($title: String!, $description: String, $createdBy: uuid!) {
+    insert_discussion_one(
+      object: { title: $title, description: $description, created_by: $createdBy }
+    ) {
       id
       title
     }
@@ -113,6 +115,15 @@ export const PUBLISH_POST = gql`
     ) {
       id
       status
+    }
+  }
+`;
+
+// Mutation to update draft content (autosave)
+export const UPDATE_POST_DRAFT = gql`
+  mutation UpdatePostDraft($postId: uuid!, $draftContent: String!) {
+    update_post_by_pk(pk_columns: { id: $postId }, _set: { draft_content: $draftContent }) {
+      id
     }
   }
 `;

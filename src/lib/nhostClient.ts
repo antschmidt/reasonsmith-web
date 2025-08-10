@@ -13,3 +13,45 @@ export const nhost = new NhostClient({
   graphqlUrl: isBrowser ? 'https://graphql.reasonsmith.com/v1/graphql' : undefined,
   storageUrl: isBrowser ? 'https://storage.reasonsmith.com/v1' : undefined
 });
+
+// Ensure all GraphQL requests use the Hasura role "me"
+nhost.graphql.setHeaders({
+  'x-hasura-role': 'me'
+});
+
+// Correct constraint name (user_pkey) per contributor_constraint enum
+const UPSERT_CONTRIBUTOR = `
+  mutation UpsertContributor($id: uuid!, $display_name: String, $email: String) {
+    insert_contributor_one(
+      object: { id: $id, display_name: $display_name, email: $email },
+      on_conflict: { constraint: user_pkey, update_columns: [display_name, email] }
+    ) { id }
+  }
+`;
+
+export async function ensureContributor() {
+  const user = nhost.auth.getUser();
+  if (!user) return;
+
+  const displayName = user.displayName || user.email?.split('@')[0] || 'Anonymous';
+  const res = await nhost.graphql.request(UPSERT_CONTRIBUTOR, {
+    id: user.id,
+    display_name: displayName,
+    email: user.email ?? null
+  });
+  if (res.error) {
+    console.error('Failed to upsert contributor:', res.error);
+  }
+}
+
+// Run on initial load (if already authenticated) and on sign-in events
+if (isBrowser) {
+  if (nhost.auth.getUser()) {
+    ensureContributor();
+  }
+  nhost.auth.onAuthStateChanged((event) => {
+    if (event === 'SIGNED_IN') {
+      ensureContributor();
+    }
+  });
+}

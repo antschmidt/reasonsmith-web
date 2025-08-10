@@ -1,145 +1,71 @@
+<svelte:options runes={true} />
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { nhost } from '$lib/nhostClient';
 	import { writable } from 'svelte/store';
-	import { theme, toggleTheme } from '$lib/themeStore';
-	import { page } from '$app/stores';
-	import '../app.css'; // Import global styles
+	import { nhost } from '$lib/nhostClient';
 	import Dashboard from '$lib/components/Dashboard.svelte';
+	import { theme, toggleTheme } from '$lib/themeStore';
 
-	const user = writable(nhost.auth.getUser());
-	const showAuthOverlay = writable(false); // Store for overlay visibility
+	const isOpen = writable(false);
+	function toggle() { isOpen.update((v: boolean) => !v); }
+	function close() { isOpen.set(false); }
 
+	let user = $state(nhost.auth.getUser());
+	let themeValue = $state('light');
 	onMount(() => {
-		if ('serviceWorker' in navigator) {
-			navigator.serviceWorker.ready.then((reg) => {
-				reg.addEventListener('updatefound', () => {
-					// notify user to refresh
-				});
-			});
-		}
-		nhost.auth.onAuthStateChanged((_event, session) => {
-			user.set(session?.user ?? null);
-		});
+		const unsubTheme = theme.subscribe(v => themeValue = v || 'light');
+		nhost.auth.onAuthStateChanged((_event: string) => { user = nhost.auth.getUser(); });
+		return () => { unsubTheme(); };
 	});
 
-	let email = '';
-	let password = '';
-	let isLoginView = true;
-	let activeAuthView: 'initial' | 'emailPassword' | 'magicLink' | 'securityKey' = 'initial';
+	// Auth UI state
+	let showAuthOverlay = $state(false);
+	let activeAuthView = $state<'initial' | 'emailPassword' | 'magicLink' | 'securityKey'>('initial');
+	let isLoginView = $state(true);
+	let email = $state('');
+	let password = $state('');
+	let authError = $state<string | null>(null);
+	let magicLinkSent = $state(false);
 
-	function toggleAuthModeView(targetIsLoginView: boolean) {
-		isLoginView = targetIsLoginView;
+	function toggleAuthModeView(toLogin?: boolean) {
+		if (typeof toLogin === 'boolean') isLoginView = toLogin; else isLoginView = !isLoginView;
 		activeAuthView = 'initial';
-		email = '';
-		password = '';
+		authError = null;
+		magicLinkSent = false;
 	}
 
-	const login = async () => {
-		await nhost.auth.signIn({ email, password });
-	};
-
-	const logout = async () => {
-		await nhost.auth.signOut();
-	};
-
-	const signup = async () => {
-		const { error } = await nhost.auth.signUp({ email, password });
-		if (error) {
-			alert(error.message);
-			return;
-		}
-		alert('Signup successful! Please check your email to verify your account.');
-		toggleAuthModeView(true);
-	};
-
-	const signInWithGoogle = async () => {
-		const { error } = await nhost.auth.signIn({
-			provider: 'google'
-		});
-		if (error) {
-			alert(`Error signing in with Google: ${error.message}`);
-		}
-	};
-
-	const signInWithGitHub = async () => {
-		const { error } = await nhost.auth.signIn({
-			provider: 'github'
-		});
-		if (error) {
-			alert(`Error signing in with GitHub: ${error.message}`);
-		}
-	};
-
-	const sendMagicLink = async () => {
-		if (!email) {
-			alert('Please enter your email address.');
-			return;
-		}
-		const { error } = await nhost.auth.signIn({ email });
-		if (error) {
-			alert(`Error sending magic link: ${error.message}`);
-		} else {
-			alert('Magic link sent! Check your email to complete the sign-in process.');
-			activeAuthView = 'initial';
-		}
-	};
-
-	const signUpWithSecurityKey = async () => {
-		if (!email) {
-			alert('Please enter your email address to register with a security key.');
-			return;
-		}
-		const { error, session } = await nhost.auth.signUp({
-			email,
-			securityKey: true
-		});
-
-		if (error) {
-			alert(`Error signing up with security key: ${error.message}`);
-		} else {
-			alert(
-				'Follow the browser prompts to register your security key. You might be asked to verify your email first if this is a new account.'
-			);
-			if (session) {
-				user.set(session.user);
-			} else {
-				toggleAuthModeView(true);
-			}
-		}
-	};
-
-	const signInWithSecurityKey = async () => {
-		if (!email) {
-			alert('Please enter your email address to sign in with a security key.');
-			return;
-		}
-		const { error, session } = await nhost.auth.signIn({
-			email,
-			securityKey: true
-		});
-
-		if (error) {
-			alert(`Error signing in with security key: ${error.message}`);
-		} else {
-			if (session) {
-				user.set(session.user);
-			}
-		}
-	};
+	async function logout() { await nhost.auth.signOut(); user = null; }
+	async function signInWithGitHub() { await nhost.auth.signIn({ provider: 'github', options: { redirectTo: '/auth/callback' } }); }
+	async function signInWithGoogle() { await nhost.auth.signIn({ provider: 'google', options: { redirectTo: '/auth/callback' } }); }
+	async function login() {
+		authError = null;
+		try { await nhost.auth.signIn({ email, password }); } catch (e: any) { authError = e.message; }
+	}
+	async function signup() {
+		authError = null;
+		try { await nhost.auth.signUp({ email, password }); } catch (e: any) { authError = e.message; }
+	}
+	async function sendMagicLink() {
+		authError = null; magicLinkSent = false;
+		if (!email) { authError = 'Please enter an email first.'; return; }
+		try {
+			await nhost.auth.signIn({ email, options: { redirectTo: '/auth/callback' } });
+			magicLinkSent = true;
+		} catch (e: any) { authError = e.message; }
+	}
+	async function signInWithSecurityKey() { alert('Security key sign-in not yet implemented.'); }
+	async function signUpWithSecurityKey() { alert('Security key sign-up not yet implemented.'); }
 </script>
 
-{#if $user}
+{#if user}
 	<nav class="main-nav">
-		<button on:click={toggleTheme} aria-label="Toggle theme" class="theme-toggle">
-			{$theme === 'light' ? '🌙' : '☀️'}
+		<button type="button" onclick={toggleTheme} aria-label="Toggle theme" class="theme-toggle">
+			{themeValue === 'light' ? '🌙' : '☀️'}
 		</button>
-		<div class="user-email">{$user.email}</div>
-		<button on:click={logout} class="logout-button">Logout</button>
+		<div class="user-email">{user.email}</div>
+		<button type="button" onclick={logout} class="logout-button">Logout</button>
 	</nav>
-	<Dashboard user={$user} />
-{:else if $page.url.pathname === '/privacy' || $page.url.pathname === '/terms'}
-	<slot />
+	<Dashboard user={user} />
 {:else}
 	<div class="landing-hero">
 		<h1>Welcome to ReasonSmith</h1>
@@ -158,88 +84,63 @@
 		</ul>
 		<button
 			class="cta-button"
-			on:click={() => {
-				$showAuthOverlay = true;
+			type="button"
+			onclick={() => {
+				showAuthOverlay = true;
 				toggleAuthModeView(true);
 			}}
 		>
 			Get Started
 		</button>
+
+		<div class="public-resources" aria-labelledby="public-resources-title">
+			<h2 id="public-resources-title" class="public-resources-title">Learn More</h2>
+			<ul class="public-resources-list">
+				<li><a href="/resources/good-faith-arguments">Good-Faith Arguments Guide</a></li>
+				<li><a href="/resources/citation-best-practices">Citation Best Practices</a></li>
+				<li><a href="/resources/community-guidelines">Community Guidelines</a></li>
+			</ul>
+		</div>
 	</div>
 
-	{#if $showAuthOverlay}
-		<div
-			class="login-page-wrapper"
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="auth-dialog-title"
-		>
+	{#if showAuthOverlay}
+		<div class="login-page-wrapper" role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
 			<div class="login-container">
-				<button
-					class="close-auth-overlay"
-					on:click={() => ($showAuthOverlay = false)}
-					aria-label="Close authentication panel">&times;</button
-				>
+				<button class="close-auth-overlay" type="button" onclick={() => (showAuthOverlay = false)} aria-label="Close authentication panel">&times;</button>
 				<h2 id="auth-dialog-title">{isLoginView ? 'Login' : 'Sign Up'}</h2>
 
 				{#if activeAuthView === 'initial'}
 					<div class="auth-method-buttons">
-						<button on:click={() => (activeAuthView = 'emailPassword')}>
-							Continue with Email/Password
-						</button>
-						<button class="oauth-button" on:click={() => (activeAuthView = 'magicLink')}>
-							{isLoginView ? 'Sign In' : 'Sign Up'} with Magic Link
-						</button>
-						<button class="oauth-button" on:click={() => (activeAuthView = 'securityKey')}>
-							{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key
-						</button>
+						<button type="button" onclick={() => (activeAuthView = 'emailPassword')}>Continue with Email/Password</button>
+						<button type="button" class="oauth-button" onclick={() => (activeAuthView = 'magicLink')}>{isLoginView ? 'Use Magic Link to Sign In' : 'Use Magic Link to Sign Up'}</button>
+						<button type="button" class="oauth-button" onclick={() => (activeAuthView = 'securityKey')}>{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key</button>
 					</div>
 
 					<div class="oauth-buttons">
-						<button
-							class="oauth-button"
-							on:click={signInWithGoogle}
-							aria-label="Sign in with Google"
-						>
-							<span>Sign in with Google</span>
-						</button>
-						<button
-							class="oauth-button"
-							on:click={signInWithGitHub}
-							aria-label="Sign in with GitHub"
-						>
-							<span>Sign in with GitHub</span>
-						</button>
+						<button type="button" class="oauth-button" onclick={signInWithGoogle} aria-label="Sign in with Google"><span>Sign in with Google</span></button>
+						<button type="button" class="oauth-button" onclick={signInWithGitHub} aria-label="Sign in with GitHub"><span>Sign in with GitHub</span></button>
 					</div>
-					<button class="toggle-auth-mode" on:click={() => toggleAuthModeView(!isLoginView)}>
-						{isLoginView ? "Don't have an account? Sign up" : 'Already have an account? Log in'}
-					</button>
+					<button type="button" class="toggle-auth-mode" onclick={() => toggleAuthModeView(!isLoginView)}>{isLoginView ? "Don't have an account? Sign up" : 'Already have an account? Log in'}</button>
 				{:else if activeAuthView === 'emailPassword'}
 					<input type="email" placeholder="Email" bind:value={email} />
 					<input type="password" placeholder="Password" bind:value={password} />
-					<button class="auth-primary-action" on:click={isLoginView ? login : signup}>
-						{isLoginView ? 'Login' : 'Sign Up'}
-					</button>
-					<button class="toggle-auth-mode" on:click={() => (activeAuthView = 'initial')}
-						>Back to options</button
-					>
+					<button type="button" class="auth-primary-action" onclick={isLoginView ? login : signup}>{isLoginView ? 'Login' : 'Sign Up'}</button>
+					<button type="button" class="toggle-auth-mode" onclick={() => (activeAuthView = 'initial')}>Back to options</button>
 				{:else if activeAuthView === 'magicLink'}
 					<input type="email" placeholder="Email" bind:value={email} />
-					<button class="oauth-button" on:click={sendMagicLink}>Send Magic Link</button>
-					<button class="toggle-auth-mode" on:click={() => (activeAuthView = 'initial')}
-						>Back to options</button
-					>
+					<button type="button" class="oauth-button" onclick={sendMagicLink} disabled={magicLinkSent}>{magicLinkSent ? 'Magic Link Sent' : 'Send Magic Link'}</button>
+					<button type="button" class="toggle-auth-mode" onclick={() => (activeAuthView = 'initial')}>Back to options</button>
 				{:else if activeAuthView === 'securityKey'}
 					<input type="email" placeholder="Email (required for Security Key)" bind:value={email} />
-					<button
-						class="oauth-button"
-						on:click={isLoginView ? signInWithSecurityKey : signUpWithSecurityKey}
-					>
-						{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key
-					</button>
-					<button class="toggle-auth-mode" on:click={() => (activeAuthView = 'initial')}
-						>Back to options</button
-					>
+					<button type="button" class="oauth-button" onclick={isLoginView ? signInWithSecurityKey : signUpWithSecurityKey}>{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key</button>
+					<button type="button" class="toggle-auth-mode" onclick={() => (activeAuthView = 'initial')}>Back to options</button>
+				{/if}
+
+				{#if authError}
+					<p class="auth-error" aria-live="polite">{authError}</p>
+				{/if}
+				{#if magicLinkSent}
+					<p class="auth-success" aria-live="polite">Magic link sent. Check your email.</p>
 				{/if}
 
 				<div class="legal-links">
@@ -442,4 +343,14 @@
 		text-decoration: underline;
 		color: var(--color-primary);
 	}
+	.auth-error { color: #ef4444; margin-top: 0.75rem; font-size: 0.875rem; }
+	.auth-success { color: #16a34a; margin-top: 0.75rem; font-size: 0.875rem; }
+	.oauth-button[disabled] { opacity: 0.6; cursor: default; }
+
+	.public-resources { margin:2.5rem auto 0; max-width:800px; text-align:left; }
+	.public-resources-title { font-size:1.25rem; font-weight:600; margin:0 0 0.75rem; font-family: var(--font-family-display); }
+	.public-resources-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:0.5rem; }
+	.public-resources-list a { color: var(--color-primary); text-decoration:none; font-size:0.95rem; }
+	.public-resources-list a:hover { text-decoration:underline; }
+	@media (min-width:640px){ .public-resources-list { flex-direction:row; flex-wrap:wrap; gap:0.75rem 1.5rem; } }
 </style>

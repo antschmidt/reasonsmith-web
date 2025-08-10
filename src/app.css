@@ -6,6 +6,7 @@
   --color-accent: #10b981; /* Emerald 500 */
   --color-surface: #ffffff;
   --color-surface-alt: #f9fafb; /* Gray 50 */
+  --color-surface-elevated: #ffffff; /* Elevated panels / modals (distinct for shadow layering) */
   --color-text-primary: #111827; /* Gray 900 */
   --color-text-secondary: #6b7280; /* Gray 500 */
   --color-border: #e5e7eb; /* Gray 200 */
@@ -22,6 +23,7 @@
     --color-accent: #34d399; /* Emerald 400 */
     --color-surface: #111827; /* Gray 900 */
     --color-surface-alt: #1f2937; /* Gray 800 */
+    --color-surface-elevated: #1b2430; /* Slightly lighter than base surface for elevation */
     --color-text-primary: #f9fafb; /* Gray 50 */
     --color-text-secondary: #9ca3af; /* Gray 400 */
     --color-border: #374151; /* Gray 700 */

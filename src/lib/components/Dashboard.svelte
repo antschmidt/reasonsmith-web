@@ -1,49 +1,173 @@
 <script lang="ts">
   import type { User } from '@nhost/nhost-js';
+  import { onMount } from 'svelte';
+  // Avoid importing gql to prevent type resolution issues; use plain strings
+  import { nhost } from '$lib/nhostClient';
+  import { GET_DASHBOARD_DATA, CREATE_POST_DRAFT } from '$lib/graphql/queries';
+  import { goto } from '$app/navigation';
+  import Editor from '$lib/Editor.svelte';
 
   export let user: User;
 
-  // Placeholder data - replace with actual data from your backend
+  // Keep placeholder stats for now; can be backed by a view later
   const stats = {
     goodFaithRate: 88,
     sourceAccuracy: 95,
     reputationScore: 750
   };
 
-  const recentDiscussions = [
-    { id: 1, title: 'Is utilitarianism a complete ethical framework?', snippet: 'I argue that while useful, it fails to account for...', author: 'Alice', timestamp: '2h ago' },
-    { id: 2, title: 'The role of AI in moderating online discourse', snippet: 'Can an algorithm truly understand context and intent? Let\'s explore...', author: 'Bob', timestamp: '5h ago' },
-    { id: 3, title: 'Debating the merits of decentralized social media', snippet: 'Freedom from central control vs. the challenge of content moderation...', author: 'Charlie', timestamp: '1d ago' }
-  ];
+  // Live data
+  let recentDiscussions: Array<{
+    id: string;
+    title: string;
+    description?: string | null;
+    created_at: string;
+    creator?: { id: string; display_name?: string | null } | null;
+  }> = [];
 
-  const drafts = [
-    { id: 1, title: 'A critique of pure reason, simplified' },
-    { id: 2, title: 'Re: The role of AI in moderating' }
-  ];
+  let drafts: Array<{
+    id: string;
+    draft_content?: string | null;
+    discussion_id?: string | null;
+    updated_at?: string | null;
+  }> = [];
 
-  const pinnedThreads = [
-    { id: 1, title: 'Community Guidelines & Best Practices' }
-  ];
+  let loading = true;
+  let error: string | null = null;
 
-  const leaderboard = [
-    { rank: 1, name: 'Eve', score: 1250 },
-    { rank: 2, name: 'Mallory', score: 1100 },
-    { rank: 3, name: 'Trent', score: 980 },
-    { rank: 4, name: 'Alice', score: 950 },
-    { rank: 5, name: 'Bob', score: 890 }
-  ];
+  async function loadData() {
+    loading = true;
+    error = null;
+    const { data, error: gqlError } = await nhost.graphql.request(GET_DASHBOARD_DATA, {
+      userId: user.id as unknown as string
+    });
+    if (gqlError) {
+      error = gqlError.message || 'Failed to load data';
+    } else if (data) {
+      recentDiscussions = data.recentDiscussions ?? [];
+      drafts = data.myDrafts ?? [];
+    }
+    loading = false;
+  }
 
-  const currentUserRank = 12;
+  onMount(loadData);
 
-  const notifications = [
-    { id: 1, type: 'mention', text: 'Dave mentioned you in "The Paradox of Tolerance"' },
-    { id: 2, type: 'review', text: 'Your post "On the nature of evidence" is pending review' },
-    { id: 3, type: 'alert', text: 'A source in your post needs verification' }
-  ];
+  // Seed sample discussions and drafts for this user
+  const SEED_DISCUSSIONS = `
+    mutation SeedDiscussions($userId: uuid!) {
+      insert_discussion(objects: [
+        { title: "The role of AI in moderating online discourse", description: "Context, intent, and the limits of automated moderation.", created_by: $userId },
+        { title: "Decentralized social media: pros and cons", description: "Balancing freedom with responsibility and safety.", created_by: $userId }
+      ]) {
+        returning { id }
+      }
+    }
+  `;
+
+  const SEED_DRAFTS = `
+    mutation SeedDrafts($objects: [post_insert_input!]!) {
+      insert_post(objects: $objects) { affected_rows }
+    }
+  `;
+
+  async function seedSampleData() {
+    const res1 = await nhost.graphql.request(SEED_DISCUSSIONS, { userId: user.id as unknown as string });
+    if ((res1 as any).error) {
+      error = (res1 as any).error.message || 'Failed to seed discussions';
+      return;
+    }
+    const ids: string[] = (res1 as any).data?.insert_discussion?.returning?.map((r: { id: string }) => r.id) ?? [];
+
+    if (!ids.length) {
+      error = 'No discussions were created';
+      return;
+    }
+
+    const draftObjects = [
+      {
+        author_id: user.id as unknown as string,
+        discussion_id: ids[0],
+        draft_content: 'I argue that while useful, it fails to account for rights and justice.',
+        status: 'draft'
+      },
+      ids[1]
+        ? {
+            author_id: user.id as unknown as string,
+            discussion_id: ids[1],
+            draft_content: 'Algorithms can assist but must be guided by transparent community norms.',
+            status: 'draft'
+          }
+        : null
+    ].filter(Boolean) as any[];
+
+    const res2 = await nhost.graphql.request(SEED_DRAFTS, { objects: draftObjects });
+    if ((res2 as any).error) {
+      error = (res2 as any).error.message || 'Failed to seed drafts';
+      return;
+    }
+
+    await loadData();
+  }
+
+  let activeDraftId: string | null = null;
+  let activeDraftContent = '';
+  function openDraft(d: { id: string; draft_content?: string | null }) {
+    activeDraftId = d.id;
+    activeDraftContent = d.draft_content || '';
+  }
+
+  let newDraftLoading = false;
+  async function createNewDraft() {
+    if (newDraftLoading) return;
+    const userObj = nhost.auth.getUser();
+    if (!userObj) { error = 'Not authenticated'; return; }
+    if (!recentDiscussions.length) {
+      error = 'Create or seed a discussion first.';
+      return;
+    }
+    newDraftLoading = true;
+    error = null;
+    const discussionId = recentDiscussions[0].id; // simple heuristic; later allow selection
+    const { data, error: draftErr } = await nhost.graphql.request(CREATE_POST_DRAFT, {
+      discussionId,
+      authorId: userObj.id,
+      draftContent: ''
+    });
+    if (draftErr) {
+      error = draftErr.message || 'Failed to create draft';
+      newDraftLoading = false;
+      return;
+    }
+    const newId = (data as any)?.insert_post_one?.id;
+    if (newId) {
+      const draftObj = { id: newId, draft_content: '', discussion_id: discussionId, updated_at: new Date().toISOString() };
+      drafts = [draftObj, ...drafts];
+      openDraft(draftObj);
+    }
+    newDraftLoading = false;
+  }
+
+  function extractSnippet(html: string, max = 80) {
+    if (!html) return 'Untitled draft';
+    const txt = html
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ') // remove tags
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/\s+/g, ' ') // collapse whitespace
+      .trim();
+    if (!txt) return 'Untitled draft';
+    return txt.length > max ? txt.slice(0, max) + '…' : txt;
+  }
 </script>
 
 <div class="dashboard-container">
-  <!-- 1. Welcome & At-a-Glance Metrics -->
+  <!-- Welcome & At-a-Glance Metrics -->
   <section class="welcome-card">
     <div class="welcome-card-content">
         <h1 class="welcome-title">
@@ -68,30 +192,63 @@
 
   <!-- Main Content Grid -->
   <div class="dashboard-grid">
-    <!-- 3. Recent & Pinned Discussions (Left Column) -->
+    <!-- Recent & Pinned Discussions (Left Column) -->
     <main class="main-content">
       <h2 class="section-title">Recent Discussions</h2>
-      <div class="discussions-list">
-        {#each recentDiscussions as discussion}
-          <div class="discussion-card">
-            <h3 class="discussion-title">{discussion.title}</h3>
-            <p class="discussion-snippet">{discussion.snippet}</p>
-            <p class="discussion-meta">by {discussion.author} &middot; {discussion.timestamp}</p>
+
+      {#if loading}
+        <p>Loading…</p>
+      {:else if error}
+        <p style="color: var(--color-accent)">{error}</p>
+      {:else}
+        {#if recentDiscussions.length === 0}
+          <div class="card" style="margin-bottom: 1rem;">
+            <p>No discussions yet.</p>
+            <button class="btn-primary" on:click={seedSampleData} style="margin-top: 0.75rem;">Seed sample data</button>
           </div>
-        {/each}
-      </div>
-      <button class="btn-secondary load-more">Load More</button>
+        {/if}
+
+        <div class="discussions-list">
+          {#each recentDiscussions as discussion}
+            <div class="discussion-card" role="button" tabindex="0" on:click={() => goto(`/discussions/${discussion.id}`)} on:keydown={(e) => (e.key === 'Enter' ? goto(`/discussions/${discussion.id}`) : null)}>
+              <h3 class="discussion-title">{discussion.title}</h3>
+              {#if discussion.description}
+                <p class="discussion-snippet">{discussion.description}</p>
+              {/if}
+              <p class="discussion-meta">
+                {#if discussion.creator?.display_name}
+                  by {discussion.creator.display_name}
+                {/if}
+                
+                {#if discussion.created_at}
+                  &middot; {new Date(discussion.created_at).toLocaleString()}
+                {/if}
+              </p>
+            </div>
+          {/each}
+        </div>
+        <button class="btn-secondary load-more">Load More</button>
+      {/if}
     </main>
 
     <!-- Sidebar (Right Column) -->
+    <!-- Replace "Your Drafts" list with live data -->
     <aside class="sidebar">
       <!-- Quick Actions -->
       <section class="card">
         <h2 class="section-title">Quick Actions</h2>
         <div class="quick-actions">
-          <button class="btn-primary">
+          <a href="/discussions/new" class="btn-primary">
             <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
             New Discussion
+          </a>
+          <button class="btn-secondary" on:click={createNewDraft} disabled={newDraftLoading}>
+            {#if newDraftLoading}
+              Creating…
+            {:else}
+              <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+              New Draft
+            {/if}
           </button>
           <button class="btn-secondary">
             <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg>
@@ -107,61 +264,42 @@
       <!-- Your Drafts -->
       <section class="card">
         <h2 class="section-title">Your Drafts</h2>
-        <ul class="list">
-          {#each drafts as draft}
-            <li class="list-item">{draft.title}</li>
-          {/each}
-        </ul>
+        {#if loading}
+          <p>Loading…</p>
+        {:else}
+          {#if drafts.length === 0}
+            <p>No drafts yet.</p>
+          {:else}
+            <ul class="list">
+              {#each drafts as draft}
+                <li class="list-item" role="button" tabindex="0" on:click={() => openDraft(draft)} on:keydown={(e)=> e.key==='Enter' && openDraft(draft)}>
+                  {extractSnippet(draft.draft_content || '')}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        {/if}
+        {#if activeDraftId}
+          <div class="editor-wrapper">
+            <h3 class="editor-title">Editing Draft</h3>
+            <Editor postId={activeDraftId} content={activeDraftContent} on:saved={(e)=>{/* could surface toast */}} onUpdate={(html)=> activeDraftContent = html} />
+            <p class="hint">Autosaves locally & to server.</p>
+          </div>
+        {/if}
       </section>
 
-      <!-- Pinned Threads -->
-      <section class="card">
-        <h2 class="section-title">Pinned Threads</h2>
-        <ul class="list">
-          {#each pinnedThreads as thread}
-            <li class="list-item">{thread.title}</li>
-          {/each}
-        </ul>
-      </section>
-
-      <!-- 4. Leaderboard -->
-      <section class="card">
-        <h2 class="section-title">Top Contributors</h2>
-        <ul class="list">
-          {#each leaderboard as contributor}
-            <li class="leaderboard-item">
-              <span>{contributor.rank}. {contributor.name}</span>
-              <span class="leaderboard-score">{contributor.score} pts</span>
-            </li>
-          {/each}
-        </ul>
-        <p class="current-rank">You're #{currentUserRank} this week!</p>
-      </section>
-
-      <!-- 5. Notifications -->
-      <section class="card">
-        <h2 class="section-title">Notifications</h2>
-        <ul class="list">
-          {#each notifications as notification}
-            <li class="notification-item">
-              <span class="notification-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
-              </span>
-              <p>{notification.text}</p>
-            </li>
-          {/each}
-        </ul>
-      </section>
+      <!-- Pinned Threads, Leaderboard, Notifications remain placeholders for now -->
+      <!-- ...existing code... -->
     </aside>
   </div>
 
-  <!-- 6. Learning & Resources -->
+  <!-- Learning & Resources -->
   <footer class="dashboard-footer">
     <h2 class="section-title">Learning & Resources</h2>
     <div class="footer-links">
-      <a href="#">How to Craft Good-Faith Arguments</a>
-      <a href="#">Citation Best Practices</a>
-      <a href="#">Community Guidelines</a>
+      <a href="/resources/good-faith-arguments">How to Craft Good-Faith Arguments</a>
+      <a href="/resources/citation-best-practices">Citation Best Practices</a>
+      <a href="/resources/community-guidelines">Community Guidelines</a>
     </div>
   </footer>
 </div>
@@ -382,6 +520,7 @@
     border-radius: var(--border-radius-md);
     transition: all 150ms ease-in-out;
     cursor: pointer;
+    text-decoration: none;
   }
   .btn-primary {
     background-color: var(--color-primary);
@@ -427,4 +566,8 @@
   .footer-links a:hover {
     text-decoration: underline;
   }
+
+  .editor-wrapper { margin-top:1rem; padding-top:1rem; border-top:1px solid var(--color-border); }
+  .editor-title { font-size:0.85rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; margin:0 0 0.5rem; color: var(--color-text-secondary); }
+  .hint { font-size:0.65rem; color: var(--color-text-secondary); margin-top:0.35rem; }
 </style>
