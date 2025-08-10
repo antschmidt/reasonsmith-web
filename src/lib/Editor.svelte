@@ -3,8 +3,7 @@
   import { Editor } from '@tiptap/core';
   import StarterKit from '@tiptap/starter-kit';
   import Placeholder from '@tiptap/extension-placeholder';
-  import { createDraftAutosaver, type DraftAutosaver } from '$lib/autosaveDraft';
-
+  import { createDraftAutosaver, type DraftAutosaver } from '$lib';
   // Initial HTML to load into the editor
   export let content: string = '';
   export let postId: string | null = null; // when provided, enables autosave
