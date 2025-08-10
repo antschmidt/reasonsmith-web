@@ -272,8 +272,8 @@
           {:else}
             <ul class="list">
               {#each drafts as draft}
-                <li class="list-item" role="button" tabindex="0" on:click={() => openDraft(draft)} on:keydown={(e)=> e.key==='Enter' && openDraft(draft)}>
-                  {extractSnippet(draft.draft_content || '')}
+                <li class="list-item">
+                  <button type="button" class="draft-button" on:click={() => openDraft(draft)} on:keydown={(e)=> e.key==='Enter' && openDraft(draft)}>{extractSnippet(draft.draft_content || '')}</button>
                 </li>
               {/each}
             </ul>
@@ -570,4 +570,7 @@
   .editor-wrapper { margin-top:1rem; padding-top:1rem; border-top:1px solid var(--color-border); }
   .editor-title { font-size:0.85rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; margin:0 0 0.5rem; color: var(--color-text-secondary); }
   .hint { font-size:0.65rem; color: var(--color-text-secondary); margin-top:0.35rem; }
+
+  .draft-button { background:none; border:none; padding:0; margin:0; color: var(--color-primary); cursor:pointer; font: inherit; text-align:left; }
+  .draft-button:hover, .draft-button:focus { text-decoration:underline; outline:none; }
 </style>
