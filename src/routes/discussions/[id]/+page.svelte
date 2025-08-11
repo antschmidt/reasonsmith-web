@@ -3,6 +3,8 @@
   // Avoid importing gql to prevent type resolution issues; use plain string
   import { nhost } from '$lib/nhostClient';
   import { onMount } from 'svelte';
+  import { CREATE_POST_DRAFT, UPDATE_POST_DRAFT, PUBLISH_POST } from '$lib/graphql/queries';
+  import { createDraftAutosaver, type DraftAutosaver } from '$lib';
 
   let discussion: any = null;
   let loading = true;
@@ -14,6 +16,13 @@
   let submitError: string | null = null;
   let user = nhost.auth.getUser();
   nhost.auth.onAuthStateChanged(() => { user = nhost.auth.getUser(); });
+
+  let draftPostId: string | null = null;
+  let draftAutosaver: DraftAutosaver | null = null;
+  let draftLoaded = false; // prevents duplicate fetch
+  let lastSavedAt: number | null = null;
+  let hasPending = false;
+  let focusReplyOnMount = false;
 
   const GET_DISCUSSION_DETAILS = `
     query GetDiscussionDetails($discussionId: uuid!) {
@@ -52,6 +61,16 @@
     }
   `;
 
+  const GET_EXISTING_DRAFT = `
+    query GetExistingDraft($discussionId: uuid!, $authorId: uuid!) {
+      post(where: {discussion_id: {_eq: $discussionId}, author_id: {_eq: $authorId}, status: {_eq: "draft"}}, limit: 1, order_by: {updated_at: desc}) {
+        id
+        draft_content
+        updated_at
+      }
+    }
+  `;
+
   async function submitComment() {
     submitError = null;
     if (!user) { submitError = 'You must be signed in to comment.'; return; }
@@ -75,24 +94,141 @@
     }
   }
 
+  function updateAutosaveStatus() {
+    if (!draftAutosaver) return;
+    const st = draftAutosaver.getState();
+    lastSavedAt = st.lastSavedAt;
+    hasPending = st.hasPending;
+  }
+
+  function initAutosaver() {
+    if (!draftPostId) return;
+    if (draftAutosaver) draftAutosaver.destroy();
+    draftAutosaver = createDraftAutosaver({
+      postId: draftPostId,
+      initialContent: newComment,
+      delay: 700,
+      minInterval: 2500,
+      onSaved: () => { updateAutosaveStatus(); }
+    });
+    updateAutosaveStatus();
+  }
+
+  async function loadExistingDraft() {
+    if (!user || draftLoaded) return;
+    draftLoaded = true;
+    const discussionId = $page.params.id as string;
+    const qp = $page.url.searchParams;
+    const replyDraftParam = qp.get('replyDraftId');
+    if (replyDraftParam) {
+      // fetch that specific draft id if belongs to this discussion & user
+      const { data, error } = await nhost.graphql.request(`query GetDraftById($id: uuid!, $authorId: uuid!, $discussionId: uuid!) { post_by_pk(id: $id) { id draft_content discussion_id author_id } }`, { id: replyDraftParam, authorId: user.id, discussionId });
+      if (!error) {
+        const candidate = (data as any)?.post_by_pk;
+        if (candidate && candidate.author_id === user.id && candidate.discussion_id === discussionId) {
+          draftPostId = candidate.id;
+          newComment = candidate.draft_content || '';
+          initAutosaver();
+          focusReplyOnMount = true;
+          return;
+        }
+      }
+    }
+    // fallback to existing most recent draft lookup
+    const { data, error } = await nhost.graphql.request(GET_EXISTING_DRAFT, { discussionId, authorId: user.id });
+    if (error) return; // silent
+    const existing = (data as any)?.post?.[0];
+    if (existing) {
+      draftPostId = existing.id;
+      newComment = existing.draft_content || '';
+      initAutosaver();
+    }
+  }
+
+  async function ensureDraftCreated() {
+    if (!user || draftPostId) return;
+    const discussionId = $page.params.id as string;
+    // create empty draft row immediately
+    const { data, error } = await nhost.graphql.request(CREATE_POST_DRAFT, {
+      discussionId,
+      authorId: user.id,
+      draftContent: newComment || ''
+    });
+    if (error) return; // silent fail; user can still post normally
+    draftPostId = (data as any)?.insert_post_one?.id || null;
+    initAutosaver();
+    // push initial content through autosaver
+    if (draftPostId && newComment) draftAutosaver?.handleChange(newComment);
+  }
+
+  function onCommentInput(e: Event) {
+    newComment = (e.target as HTMLTextAreaElement).value;
+    if (!draftPostId) {
+      // lazily create draft after first actual input (non-empty or first key)
+      ensureDraftCreated();
+    } else {
+      draftAutosaver?.handleChange(newComment);
+      updateAutosaveStatus();
+    }
+  }
+
+  async function publishDraft() {
+    submitError = null;
+    if (!user) { submitError = 'You must be signed in to comment.'; return; }
+    if (!newComment.trim()) { submitError = 'Comment cannot be empty.'; return; }
+    submitting = true;
+    try {
+      if (draftPostId) {
+        // Use publish mutation to promote draft to approved content
+        const { data, error } = await nhost.graphql.request(PUBLISH_POST, { postId: draftPostId });
+        if (error) throw (error as any);
+        const discussionId = $page.params.id as string;
+        // refetch approved posts (simpler than manually merging since publish copies content)
+        await refreshApprovedPosts(discussionId);
+        // reset draft state
+        draftAutosaver?.destroy();
+        draftAutosaver = null;
+        draftPostId = null;
+        newComment = '';
+        draftLoaded = false; // allow new draft creation later
+      } else {
+        // fallback legacy path (should rarely hit now)
+        await submitComment();
+      }
+    } catch (e: any) {
+      submitError = e.message || 'Failed to publish comment.';
+    } finally {
+      submitting = false;
+    }
+  }
+
+  async function refreshApprovedPosts(discussionId: string) {
+    const result = await nhost.graphql.request(GET_DISCUSSION_DETAILS, { discussionId });
+    if ((result as any).error) return;
+    const fresh = (result as any).data?.discussion_by_pk;
+    if (fresh) discussion.posts = fresh.posts; // only need posts
+  }
+
+  // Extend existing onMount: after loading discussion, attempt to load draft
   onMount(async () => {
     try {
       const discussionId = $page.params.id as string;
-      const result = await nhost.graphql.request(GET_DISCUSSION_DETAILS, {
-        discussionId
-      });
-
-      if ((result as any).error) {
-        throw (result as any).error;
-      }
-
+      const result = await nhost.graphql.request(GET_DISCUSSION_DETAILS, { discussionId });
+      if ((result as any).error) { throw (result as any).error; }
       discussion = (result as any).data.discussion_by_pk;
+      await loadExistingDraft();
     } catch (e: any) {
       error = e;
     } finally {
       loading = false;
     }
+    if (focusReplyOnMount) {
+      const ta = document.querySelector('textarea[aria-label="New comment"]') as HTMLTextAreaElement | null;
+      if (ta) setTimeout(() => ta.focus(), 50);
+    }
   });
+
+  nhost.auth.onAuthStateChanged(() => { user = nhost.auth.getUser(); loadExistingDraft(); });
 </script>
 
 <div class="container">
@@ -134,11 +270,22 @@
       {#if !user}
         <p class="signin-hint">Please sign in to participate.</p>
       {:else}
-        <form on:submit|preventDefault={submitComment} class="comment-form">
-          <textarea bind:value={newComment} rows="5" placeholder="Share your perspective..." aria-label="New comment"></textarea>
+        <form on:submit|preventDefault={publishDraft} class="comment-form">
+          <textarea bind:value={newComment} on:input={onCommentInput} on:focus={loadExistingDraft} rows="5" placeholder="Share your perspective..." aria-label="New comment"></textarea>
           {#if submitError}<p class="error-message" style="margin-top:0.5rem;">{submitError}</p>{/if}
-          <div class="comment-actions">
-            <button type="submit" class="btn-primary" disabled={submitting}>{submitting ? 'Posting...' : 'Post Comment'}</button>
+          <div class="comment-actions" style="flex-direction:column; align-items:flex-end; gap:0.4rem;">
+            <div class="autosave-indicator" aria-live="polite">
+              {#if draftPostId}
+                {#if hasPending}
+                  <span class="pending-dot" aria-hidden="true"></span> Saving…
+                {:else if lastSavedAt}
+                  Saved {new Date(lastSavedAt).toLocaleTimeString()}
+                {:else}
+                  Draft created
+                {/if}
+              {/if}
+            </div>
+            <button type="submit" class="btn-primary" disabled={submitting}>{submitting ? 'Posting...' : (draftPostId ? 'Publish Comment' : 'Post Comment')}</button>
           </div>
         </form>
       {/if}
@@ -233,4 +380,7 @@
   .btn-primary:hover { opacity: 0.9; }
   .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
   .error-message { color: #ef4444; }
+  .autosave-indicator { font-size:0.65rem; color: var(--color-text-secondary); min-height:0.9rem; display:flex; align-items:center; gap:0.35rem; }
+  .pending-dot { width:6px; height:6px; border-radius:50%; background: var(--color-accent); display:inline-block; animation: pulse 1s linear infinite; }
+  @keyframes pulse { 0% { opacity:0.2; } 50% { opacity:1; } 100% { opacity:0.2; } }
 </style>

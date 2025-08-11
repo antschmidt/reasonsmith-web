@@ -1,80 +1,138 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { nhost } from '$lib/nhostClient';
+  import { onMount } from 'svelte';
+  import { createDraftAutosaver, type DraftAutosaver } from '$lib';
   import { goto } from '$app/navigation';
 
+  let user = nhost.auth.getUser();
+  nhost.auth.onAuthStateChanged(() => { user = nhost.auth.getUser(); });
+
   let title = '';
-  let description = '';
-  let error: Error | null = null;
-  let loading = false;
+  let content = '';
+  let draftId: string | null = null;
+  let autosaver: DraftAutosaver | null = null;
+  let hasPending = false;
+  let lastSavedAt: number | null = null;
+  let publishing = false;
+  let publishError: string | null = null;
 
-  // Simplified mutation – contributor upsert handled globally in nhostClient ensureContributor
-  const CREATE_DISCUSSION = `
-    mutation CreateDiscussion($title: String!, $description: String, $userId: uuid!) {
-      insert_discussion_one(
-        object: { title: $title, description: $description, created_by: $userId }
-      ) { id }
-    }
-  `;
+  const CREATE_DISCUSSION = `mutation CreateDiscussion($title: String!, $authorId: uuid!) { insert_discussion_one(object:{ title:$title, created_by:$authorId }) { id } }`;
+  const ATTACH_AND_PUBLISH = `mutation AttachAndPublish($postId: uuid!, $discussionId: uuid!, $content: String!) { update_post_by_pk(pk_columns:{id:$postId}, _set:{discussion_id:$discussionId, draft_content:$content, content:$content, status:"approved"}) { id status discussion_id } }`;
 
-  const handleSubmit = async () => {
-    loading = true;
-    error = null;
-    const user = nhost.auth.getUser();
-
-    if (!user) {
-      error = new Error('You must be logged in to create a discussion.');
-      loading = false;
-      return;
-    }
-
-    if (!title.trim()) {
-        error = new Error('Title is required.');
-        loading = false;
-        return;
-    }
-
-    try {
-      const result = await nhost.graphql.request(CREATE_DISCUSSION, {
-        title,
-        description,
-        userId: user.id
-      });
-
-      if ((result as any).error) {
-        throw (result as any).error;
+  async function loadDraftById(id: string) {
+    const { data, error } = await nhost.graphql.request(`query GetDraft($id: uuid!, $authorId: uuid!) { post_by_pk(id: $id) { id draft_content author_id status } }`, { id, authorId: user?.id });
+    if (!error) {
+      const d = (data as any)?.post_by_pk;
+      if (d && d.author_id === user?.id && d.status === 'draft') {
+        draftId = d.id;
+        content = d.draft_content || '';
+        initAutosaver();
       }
-
-      const newDiscussionId = (result as any).data.insert_discussion_one.id;
-      goto(`/discussions/${newDiscussionId}`);
-    } catch (e: any) {
-      error = e;
-    } finally {
-      loading = false;
     }
-  };
+  }
+
+  function updateAutosaveState() {
+    if (!autosaver) return;
+    const st = autosaver.getState();
+    hasPending = st.hasPending;
+    lastSavedAt = st.lastSavedAt;
+  }
+
+  function initAutosaver() {
+    if (!draftId) return;
+    if (autosaver) autosaver.destroy();
+    autosaver = createDraftAutosaver({ postId: draftId, initialContent: content, delay: 700, minInterval: 2500, onSaved: updateAutosaveState });
+    updateAutosaveState();
+  }
+
+  onMount(async () => {
+    const qp = $page.url.searchParams;
+    const paramId = qp.get('draftId');
+    if (paramId && user) {
+      await loadDraftById(paramId);
+    }
+  });
+
+  function onContentInput(e: Event) {
+    content = (e.target as HTMLTextAreaElement).value;
+    if (draftId) {
+      autosaver?.handleChange(content);
+      updateAutosaveState();
+    }
+  }
+
+  async function publishNewDiscussion() {
+    publishError = null;
+    if (!user) { publishError = 'Sign in required.'; return; }
+    if (!title.trim()) { publishError = 'Title required.'; return; }
+    if (!content.trim()) { publishError = 'Content required.'; return; }
+    if (!draftId) { publishError = 'Draft missing.'; return; }
+    publishing = true;
+    try {
+      // 1. Create discussion
+      const { data: discData, error: discErr } = await nhost.graphql.request(CREATE_DISCUSSION, { title: title.trim(), authorId: user.id });
+      if (discErr) throw discErr;
+      const discussionId = (discData as any)?.insert_discussion_one?.id;
+      if (!discussionId) throw new Error('Failed to create discussion.');
+      // 2. Ensure latest content saved to draft then publish by updating row
+      autosaver?.handleChange(content); // push latest to autosaver buffer
+      // wait a short tick for debounce? Force immediate save by calling internal flush if available (not exposed); we redundantly set draft_content/content below anyway.
+      const { error: attachErr } = await nhost.graphql.request(ATTACH_AND_PUBLISH, { postId: draftId, discussionId, content });
+      if (attachErr) throw attachErr;
+      // 3. Navigate to discussion
+      goto(`/discussions/${discussionId}`);
+    } catch (e: any) {
+      publishError = e.message || 'Failed to publish.';
+    } finally {
+      publishing = false;
+    }
+  }
+
+  function canPublish() { return !!user && !!draftId && title.trim().length > 0 && content.trim().length > 0 && !publishing; }
+
+  // Reactive handler: if draftId query param changes, load new draft
+  $: if (user) {
+    const qid = $page.url.searchParams.get('draftId');
+    if (qid && qid !== draftId) {
+      // reset current autosaver before loading another draft
+      autosaver?.destroy();
+      autosaver = null;
+      draftId = null;
+      content = '';
+      loadDraftById(qid);
+    }
+  }
 </script>
 
 <div class="container">
   <a href="/" class="back-link" aria-label="Back to Dashboard">← Back to Dashboard</a>
   <h1 class="title">Create a New Discussion</h1>
-  <form on:submit|preventDefault={handleSubmit} class="form">
+  <form on:submit|preventDefault={publishNewDiscussion}>
     <div class="form-group">
       <label for="title">Title</label>
       <input id="title" type="text" bind:value={title} placeholder="Enter a clear and concise title" required />
     </div>
     <div class="form-group">
       <label for="description">Description (Optional)</label>
-      <textarea id="description" bind:value={description} rows="4" placeholder="Provide some context or a starting point for the discussion."></textarea>
+      <textarea id="description" bind:value={content} rows="4" placeholder="Provide some context or a starting point for the discussion." on:input={onContentInput}></textarea>
     </div>
 
-    {#if error}
-      <p class="error-message">{error.message}</p>
-    {/if}
+    <div class="autosave-indicator" aria-live="polite">
+      {#if draftId}
+        {#if hasPending}
+          <span class="pending-dot" aria-hidden="true"></span> Saving…
+        {:else if lastSavedAt}
+          Saved {new Date(lastSavedAt).toLocaleTimeString()}
+        {:else}
+          Draft loaded
+        {/if}
+      {/if}
+    </div>
 
-    <div class="actions">
-      <button type="submit" class="btn-primary" disabled={loading}>
-        {loading ? 'Creating...' : 'Create Discussion'}
-      </button>
+    {#if publishError}<p style="color:var(--color-accent); font-size:0.75rem;">{publishError}</p>{/if}
+    <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+      <button class="btn-primary" type="submit" disabled={!canPublish()}>{publishing ? 'Publishing…' : 'Publish Discussion'}</button>
       <button type="button" class="btn-secondary" on:click={() => goto('/')}>Cancel</button>
     </div>
   </form>
@@ -82,12 +140,9 @@
 
 <style>
   .container {
-    max-width: 800px;
+    max-width: 900px;
     margin: 2rem auto;
     padding: 2rem;
-    background-color: var(--color-surface);
-    border-radius: var(--border-radius-md);
-    border: 1px solid var(--color-border);
   }
   .title {
     font-size: 1.75rem;
@@ -95,38 +150,53 @@
     font-family: var(--font-family-display);
     margin-bottom: 1.5rem;
   }
-  .form {
+  form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.25rem;
   }
-  .form-group {
-    display: flex;
-    flex-direction: column;
+  label span {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+    color: var(--color-text-secondary);
   }
-  .form-group label {
-    margin-bottom: 0.5rem;
-    font-weight: 500;
-  }
-  .form-group input,
-  .form-group textarea {
+  input[type=text], textarea {
     width: 100%;
-    padding: 0.75rem;
     border: 1px solid var(--color-border);
-    border-radius: var(--border-radius-sm);
-    background-color: var(--color-input-bg);
-    color: var(--color-text-primary);
-    transition: border-color 150ms ease-in-out, box-shadow 150ms ease-in-out;
+    background: var(--color-surface);
+    padding: 0.75rem;
+    border-radius: var(--border-radius-md);
+    font: inherit;
   }
-  .form-group input:focus,
-  .form-group textarea:focus {
+  input[type=text]:focus, textarea:focus {
     outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 40%, transparent);
   }
-  .error-message {
-    color: #ef4444; /* Red 500 */
-    margin-bottom: 1rem;
+  .autosave-indicator {
+    font-size: 0.65rem;
+    color: var(--color-text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 1rem;
+  }
+  .pending-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--color-primary);
+    border-radius: 50%;
+    animation: pulse 1.2s infinite ease-in-out;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(0.5); opacity: 0.4; }
+  }
+  button.btn-primary {
+    margin-top: 0.5rem;
   }
   .btn-primary {
     align-self: flex-start;

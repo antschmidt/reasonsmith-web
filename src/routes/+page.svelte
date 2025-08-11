@@ -5,6 +5,15 @@
 	import { nhost } from '$lib/nhostClient';
 	import Dashboard from '$lib/components/Dashboard.svelte';
 	import { theme, toggleTheme } from '$lib/themeStore';
+	import { env as publicEnv } from '$env/dynamic/public';
+
+	const SITE_URL = publicEnv.PUBLIC_SITE_URL;
+
+	function getRedirect() {
+		if (SITE_URL) return SITE_URL.replace(/\/$/, '') + '/auth/callback';
+		if (typeof window !== 'undefined') return window.location.origin + '/auth/callback';
+		return undefined;
+	}
 
 	const isOpen = writable(false);
 	function toggle() { isOpen.update((v: boolean) => !v); }
@@ -35,8 +44,8 @@
 	}
 
 	async function logout() { await nhost.auth.signOut(); user = null; }
-	async function signInWithGitHub() { await nhost.auth.signIn({ provider: 'github', options: { redirectTo: '/auth/callback' } }); }
-	async function signInWithGoogle() { await nhost.auth.signIn({ provider: 'google', options: { redirectTo: '/auth/callback' } }); }
+	async function signInWithGitHub() { await nhost.auth.signIn({ provider: 'github', options: { redirectTo: getRedirect() } }); }
+	async function signInWithGoogle() { await nhost.auth.signIn({ provider: 'google', options: { redirectTo: getRedirect() } }); }
 	async function login() {
 		authError = null;
 		try { await nhost.auth.signIn({ email, password }); } catch (e: any) { authError = e.message; }
@@ -49,7 +58,7 @@
 		authError = null; magicLinkSent = false;
 		if (!email) { authError = 'Please enter an email first.'; return; }
 		try {
-			await nhost.auth.signIn({ email, options: { redirectTo: '/auth/callback' } });
+			await nhost.auth.signIn({ email, options: { redirectTo: getRedirect() } });
 			magicLinkSent = true;
 		} catch (e: any) { authError = e.message; }
 	}

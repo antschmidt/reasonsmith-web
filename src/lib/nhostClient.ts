@@ -1,7 +1,14 @@
 import { NhostClient } from '@nhost/nhost-js';
-import { PUBLIC_NHOST_SUBDOMAIN, PUBLIC_NHOST_REGION } from '$env/static/public';
+import { env } from '$env/dynamic/public';
 
 const isBrowser = typeof window !== 'undefined';
+
+const PUBLIC_NHOST_SUBDOMAIN = env.PUBLIC_NHOST_SUBDOMAIN;
+const PUBLIC_NHOST_REGION = env.PUBLIC_NHOST_REGION;
+
+if (!PUBLIC_NHOST_SUBDOMAIN || !PUBLIC_NHOST_REGION) {
+  console.warn('[nhostClient] Missing PUBLIC_NHOST_SUBDOMAIN or PUBLIC_NHOST_REGION; configure in Vercel project settings.');
+}
 
 export const nhost = new NhostClient({
   subdomain: PUBLIC_NHOST_SUBDOMAIN,

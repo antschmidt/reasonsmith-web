@@ -3,9 +3,8 @@
   import { onMount } from 'svelte';
   // Avoid importing gql to prevent type resolution issues; use plain strings
   import { nhost } from '$lib/nhostClient';
-  import { GET_DASHBOARD_DATA, CREATE_POST_DRAFT } from '$lib/graphql/queries';
+  import { GET_DASHBOARD_DATA } from '$lib/graphql/queries';
   import { goto } from '$app/navigation';
-  import Editor from '$lib/Editor.svelte';
 
   export let user: User;
 
@@ -109,42 +108,12 @@
     await loadData();
   }
 
-  let activeDraftId: string | null = null;
-  let activeDraftContent = '';
-  function openDraft(d: { id: string; draft_content?: string | null }) {
-    activeDraftId = d.id;
-    activeDraftContent = d.draft_content || '';
-  }
-
-  let newDraftLoading = false;
-  async function createNewDraft() {
-    if (newDraftLoading) return;
-    const userObj = nhost.auth.getUser();
-    if (!userObj) { error = 'Not authenticated'; return; }
-    if (!recentDiscussions.length) {
-      error = 'Create or seed a discussion first.';
-      return;
+  function goToDraft(d: { id: string; discussion_id?: string | null }) {
+    if (d.discussion_id) {
+      goto(`/discussions/${d.discussion_id}?replyDraftId=${d.id}`);
+    } else {
+      goto(`/discussions/new?draftId=${d.id}`);
     }
-    newDraftLoading = true;
-    error = null;
-    const discussionId = recentDiscussions[0].id; // simple heuristic; later allow selection
-    const { data, error: draftErr } = await nhost.graphql.request(CREATE_POST_DRAFT, {
-      discussionId,
-      authorId: userObj.id,
-      draftContent: ''
-    });
-    if (draftErr) {
-      error = draftErr.message || 'Failed to create draft';
-      newDraftLoading = false;
-      return;
-    }
-    const newId = (data as any)?.insert_post_one?.id;
-    if (newId) {
-      const draftObj = { id: newId, draft_content: '', discussion_id: discussionId, updated_at: new Date().toISOString() };
-      drafts = [draftObj, ...drafts];
-      openDraft(draftObj);
-    }
-    newDraftLoading = false;
   }
 
   function extractSnippet(html: string, max = 80) {
@@ -163,6 +132,21 @@
       .trim();
     if (!txt) return 'Untitled draft';
     return txt.length > max ? txt.slice(0, max) + '…' : txt;
+  }
+
+  const DELETE_DRAFT = `mutation DeleteDraft($id: uuid!, $authorId: uuid!) { delete_post(where:{id:{_eq:$id}, author_id:{_eq:$authorId}, status:{_eq:"draft"}}){ affected_rows } }`;
+
+  async function deleteDraft(d: { id: string }) {
+    if (!user) return;
+    const ok = typeof window !== 'undefined' ? confirm('Delete this draft?') : true;
+    if (!ok) return;
+    const { error: delErr } = await nhost.graphql.request(DELETE_DRAFT, { id: d.id, authorId: user.id as unknown as string });
+    if (delErr) {
+      // simple inline fallback; could add toast later
+      console.warn('Failed to delete draft', delErr);
+      return;
+    }
+    drafts = drafts.filter(dr => dr.id !== d.id);
   }
 </script>
 
@@ -234,31 +218,12 @@
     <!-- Sidebar (Right Column) -->
     <!-- Replace "Your Drafts" list with live data -->
     <aside class="sidebar">
-      <!-- Quick Actions -->
-      <section class="card">
-        <h2 class="section-title">Quick Actions</h2>
-        <div class="quick-actions">
-          <a href="/discussions/new" class="btn-primary">
-            <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
-            New Discussion
-          </a>
-          <button class="btn-secondary" on:click={createNewDraft} disabled={newDraftLoading}>
-            {#if newDraftLoading}
-              Creating…
-            {:else}
-              <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
-              New Draft
-            {/if}
-          </button>
-          <button class="btn-secondary">
-            <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg>
-            New Reply
-          </button>
-          <button class="btn-secondary">
-            <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 11a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1v-1z" /></svg>
-            Invite Collaborator
-          </button>
-        </div>
+      <!-- Single Action: New Discussion -->
+      <section class="card quick-discussion">
+        <a href="/discussions/new" class="btn-primary full-width">
+          <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+          New Discussion
+        </a>
       </section>
 
       <!-- Your Drafts -->
@@ -273,19 +238,16 @@
             <ul class="list">
               {#each drafts as draft}
                 <li class="list-item">
-                  <button type="button" class="draft-button" on:click={() => openDraft(draft)} on:keydown={(e)=> e.key==='Enter' && openDraft(draft)}>{extractSnippet(draft.draft_content || '')}</button>
+                  <div class="draft-row">
+                    <button type="button" class="draft-button" on:click={() => goToDraft(draft)} on:keydown={(e: KeyboardEvent)=> e.key==='Enter' && goToDraft(draft)}>{extractSnippet(draft.draft_content || '')}</button>
+                    <button type="button" class="draft-delete" aria-label="Delete draft" title="Delete draft" on:click={() => deleteDraft(draft)}>&times;</button>
+                  </div>
                 </li>
               {/each}
             </ul>
           {/if}
         {/if}
-        {#if activeDraftId}
-          <div class="editor-wrapper">
-            <h3 class="editor-title">Editing Draft</h3>
-            <Editor postId={activeDraftId} content={activeDraftContent} on:saved={(e)=>{/* could surface toast */}} onUpdate={(html)=> activeDraftContent = html} />
-            <p class="hint">Autosaves locally & to server.</p>
-          </div>
-        {/if}
+        <!-- Removed inline editor; navigation now handles drafting -->
       </section>
 
       <!-- Pinned Threads, Leaderboard, Notifications remain placeholders for now -->
@@ -471,44 +433,6 @@
   .list-item:hover {
     text-decoration: underline;
   }
-  .leaderboard-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .leaderboard-score {
-    font-size: 0.875rem;
-    color: var(--color-text-secondary);
-  }
-  .current-rank {
-    margin-top: 1rem;
-    text-align: center;
-    background-color: var(--color-surface-alt);
-    padding: 0.5rem;
-    border-radius: var(--border-radius-md);
-    font-size: 0.875rem;
-  }
-  .notification-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    font-size: 0.875rem;
-  }
-  .notification-icon {
-    margin-top: 0.25rem;
-    color: var(--color-accent);
-  }
-  .notification-icon svg {
-      width: 1.25rem;
-      height: 1.25rem;
-  }
-
-  /* Quick Actions */
-  .quick-actions {
-    display: inline-flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
 
   /* Buttons */
   .btn-primary, .btn-secondary {
@@ -567,10 +491,8 @@
     text-decoration: underline;
   }
 
-  .editor-wrapper { margin-top:1rem; padding-top:1rem; border-top:1px solid var(--color-border); }
-  .editor-title { font-size:0.85rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; margin:0 0 0.5rem; color: var(--color-text-secondary); }
-  .hint { font-size:0.65rem; color: var(--color-text-secondary); margin-top:0.35rem; }
-
-  .draft-button { background:none; border:none; padding:0; margin:0; color: var(--color-primary); cursor:pointer; font: inherit; text-align:left; }
-  .draft-button:hover, .draft-button:focus { text-decoration:underline; outline:none; }
+  /* Draft Delete Button */
+  .draft-row { display:flex; align-items:center; justify-content:space-between; gap:0.5rem; }
+  .draft-delete { background:none; border:none; color:var(--color-text-secondary); cursor:pointer; font-size:1rem; line-height:1; padding:0 0.25rem; border-radius:4px; }
+  .draft-delete:hover, .draft-delete:focus { color:var(--color-accent); outline:none; }
 </style>
