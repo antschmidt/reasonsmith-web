@@ -16,12 +16,19 @@
   };
 
   // Live data
-  let recentDiscussions: Array<{
+  let myDiscussions: Array<{
     id: string;
     title: string;
     description?: string | null;
     created_at: string;
-    creator?: { id: string; display_name?: string | null } | null;
+    contributor?: { id: string; display_name?: string | null } | null;
+  }> = [];
+  let repliedDiscussions: Array<{
+    id: string;
+    title: string;
+    description?: string | null;
+    created_at: string;
+    contributor?: { id: string; display_name?: string | null } | null;
   }> = [];
 
   let drafts: Array<{
@@ -29,6 +36,7 @@
     draft_content?: string | null;
     discussion_id?: string | null;
     updated_at?: string | null;
+    discussion_title?: string | null;
   }> = [];
 
   let loading = true;
@@ -41,10 +49,19 @@
       userId: user.id as unknown as string
     });
     if (gqlError) {
-      error = gqlError.message || 'Failed to load data';
+      error = Array.isArray(gqlError)
+        ? gqlError.map((e: any) => e.message ?? String(e)).join('; ')
+        : ((gqlError as any).message ?? 'Failed to load data');
     } else if (data) {
-      recentDiscussions = data.recentDiscussions ?? [];
-      drafts = data.myDrafts ?? [];
+      myDiscussions = data.myDiscussions ?? [];
+      repliedDiscussions = data.repliedDiscussions ?? [];
+      drafts = (data.myDrafts ?? []).map((draft: any) => ({
+        id: draft.id,
+        draft_content: draft.draft_content,
+        discussion_id: draft.discussion_id,
+        updated_at: draft.updated_at,
+        discussion_title: draft.discussion?.title ?? null
+      }));
     }
     loading = false;
   }
@@ -176,42 +193,68 @@
 
   <!-- Main Content Grid -->
   <div class="dashboard-grid">
-    <!-- Recent & Pinned Discussions (Left Column) -->
+    <!-- Your Discussions (Left Column) -->
     <main class="main-content">
-      <h2 class="section-title">Recent Discussions</h2>
+      <div class="header-row">
+        <h2 class="section-title">Your Discussions</h2>
+        <a class="btn-secondary" href="/discussions" style="margin-left:auto;">Browse all</a>
+      </div>
 
       {#if loading}
         <p>Loading…</p>
       {:else if error}
         <p style="color: var(--color-accent)">{error}</p>
       {:else}
-        {#if recentDiscussions.length === 0}
+        {#if (myDiscussions.length + repliedDiscussions.length) === 0}
           <div class="card" style="margin-bottom: 1rem;">
             <p>No discussions yet.</p>
             <button class="btn-primary" on:click={seedSampleData} style="margin-top: 0.75rem;">Seed sample data</button>
           </div>
         {/if}
 
-        <div class="discussions-list">
-          {#each recentDiscussions as discussion}
-            <div class="discussion-card" role="button" tabindex="0" on:click={() => goto(`/discussions/${discussion.id}`)} on:keydown={(e) => (e.key === 'Enter' ? goto(`/discussions/${discussion.id}`) : null)}>
-              <h3 class="discussion-title">{discussion.title}</h3>
-              {#if discussion.description}
-                <p class="discussion-snippet">{discussion.description}</p>
-              {/if}
-              <p class="discussion-meta">
-                {#if discussion.creator?.display_name}
-                  by {discussion.creator.display_name}
+        {#if myDiscussions.length > 0}
+          <h3 class="subsection-title">Started by you</h3>
+          <div class="discussions-list">
+            {#each myDiscussions as discussion}
+              <div class="discussion-card" role="button" tabindex="0" on:click={() => goto(`/discussions/${discussion.id}`)} on:keydown={(e) => (e.key === 'Enter' ? goto(`/discussions/${discussion.id}`) : null)}>
+                <h3 class="discussion-title">{discussion.title}</h3>
+                {#if discussion.description}
+                  <p class="discussion-snippet">{discussion.description}</p>
                 {/if}
-                
-                {#if discussion.created_at}
-                  &middot; {new Date(discussion.created_at).toLocaleString()}
+                <p class="discussion-meta">
+                  {#if discussion.contributor?.display_name}
+                    by {discussion.contributor.display_name}
+                  {/if}
+                  {#if discussion.created_at}
+                    &middot; {new Date(discussion.created_at).toLocaleString()}
+                  {/if}
+                </p>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        {#if repliedDiscussions.length > 0}
+          <h3 class="subsection-title">You replied to</h3>
+          <div class="discussions-list">
+            {#each repliedDiscussions as discussion}
+              <div class="discussion-card" role="button" tabindex="0" on:click={() => goto(`/discussions/${discussion.id}`)} on:keydown={(e) => (e.key === 'Enter' ? goto(`/discussions/${discussion.id}`) : null)}>
+                <h3 class="discussion-title">{discussion.title}</h3>
+                {#if discussion.description}
+                  <p class="discussion-snippet">{discussion.description}</p>
                 {/if}
-              </p>
-            </div>
-          {/each}
-        </div>
-        <button class="btn-secondary load-more">Load More</button>
+                <p class="discussion-meta">
+                  {#if discussion.contributor?.display_name}
+                    by {discussion.contributor.display_name}
+                  {/if}
+                  {#if discussion.created_at}
+                    &middot; {new Date(discussion.created_at).toLocaleString()}
+                  {/if}
+                </p>
+              </div>
+            {/each}
+          </div>
+        {/if}
       {/if}
     </main>
 
@@ -239,7 +282,21 @@
               {#each drafts as draft}
                 <li class="list-item">
                   <div class="draft-row">
-                    <button type="button" class="draft-button" on:click={() => goToDraft(draft)} on:keydown={(e: KeyboardEvent)=> e.key==='Enter' && goToDraft(draft)}>{extractSnippet(draft.draft_content || '')}</button>
+                    <div style="flex:1;">
+                      <button type="button" class="draft-button" on:click={() => goToDraft(draft)} on:keydown={(e: KeyboardEvent)=> e.key==='Enter' && goToDraft(draft)}>
+                        {extractSnippet(draft.draft_content || '')}
+                      </button>
+                      <div class="draft-meta" style="font-size:0.8em; color:var(--color-text-secondary); margin-top:2px;">
+                        {#if draft.discussion_id}
+                          <span>Reply draft</span>
+                          {#if draft.discussion_title}
+                            &nbsp;to <span style="font-weight:500; text-decoration:underline;">{draft.discussion_title}</span>
+                          {/if}
+                        {:else}
+                          <span>Discussion draft</span>
+                        {/if}
+                      </div>
+                    </div>
                     <button type="button" class="draft-delete" aria-label="Delete draft" title="Delete draft" on:click={() => deleteDraft(draft)}>&times;</button>
                   </div>
                 </li>
@@ -408,15 +465,13 @@
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+  line-clamp: 2;
   }
   .discussion-meta {
     font-size: 0.75rem;
     color: var(--color-text-secondary);
   }
-  .load-more {
-    margin-top: 1.5rem;
-    width: 100%;
-  }
+  /* .load-more removed: no longer used */
 
   /* Sidebar Lists */
   .list {
@@ -493,6 +548,28 @@
 
   /* Draft Delete Button */
   .draft-row { display:flex; align-items:center; justify-content:space-between; gap:0.5rem; }
+  .draft-meta {
+    margin-left: 1rem;
+    padding: 1rem;
+  }
+  .draft-button {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    color: var(--color-primary);
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    padding: 0.5rem 1rem;
+    transition: background-color 150ms, box-shadow 150ms;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  }
+  .draft-button:hover, .draft-button:focus {
+    background: var(--color-surface-alt);
+    text-decoration: underline;
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+  }
   .draft-delete { background:none; border:none; color:var(--color-text-secondary); cursor:pointer; font-size:1rem; line-height:1; padding:0 0.25rem; border-radius:4px; }
   .draft-delete:hover, .draft-delete:focus { color:var(--color-accent); outline:none; }
 </style>

@@ -20,7 +20,9 @@
 <div class="min-h-screen bg-gray-50 flex flex-col justify-center items-center">
   <div class="max-w-md w-full mx-auto p-8">
     <div class="text-center">
-        <img class="mx-auto h-12 w-auto" src="/ReasonSmith.png" alt="ReasonSmith">
+        <div class="logo-shell">
+          <img class="logo" src="/ReasonSmith-transparent.png" alt="ReasonSmith">
+        </div>
         <h1 class="mt-6 text-3xl font-bold text-center text-gray-900">
             Sign in to your account
         </h1>
@@ -44,3 +46,9 @@
     {/if}
   </div>
 </div>
+
+<style>
+  .logo-shell { width: 96px; height: 96px; margin: 0 auto; display:flex; align-items:center; justify-content:center; }
+  .logo { width:100%; height:100%; object-fit:contain; display:block; }
+  @media (prefers-color-scheme: dark) { .logo-shell { filter: brightness(1.1) saturate(1.1); } }
+</style>

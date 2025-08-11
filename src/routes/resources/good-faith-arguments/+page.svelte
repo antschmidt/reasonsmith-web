@@ -4,7 +4,6 @@
 </script>
 
 <div class="guide-container">
-  <a href="/" class="back-link" aria-label="Back to Dashboard">← Back to Dashboard</a>
   <h1 class="guide-title">How to Craft Good-Faith Arguments</h1>
   <p class="intro">
     Good-faith argumentation is about seeking truth, understanding, and constructive progress—rather than simply winning. This guide provides practical principles to help you participate productively in ReasonSmith discussions.
@@ -108,15 +107,11 @@ Open Questions: &lt;areas needing clarification or data&gt;</code></pre>
     <p class="tip">When you notice these, ask for clarification, criteria, or evidence instead of mirroring tone.</p>
   </section>
 
-  <section class="cta">
-    <a href="/" class="btn-primary">Return to Dashboard</a>
-  </section>
 </div>
 
 <style>
   .guide-container { max-width: 900px; margin: 2rem auto; padding: 2rem; }
-  .back-link { display:inline-block; margin-bottom:0.75rem; color: var(--color-primary); text-decoration:none; font-size:0.875rem; }
-  .back-link:hover { text-decoration:underline; }
+  /* back-link removed */
   .guide-title { font-size:2.25rem; font-weight:700; font-family: var(--font-family-display); margin-bottom:1rem; }
   .intro { font-size:1.05rem; color: var(--color-text-secondary); margin-bottom:2rem; line-height:1.5; }
   .principles { list-style:none; padding:0; display:flex; flex-direction:column; gap:1.75rem; margin:0 0 2.5rem; }
@@ -132,8 +127,5 @@ Open Questions: &lt;areas needing clarification or data&gt;</code></pre>
   .grid-list li { background: var(--color-surface); border:1px solid var(--color-border); padding:0.75rem 0.9rem; border-radius: var(--border-radius-sm); font-size:0.85rem; line-height:1.35; }
   .section-intro { font-size:0.95rem; color: var(--color-text-secondary); margin-bottom:0.75rem; }
   .tip { font-size:0.85rem; color: var(--color-text-secondary); margin-top:-0.5rem; }
-  .cta { margin-top:3rem; }
-  .btn-primary { display:inline-block; background: var(--color-primary); color: var(--color-surface); border:none; padding:0.75rem 1.25rem; border-radius: var(--border-radius-md); cursor:pointer; font-weight:600; text-decoration:none; }
-  .btn-primary:hover { opacity:0.9; }
   @media (max-width: 640px) { .guide-container { padding:1.25rem; } .guide-title { font-size:1.85rem; } }
 </style>

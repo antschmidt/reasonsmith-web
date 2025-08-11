@@ -171,7 +171,6 @@
 </script>
 
 <div class="guide-container">
-  <a href="/" class="back-link" aria-label="Back to Dashboard">← Back to Dashboard</a>
   <h1 class="guide-title">Community Guidelines</h1>
   <p class="intro">ReasonSmith exists to elevate reasoning quality. These guidelines explain participation standards, our scoring signals, and how we treat edge cases. The goal is not sterile civility—it is intellectually honest, well-supported argumentation.</p>
 
@@ -281,9 +280,7 @@ If you still deny this, you're willfully discarding multi-domain convergent evid
     </ul>
   </section>
 
-  <section class="cta">
-    <a href="/" class="btn-primary">Return to Dashboard</a>
-  </section>
+  
 
   {#if activeItem && activeKind}
     {#key activeItem}
@@ -315,8 +312,7 @@ If you still deny this, you're willfully discarding multi-domain convergent evid
 
 <style>
   .guide-container { max-width: 1000px; margin: 2rem auto; padding: 2rem; }
-  .back-link { display:inline-block; margin-bottom:0.75rem; color: var(--color-primary); text-decoration:none; font-size:0.875rem; }
-  .back-link:hover { text-decoration:underline; }
+  /* back-link removed */
   .guide-title { font-size:2.25rem; font-weight:700; font-family: var(--font-family-display); margin-bottom:1rem; }
   .intro { font-size:1.05rem; color: var(--color-text-secondary); margin-bottom:2rem; line-height:1.5; }
   h2 { font-size:1.3rem; font-weight:600; margin:2.25rem 0 0.75rem; }
@@ -346,8 +342,9 @@ If you still deny this, you're willfully discarding multi-domain convergent evid
   .modal-detail { font-size:0.9rem; line-height:1.5; }
   .example-block { background: var(--color-surface-alt, rgba(255,255,255,0.06)); padding:0.6rem 0.75rem; border-radius: var(--border-radius-sm); font-size:0.75rem; }
   .modal-footer { padding:0.75rem 1.25rem 1rem; border-top:1px solid var(--color-border); display:flex; justify-content:flex-end; }
-  .btn-primary { display:inline-block; background: var(--color-primary); color: var(--color-surface); padding:0.75rem 1.25rem; border-radius: var(--border-radius-md); text-decoration:none; font-weight:600; }
+  .btn-primary { display:inline-block; background: var(--color-primary); color: var(--color-surface); padding:0.75rem 1.25rem; border-radius: var(--border-radius-md); text-decoration:none; font-weight:600; border: none; cursor: pointer; }
   .btn-primary:hover { opacity:0.9; }
+  
   @media (max-width: 640px) { .guide-container { padding:1.25rem; } .guide-title { font-size:1.9rem; } }
   @media (max-width:600px){ .modal { max-width:100%; } }
   .examples { margin:0.4rem 0 0; padding-left:1.05rem; display:flex; flex-direction:column; gap:0.35rem; font-size:0.7rem; }

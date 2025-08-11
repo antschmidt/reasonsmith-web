@@ -106,7 +106,6 @@
 </script>
 
 <div class="container">
-  <a href="/" class="back-link" aria-label="Back to Dashboard">← Back to Dashboard</a>
   <h1 class="title">Create a New Discussion</h1>
   <form on:submit|preventDefault={publishNewDiscussion}>
     <div class="form-group">
@@ -155,15 +154,7 @@
     flex-direction: column;
     gap: 1.25rem;
   }
-  label span {
-    display: block;
-    font-size: 0.8rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.25rem;
-    color: var(--color-text-secondary);
-  }
+  /* removed unused label span styling */
   input[type=text], textarea {
     width: 100%;
     border: 1px solid var(--color-border);
@@ -215,19 +206,7 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
-  .back-link {
-    display: inline-block;
-    margin-bottom: 0.5rem;
-    color: var(--color-primary);
-    text-decoration: none;
-  }
-  .back-link:hover { text-decoration: underline; }
-  .actions {
-    display: flex;
-    gap: 0.75rem;
-    align-items: center;
-    margin-top: 0.5rem;
-  }
+  /* removed unused .actions */
   .btn-secondary {
     background-color: var(--color-surface);
     color: var(--color-text-primary);

@@ -21,10 +21,13 @@ export const nhost = new NhostClient({
   storageUrl: isBrowser ? 'https://storage.reasonsmith.com/v1' : undefined
 });
 
-// Ensure all GraphQL requests use the Hasura role "me"
-nhost.graphql.setHeaders({
-  'x-hasura-role': 'me'
-});
+// Apply GraphQL role header dynamically (anonymous before auth; me after sign-in)
+function applyGraphqlRoleHeader() {
+  const user = nhost.auth.getUser();
+  if (user) nhost.graphql.setHeaders({ 'x-hasura-role': 'me' });
+  else nhost.graphql.setHeaders({}); // let Hasura use its unauthorized role
+}
+applyGraphqlRoleHeader();
 
 // Correct constraint name (user_pkey) per contributor_constraint enum
 const UPSERT_CONTRIBUTOR = `
@@ -54,11 +57,16 @@ export async function ensureContributor() {
 // Run on initial load (if already authenticated) and on sign-in events
 if (isBrowser) {
   if (nhost.auth.getUser()) {
+    applyGraphqlRoleHeader();
     ensureContributor();
   }
   nhost.auth.onAuthStateChanged((event) => {
     if (event === 'SIGNED_IN') {
+      applyGraphqlRoleHeader();
       ensureContributor();
+    }
+    if (event === 'SIGNED_OUT') {
+      applyGraphqlRoleHeader();
     }
   });
 }

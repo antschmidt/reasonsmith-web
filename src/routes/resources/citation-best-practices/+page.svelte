@@ -4,7 +4,6 @@
 </script>
 
 <div class="guide-container">
-  <a href="/" class="back-link" aria-label="Back to Dashboard">← Back to Dashboard</a>
   <h1 class="guide-title">Citation Best Practices</h1>
   <p class="intro">Clear, transparent sourcing strengthens credibility and accelerates collaborative reasoning. This guide outlines how to cite responsibly inside ReasonSmith discussions.</p>
 
@@ -109,15 +108,11 @@ Example: Adoption plateaued after Q2 2024 [AcmeAnalytics-2024Q3].</code></pre>
     </ul>
   </section>
 
-  <section class="cta">
-    <a href="/" class="btn-primary">Return to Dashboard</a>
-  </section>
 </div>
 
 <style>
   .guide-container { max-width: 1000px; margin: 2rem auto; padding: 2rem; }
-  .back-link { display:inline-block; margin-bottom:0.75rem; color: var(--color-primary); text-decoration:none; font-size:0.875rem; }
-  .back-link:hover { text-decoration:underline; }
+  /* back-link removed */
   .guide-title { font-size:2.25rem; font-weight:700; font-family: var(--font-family-display); margin-bottom:1rem; }
   .intro { font-size:1.05rem; color: var(--color-text-secondary); margin-bottom:2rem; line-height:1.5; }
   h2 { font-size:1.3rem; font-weight:600; margin:2.25rem 0 0.75rem; }
@@ -130,7 +125,5 @@ Example: Adoption plateaued after Q2 2024 [AcmeAnalytics-2024Q3].</code></pre>
   @media (min-width:720px){ .example-grid { grid-template-columns:1fr 1fr; } }
   .example-grid h3 { margin:0 0 0.5rem; font-size:0.95rem; font-weight:600; }
   .good-vs-bad ul { list-style:disc; padding-left:1.1rem; display:flex; flex-direction:column; gap:0.35rem; }
-  .btn-primary { display:inline-block; background: var(--color-primary); color: var(--color-surface); padding:0.75rem 1.25rem; border-radius: var(--border-radius-md); text-decoration:none; font-weight:600; }
-  .btn-primary:hover { opacity:0.9; }
   @media (max-width: 640px) { .guide-container { padding:1.25rem; } .guide-title { font-size:1.9rem; } }
 </style>

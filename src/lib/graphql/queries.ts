@@ -26,8 +26,8 @@ const POST_FIELDS = gql`
 // Query for the main dashboard view
 export const GET_DASHBOARD_DATA = gql`
   query GetDashboardData($userId: uuid!) {
-    # Get the 5 most recent discussions
-    recentDiscussions: discussion(order_by: { created_at: desc }, limit: 5) {
+    # Discussions created by the user
+    myDiscussions: discussion(where: { created_by: { _eq: $userId } }, order_by: { created_at: desc }, limit: 10) {
       id
       title
       description
@@ -37,7 +37,22 @@ export const GET_DASHBOARD_DATA = gql`
       }
     }
 
-    # Get the current user's drafts
+    # Discussions the user has replied to (exclude those created by the user)
+    repliedDiscussions: discussion(
+      where: { created_by: { _neq: $userId }, posts: { author_id: { _eq: $userId } } }
+      order_by: { created_at: desc }
+      limit: 10
+    ) {
+      id
+      title
+      description
+      created_at
+      contributor {
+        ...ContributorFields
+      }
+    }
+
+    # Get the current user's drafts; include related discussion title for reply drafts
     myDrafts: post(
       where: { author_id: { _eq: $userId }, status: { _eq: "draft" } }
       order_by: { updated_at: desc }
@@ -46,10 +61,8 @@ export const GET_DASHBOARD_DATA = gql`
       draft_content
       discussion_id
       updated_at
+      discussion { id title }
     }
-
-    # Pinned threads would require a separate table, e.g., user_pinned_discussion
-    # For now, this is a placeholder.
   }
   ${CONTRIBUTOR_FIELDS}
 `;
