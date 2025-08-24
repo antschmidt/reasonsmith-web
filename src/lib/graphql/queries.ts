@@ -16,6 +16,9 @@ const POST_FIELDS = gql`
     content
     status
     created_at
+  good_faith_score
+  good_faith_label
+  good_faith_last_evaluated
     contributor {
       ...ContributorFields
     }
@@ -54,12 +57,13 @@ export const GET_DASHBOARD_DATA = gql`
 
     # Get the current user's drafts; include related discussion title for reply drafts
     myDrafts: post(
-      where: { author_id: { _eq: $userId }, status: { _eq: "draft" } }
+      where: { author_id: { _eq: $userId }, status: { _in: ["draft", "pending"] } }
       order_by: { updated_at: desc }
     ) {
       id
       draft_content
       discussion_id
+      status
       updated_at
       discussion { id title }
     }
@@ -121,13 +125,19 @@ export const PUBLISH_POST = gql`
     update_post_by_pk(
       pk_columns: { id: $postId }
       _set: {
-        status: "pending" # Or "approved" if you don't have a review step
-        content: draft_content # Copies draft content to final content
+        status: "pending"
+        content: draft_content
         draft_content: ""
       }
     ) {
       id
       status
+      content
+      created_at
+      good_faith_score
+      good_faith_label
+      good_faith_last_evaluated
+      contributor { id display_name email role }
     }
   }
 `;

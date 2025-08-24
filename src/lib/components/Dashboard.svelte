@@ -37,6 +37,7 @@
     discussion_id?: string | null;
     updated_at?: string | null;
     discussion_title?: string | null;
+    status?: string | null;
   }> = [];
 
   let loading = true;
@@ -60,7 +61,8 @@
         draft_content: draft.draft_content,
         discussion_id: draft.discussion_id,
         updated_at: draft.updated_at,
-        discussion_title: draft.discussion?.title ?? null
+        discussion_title: draft.discussion?.title ?? null,
+        status: draft.status
       }));
     }
     loading = false;
@@ -286,7 +288,7 @@
                       <button type="button" class="draft-button" on:click={() => goToDraft(draft)} on:keydown={(e: KeyboardEvent)=> e.key==='Enter' && goToDraft(draft)}>
                         {extractSnippet(draft.draft_content || '')}
                       </button>
-                      <div class="draft-meta" style="font-size:0.8em; color:var(--color-text-secondary); margin-top:2px;">
+                      <div class="draft-meta" style="font-size:0.8em; color:var(--color-text-secondary); margin-top:2px; display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
                         {#if draft.discussion_id}
                           <span>Reply draft</span>
                           {#if draft.discussion_title}
@@ -294,6 +296,9 @@
                           {/if}
                         {:else}
                           <span>Discussion draft</span>
+                        {/if}
+                        {#if draft.status === 'pending'}
+                          <span class="pending-badge" title="Awaiting moderation / processing">Pending…</span>
                         {/if}
                       </div>
                     </div>
@@ -572,4 +577,5 @@
   }
   .draft-delete { background:none; border:none; color:var(--color-text-secondary); cursor:pointer; font-size:1rem; line-height:1; padding:0 0.25rem; border-radius:4px; }
   .draft-delete:hover, .draft-delete:focus { color:var(--color-accent); outline:none; }
+  .pending-badge { background: color-mix(in srgb, var(--color-accent) 18%, transparent); color: var(--color-accent); padding:2px 6px; border-radius: 999px; font-size:0.6rem; font-weight:600; letter-spacing:0.5px; border:1px solid color-mix(in srgb, var(--color-accent) 55%, transparent); }
 </style>

@@ -3,7 +3,7 @@
   // Avoid importing gql to prevent type resolution issues; use plain string
   import { nhost } from '$lib/nhostClient';
   import { onMount } from 'svelte';
-  import { CREATE_POST_DRAFT, UPDATE_POST_DRAFT, PUBLISH_POST } from '$lib/graphql/queries';
+  import { CREATE_POST_DRAFT } from '$lib/graphql/queries';
   import { createDraftAutosaver, type DraftAutosaver } from '$lib';
 
   let discussion: any = null;
@@ -23,6 +23,42 @@
   let lastSavedAt: number | null = null;
   let hasPending = false;
   let focusReplyOnMount = false;
+  // Good-Faith scoring state
+  let gfScore: number | null = null;
+  let gfLabel: string | null = null;
+  let gfLoading = false;
+  let gfError: string | null = null;
+  const GOOD_FAITH_THRESHOLD = 0.6; // provisional threshold
+  let lastScoredContent = '';
+  let scoreDebounce: any = null;
+
+  async function scoreGoodFaith() {
+    if (!newComment.trim()) { gfScore = null; gfLabel = null; return; }
+    const content = newComment;
+    if (content === lastScoredContent) return; // unchanged since last scoring
+    lastScoredContent = content;
+    gfLoading = true; gfError = null;
+    try {
+      let payload: any = { content };
+      if (draftPostId) {
+        // Persist score to draft row but DO NOT auto-approve while user is still editing.
+        payload.post_id = draftPostId;
+        payload.persist = true;
+      }
+      const { res, error } = await nhost.functions.call('goodFaithScore', payload);
+      if (error) throw error;
+      gfScore = typeof (res as any).good_faith_score === 'number' ? (res as any).good_faith_score : null;
+      gfLabel = (res as any).good_faith_label || null;
+    } catch (e: any) {
+      gfError = e.message || 'Scoring failed';
+      gfScore = null; gfLabel = null;
+    } finally { gfLoading = false; }
+  }
+
+  function scheduleScore() {
+    if (scoreDebounce) clearTimeout(scoreDebounce);
+    scoreDebounce = setTimeout(scoreGoodFaith, 600); // debounce scoring
+  }
 
   const GET_DISCUSSION_DETAILS = `
     query GetDiscussionDetails($discussionId: uuid!) {
@@ -96,6 +132,12 @@
     }
   `;
 
+  const GET_LATEST_VERSION_NUMBER = `
+    query LatestVersion($discussionId: uuid!) {
+      discussion_version(where:{discussion_id:{_eq:$discussionId}}, order_by:{version_number: desc}, limit:1){ version_number }
+    }
+  `;
+
   let historicalVersion: any = null;
   let versionLoading = false;
   let versionError: string | null = null;
@@ -107,8 +149,12 @@
       versionError = null;
       nhost.graphql.request(GET_DISCUSSION_VERSION, { versionId: versionRef })
         .then(({ data, error }) => {
-          if (error) versionError = error.message;
-          else historicalVersion = (data as any)?.discussion_version_by_pk;
+          if (error) {
+            // error could be array or object; attempt to normalize
+            versionError = Array.isArray(error) ? error.map(e => (e as any).message || 'Error').join(', ') : (error as any).message || 'Error';
+          } else {
+            historicalVersion = (data as any)?.discussion_version_by_pk;
+          }
         })
         .finally(() => { versionLoading = false; });
     } else {
@@ -223,36 +269,47 @@
       draftAutosaver?.handleChange(newComment);
       updateAutosaveStatus();
     }
+  scheduleScore();
   }
 
   async function publishDraft() {
     submitError = null;
     if (!user) { submitError = 'You must be signed in to comment.'; return; }
     if (!newComment.trim()) { submitError = 'Comment cannot be empty.'; return; }
+    if (gfScore == null || gfScore < GOOD_FAITH_THRESHOLD) { submitError = 'Improve tone to reach threshold before publishing.'; return; }
     submitting = true;
     try {
-      if (draftPostId) {
-        // Use publish mutation to promote draft to approved content
-        const { data, error } = await nhost.graphql.request(PUBLISH_POST, { postId: draftPostId });
-        if (error) throw (error as any);
-        const discussionId = $page.params.id as string;
-        // refetch approved posts (simpler than manually merging since publish copies content)
-        await refreshApprovedPosts(discussionId);
-        // reset draft state
+      // Ensure draft exists
+      if (!draftPostId) {
+        await ensureDraftCreated();
+      }
+      if (!draftPostId) throw new Error('Failed to create draft.');
+      // Flush current content through autosaver logic
+      draftAutosaver?.handleChange(newComment);
+      // Perform atomic score + approve (server will also persist final content)
+      const { res, error } = await nhost.functions.call('goodFaithScore', {
+        content: newComment,
+        post_id: draftPostId,
+        persist: true,
+        approve_if: GOOD_FAITH_THRESHOLD
+      });
+      if (error) throw error;
+      const approved = (res as any)?.approved;
+      // Clear composer & reload posts if approved
+      if (approved) {
+        newComment = '';
+        gfScore = null; gfLabel = null; lastScoredContent = '';
         draftAutosaver?.destroy();
         draftAutosaver = null;
         draftPostId = null;
-        newComment = '';
-        draftLoaded = false; // allow new draft creation later
+        draftLoaded = false;
+        await refreshApprovedPosts($page.params.id as string);
       } else {
-        // fallback legacy path (should rarely hit now)
-        await submitComment();
+        submitError = 'Publish attempt did not meet approval threshold.';
       }
     } catch (e: any) {
       submitError = e.message || 'Failed to publish comment.';
-    } finally {
-      submitting = false;
-    }
+    } finally { submitting = false; }
   }
 
   async function refreshApprovedPosts(discussionId: string) {
@@ -289,42 +346,38 @@
     editDescription = discussion.description;
     editError = null;
   }
-
+  
   async function submitEdit() {
+    if (!editing) return;
     editError = null;
-    if (!user || user.id !== discussion.contributor.id) { editError = 'Not authorized.'; return; }
-    if (!editTitle.trim()) { editError = 'Title required.'; return; }
+    if (!editTitle.trim()) { editError = 'Title required'; return; }
+    if (!editDescription.trim()) { editError = 'Description required'; return; }
+    // If no meaningful change skip
+    if (editTitle.trim() === discussion.title && editDescription.trim() === discussion.description) { editing = false; return; }
     editLoading = true;
     try {
-      // Get next version number
-      const nextVersion = (discussion.current_version?.version_number || 1) + 1;
-      // 1. Create new version row
-      const { data: vData, error: vErr } = await nhost.graphql.request(CREATE_DISCUSSION_VERSION, {
-        discussionId: discussion.id,
-        title: editTitle.trim(),
-        description: editDescription.trim(),
-        versionNumber: nextVersion
-      });
-      if (vErr) throw vErr;
-      const versionId = (vData as any)?.insert_discussion_version_one?.id;
-      // 2. Update discussion current_version_id and live fields
-      const { error: uErr } = await nhost.graphql.request(UPDATE_DISCUSSION_CURRENT_VERSION, {
-        discussionId: discussion.id,
-        versionId,
-        title: editTitle.trim(),
-        description: editDescription.trim()
-      });
-      if (uErr) throw uErr;
-      // 3. Update UI
+      const discussionId = discussion.id;
+      // Fetch latest version number
+      const latest = await nhost.graphql.request(GET_LATEST_VERSION_NUMBER, { discussionId });
+      if ((latest as any).error) throw (latest as any).error;
+      const latestNum = (latest as any).data?.discussion_version?.[0]?.version_number || 0;
+      const nextVersion = latestNum + 1;
+      // Create version
+      const created = await nhost.graphql.request(CREATE_DISCUSSION_VERSION, { discussionId, title: editTitle.trim(), description: editDescription.trim(), versionNumber: nextVersion });
+      if ((created as any).error) throw (created as any).error;
+      const versionId = (created as any).data?.insert_discussion_version_one?.id;
+      if (!versionId) throw new Error('Failed to create version');
+      // Set current version & update root discussion record
+      const upd = await nhost.graphql.request(UPDATE_DISCUSSION_CURRENT_VERSION, { discussionId, versionId, title: editTitle.trim(), description: editDescription.trim() });
+      if ((upd as any).error) throw (upd as any).error;
+      // Update UI
       discussion.title = editTitle.trim();
       discussion.description = editDescription.trim();
       discussion.current_version_id = versionId;
       editing = false;
     } catch (e: any) {
       editError = e.message || 'Failed to update.';
-    } finally {
-      editLoading = false;
-    }
+    } finally { editLoading = false; }
   }
 </script>
 
@@ -387,6 +440,9 @@
             {#if post.context_version_id}
               <a class="post-version-link" href={`?versionRef=${post.context_version_id}`}>context version</a>
             {/if}
+            {#if post.good_faith_score != null}
+              <span class="gf-chip" title={post.good_faith_label ? `${post.good_faith_label} (${Math.round(post.good_faith_score * 100)/100})` : `Good-faith score: ${Math.round(post.good_faith_score * 100)/100}`}>GF {Math.round(post.good_faith_score * 10)/10}</span>
+            {/if}
           </div>
           <div class="post-content">
             {@html post.content}
@@ -417,7 +473,25 @@
                 {/if}
               {/if}
             </div>
-            <button type="submit" class="btn-primary" disabled={submitting}>{submitting ? 'Posting...' : (draftPostId ? 'Publish Comment' : 'Post Comment')}</button>
+            <button type="submit" class="btn-primary" disabled={Boolean(submitting || (draftPostId && (gfScore === null || gfScore < GOOD_FAITH_THRESHOLD)))}>
+              {#if submitting}
+                Posting...
+              {:else if draftPostId}
+                {#if gfScore === null}
+                  {gfLoading ? 'Scoring…' : 'Good Faith?'}
+                {:else if gfScore < GOOD_FAITH_THRESHOLD}
+                  Improve Tone (GF {Math.round(gfScore*100)}%)
+                {:else}
+                  Publish Comment (GF {Math.round(gfScore*100)}%)
+                {/if}
+              {:else}
+                Post Comment
+              {/if}
+            </button>
+            {#if gfError}<span class="gf-error" aria-live="polite">{gfError}</span>{/if}
+            {#if gfScore !== null && gfScore < GOOD_FAITH_THRESHOLD && !gfError}
+              <div class="gf-hint" aria-live="polite">Aim for constructive language, cite sources, avoid personal attacks.</div>
+            {/if}
           </div>
         </form>
       {/if}
@@ -433,14 +507,7 @@
     margin: 2rem auto;
     padding: 2rem;
   }
-  .back-link {
-    display: inline-block;
-    margin-bottom: 0.75rem;
-    color: var(--color-primary);
-    text-decoration: none;
-    font-size: 0.875rem;
-  }
-  .back-link:hover { text-decoration: underline; }
+  /* Removed obsolete .back-link styles */
   .discussion-header {
     margin-bottom: 2rem;
     padding-bottom: 1.5rem;
@@ -480,6 +547,18 @@
     color: var(--color-text-secondary);
     margin-bottom: 1rem;
   }
+  .gf-chip {
+    margin-left: 0.4rem;
+    background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+    color: var(--color-accent);
+    font-size: 0.6rem;
+    font-weight: 600;
+    padding: 2px 5px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    line-height: 1;
+    border: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
   .post-content { line-height: 1.6; }
   .add-comment { margin-top: 3rem; }
   .add-comment-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.75rem; }
@@ -511,6 +590,8 @@
   }
   .btn-primary:hover { opacity: 0.9; }
   .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+  .gf-error { color: var(--color-accent); font-size:0.6rem; margin-top:0.25rem; }
+  .gf-hint { font-size:0.55rem; color: var(--color-text-secondary); max-width:320px; text-align:right; }
   .error-message { color: #ef4444; }
   .autosave-indicator { font-size:0.65rem; color: var(--color-text-secondary); min-height:0.9rem; display:flex; align-items:center; gap:0.35rem; }
   .pending-dot { width:6px; height:6px; border-radius:50%; background: var(--color-accent); display:inline-block; animation: pulse 1s linear infinite; }

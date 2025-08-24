@@ -5,30 +5,34 @@
   import { createDraftAutosaver, type DraftAutosaver } from '$lib';
   import { goto } from '$app/navigation';
 
-  let user = nhost.auth.getUser();
+  // --- State (Runes) ---
+  let user = $state(nhost.auth.getUser());
   nhost.auth.onAuthStateChanged(() => { user = nhost.auth.getUser(); });
 
-  let title = '';
-  let content = '';
-  let draftId: string | null = null;
-  let autosaver: DraftAutosaver | null = null;
-  let hasPending = false;
-  let lastSavedAt: number | null = null;
-  let publishing = false;
-  let publishError: string | null = null;
+  let title = $state('');
+  let content = $state('');
+  let draftId = $state<string | null>(null);
+  let autosaver = $state<DraftAutosaver | null>(null);
+  let hasPending = $state(false);
+  let lastSavedAt = $state<number | null>(null);
+  let publishing = $state(false);
+  let publishError = $state<string | null>(null);
 
+  // GraphQL mutation documents
   const CREATE_DISCUSSION = `mutation CreateDiscussion($title: String!, $authorId: uuid!) { insert_discussion_one(object:{ title:$title, created_by:$authorId }) { id } }`;
   const ATTACH_AND_PUBLISH = `mutation AttachAndPublish($postId: uuid!, $discussionId: uuid!, $content: String!) { update_post_by_pk(pk_columns:{id:$postId}, _set:{discussion_id:$discussionId, draft_content:$content, content:$content, status:"approved"}) { id status discussion_id } }`;
 
+  // Derived route param
+  const routeDraftId = $derived($page.url.searchParams.get('draftId'));
+
   async function loadDraftById(id: string) {
     const { data, error } = await nhost.graphql.request(`query GetDraft($id: uuid!, $authorId: uuid!) { post_by_pk(id: $id) { id draft_content author_id status } }`, { id, authorId: user?.id });
-    if (!error) {
-      const d = (data as any)?.post_by_pk;
-      if (d && d.author_id === user?.id && d.status === 'draft') {
-        draftId = d.id;
-        content = d.draft_content || '';
-        initAutosaver();
-      }
+    if (error) return;
+    const d = (data as any)?.post_by_pk;
+    if (d && d.author_id === user?.id && d.status === 'draft') {
+      draftId = d.id;
+      content = d.draft_content || '';
+      initAutosaver();
     }
   }
 
@@ -47,10 +51,8 @@
   }
 
   onMount(async () => {
-    const qp = $page.url.searchParams;
-    const paramId = qp.get('draftId');
-    if (paramId && user) {
-      await loadDraftById(paramId);
+    if (routeDraftId && user) {
+      await loadDraftById(routeDraftId);
     }
   });
 
@@ -70,17 +72,13 @@
     if (!draftId) { publishError = 'Draft missing.'; return; }
     publishing = true;
     try {
-      // 1. Create discussion
       const { data: discData, error: discErr } = await nhost.graphql.request(CREATE_DISCUSSION, { title: title.trim(), authorId: user.id });
       if (discErr) throw discErr;
       const discussionId = (discData as any)?.insert_discussion_one?.id;
       if (!discussionId) throw new Error('Failed to create discussion.');
-      // 2. Ensure latest content saved to draft then publish by updating row
-      autosaver?.handleChange(content); // push latest to autosaver buffer
-      // wait a short tick for debounce? Force immediate save by calling internal flush if available (not exposed); we redundantly set draft_content/content below anyway.
+      autosaver?.handleChange(content);
       const { error: attachErr } = await nhost.graphql.request(ATTACH_AND_PUBLISH, { postId: draftId, discussionId, content });
       if (attachErr) throw attachErr;
-      // 3. Navigate to discussion
       goto(`/discussions/${discussionId}`);
     } catch (e: any) {
       publishError = e.message || 'Failed to publish.';
@@ -89,32 +87,31 @@
     }
   }
 
-  function canPublish() { return !!user && !!draftId && title.trim().length > 0 && content.trim().length > 0 && !publishing; }
+  const canPublish = $derived(() => !!user && !!draftId && title.trim().length > 0 && content.trim().length > 0 && !publishing);
 
-  // Reactive handler: if draftId query param changes, load new draft
-  $: if (user) {
-    const qid = $page.url.searchParams.get('draftId');
-    if (qid && qid !== draftId) {
-      // reset current autosaver before loading another draft
-      autosaver?.destroy();
-      autosaver = null;
-      draftId = null;
-      content = '';
-      loadDraftById(qid);
-    }
-  }
+  // Effect: watch routeDraftId changes
+  $effect(() => {
+    if (!user) return;
+    if (!routeDraftId) return;
+    if (routeDraftId === draftId) return;
+    autosaver?.destroy();
+    autosaver = null;
+    draftId = null;
+    content = '';
+    loadDraftById(routeDraftId);
+  });
 </script>
 
 <div class="container">
   <h1 class="title">Create a New Discussion</h1>
-  <form on:submit|preventDefault={publishNewDiscussion}>
+  <form onsubmit={(e) => { e.preventDefault(); publishNewDiscussion(); }}>
     <div class="form-group">
       <label for="title">Title</label>
       <input id="title" type="text" bind:value={title} placeholder="Enter a clear and concise title" required />
     </div>
     <div class="form-group">
       <label for="description">Description (Optional)</label>
-      <textarea id="description" bind:value={content} rows="4" placeholder="Provide some context or a starting point for the discussion." on:input={onContentInput}></textarea>
+  <textarea id="description" bind:value={content} rows="4" placeholder="Provide some context or a starting point for the discussion." oninput={onContentInput}></textarea>
     </div>
 
     <div class="autosave-indicator" aria-live="polite">
@@ -131,8 +128,8 @@
 
     {#if publishError}<p style="color:var(--color-accent); font-size:0.75rem;">{publishError}</p>{/if}
     <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
-      <button class="btn-primary" type="submit" disabled={!canPublish()}>{publishing ? 'Publishing…' : 'Publish Discussion'}</button>
-      <button type="button" class="btn-secondary" on:click={() => goto('/')}>Cancel</button>
+  <button class="btn-primary" type="submit" disabled={!canPublish}>{publishing ? 'Publishing…' : 'Publish Discussion'}</button>
+  <button type="button" class="btn-secondary" onclick={() => goto('/')}>Cancel</button>
     </div>
   </form>
 </div>
