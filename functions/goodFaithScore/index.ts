@@ -55,7 +55,27 @@ async function updatePost(postId: string, fields: Record<string, any>) {
 }
 
 export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Max-Age': '86400'
+      }
+    });
+  }
+  
+  const corsHeaders = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+  };
+  
+  if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
   try {
     const body = await req.json().catch((e) => {
       console.error('JSON parse error:', e);
@@ -63,7 +83,7 @@ export default async function handler(req: Request): Promise<Response> {
     });
     const { content, post_id, persist, approve_if, provider } = body as { content?: string; post_id?: string; persist?: boolean; approve_if?: number; provider?: 'auto'|'heuristic'|'openai' };
     if (!content || typeof content !== 'string' || !content.trim()) {
-      return new Response(JSON.stringify({ error: 'content required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: 'content required' }), { status: 400, headers: corsHeaders });
     }
     const mode = provider || 'auto';
     let llm: { score: number; label: string; rationale?: string; flags?: string[]; provider: string } | null = null;
@@ -99,11 +119,11 @@ export default async function handler(req: Request): Promise<Response> {
         approved = true;
       }
       const upd = await updatePost(post_id, set);
-      if (upd.error) return new Response(JSON.stringify({ error: upd.error }), { status: 500 });
+      if (upd.error) return new Response(JSON.stringify({ error: upd.error }), { status: 500, headers: corsHeaders });
     }
-    return new Response(JSON.stringify({ good_faith_score: finalScore, good_faith_label: finalLabel, approved, provider: llm ? llm.provider : 'heuristic', rationale, flags, heuristic_used: usedHeuristicOnly, llm_error: llmError || undefined }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ good_faith_score: finalScore, good_faith_label: finalLabel, approved, provider: llm ? llm.provider : 'heuristic', rationale, flags, heuristic_used: usedHeuristicOnly, llm_error: llmError || undefined }), { status: 200, headers: corsHeaders });
   } catch (e: any) {
     console.error('Handler error:', e);
-    return new Response(JSON.stringify({ error: e?.message || 'Internal error', stack: e?.stack }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: e?.message || 'Internal error', stack: e?.stack }), { status: 500, headers: corsHeaders });
   }
 }
