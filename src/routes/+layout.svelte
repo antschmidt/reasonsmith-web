@@ -1,6 +1,7 @@
 <script>
 	import '../app.css';
 	import { nhost } from '$lib/nhostClient';
+	import { theme } from '$lib/themeStore';
 
 	let user = nhost.auth.getUser();
 	if (typeof window !== 'undefined') {
@@ -8,6 +9,15 @@
 			user = nhost.auth.getUser();
 		});
 	}
+
+	// Initialize theme immediately on page load
+	let currentTheme;
+	theme.subscribe(value => {
+		currentTheme = value;
+		if (typeof window !== 'undefined') {
+			document.documentElement.setAttribute('data-theme', value || 'light');
+		}
+	});
 </script>
 
 {#if user}

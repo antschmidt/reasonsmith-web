@@ -12,6 +12,7 @@
   let title = $state('');
   let content = $state('');
   let draftId = $state<string | null>(null);
+  let discussionId = $state<string | null>(null);
   let autosaver = $state<DraftAutosaver | null>(null);
   let hasPending = $state(false);
   let lastSavedAt = $state<number | null>(null);
@@ -20,15 +21,16 @@
 
   // GraphQL mutation documents
   const CREATE_DISCUSSION = `mutation CreateDiscussion($title: String!, $authorId: uuid!) { insert_discussion_one(object:{ title:$title, created_by:$authorId }) { id } }`;
-  const ATTACH_AND_PUBLISH = `mutation AttachAndPublish($postId: uuid!, $discussionId: uuid!, $content: String!) { update_post_by_pk(pk_columns:{id:$postId}, _set:{discussion_id:$discussionId, draft_content:$content, content:$content, status:"approved"}) { id status discussion_id } }`;
+  const CREATE_POST_DRAFT = `mutation CreatePostDraft($authorId: uuid!, $discussionId: uuid!, $draftContent: String!) { insert_post_one(object:{author_id:$authorId, discussion_id:$discussionId, draft_content:$draftContent, status:"draft"}) { id } }`;
 
   // Derived route param
   const routeDraftId = $derived($page.url.searchParams.get('draftId'));
 
   async function loadDraftById(id: string) {
-    const { data, error } = await nhost.graphql.request(`query GetDraft($id: uuid!, $authorId: uuid!) { post_by_pk(id: $id) { id draft_content author_id status } }`, { id, authorId: user?.id });
+    const { data, error } = await nhost.graphql.request(`query GetDraft($id: uuid!, $authorId: uuid!) { post(where:{id:{_eq:$id}}) { id draft_content author_id status } }`, { id, authorId: user?.id });
     if (error) return;
-    const d = (data as any)?.post_by_pk;
+    const posts = (data as any)?.post;
+    const d = posts?.[0];
     if (d && d.author_id === user?.id && d.status === 'draft') {
       draftId = d.id;
       content = d.draft_content || '';
@@ -50,6 +52,40 @@
     updateAutosaveState();
   }
 
+  async function createDraftDiscussion() {
+    if (!user || draftId || discussionId) return;
+    try {
+      // First create the discussion with a placeholder title
+      const discTitle = title.trim() || 'Untitled Discussion';
+      const { data: discData, error: discError } = await nhost.graphql.request(CREATE_DISCUSSION, { 
+        title: discTitle, 
+        authorId: user.id 
+      });
+      if (discError) throw discError;
+      
+      const newDiscussionId = (discData as any)?.insert_discussion_one?.id;
+      if (!newDiscussionId) throw new Error('Failed to create discussion');
+      
+      discussionId = newDiscussionId;
+      
+      // Then create the draft post
+      const { data: postData, error: postError } = await nhost.graphql.request(CREATE_POST_DRAFT, { 
+        authorId: user.id,
+        discussionId: newDiscussionId,
+        draftContent: content 
+      });
+      if (postError) throw postError;
+      
+      const newDraftId = (postData as any)?.insert_post_one?.id;
+      if (newDraftId) {
+        draftId = newDraftId;
+        initAutosaver();
+      }
+    } catch (e) {
+      console.error('Failed to create draft discussion:', e);
+    }
+  }
+
   onMount(async () => {
     if (routeDraftId && user) {
       await loadDraftById(routeDraftId);
@@ -61,6 +97,9 @@
     if (draftId) {
       autosaver?.handleChange(content);
       updateAutosaveState();
+    } else if (content.trim() && user) {
+      // Create draft discussion when user starts typing
+      createDraftDiscussion();
     }
   }
 
@@ -69,16 +108,21 @@
     if (!user) { publishError = 'Sign in required.'; return; }
     if (!title.trim()) { publishError = 'Title required.'; return; }
     if (!content.trim()) { publishError = 'Content required.'; return; }
-    if (!draftId) { publishError = 'Draft missing.'; return; }
+    if (!draftId || !discussionId) { publishError = 'Draft missing.'; return; }
     publishing = true;
     try {
-      const { data: discData, error: discErr } = await nhost.graphql.request(CREATE_DISCUSSION, { title: title.trim(), authorId: user.id });
-      if (discErr) throw discErr;
-      const discussionId = (discData as any)?.insert_discussion_one?.id;
-      if (!discussionId) throw new Error('Failed to create discussion.');
-      autosaver?.handleChange(content);
-      const { error: attachErr } = await nhost.graphql.request(ATTACH_AND_PUBLISH, { postId: draftId, discussionId, content });
-      if (attachErr) throw attachErr;
+      // Update discussion with title and description
+      await nhost.graphql.request(`mutation UpdateDiscussionTitleAndDescription($id: uuid!, $title: String!, $description: String!) { update_discussion(where:{id:{_eq:$id}}, _set:{title:$title, description:$description}) { returning { id title description } } }`, { 
+        id: discussionId, 
+        title: title.trim(),
+        description: content.trim()
+      });
+      
+      // Delete the draft post since we're saving content as discussion description instead
+      await nhost.graphql.request(`mutation DeleteDraftPost($id: uuid!) { delete_post(where:{id:{_eq:$id}}) { affected_rows } }`, {
+        id: draftId
+      });
+      
       goto(`/discussions/${discussionId}`);
     } catch (e: any) {
       publishError = e.message || 'Failed to publish.';
@@ -156,6 +200,7 @@
     width: 100%;
     border: 1px solid var(--color-border);
     background: var(--color-surface);
+    color: var(--color-text-primary);
     padding: 0.75rem;
     border-radius: var(--border-radius-md);
     font: inherit;

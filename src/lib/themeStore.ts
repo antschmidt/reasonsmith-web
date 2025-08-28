@@ -17,8 +17,4 @@ export const toggleTheme = () => {
   });
 };
 
-if (isBrowser) {
-  theme.subscribe(currentTheme => {
-    document.documentElement.setAttribute('data-theme', currentTheme ?? 'light');
-  });
-}
+// Theme initialization is now handled in +layout.svelte

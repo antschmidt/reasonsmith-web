@@ -9,13 +9,17 @@
   let discussion: any = null;
   let loading = true;
   let error: Error | null = null;
+  let authReady = false;
 
   // New comment form state
   let newComment = '';
   let submitting = false;
   let submitError: string | null = null;
   let user = nhost.auth.getUser();
-  nhost.auth.onAuthStateChanged(() => { user = nhost.auth.getUser(); });
+  nhost.auth.onAuthStateChanged(() => { 
+    user = nhost.auth.getUser(); 
+    authReady = true;
+  });
 
   let draftPostId: string | null = null;
   let draftAutosaver: DraftAutosaver | null = null;
@@ -30,7 +34,6 @@
   let gfError: string | null = null;
   const GOOD_FAITH_THRESHOLD = 0.6; // provisional threshold
   let lastScoredContent = '';
-  let scoreDebounce: any = null;
 
   async function scoreGoodFaith() {
     if (!newComment.trim()) { gfScore = null; gfLabel = null; return; }
@@ -45,8 +48,34 @@
         payload.post_id = draftPostId;
         payload.persist = true;
       }
-      const { res, error } = await nhost.functions.call('goodFaithScore', payload);
-      if (error) throw error;
+      let res: any; let error: any;
+      try {
+        const r = await nhost.functions.call('goodFaithScore', payload);
+        res = r.res; error = r.error;
+      } catch (e: any) {
+        error = e;
+      }
+      if (error) {
+        // Attempt manual fallback paths (some environments differ in path prefix)
+        const pubEnv: any = (globalThis as any).env || {};
+        const sub = pubEnv?.PUBLIC_NHOST_SUBDOMAIN;
+        const region = pubEnv?.PUBLIC_NHOST_REGION;
+        if (sub && region) {
+          const base = `https://${sub}.functions.${region}.nhost.run`;
+          const paths = ['/v1/functions/goodFaithScore', '/v1/goodFaithScore'];
+          let success = false;
+            for (const p of paths) {
+              try {
+                const resp = await fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (resp.ok) { res = await resp.json(); success = true; break; }
+              } catch (e2) { /* continue */ }
+            }
+          if (!success) throw error;
+        } else {
+          throw error;
+        }
+      }
+      if (!res) throw new Error('No response from goodFaithScore');
       gfScore = typeof (res as any).good_faith_score === 'number' ? (res as any).good_faith_score : null;
       gfLabel = (res as any).good_faith_label || null;
     } catch (e: any) {
@@ -55,19 +84,16 @@
     } finally { gfLoading = false; }
   }
 
-  function scheduleScore() {
-    if (scoreDebounce) clearTimeout(scoreDebounce);
-    scoreDebounce = setTimeout(scoreGoodFaith, 600); // debounce scoring
-  }
+  // Removed auto-debounce scoring; scoring now only occurs when user clicks button (first submit attempt).
 
   const GET_DISCUSSION_DETAILS = `
     query GetDiscussionDetails($discussionId: uuid!) {
-      discussion_by_pk(id: $discussionId) {
+      discussion(where: { id: { _eq: $discussionId } }) {
         id
         title
         description
         current_version_id
-        current_version: discussion_version_by_pk(id: current_version_id) @skip(if: true) # placeholder
+        # current_version: discussion_version(where: {id: {_eq: current_version_id}}) @skip(if: true) # placeholder - disabled
         created_at
         contributor { id display_name }
         posts(where: { status: { _eq: "approved" } }, order_by: { created_at: asc }) {
@@ -116,13 +142,13 @@
   `;
   const UPDATE_DISCUSSION_CURRENT_VERSION = `
     mutation UpdateDiscussionCurrentVersion($discussionId: uuid!, $versionId: uuid!, $title: String!, $description: String!) {
-      update_discussion_by_pk(pk_columns: {id: $discussionId}, _set: {current_version_id: $versionId, title: $title, description: $description}) { id current_version_id title description }
+      update_discussion(where: {id: {_eq: $discussionId}}, _set: {current_version_id: $versionId, title: $title, description: $description}) { returning { id current_version_id title description } }
     }
   `;
 
   const GET_DISCUSSION_VERSION = `
     query GetDiscussionVersion($versionId: uuid!) {
-      discussion_version_by_pk(id: $versionId) {
+      discussion_version(where: {id: {_eq: $versionId}}) {
         id
         version_number
         title
@@ -153,7 +179,8 @@
             // error could be array or object; attempt to normalize
             versionError = Array.isArray(error) ? error.map(e => (e as any).message || 'Error').join(', ') : (error as any).message || 'Error';
           } else {
-            historicalVersion = (data as any)?.discussion_version_by_pk;
+            const versions = (data as any)?.discussion_version;
+            historicalVersion = versions?.[0];
           }
         })
         .finally(() => { versionLoading = false; });
@@ -221,9 +248,10 @@
     const replyDraftParam = qp.get('replyDraftId');
     if (replyDraftParam) {
       // fetch that specific draft id if belongs to this discussion & user
-      const { data, error } = await nhost.graphql.request(`query GetDraftById($id: uuid!, $authorId: uuid!, $discussionId: uuid!) { post_by_pk(id: $id) { id draft_content discussion_id author_id } }`, { id: replyDraftParam, authorId: user.id, discussionId });
+      const { data, error } = await nhost.graphql.request(`query GetDraftById($id: uuid!, $authorId: uuid!, $discussionId: uuid!) { post(where: {id: {_eq: $id}}) { id draft_content discussion_id author_id } }`, { id: replyDraftParam, authorId: user.id, discussionId });
       if (!error) {
-        const candidate = (data as any)?.post_by_pk;
+        const posts = (data as any)?.post;
+        const candidate = posts?.[0];
         if (candidate && candidate.author_id === user.id && candidate.discussion_id === discussionId) {
           draftPostId = candidate.id;
           newComment = candidate.draft_content || '';
@@ -262,21 +290,31 @@
 
   function onCommentInput(e: Event) {
     newComment = (e.target as HTMLTextAreaElement).value;
+    // Invalidate prior score so user must explicitly re-check
+    gfScore = null; gfLabel = null; gfError = null; lastScoredContent = '';
     if (!draftPostId) {
-      // lazily create draft after first actual input (non-empty or first key)
       ensureDraftCreated();
     } else {
       draftAutosaver?.handleChange(newComment);
       updateAutosaveStatus();
     }
-  scheduleScore();
   }
 
   async function publishDraft() {
     submitError = null;
     if (!user) { submitError = 'You must be signed in to comment.'; return; }
     if (!newComment.trim()) { submitError = 'Comment cannot be empty.'; return; }
-    if (gfScore == null || gfScore < GOOD_FAITH_THRESHOLD) { submitError = 'Improve tone to reach threshold before publishing.'; return; }
+    if (gfScore == null) {
+      // First click: perform scoring only.
+      await scoreGoodFaith();
+      // If still null (error) show message; else user can click again to publish if meets threshold.
+      if (gfScore == null) submitError = gfError || 'Scoring failed; try again.';
+      return;
+    }
+    if (gfScore < GOOD_FAITH_THRESHOLD) {
+      submitError = `Improve tone to reach threshold (${Math.round(gfScore*100)}% < ${Math.round(GOOD_FAITH_THRESHOLD*100)}%).`;
+      return;
+    }
     submitting = true;
     try {
       // Ensure draft exists
@@ -315,30 +353,44 @@
   async function refreshApprovedPosts(discussionId: string) {
     const result = await nhost.graphql.request(GET_DISCUSSION_DETAILS, { discussionId });
     if ((result as any).error) return;
-    const fresh = (result as any).data?.discussion_by_pk;
+    const fresh = (result as any).data?.discussion?.[0];
     if (fresh) discussion.posts = fresh.posts; // only need posts
   }
 
-  // Extend existing onMount: after loading discussion, attempt to load draft
-  onMount(async () => {
+  async function loadDiscussion() {
     try {
       const discussionId = $page.params.id as string;
       const result = await nhost.graphql.request(GET_DISCUSSION_DETAILS, { discussionId });
       if ((result as any).error) { throw (result as any).error; }
-      discussion = (result as any).data.discussion_by_pk;
+      const discussions = (result as any).data.discussion;
+      if (!discussions || discussions.length === 0) {
+        throw new Error('Discussion not found');
+      }
+      discussion = discussions[0];
       await loadExistingDraft();
     } catch (e: any) {
       error = e;
     } finally {
       loading = false;
     }
+  }
+
+  onMount(async () => {
+    // Give auth a moment to initialize, then mark as ready
+    setTimeout(() => {
+      authReady = true;
+    }, 100);
+    
     if (focusReplyOnMount) {
       const ta = document.querySelector('textarea[aria-label="New comment"]') as HTMLTextAreaElement | null;
       if (ta) setTimeout(() => ta.focus(), 50);
     }
   });
 
-  nhost.auth.onAuthStateChanged(() => { user = nhost.auth.getUser(); loadExistingDraft(); });
+  // Reactive: load discussion when auth becomes ready
+  $: if (authReady && !discussion && !error) {
+    loadDiscussion();
+  }
 
   function startEdit() {
     editing = true;
@@ -473,19 +525,15 @@
                 {/if}
               {/if}
             </div>
-            <button type="submit" class="btn-primary" disabled={Boolean(submitting || (draftPostId && (gfScore === null || gfScore < GOOD_FAITH_THRESHOLD)))}>
+            <button type="submit" class="btn-primary" disabled={submitting || gfLoading || !newComment.trim()}>
               {#if submitting}
-                Posting...
-              {:else if draftPostId}
-                {#if gfScore === null}
-                  {gfLoading ? 'Scoring…' : 'Good Faith?'}
-                {:else if gfScore < GOOD_FAITH_THRESHOLD}
-                  Improve Tone (GF {Math.round(gfScore*100)}%)
-                {:else}
-                  Publish Comment (GF {Math.round(gfScore*100)}%)
-                {/if}
+                {gfScore !== null && gfScore >= GOOD_FAITH_THRESHOLD ? 'Publishing…' : 'Scoring…'}
+              {:else if gfScore === null}
+                {gfLoading ? 'Scoring…' : 'Good Faith?'}
+              {:else if gfScore < GOOD_FAITH_THRESHOLD}
+                Recheck (GF {Math.round(gfScore*100)}%)
               {:else}
-                Post Comment
+                Publish Comment (GF {Math.round(gfScore*100)}%)
               {/if}
             </button>
             {#if gfError}<span class="gf-error" aria-live="polite">{gfError}</span>{/if}

@@ -74,7 +74,7 @@ export const GET_DASHBOARD_DATA = gql`
 // Query to get the details of a single discussion and its approved posts
 export const GET_DISCUSSION_DETAILS = gql`
   query GetDiscussionDetails($discussionId: uuid!) {
-    discussion_by_pk(id: $discussionId) {
+    discussion(where: { id: { _eq: $discussionId } }) {
       id
       title
       description
