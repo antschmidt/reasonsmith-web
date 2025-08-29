@@ -41,7 +41,7 @@
     if (content === lastScoredContent) return; // unchanged since last scoring
     lastScoredContent = content;
     gfLoading = true; gfError = null;
-    try {
+    // try {
       let payload: any = { content };
       if (draftPostId) {
         // Persist score to draft row but DO NOT auto-approve while user is still editing.
@@ -50,12 +50,12 @@
       }
       let res: any; let error: any;
       try {
-        const r = await nhost.functions.call('goodFaithScore', payload);
-        res = r.res; error = r.error;
-      } catch (e: any) {
-        error = e;
-      }
-      if (error) {
+      //   const r = await nhost.functions.call('goodFaithScore', payload);
+      //   res = r.res; error = r.error;
+      // } catch (e: any) {
+      //   error = e;
+      // }
+      // if (error) {
         // Attempt manual fallback paths (some environments differ in path prefix)
         const pubEnv: any = (globalThis as any).env || {};
         const sub = pubEnv?.PUBLIC_NHOST_SUBDOMAIN;
@@ -74,7 +74,7 @@
         } else {
           throw error;
         }
-      }
+      // }
       if (!res) throw new Error('No response from goodFaithScore');
       gfScore = typeof (res as any).good_faith_score === 'number' ? (res as any).good_faith_score : null;
       gfLabel = (res as any).good_faith_label || null;
