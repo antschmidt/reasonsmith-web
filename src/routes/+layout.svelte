@@ -2,7 +2,10 @@
 	import '../app.css';
 	import { nhost } from '$lib/nhostClient';
 	import { theme } from '$lib/themeStore';
+	import { dev } from '$app/environment';
+	import { injectAnalytics } from '@vercel/analytics/sveltekit';
 
+	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = nhost.auth.getUser();
 	if (typeof window !== 'undefined') {
 		nhost.auth.onAuthStateChanged(() => {
@@ -12,7 +15,7 @@
 
 	// Initialize theme immediately on page load
 	let currentTheme;
-	theme.subscribe(value => {
+	theme.subscribe((value) => {
 		currentTheme = value;
 		if (typeof window !== 'undefined') {
 			document.documentElement.setAttribute('data-theme', value || 'light');
@@ -86,11 +89,11 @@
 		justify-content: center;
 		width: 48px;
 		height: 48px;
-        padding: 0.5rem;
+		padding: 0.5rem;
 		border-radius: 14px;
 		background: #ffffff; /* Light mode: solid white for clarity */
 		box-shadow:
-			0 2px 4px rgba(0, 0, 0, 0.10),
+			0 2px 4px rgba(0, 0, 0, 0.1),
 			0 0 0 1px color-mix(in srgb, var(--color-primary) 35%, transparent);
 		transition:
 			transform 140ms ease,
@@ -105,7 +108,7 @@
 	.brand-icon img {
 		width: 100%;
 		height: 100%;
-        padding: 0.5rem;
+		padding: 0.5rem;
 		display: block;
 		object-fit: contain;
 		filter: brightness(1.05) saturate(1.15);
@@ -119,7 +122,7 @@
 	}
 	@media (max-width: 560px) {
 		.brand-icon {
-            padding: 0.5rem;
+			padding: 0.5rem;
 			width: 42px;
 			height: 42px;
 		}

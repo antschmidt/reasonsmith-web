@@ -1,9 +1,9 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { nhost } from '$lib/nhostClient';
-  import { onMount } from 'svelte';
-  import { createDraftAutosaver, type DraftAutosaver } from '$lib';
   import { goto } from '$app/navigation';
+  import { WRITING_STYLES, getStyleConfig, validateStyleRequirements, type WritingStyle, type StyleMetadata, type Citation, type Source } from '$lib/types/writingStyle';
+  import CitationForm from '$lib/components/CitationForm.svelte';
 
   // --- State (Runes) ---
   let user = $state(nhost.auth.getUser());
@@ -11,96 +11,141 @@
 
   let title = $state('');
   let content = $state('');
-  let draftId = $state<string | null>(null);
   let discussionId = $state<string | null>(null);
-  let autosaver = $state<DraftAutosaver | null>(null);
-  let hasPending = $state(false);
-  let lastSavedAt = $state<number | null>(null);
   let publishing = $state(false);
   let publishError = $state<string | null>(null);
+  let lastSavedAt = $state<number | null>(null);
+  let autoSaveTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
 
-  // GraphQL mutation documents
-  const CREATE_DISCUSSION = `mutation CreateDiscussion($title: String!, $authorId: uuid!) { insert_discussion_one(object:{ title:$title, created_by:$authorId }) { id } }`;
-  const CREATE_POST_DRAFT = `mutation CreatePostDraft($authorId: uuid!, $discussionId: uuid!, $draftContent: String!) { insert_post_one(object:{author_id:$authorId, discussion_id:$discussionId, draft_content:$draftContent, status:"draft"}) { id } }`;
+  // Writing style state
+  let selectedStyle = $state<WritingStyle>('journalistic');
+  let styleMetadata = $state<StyleMetadata>({});
+  let styleValidation = $state<{ isValid: boolean; issues: string[] }>({ isValid: true, issues: [] });
+  let showStyleHelper = $state(false);
+  
+  // Citation management
+  let showCitationForm = $state(false);
+  let citationFormType = $state<'citation' | 'source'>('citation');
 
-  // Derived route param
-  const routeDraftId = $derived($page.url.searchParams.get('draftId'));
+  // GraphQL mutation documents (without writing style fields until migration is applied)
+  const CREATE_DISCUSSION = `mutation CreateDiscussion($title: String!, $description: String, $authorId: uuid!) { insert_discussion_one(object:{ title:$title, description:$description, created_by:$authorId }) { id } }`;
+  const UPDATE_DISCUSSION = `mutation UpdateDiscussion($id: uuid!, $title: String!, $description: String!) { update_discussion_by_pk(pk_columns: {id: $id}, _set: {title: $title, description: $description}) { id title description } }`;
 
-  async function loadDraftById(id: string) {
-    const { data, error } = await nhost.graphql.request(`query GetDraft($id: uuid!, $authorId: uuid!) { post(where:{id:{_eq:$id}}) { id draft_content author_id status } }`, { id, authorId: user?.id });
-    if (error) return;
-    const posts = (data as any)?.post;
-    const d = posts?.[0];
-    if (d && d.author_id === user?.id && d.status === 'draft') {
-      draftId = d.id;
-      content = d.draft_content || '';
-      initAutosaver();
-    }
-  }
-
-  function updateAutosaveState() {
-    if (!autosaver) return;
-    const st = autosaver.getState();
-    hasPending = st.hasPending;
-    lastSavedAt = st.lastSavedAt;
-  }
-
-  function initAutosaver() {
-    if (!draftId) return;
-    if (autosaver) autosaver.destroy();
-    autosaver = createDraftAutosaver({ postId: draftId, initialContent: content, delay: 700, minInterval: 2500, onSaved: updateAutosaveState });
-    updateAutosaveState();
-  }
 
   async function createDraftDiscussion() {
-    if (!user || draftId || discussionId) return;
+    if (!user || discussionId) return;
+    console.log('Creating draft discussion...');
     try {
-      // First create the discussion with a placeholder title
       const discTitle = title.trim() || 'Untitled Discussion';
       const { data: discData, error: discError } = await nhost.graphql.request(CREATE_DISCUSSION, { 
-        title: discTitle, 
+        title: discTitle,
+        description: content || '',
         authorId: user.id 
       });
-      if (discError) throw discError;
+      if (discError) {
+        console.error('Failed to create discussion:', discError);
+        return;
+      }
       
       const newDiscussionId = (discData as any)?.insert_discussion_one?.id;
-      if (!newDiscussionId) throw new Error('Failed to create discussion');
-      
-      discussionId = newDiscussionId;
-      
-      // Then create the draft post
-      const { data: postData, error: postError } = await nhost.graphql.request(CREATE_POST_DRAFT, { 
-        authorId: user.id,
-        discussionId: newDiscussionId,
-        draftContent: content 
-      });
-      if (postError) throw postError;
-      
-      const newDraftId = (postData as any)?.insert_post_one?.id;
-      if (newDraftId) {
-        draftId = newDraftId;
-        initAutosaver();
+      if (newDiscussionId) {
+        discussionId = newDiscussionId;
+        lastSavedAt = Date.now();
+        console.log('Draft discussion created:', newDiscussionId);
       }
     } catch (e) {
       console.error('Failed to create draft discussion:', e);
     }
   }
 
-  onMount(async () => {
-    if (routeDraftId && user) {
-      await loadDraftById(routeDraftId);
+  async function autoSaveDiscussion() {
+    if (!discussionId || !user) return;
+    
+    try {
+      const { error } = await nhost.graphql.request(UPDATE_DISCUSSION, {
+        id: discussionId,
+        title: title.trim() || 'Untitled Discussion',
+        description: content || ''
+      });
+      
+      if (!error) {
+        lastSavedAt = Date.now();
+        console.log('Discussion auto-saved');
+      }
+    } catch (e) {
+      console.error('Auto-save failed:', e);
     }
-  });
+  }
+
+  function scheduleAutoSave() {
+    if (autoSaveTimeout) {
+      clearTimeout(autoSaveTimeout);
+    }
+    autoSaveTimeout = setTimeout(() => {
+      if (discussionId) {
+        autoSaveDiscussion();
+      } else if (user && (title.trim() || content.trim())) {
+        createDraftDiscussion();
+      }
+    }, 1500); // Auto-save after 1.5 seconds of no typing
+  }
+
+  function onTitleInput(e: Event) {
+    title = (e.target as HTMLInputElement).value;
+    scheduleAutoSave();
+  }
 
   function onContentInput(e: Event) {
     content = (e.target as HTMLTextAreaElement).value;
-    if (draftId) {
-      autosaver?.handleChange(content);
-      updateAutosaveState();
-    } else if (content.trim() && user) {
-      // Create draft discussion when user starts typing
-      createDraftDiscussion();
+    
+    // Update style validation
+    styleValidation = validateStyleRequirements(selectedStyle, content, styleMetadata);
+    
+    // Schedule auto-save
+    scheduleAutoSave();
+  }
+
+  function onStyleChange(style: WritingStyle) {
+    selectedStyle = style;
+    styleMetadata = {}; // Reset metadata when style changes
+    styleValidation = validateStyleRequirements(selectedStyle, content, styleMetadata);
+  }
+
+  function addCitation(citation: Citation) {
+    if (!styleMetadata.citations) {
+      styleMetadata.citations = [];
     }
+    styleMetadata.citations = [...styleMetadata.citations, citation];
+    showCitationForm = false;
+    styleValidation = validateStyleRequirements(selectedStyle, content, styleMetadata);
+  }
+
+  function addSource(source: Source) {
+    if (!styleMetadata.sources) {
+      styleMetadata.sources = [];
+    }
+    styleMetadata.sources = [...styleMetadata.sources, source];
+    showCitationForm = false;
+    styleValidation = validateStyleRequirements(selectedStyle, content, styleMetadata);
+  }
+
+  function removeCitation(id: string) {
+    if (styleMetadata.citations) {
+      styleMetadata.citations = styleMetadata.citations.filter(c => c.id !== id);
+      styleValidation = validateStyleRequirements(selectedStyle, content, styleMetadata);
+    }
+  }
+
+  function removeSource(id: string) {
+    if (styleMetadata.sources) {
+      styleMetadata.sources = styleMetadata.sources.filter(s => s.id !== id);
+      styleValidation = validateStyleRequirements(selectedStyle, content, styleMetadata);
+    }
+  }
+
+  function showAddCitationForm(type: 'citation' | 'source') {
+    citationFormType = type;
+    showCitationForm = true;
   }
 
   async function publishNewDiscussion() {
@@ -108,21 +153,26 @@
     if (!user) { publishError = 'Sign in required.'; return; }
     if (!title.trim()) { publishError = 'Title required.'; return; }
     if (!content.trim()) { publishError = 'Content required.'; return; }
-    if (!draftId || !discussionId) { publishError = 'Draft missing.'; return; }
+    // Temporarily disable style validation until migration is applied
+    // if (!styleValidation.isValid) { 
+    //   publishError = `Style requirements not met: ${styleValidation.issues.join(', ')}`;
+    //   return;
+    // }
+    
     publishing = true;
     try {
-      // Update discussion with title and description
-      await nhost.graphql.request(`mutation UpdateDiscussionTitleAndDescription($id: uuid!, $title: String!, $description: String!) { update_discussion(where:{id:{_eq:$id}}, _set:{title:$title, description:$description}) { returning { id title description } } }`, { 
-        id: discussionId, 
-        title: title.trim(),
-        description: content.trim()
-      });
+      // If we don't have a discussion yet, create one
+      if (!discussionId) {
+        await createDraftDiscussion();
+        if (!discussionId) {
+          throw new Error('Failed to create discussion');
+        }
+      }
       
-      // Delete the draft post since we're saving content as discussion description instead
-      await nhost.graphql.request(`mutation DeleteDraftPost($id: uuid!) { delete_post(where:{id:{_eq:$id}}) { affected_rows } }`, {
-        id: draftId
-      });
+      // Final save with current content
+      await autoSaveDiscussion();
       
+      // Navigate to the discussion
       goto(`/discussions/${discussionId}`);
     } catch (e: any) {
       publishError = e.message || 'Failed to publish.';
@@ -131,19 +181,7 @@
     }
   }
 
-  const canPublish = $derived(() => !!user && !!draftId && title.trim().length > 0 && content.trim().length > 0 && !publishing);
-
-  // Effect: watch routeDraftId changes
-  $effect(() => {
-    if (!user) return;
-    if (!routeDraftId) return;
-    if (routeDraftId === draftId) return;
-    autosaver?.destroy();
-    autosaver = null;
-    draftId = null;
-    content = '';
-    loadDraftById(routeDraftId);
-  });
+  const canPublish = $derived(() => !!user && title.trim().length > 0 && content.trim().length > 0 && !publishing);
 </script>
 
 <div class="container">
@@ -151,22 +189,167 @@
   <form onsubmit={(e) => { e.preventDefault(); publishNewDiscussion(); }}>
     <div class="form-group">
       <label for="title">Title</label>
-      <input id="title" type="text" bind:value={title} placeholder="Enter a clear and concise title" required />
+      <input id="title" type="text" bind:value={title} placeholder="Enter a clear and concise title" oninput={onTitleInput} required />
     </div>
+    
+    <!-- Writing Style Selector -->
     <div class="form-group">
-      <label for="description">Description (Optional)</label>
-  <textarea id="description" bind:value={content} rows="4" placeholder="Provide some context or a starting point for the discussion." oninput={onContentInput}></textarea>
+      <div class="style-selector">
+        <div class="style-selector-header">
+          <div class="style-label">Writing Style:</div>
+          <button type="button" class="style-help-btn" onclick={() => showStyleHelper = !showStyleHelper}>
+            {showStyleHelper ? 'Hide' : 'Show'} Help
+          </button>
+        </div>
+        <div class="style-options">
+          {#each Object.entries(WRITING_STYLES) as [value, config]}
+            <label class="style-option" class:selected={selectedStyle === value}>
+              <input 
+                type="radio" 
+                bind:group={selectedStyle} 
+                value={value}
+                onchange={() => onStyleChange(value as WritingStyle)}
+              />
+              <div class="style-option-content">
+                <div class="style-title">{config.label}</div>
+                <div class="style-description">{config.description}</div>
+              </div>
+            </label>
+          {/each}
+        </div>
+        
+        {#if showStyleHelper}
+          <div class="style-helper">
+            <h4>{getStyleConfig(selectedStyle).label} Guidelines:</h4>
+            <ul>
+              {#each getStyleConfig(selectedStyle).requirements as req}
+                <li>{req}</li>
+              {/each}
+            </ul>
+            <div class="word-count-guide">
+              Word count: {getStyleConfig(selectedStyle).minWords}-{getStyleConfig(selectedStyle).maxWords} words
+            </div>
+          </div>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Citations/Sources Management -->
+    {#if selectedStyle === 'academic' || selectedStyle === 'journalistic'}
+      <div class="form-group">
+        <div class="citations-section">
+          <div class="citations-header">
+            <h3>{selectedStyle === 'academic' ? 'Citations' : 'Sources'}</h3>
+            <button 
+              type="button" 
+              class="btn-add-citation"
+              onclick={() => showAddCitationForm(selectedStyle === 'academic' ? 'citation' : 'source')}
+            >
+              + Add {selectedStyle === 'academic' ? 'Citation' : 'Source'}
+            </button>
+          </div>
+          
+          <!-- Display existing citations/sources -->
+          {#if selectedStyle === 'academic' && styleMetadata.citations && styleMetadata.citations.length > 0}
+            <div class="citations-list">
+              {#each styleMetadata.citations as citation}
+                <div class="citation-item">
+                  <div class="citation-content">
+                    <div class="citation-title">{citation.title}</div>
+                    <div class="citation-details">
+                      {#if citation.author}<strong>{citation.author}</strong>{/if}
+                      {#if citation.publishDate}({citation.publishDate}){/if}
+                      {#if citation.publisher}. {citation.publisher}{/if}
+                      {#if citation.pageNumber}, p. {citation.pageNumber}{/if}
+                    </div>
+                    <div class="citation-point">
+                      <strong>Supporting:</strong> {citation.pointSupported}
+                    </div>
+                    <div class="citation-quote">
+                      <strong>Quote:</strong> "{citation.relevantQuote}"
+                    </div>
+                    <div class="citation-url">
+                      <a href={citation.url} target="_blank" rel="noopener">{citation.url}</a>
+                    </div>
+                  </div>
+                  <button 
+                    type="button" 
+                    class="remove-citation"
+                    onclick={() => removeCitation(citation.id)}
+                  >×</button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+          
+          {#if selectedStyle === 'journalistic' && styleMetadata.sources && styleMetadata.sources.length > 0}
+            <div class="citations-list">
+              {#each styleMetadata.sources as source}
+                <div class="citation-item">
+                  <div class="citation-content">
+                    <div class="citation-title">{source.title}</div>
+                    <div class="citation-details">
+                      {#if source.author}<strong>{source.author}</strong>{/if}
+                      {#if source.publishDate}({source.publishDate}){/if}
+                      {#if source.accessed}. Accessed: {source.accessed}{/if}
+                    </div>
+                    <div class="citation-point">
+                      <strong>Supporting:</strong> {source.pointSupported}
+                    </div>
+                    <div class="citation-quote">
+                      <strong>Quote:</strong> "{source.relevantQuote}"
+                    </div>
+                    <div class="citation-url">
+                      <a href={source.url} target="_blank" rel="noopener">{source.url}</a>
+                    </div>
+                  </div>
+                  <button 
+                    type="button" 
+                    class="remove-citation"
+                    onclick={() => removeSource(source.id)}
+                  >×</button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+          
+          <!-- Citation Form -->
+          {#if showCitationForm}
+            <CitationForm 
+              type={citationFormType}
+              onAdd={citationFormType === 'citation' ? addCitation : addSource}
+              onCancel={() => showCitationForm = false}
+            />
+          {/if}
+        </div>
+      </div>
+    {/if}
+
+    <div class="form-group">
+      <label for="description">Description</label>
+      <textarea 
+        id="description" 
+        bind:value={content} 
+        rows="8" 
+        placeholder={getStyleConfig(selectedStyle).placeholder}
+        oninput={onContentInput}
+      ></textarea>
+      
+      <!-- Style Validation -->
+      {#if !styleValidation.isValid}
+        <div class="style-validation-errors">
+          {#each styleValidation.issues as issue}
+            <div class="validation-issue">{issue}</div>
+          {/each}
+        </div>
+      {/if}
     </div>
 
     <div class="autosave-indicator" aria-live="polite">
-      {#if draftId}
-        {#if hasPending}
-          <span class="pending-dot" aria-hidden="true"></span> Saving…
-        {:else if lastSavedAt}
-          Saved {new Date(lastSavedAt).toLocaleTimeString()}
-        {:else}
-          Draft loaded
-        {/if}
+      {#if discussionId && lastSavedAt}
+        Draft saved {new Date(lastSavedAt).toLocaleTimeString()}
+      {:else if discussionId}
+        Draft created
       {/if}
     </div>
 
@@ -217,17 +400,6 @@
     gap: 0.4rem;
     min-height: 1rem;
   }
-  .pending-dot {
-    width: 6px;
-    height: 6px;
-    background: var(--color-primary);
-    border-radius: 50%;
-    animation: pulse 1.2s infinite ease-in-out;
-  }
-  @keyframes pulse {
-    0%, 100% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(0.5); opacity: 0.4; }
-  }
   button.btn-primary {
     margin-top: 0.5rem;
   }
@@ -259,4 +431,250 @@
     transition: background-color 150ms ease-in-out;
   }
   .btn-secondary:hover { background-color: var(--color-surface-alt); }
+
+  /* Writing Style Selector */
+  .style-selector {
+    padding: 1rem;
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+  }
+
+  .style-selector-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .style-label {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--color-text-primary);
+  }
+
+  .style-help-btn {
+    background: none;
+    border: none;
+    color: var(--color-primary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+
+  .style-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .style-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border: 2px solid var(--color-border);
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    transition: border-color 0.2s, background-color 0.2s;
+  }
+
+  .style-option:hover {
+    border-color: var(--color-primary);
+    background-color: color-mix(in srgb, var(--color-primary) 5%, transparent);
+  }
+
+  .style-option.selected {
+    border-color: var(--color-primary);
+    background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  }
+
+  .style-option input[type="radio"] {
+    margin: 0;
+    margin-top: 0.125rem;
+    width: 2rem;
+  }
+
+  .style-option-content {
+    flex: 1;
+  }
+
+  .style-title {
+    font-weight: 600;
+    font-size: 0.875rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .style-description {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    line-height: 1.3;
+  }
+
+  .style-helper {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: var(--color-surface);
+    border-radius: var(--border-radius-sm);
+    border: 1px solid var(--color-border);
+  }
+
+  .style-helper h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .style-helper ul {
+    margin: 0 0 0.5rem 0;
+    padding-left: 1.25rem;
+    font-size: 0.8rem;
+  }
+
+  .style-helper li {
+    margin-bottom: 0.25rem;
+    color: var(--color-text-secondary);
+  }
+
+  .word-count-guide {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    font-style: italic;
+  }
+
+  .style-validation-errors {
+    background: color-mix(in srgb, #ef4444 10%, transparent);
+    border: 1px solid #ef4444;
+    border-radius: var(--border-radius-sm);
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .validation-issue {
+    font-size: 0.75rem;
+    color: #ef4444;
+    margin-bottom: 0.25rem;
+  }
+
+  .validation-issue:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Citations Section */
+  .citations-section {
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    padding: 1rem;
+    background: var(--color-surface-alt);
+  }
+
+  .citations-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .citations-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  .btn-add-citation {
+    background: var(--color-primary);
+    color: var(--color-surface);
+    border: none;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--border-radius-sm);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+
+  .btn-add-citation:hover {
+    opacity: 0.9;
+  }
+
+  .citations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .citation-item {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-sm);
+    padding: 1rem;
+    position: relative;
+  }
+
+  .citation-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .citation-title {
+    font-weight: 600;
+    color: var(--color-text-primary);
+    line-height: 1.3;
+  }
+
+  .citation-details {
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+  }
+
+  .citation-point,
+  .citation-quote {
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+
+  .citation-quote {
+    font-style: italic;
+    padding-left: 0.5rem;
+    border-left: 3px solid var(--color-border);
+  }
+
+  .citation-url {
+    font-size: 0.8rem;
+  }
+
+  .citation-url a {
+    color: var(--color-primary);
+    text-decoration: none;
+    word-break: break-all;
+  }
+
+  .citation-url a:hover {
+    text-decoration: underline;
+  }
+
+  .remove-citation {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: #ef4444;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s;
+  }
+
+  .remove-citation:hover {
+    opacity: 0.8;
+  }
 </style>

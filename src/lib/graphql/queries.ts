@@ -16,9 +16,13 @@ const POST_FIELDS = gql`
     content
     status
     created_at
-  good_faith_score
-  good_faith_label
-  good_faith_last_evaluated
+    good_faith_score
+    good_faith_label
+    good_faith_last_evaluated
+    writing_style
+    style_metadata
+    style_word_count
+    style_requirements_met
     contributor {
       ...ContributorFields
     }
@@ -103,7 +107,7 @@ export const CREATE_DISCUSSION = gql`
   }
 `;
 
-// Mutation to create a new post (as a draft)
+// Mutation to create a new post (as a draft) - fallback version for pre-migration compatibility
 export const CREATE_POST_DRAFT = gql`
   mutation CreatePostDraft($discussionId: uuid!, $authorId: uuid!, $draftContent: String!) {
     insert_post_one(
@@ -119,7 +123,27 @@ export const CREATE_POST_DRAFT = gql`
   }
 `;
 
-// Mutation to publish a draft
+// Mutation to create a new post (as a draft) - with writing style support (for post-migration)
+export const CREATE_POST_DRAFT_WITH_STYLE = gql`
+  mutation CreatePostDraftWithStyle($discussionId: uuid!, $authorId: uuid!, $draftContent: String!, $writingStyle: writing_style_type_enum = quick_point, $styleMetadata: jsonb = {}) {
+    insert_post_one(
+      object: {
+        discussion_id: $discussionId
+        author_id: $authorId
+        draft_content: $draftContent
+        status: "draft"
+        writing_style: $writingStyle
+        style_metadata: $styleMetadata
+      }
+    ) {
+      id
+      writing_style
+      style_metadata
+    }
+  }
+`;
+
+// Mutation to publish a draft - fallback version for pre-migration compatibility
 export const PUBLISH_POST = gql`
   mutation PublishPost($postId: uuid!) {
     update_post_by_pk(
@@ -142,11 +166,78 @@ export const PUBLISH_POST = gql`
   }
 `;
 
-// Mutation to update draft content (autosave)
+// Mutation to publish a draft - with writing style support (for post-migration)
+export const PUBLISH_POST_WITH_STYLE = gql`
+  mutation PublishPostWithStyle($postId: uuid!, $writingStyle: writing_style_type_enum, $styleMetadata: jsonb, $wordCount: Int) {
+    update_post_by_pk(
+      pk_columns: { id: $postId }
+      _set: {
+        status: "pending"
+        content: draft_content
+        draft_content: ""
+        writing_style: $writingStyle
+        style_metadata: $styleMetadata
+        style_word_count: $wordCount
+        style_requirements_met: true
+      }
+    ) {
+      id
+      status
+      content
+      writing_style
+      style_metadata
+      style_word_count
+      style_requirements_met
+      created_at
+      good_faith_score
+      good_faith_label
+      good_faith_last_evaluated
+      contributor { id display_name email role }
+    }
+  }
+`;
+
+// Mutation to update draft content (autosave) - fallback version for pre-migration compatibility
 export const UPDATE_POST_DRAFT = gql`
   mutation UpdatePostDraft($postId: uuid!, $draftContent: String!) {
     update_post_by_pk(pk_columns: { id: $postId }, _set: { draft_content: $draftContent }) {
       id
+    }
+  }
+`;
+
+// Mutation to update draft content (autosave) - with writing style support (for post-migration)
+export const UPDATE_POST_DRAFT_WITH_STYLE = gql`
+  mutation UpdatePostDraftWithStyle($postId: uuid!, $draftContent: String!, $writingStyle: writing_style_type_enum, $styleMetadata: jsonb) {
+    update_post_by_pk(pk_columns: { id: $postId }, _set: { 
+      draft_content: $draftContent,
+      writing_style: $writingStyle,
+      style_metadata: $styleMetadata
+    }) {
+      id
+      writing_style
+      style_metadata
+    }
+  }
+`;
+
+// Mutation to update writing style and metadata
+export const UPDATE_POST_STYLE = gql`
+  mutation UpdatePostStyle($postId: uuid!, $writingStyle: writing_style_type_enum!, $styleMetadata: jsonb!, $wordCount: Int, $requirementsMet: Boolean!) {
+    update_post_by_pk(
+      pk_columns: { id: $postId }
+      _set: { 
+        writing_style: $writingStyle,
+        style_metadata: $styleMetadata,
+        style_word_count: $wordCount,
+        style_requirements_met: $requirementsMet
+      }
+    ) {
+      id
+      writing_style
+      style_metadata
+      style_word_count
+      style_requirements_met
     }
   }
 `;
@@ -184,3 +275,96 @@ query GetUserStats($userId: uuid!) {
   }
 }
 */
+
+// Query to check if a post can be deleted (no other users have replied to this discussion after this post)
+export const CHECK_POST_DELETABLE = gql`
+  query CheckPostDeletable($authorId: uuid!, $discussionId: uuid!, $postCreatedAt: timestamptz!, $postIdString: String!) {
+    # Check if any other users have posted after this post in the same discussion
+    laterPosts: post(
+      where: { 
+        discussion_id: { _eq: $discussionId },
+        author_id: { _neq: $authorId },
+        created_at: { _gt: $postCreatedAt },
+        status: { _in: ["approved", "pending"] }
+      }
+    ) {
+      id
+    }
+    
+    # Check if this post has been referenced in other posts' content or citations
+    # This would require checking style_metadata for citation references
+    referencingPosts: post(
+      where: {
+        author_id: { _neq: $authorId },
+        status: { _in: ["approved", "pending"] },
+        _or: [
+          { content: { _ilike: $postIdString } },
+          { style_metadata: { _contains: { citations: [{ id: $postIdString }] } } },
+          { style_metadata: { _contains: { sources: [{ id: $postIdString }] } } }
+        ]
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+// Mutation to delete a post (only if it passes safety checks)
+export const DELETE_POST = gql`
+  mutation DeletePost($postId: uuid!) {
+    delete_post_by_pk(id: $postId) {
+      id
+    }
+  }
+`;
+
+// Query to check if a discussion can be deleted (no posts from other users)
+export const CHECK_DISCUSSION_DELETABLE = gql`
+  query CheckDiscussionDeletable($discussionId: uuid!, $createdBy: uuid!, $discussionIdString: String!) {
+    # Check if any other users have posted in this discussion
+    otherUserPosts: post(
+      where: { 
+        discussion_id: { _eq: $discussionId },
+        author_id: { _neq: $createdBy },
+        status: { _in: ["approved", "pending"] }
+      }
+    ) {
+      id
+    }
+    
+    # Check if this discussion has been referenced in other posts
+    referencingPosts: post(
+      where: {
+        author_id: { _neq: $createdBy },
+        status: { _in: ["approved", "pending"] },
+        _or: [
+          { content: { _ilike: $discussionIdString } },
+          { style_metadata: { _contains: { citations: [{ id: $discussionIdString }] } } },
+          { style_metadata: { _contains: { sources: [{ id: $discussionIdString }] } } }
+        ]
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+// Mutation to delete a discussion and all its posts by the same user
+export const DELETE_DISCUSSION = gql`
+  mutation DeleteDiscussion($discussionId: uuid!, $createdBy: uuid!) {
+    # First delete all posts by the same user in this discussion
+    delete_post(
+      where: { 
+        discussion_id: { _eq: $discussionId },
+        author_id: { _eq: $createdBy }
+      }
+    ) {
+      affected_rows
+    }
+    
+    # Then delete the discussion itself
+    delete_discussion_by_pk(id: $discussionId) {
+      id
+    }
+  }
+`;
