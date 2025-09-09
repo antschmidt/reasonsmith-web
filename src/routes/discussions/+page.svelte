@@ -21,6 +21,7 @@
   let page = 0;
   let waitingForAuth = false;
   let unsubAuth: (() => void) | null = null;
+  let hasMoreDiscussions = true;
 
   const SEARCH_DISCUSSIONS = `
     query SearchDiscussions($q: String!, $limit: Int = 20) {
@@ -82,7 +83,7 @@
   }
 
   async function fetchAll(reset = false, retry = true) {
-    if (reset) { page = 0; discussions = []; }
+    if (reset) { page = 0; discussions = []; hasMoreDiscussions = true; }
     loading = true;
     error = null;
     try {
@@ -91,6 +92,9 @@
       const rows = (data as any)?.discussion ?? [];
       discussions = [...(discussions ?? []), ...rows];
       page += 1;
+      
+      // If we received fewer discussions than the page size, we've reached the end
+      hasMoreDiscussions = rows.length === PAGE_SIZE;
     } catch (e:any) {
       const msg = e?.message ?? String(e);
       // If schema for anonymous doesn't expose 'discussion', wait for auth and retry once
@@ -186,7 +190,6 @@
 
 <div class="container">
   <header class="header">
-    <h1>Browse Discussions</h1>
     <div class="search-row">
       <input type="search" placeholder="Search topics..." bind:value={q} on:input={onSearchInput} on:keydown={(e)=> e.key==='Enter' && search()} />
       <button class="btn-primary" on:click={search}>Search</button>
@@ -219,7 +222,7 @@
           <p class="discussion-meta">{#if d.contributor?.display_name}by {@html highlight(d.contributor.display_name, q)} · {/if}{new Date(d.created_at).toLocaleString()}</p>
         </div>
       {/each}
-      {#if !q.trim()}
+      {#if !q.trim() && hasMoreDiscussions}
         <div class="load-more-row">
           <button class="btn-secondary" on:click={() => fetchAll(false)} disabled={loading}>Load more</button>
         </div>

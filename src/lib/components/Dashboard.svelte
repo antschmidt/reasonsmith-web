@@ -38,6 +38,8 @@
     updated_at?: string | null;
     discussion_title?: string | null;
     status?: string | null;
+    type?: string;
+    original_discussion_id?: string;
   }> = [];
 
   let loading = true;
@@ -56,16 +58,61 @@
     } else if (data) {
       myDiscussions = data.myDiscussions ?? [];
       repliedDiscussions = data.repliedDiscussions ?? [];
-      drafts = (data.myDrafts ?? []).map((draft: any) => ({
+      
+      // Get database drafts (comment drafts)
+      const dbDrafts = (data.myDrafts ?? []).map((draft: any) => ({
         id: draft.id,
         draft_content: draft.draft_content,
         discussion_id: draft.discussion_id,
         updated_at: draft.updated_at,
         discussion_title: draft.discussion?.title ?? null,
-        status: draft.status
+        status: draft.status,
+        type: 'comment'
       }));
+      
+      // Get discussion description drafts from localStorage
+      const discussionDrafts = getDiscussionDraftsFromLocalStorage();
+      
+      // Combine both types of drafts
+      drafts = [...dbDrafts, ...discussionDrafts].sort((a, b) => {
+        const dateA = new Date(a.updated_at || 0).getTime();
+        const dateB = new Date(b.updated_at || 0).getTime();
+        return dateB - dateA; // Most recent first
+      });
     }
     loading = false;
+  }
+
+  function getDiscussionDraftsFromLocalStorage() {
+    if (typeof localStorage === 'undefined') return [];
+    
+    const discussionDrafts: any[] = [];
+    
+    // Check localStorage for discussion drafts for discussions created by this user
+    myDiscussions.forEach(discussion => {
+      const draftKey = `discussion_draft:${discussion.id}`;
+      const draftData = localStorage.getItem(draftKey);
+      
+      if (draftData) {
+        try {
+          const draft = JSON.parse(draftData);
+          discussionDrafts.push({
+            id: `discussion_${discussion.id}`, // Unique ID for UI
+            draft_content: `${draft.title}\n\n${draft.description}`,
+            discussion_id: null, // This is the discussion itself, not a comment
+            updated_at: new Date(draft.lastSaved).toISOString(),
+            discussion_title: draft.title,
+            status: 'draft',
+            type: 'discussion',
+            original_discussion_id: discussion.id // Keep reference to original discussion
+          });
+        } catch (e) {
+          // Ignore invalid JSON
+        }
+      }
+    });
+    
+    return discussionDrafts;
   }
 
   onMount(loadData);
@@ -127,10 +174,15 @@
     await loadData();
   }
 
-  function goToDraft(d: { id: string; discussion_id?: string | null }) {
-    if (d.discussion_id) {
+  function goToDraft(d: { id: string; discussion_id?: string | null; type?: string; original_discussion_id?: string }) {
+    if (d.type === 'discussion' && d.original_discussion_id) {
+      // Discussion description draft - go to the discussion page to edit
+      goto(`/discussions/${d.original_discussion_id}`);
+    } else if (d.discussion_id) {
+      // Comment draft - go to discussion with reply draft ID
       goto(`/discussions/${d.discussion_id}?replyDraftId=${d.id}`);
     } else {
+      // New discussion draft
       goto(`/discussions/new?draftId=${d.id}`);
     }
   }
@@ -155,27 +207,38 @@
 
   const DELETE_DRAFT = `mutation DeleteDraft($id: uuid!, $authorId: uuid!) { delete_post(where:{id:{_eq:$id}, author_id:{_eq:$authorId}, status:{_eq:"draft"}}){ affected_rows } }`;
 
-  async function deleteDraft(d: { id: string }) {
+  async function deleteDraft(d: { id: string; type?: string; original_discussion_id?: string }) {
     if (!user) return;
     const ok = typeof window !== 'undefined' ? confirm('Delete this draft?') : true;
     if (!ok) return;
-    const { error: delErr } = await nhost.graphql.request(DELETE_DRAFT, { id: d.id, authorId: user.id as unknown as string });
-    if (delErr) {
-      // simple inline fallback; could add toast later
-      console.warn('Failed to delete draft', delErr);
-      return;
+    
+    if (d.type === 'discussion' && d.original_discussion_id) {
+      // Delete discussion description draft from localStorage
+      const draftKey = `discussion_draft:${d.original_discussion_id}`;
+      localStorage.removeItem(draftKey);
+      drafts = drafts.filter(dr => dr.id !== d.id);
+    } else {
+      // Delete comment draft from database
+      const { error: delErr } = await nhost.graphql.request(DELETE_DRAFT, { id: d.id, authorId: user.id as unknown as string });
+      if (delErr) {
+        // simple inline fallback; could add toast later
+        console.warn('Failed to delete draft', delErr);
+        return;
+      }
+      drafts = drafts.filter(dr => dr.id !== d.id);
     }
-    drafts = drafts.filter(dr => dr.id !== d.id);
   }
 </script>
 
 <div class="dashboard-container">
-  <!-- Welcome & At-a-Glance Metrics -->
-  <section class="welcome-card">
-    <div class="welcome-card-content">
-        <h1 class="welcome-title">
-          Welcome back, {user.displayName}!
-        </h1>
+
+  <!-- Main Content Grid -->
+  <div class="dashboard-grid">
+        <!-- Sidebar (Right Column) -->
+    <!-- Replace "Your Drafts" list with live data -->
+    <aside class="sidebar">
+      <!-- Stats Section -->
+      <section class="card stats-section">
         <div class="stats-container">
           <div class="stat-item">
             <h3 class="stat-title">Good-Faith Rate</h3>
@@ -190,18 +253,67 @@
             <p class="stat-value">{stats.reputationScore}</p>
           </div>
         </div>
-    </div>
-  </section>
+      </section>
 
-  <!-- Main Content Grid -->
-  <div class="dashboard-grid">
+      <!-- Single Action: New Discussion -->
+      <section class="card quick-discussion">
+        <a href="/discussions/new" class="btn-primary full-width">
+          <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+          New Discussion
+        </a>
+      </section>
+
+      <!-- Your Drafts -->
+      <section class="card">
+        <h2 class="section-title">Your Drafts</h2>
+        {#if loading}
+          <p>Loading…</p>
+        {:else}
+          {#if drafts.length === 0}
+            <p>No drafts yet.</p>
+          {:else}
+            <ul class="list">
+              {#each drafts as draft}
+                <li class="list-item">
+                  <div class="draft-row">
+                    <div style="flex:1;">
+                      <button type="button" class="draft-button" on:click={() => goToDraft(draft)} on:keydown={(e: KeyboardEvent)=> e.key==='Enter' && goToDraft(draft)}>
+                        {extractSnippet(draft.draft_content || '')}
+                      </button>
+                      <div class="draft-meta" style="font-size:0.8em; color:var(--color-text-secondary); margin-top:2px; display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                        {#if draft.type === 'discussion'}
+                          <span>Discussion description draft</span>
+                          {#if draft.discussion_title}
+                            &nbsp;for <span style="font-weight:500; text-decoration:underline;">{draft.discussion_title}</span>
+                          {/if}
+                        {:else if draft.discussion_id}
+                          <span>Reply draft</span>
+                          {#if draft.discussion_title}
+                            &nbsp;to <span style="font-weight:500; text-decoration:underline;">{draft.discussion_title}</span>
+                          {/if}
+                        {:else}
+                          <span>Discussion draft</span>
+                        {/if}
+                        {#if draft.status === 'pending'}
+                          <span class="pending-badge" title="Awaiting moderation / processing">Pending…</span>
+                        {/if}
+                      </div>
+                    </div>
+                    <button type="button" class="draft-delete" aria-label="Delete draft" title="Delete draft" on:click={() => deleteDraft(draft)}>&times;</button>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        {/if}
+        <!-- Removed inline editor; navigation now handles drafting -->
+      </section>
+
+      <!-- Pinned Threads, Leaderboard, Notifications remain placeholders for now -->
+      <!-- ...existing code... -->
+    </aside>
     <!-- Your Discussions (Left Column) -->
     <main class="main-content">
-      <div class="header-row">
-        <h2 class="section-title">Your Discussions</h2>
-        <a class="btn-secondary" href="/discussions" style="margin-left:auto;">Browse all</a>
-      </div>
-
       {#if loading}
         <p>Loading…</p>
       {:else if error}
@@ -215,7 +327,6 @@
         {/if}
 
         {#if myDiscussions.length > 0}
-          <h3 class="subsection-title">Started by you</h3>
           <div class="discussions-list">
             {#each myDiscussions as discussion}
               <div class="discussion-card" role="button" tabindex="0" on:click={() => goto(`/discussions/${discussion.id}`)} on:keydown={(e) => (e.key === 'Enter' ? goto(`/discussions/${discussion.id}`) : null)}>
@@ -259,62 +370,6 @@
         {/if}
       {/if}
     </main>
-
-    <!-- Sidebar (Right Column) -->
-    <!-- Replace "Your Drafts" list with live data -->
-    <aside class="sidebar">
-      <!-- Single Action: New Discussion -->
-      <section class="card quick-discussion">
-        <a href="/discussions/new" class="btn-primary full-width">
-          <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
-          New Discussion
-        </a>
-      </section>
-
-      <!-- Your Drafts -->
-      <section class="card">
-        <h2 class="section-title">Your Drafts</h2>
-        {#if loading}
-          <p>Loading…</p>
-        {:else}
-          {#if drafts.length === 0}
-            <p>No drafts yet.</p>
-          {:else}
-            <ul class="list">
-              {#each drafts as draft}
-                <li class="list-item">
-                  <div class="draft-row">
-                    <div style="flex:1;">
-                      <button type="button" class="draft-button" on:click={() => goToDraft(draft)} on:keydown={(e: KeyboardEvent)=> e.key==='Enter' && goToDraft(draft)}>
-                        {extractSnippet(draft.draft_content || '')}
-                      </button>
-                      <div class="draft-meta" style="font-size:0.8em; color:var(--color-text-secondary); margin-top:2px; display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
-                        {#if draft.discussion_id}
-                          <span>Reply draft</span>
-                          {#if draft.discussion_title}
-                            &nbsp;to <span style="font-weight:500; text-decoration:underline;">{draft.discussion_title}</span>
-                          {/if}
-                        {:else}
-                          <span>Discussion draft</span>
-                        {/if}
-                        {#if draft.status === 'pending'}
-                          <span class="pending-badge" title="Awaiting moderation / processing">Pending…</span>
-                        {/if}
-                      </div>
-                    </div>
-                    <button type="button" class="draft-delete" aria-label="Delete draft" title="Delete draft" on:click={() => deleteDraft(draft)}>&times;</button>
-                  </div>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        {/if}
-        <!-- Removed inline editor; navigation now handles drafting -->
-      </section>
-
-      <!-- Pinned Threads, Leaderboard, Notifications remain placeholders for now -->
-      <!-- ...existing code... -->
-    </aside>
   </div>
 
   <!-- Learning & Resources -->
@@ -345,50 +400,39 @@
     }
   }
 
-  /* Welcome Card */
-  .welcome-card {
-    background-color: var(--color-surface);
-    padding: 1.25rem;
-    border-radius: var(--border-radius-md);
-    border: 1px solid var(--color-border);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    margin-bottom: 2rem;
-  }
-  .welcome-card-content {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-  .welcome-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    font-family: var(--font-family-display);
-    color: var(--color-text-primary);
-  }
+  /* Stats Section */
   .stats-container {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 0.75rem;
   }
   .stat-item {
-    padding: 0.75rem;
-    border-radius: var(--border-radius-md);
+    padding: 0.5rem;
+    border-radius: var(--border-radius-sm);
     transition: background-color 150ms ease-in-out;
+    background-color: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    text-align: center;
+    flex: 1;
+    min-width: 0;
   }
   .stat-item:hover {
-    background-color: var(--color-surface-alt);
+    background-color: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface-alt));
   }
   .stat-title {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 500;
     color: var(--color-text-secondary);
+    margin: 0 0 0.25rem 0;
+    line-height: 1.2;
   }
   .stat-value {
-    font-size: 1.125rem;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--color-text-primary);
+    margin: 0;
+    line-height: 1.2;
   }
 
   /* Grid */
@@ -419,15 +463,14 @@
   .sidebar {
     display: flex;
     flex-direction: column;
-    gap: 2rem;
   }
 
   /* Cards */
   .card {
-    background-color: var(--color-surface);
-    padding: 1.25rem;
+    /* background-color: var(--color-surface); */
+    padding: 0.5rem;
     border-radius: var(--border-radius-md);
-    border: 1px solid var(--color-border);
+    border: 0px solid var(--color-border);
     box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   }
   .section-title {
@@ -442,7 +485,7 @@
   .discussions-list {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
   }
   .discussion-card {
     background-color: var(--color-surface);

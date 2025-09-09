@@ -1613,7 +1613,7 @@
   }
 
   .chicago-citation {
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     line-height: 1.5;
     margin-bottom: 0.75rem;
   }
@@ -1748,6 +1748,10 @@
   .citation-picker-content p {
     margin: 0 0 1rem 0;
     color: var(--color-text-secondary);
+  }
+
+  .reference-item {
+    margin-bottom: 1rem;
   }
 
   .picker-references-list {

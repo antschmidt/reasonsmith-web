@@ -167,7 +167,7 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 1rem;
-		margin-bottom: 2rem;
+		/* margin-bottom: 2rem; */
 		background: var(--color-surface);
 		color: var(--color-text-primary);
 		border-radius: var(--border-radius-sm);
