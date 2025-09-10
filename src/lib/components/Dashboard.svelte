@@ -265,7 +265,7 @@
 
       <!-- Your Drafts -->
       <section class="card">
-        <h2 class="section-title">Your Drafts</h2>
+        <h2 class="section-title">Drafts</h2>
         {#if loading}
           <p>Loading…</p>
         {:else}
@@ -299,7 +299,15 @@
                         {/if}
                       </div>
                     </div>
-                    <button type="button" class="draft-delete" aria-label="Delete draft" title="Delete draft" on:click={() => deleteDraft(draft)}>&times;</button>
+                    <button type="button" class="draft-delete" aria-label="Delete draft" title="Delete draft" on:click={() => deleteDraft(draft)}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3,6 5,6 21,6"></polyline>
+                        <path d="m5,6 1,14 c0,1 1,2 2,2 h8 c1,0 2,-1 2,-2 l1,-14"></path>
+                        <path d="m10,11 v6"></path>
+                        <path d="m14,11 v6"></path>
+                        <path d="M7,6V4c0-1,1-2,2-2h6c0,1,1,2h-2V6"></path>
+                      </svg>
+                    </button>
                   </div>
                 </li>
               {/each}
@@ -328,6 +336,7 @@
 
         {#if myDiscussions.length > 0}
           <div class="discussions-list">
+            <h3 class="subsection-title">Discussions</h3>
             {#each myDiscussions as discussion}
               <div class="discussion-card" role="button" tabindex="0" on:click={() => goto(`/discussions/${discussion.id}`)} on:keydown={(e) => (e.key === 'Enter' ? goto(`/discussions/${discussion.id}`) : null)}>
                 <h3 class="discussion-title">{discussion.title}</h3>
@@ -474,6 +483,7 @@
     box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   }
   .section-title {
+    text-align: center;;
     font-size: 1.25rem;
     font-weight: 600;
     margin-bottom: 1rem;
@@ -584,7 +594,9 @@
   }
   .footer-links {
     display: flex;
+    text-align: center;
     flex-wrap: wrap;
+    flex-direction: column;
     gap: 0.5rem 1.5rem;
   }
   .footer-links a {
@@ -618,7 +630,26 @@
     outline: none;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
   }
-  .draft-delete { background:none; border:none; color:var(--color-text-secondary); cursor:pointer; font-size:1rem; line-height:1; padding:0 0.25rem; border-radius:4px; }
-  .draft-delete:hover, .draft-delete:focus { color:var(--color-accent); outline:none; }
+  .draft-delete { 
+    background: none; 
+    border: none; 
+    color: var(--color-text-secondary); 
+    cursor: pointer; 
+    padding: 0.25rem; 
+    border-radius: 4px; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
+    transition: color 0.2s ease;
+  }
+  .draft-delete:hover, .draft-delete:focus { 
+    color: var(--color-accent); 
+    outline: none; 
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  }
+  .draft-delete svg {
+    width: 24px;
+    height: 24px;
+  }
   .pending-badge { background: color-mix(in srgb, var(--color-accent) 18%, transparent); color: var(--color-accent); padding:2px 6px; border-radius: 999px; font-size:0.6rem; font-weight:600; letter-spacing:0.5px; border:1px solid color-mix(in srgb, var(--color-accent) 55%, transparent); }
 </style>

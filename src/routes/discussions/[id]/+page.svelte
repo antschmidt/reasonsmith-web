@@ -157,6 +157,103 @@
   let showCommentCitationForm = false;
   let commentCitationFormType: 'citation' | 'source' = 'citation';
 
+  // Good faith testing state
+  let goodFaithTesting = false;
+  let goodFaithResult: { good_faith_score: number; good_faith_label: string; rationale: string; claims?: any[]; cultishPhrases?: string[]; fallacyOverload?: boolean; fromCache?: boolean } | null = null;
+  let goodFaithError: string | null = null;
+  
+  // Claude good faith testing state
+  let claudeGoodFaithTesting = false;
+  let claudeGoodFaithResult: { good_faith_score: number; good_faith_label: string; rationale: string; claims?: any[]; cultishPhrases?: string[]; fromCache?: boolean } | null = null;
+  let claudeGoodFaithError: string | null = null;
+
+  // Analysis cache
+  interface CachedAnalysis {
+    contentHash: string;
+    timestamp: number;
+    openaiResult?: typeof goodFaithResult;
+    claudeResult?: typeof claudeGoodFaithResult;
+  }
+
+  // Simple hash function for content
+  function hashContent(content: string): string {
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+      const char = content.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(36);
+  }
+
+  // Get cached analysis for current content
+  function getCachedAnalysis(content: string, type: 'openai' | 'claude'): any | null {
+    if (!discussion) return null;
+    
+    const cacheKey = `analysis_cache:${discussion.id}`;
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (!cached) return null;
+      
+      const cache: CachedAnalysis = JSON.parse(cached);
+      const currentHash = hashContent(content.trim());
+      
+      // Check if content matches and cache is not too old (24 hours)
+      const isExpired = Date.now() - cache.timestamp > 24 * 60 * 60 * 1000;
+      if (cache.contentHash === currentHash && !isExpired) {
+        return type === 'openai' ? cache.openaiResult : cache.claudeResult;
+      }
+    } catch (e) {
+      console.error('Failed to read analysis cache:', e);
+    }
+    return null;
+  }
+
+  // Store analysis in cache
+  function cacheAnalysis(content: string, type: 'openai' | 'claude', result: any): void {
+    if (!discussion) return;
+    
+    const cacheKey = `analysis_cache:${discussion.id}`;
+    const contentHash = hashContent(content.trim());
+    
+    try {
+      // Get existing cache or create new one
+      let cache: CachedAnalysis;
+      const existing = localStorage.getItem(cacheKey);
+      if (existing) {
+        cache = JSON.parse(existing);
+        // If content hash changed, reset the cache
+        if (cache.contentHash !== contentHash) {
+          cache = {
+            contentHash,
+            timestamp: Date.now(),
+            openaiResult: undefined,
+            claudeResult: undefined
+          };
+        }
+      } else {
+        cache = {
+          contentHash,
+          timestamp: Date.now(),
+          openaiResult: undefined,
+          claudeResult: undefined
+        };
+      }
+      
+      // Update the specific analysis result
+      if (type === 'openai') {
+        cache.openaiResult = result;
+      } else {
+        cache.claudeResult = result;
+      }
+      cache.timestamp = Date.now();
+      
+      localStorage.setItem(cacheKey, JSON.stringify(cache));
+    } catch (e) {
+      console.error('Failed to cache analysis:', e);
+    }
+  }
+
 
   function updateAutosaveStatus() {
     if (!draftAutosaver) return;
@@ -948,6 +1045,126 @@
     };
   }
 
+  // Good faith testing function (OpenAI)
+  async function testGoodFaith() {
+    if (!editDescription.trim()) {
+      goodFaithError = 'Please enter some content to test';
+      return;
+    }
+
+    // Check cache first
+    const cachedResult = getCachedAnalysis(editDescription, 'openai');
+    if (cachedResult) {
+      goodFaithResult = { ...cachedResult, fromCache: true };
+      return;
+    }
+
+    goodFaithTesting = true;
+    goodFaithError = null;
+    goodFaithResult = null;
+
+    try {
+      // Use local API route during development, Vercel function in production
+      const endpoint = import.meta.env.DEV ? '/api/goodFaith' : '/functions/goodFaith';
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          postId: 'test',
+          content: editDescription
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      goodFaithResult = {
+        good_faith_score: data.good_faith_score,
+        good_faith_label: data.good_faith_label,
+        rationale: data.rationale,
+        claims: data.claims,
+        cultishPhrases: data.cultishPhrases,
+        fallacyOverload: data.fallacyOverload
+      };
+
+      // Cache the result
+      cacheAnalysis(editDescription, 'openai', goodFaithResult);
+
+    } catch (error: any) {
+      goodFaithError = error.message || 'Failed to analyze content';
+    } finally {
+      goodFaithTesting = false;
+    }
+  }
+
+  // Claude good faith testing function
+  async function testGoodFaithClaude() {
+    if (!editDescription.trim()) {
+      claudeGoodFaithError = 'Please enter some content to test';
+      return;
+    }
+
+    // Check cache first
+    const cachedResult = getCachedAnalysis(editDescription, 'claude');
+    if (cachedResult) {
+      claudeGoodFaithResult = { ...cachedResult, fromCache: true };
+      return;
+    }
+
+    claudeGoodFaithTesting = true;
+    claudeGoodFaithError = null;
+    claudeGoodFaithResult = null;
+
+    try {
+      const response = await fetch('/api/goodFaithClaude', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          postId: 'test-claude',
+          content: editDescription
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      claudeGoodFaithResult = {
+        good_faith_score: data.good_faith_score,
+        good_faith_label: data.good_faith_label,
+        rationale: data.rationale,
+        claims: data.claims,
+        cultishPhrases: data.cultishPhrases
+      };
+
+      // Cache the result
+      cacheAnalysis(editDescription, 'claude', claudeGoodFaithResult);
+
+    } catch (error: any) {
+      claudeGoodFaithError = error.message || 'Failed to analyze content with Claude';
+    } finally {
+      claudeGoodFaithTesting = false;
+    }
+  }
+
   // Extract citation data from post content (temporary solution until database migration)
   function extractCitationData(content: string): { cleanContent: string; citationData?: { writing_style: WritingStyle; style_metadata: StyleMetadata } } {
     const citationMatch = content.match(/<!-- CITATION_DATA:(.*?)-->/s);
@@ -1016,10 +1233,173 @@
             <textarea id="edit-description" rows="3" bind:value={editDescription} oninput={onEditDescriptionInput}></textarea>
           </label>
           
-          <!-- Insert Citation Reference Button -->
-          <button type="button" class="insert-citation-btn" onclick={openEditCitationPicker}>
-            📎 Insert Citation Reference
-          </button>
+          <!-- Good Faith Testing and Citation Buttons -->
+          <div style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.5rem 0;">
+            <button type="button" class="good-faith-test-btn openai" onclick={testGoodFaith} disabled={goodFaithTesting || !editDescription.trim()}>
+              {#if goodFaithTesting}
+                🤔 OpenAI...
+              {:else}
+                🤔 OpenAI Test
+              {/if}
+            </button>
+            <button type="button" class="good-faith-test-btn claude" onclick={testGoodFaithClaude} disabled={claudeGoodFaithTesting || !editDescription.trim()}>
+              {#if claudeGoodFaithTesting}
+                🧠 Claude...
+              {:else}
+                🧠 Claude Test
+              {/if}
+            </button>
+            <button type="button" class="insert-citation-btn" onclick={openEditCitationPicker}>
+              📎 Insert Citation Reference
+            </button>
+          </div>
+
+          <!-- Good Faith Test Results -->
+          {#if goodFaithResult}
+            <div class="good-faith-result openai-result">
+              <div class="good-faith-header">
+                <h4>
+                  OpenAI Analysis
+                  {#if goodFaithResult.fromCache}
+                    <span class="cache-indicator" title="Loaded from cache">💾</span>
+                  {/if}
+                </h4>
+                <div class="good-faith-score">
+                  <span class="score-value">{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span>
+                  <span class="score-label {goodFaithResult.good_faith_label}">{goodFaithResult.good_faith_label}</span>
+                </div>
+              </div>
+              
+              {#if goodFaithResult.claims && goodFaithResult.claims.length > 0}
+                <div class="openai-claims">
+                  <strong>Claims Analysis:</strong>
+                  {#each goodFaithResult.claims as claim}
+                    <div class="claim-item">
+                      <div class="claim-text"><strong>Claim:</strong> {claim.claim}</div>
+                      {#if claim.arguments}
+                        {#each claim.arguments as arg}
+                          <div class="argument-item">
+                            <div class="argument-text">{arg.text}</div>
+                            <div class="argument-details">
+                              <span class="argument-score">Score: {arg.score}/10</span>
+                              {#if arg.fallacies && arg.fallacies.length > 0}
+                                <span class="fallacies">Fallacies: {arg.fallacies.join(', ')}</span>
+                              {/if}
+                              {#if arg.manipulativeLanguage && arg.manipulativeLanguage.length > 0}
+                                <span class="manipulative-language">Manipulative Language: {arg.manipulativeLanguage.join(', ')}</span>
+                              {/if}
+                            </div>
+                            {#if arg.suggestions && arg.suggestions.length > 0}
+                              <div class="improvements">
+                                <strong>Suggestions:</strong>
+                                <ul>
+                                  {#each arg.suggestions as suggestion}
+                                    <li>{suggestion}</li>
+                                  {/each}
+                                </ul>
+                              </div>
+                            {/if}
+                          </div>
+                        {/each}
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+              
+              {#if goodFaithResult.cultishPhrases && goodFaithResult.cultishPhrases.length > 0}
+                <div class="cultish-phrases">
+                  <strong>Manipulative Phrases Found:</strong>
+                  <ul>
+                    {#each goodFaithResult.cultishPhrases as phrase}
+                      <li>"{phrase}"</li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+              
+              {#if goodFaithResult.fallacyOverload}
+                <div class="fallacy-warning">
+                  <strong>⚠️ Fallacy Overload:</strong> This content contains a high proportion of fallacious arguments.
+                </div>
+              {/if}
+              
+              <div class="good-faith-rationale">
+                <strong>Summary:</strong> {goodFaithResult.rationale}
+              </div>
+              <button type="button" class="close-result-btn" onclick={() => goodFaithResult = null}>✕</button>
+            </div>
+          {/if}
+
+          {#if goodFaithError}
+            <div class="good-faith-error">
+              <strong>OpenAI Error:</strong> {goodFaithError}
+              <button type="button" class="close-result-btn" onclick={() => goodFaithError = null}>✕</button>
+            </div>
+          {/if}
+
+          <!-- Claude Good Faith Test Results -->
+          {#if claudeGoodFaithResult}
+            <div class="good-faith-result claude-result">
+              <div class="good-faith-header">
+                <h4>
+                  Claude Analysis
+                  {#if claudeGoodFaithResult.fromCache}
+                    <span class="cache-indicator" title="Loaded from cache">💾</span>
+                  {/if}
+                </h4>
+                <div class="good-faith-score">
+                  <span class="score-value">{(claudeGoodFaithResult.good_faith_score * 100).toFixed(0)}%</span>
+                  <span class="score-label {claudeGoodFaithResult.good_faith_label}">{claudeGoodFaithResult.good_faith_label}</span>
+                </div>
+              </div>
+              
+              {#if claudeGoodFaithResult.claims && claudeGoodFaithResult.claims.length > 0}
+                <div class="claude-claims">
+                  <strong>Claims Analysis:</strong>
+                  {#each claudeGoodFaithResult.claims as claim}
+                    <div class="claim-item">
+                      <div class="claim-text"><strong>Claim:</strong> {claim.claim}</div>
+                      {#if claim.supportingArguments}
+                        {#each claim.supportingArguments as arg}
+                          <div class="argument-item">
+                            <div class="argument-text">{arg.argument}</div>
+                            <div class="argument-details">
+                              <span class="argument-score">Score: {arg.score}/10</span>
+                              {#if arg.fallacies && arg.fallacies.length > 0}
+                                <span class="fallacies">Fallacies: {arg.fallacies.join(', ')}</span>
+                              {/if}
+                            </div>
+                            {#if arg.improvements}
+                              <div class="improvements">Improvement: {arg.improvements}</div>
+                            {/if}
+                          </div>
+                        {/each}
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+              
+              {#if claudeGoodFaithResult.cultishPhrases && claudeGoodFaithResult.cultishPhrases.length > 0}
+                <div class="cultish-phrases">
+                  <strong>Manipulative Language:</strong> {claudeGoodFaithResult.cultishPhrases.join(', ')}
+                </div>
+              {/if}
+              
+              <div class="good-faith-rationale">
+                <strong>Analysis:</strong> {claudeGoodFaithResult.rationale}
+              </div>
+              <button type="button" class="close-result-btn" onclick={() => claudeGoodFaithResult = null}>✕</button>
+            </div>
+          {/if}
+
+          {#if claudeGoodFaithError}
+            <div class="good-faith-error">
+              <strong>Claude Error:</strong> {claudeGoodFaithError}
+              <button type="button" class="close-result-btn" onclick={() => claudeGoodFaithError = null}>✕</button>
+            </div>
+          {/if}
 
           <!-- Writing Style Selection -->
           <div class="writing-style-selector">
@@ -1684,7 +2064,6 @@
     font-size: 0.9rem;
     cursor: pointer;
     transition: opacity 0.2s;
-    margin: 0.5rem 0;
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
@@ -1692,6 +2071,243 @@
 
   .insert-citation-btn:hover {
     opacity: 0.8;
+  }
+
+  /* Good Faith Testing Buttons */
+  .good-faith-test-btn {
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: var(--border-radius-sm);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: white;
+  }
+
+  .good-faith-test-btn.openai {
+    background: #3b82f6;
+  }
+
+  .good-faith-test-btn.openai:hover:not(:disabled) {
+    background: #2563eb;
+  }
+
+  .good-faith-test-btn.claude {
+    background: #d97706;
+  }
+
+  .good-faith-test-btn.claude:hover:not(:disabled) {
+    background: #b45309;
+  }
+
+  .good-faith-test-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Good Faith Results */
+  .good-faith-result {
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    padding: 1rem;
+    margin: 1rem 0;
+    position: relative;
+  }
+
+  .good-faith-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .good-faith-header h4 {
+    margin: 0;
+    color: var(--color-text-primary);
+  }
+
+  .good-faith-score {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .score-value {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--color-text-primary);
+  }
+
+  .score-label {
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--border-radius-sm);
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+
+  .score-label.hostile {
+    background: color-mix(in srgb, #ef4444 20%, transparent);
+    color: #ef4444;
+    border: 1px solid #ef4444;
+  }
+
+  .score-label.questionable {
+    background: color-mix(in srgb, #f59e0b 20%, transparent);
+    color: #f59e0b;
+    border: 1px solid #f59e0b;
+  }
+
+  .score-label.neutral {
+    background: color-mix(in srgb, #6b7280 20%, transparent);
+    color: #6b7280;
+    border: 1px solid #6b7280;
+  }
+
+  .score-label.constructive {
+    background: color-mix(in srgb, #10b981 20%, transparent);
+    color: #10b981;
+    border: 1px solid #10b981;
+  }
+
+  .score-label.exemplary {
+    background: color-mix(in srgb, #059669 20%, transparent);
+    color: #059669;
+    border: 1px solid #059669;
+  }
+
+  .good-faith-rationale {
+    font-size: 0.9rem;
+    line-height: 1.4;
+    color: var(--color-text-secondary);
+  }
+
+  .good-faith-error {
+    background: color-mix(in srgb, #ef4444 10%, transparent);
+    border: 1px solid #ef4444;
+    border-radius: var(--border-radius-md);
+    padding: 1rem;
+    margin: 1rem 0;
+    color: #dc2626;
+    position: relative;
+  }
+
+  .close-result-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    font-size: 1rem;
+    padding: 0.25rem;
+    border-radius: 4px;
+    transition: color 0.2s;
+  }
+
+  .close-result-btn:hover {
+    color: var(--color-text-primary);
+  }
+
+  /* Claude-specific styling */
+  .claude-result {
+    border-left: 4px solid #d97706;
+  }
+
+  .claude-claims {
+    margin: 0.75rem 0;
+    font-size: 0.9rem;
+  }
+
+  .claim-item {
+    margin: 0.75rem 0;
+    padding: 0.5rem;
+    border-radius: var(--border-radius-sm);
+    background: color-mix(in srgb, var(--color-primary) 3%, var(--color-surface-alt));
+  }
+
+  .claim-text {
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+  }
+
+  .argument-item {
+    margin: 0.5rem 0;
+    padding-left: 1rem;
+    border-left: 2px solid var(--color-border);
+  }
+
+  .argument-text {
+    margin-bottom: 0.25rem;
+  }
+
+  .argument-details {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+  }
+
+  .argument-score {
+    font-weight: 600;
+  }
+
+  .fallacies {
+    color: #dc2626;
+  }
+
+  .improvements {
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    font-style: italic;
+    color: var(--color-text-secondary);
+  }
+  
+  /* OpenAI-specific styling */
+  .openai-result {
+    border-left: 4px solid #10b981;
+  }
+  .openai-claims {
+    margin: 0.75rem 0;
+    font-size: 0.9rem;
+  }
+  .manipulative-language {
+    color: #dc2626;
+  }
+  .cultish-phrases {
+    margin: 0.75rem 0;
+    padding: 0.5rem;
+    border-radius: var(--border-radius-sm);
+    background: color-mix(in srgb, #dc2626 5%, var(--color-surface-alt));
+  }
+  .cultish-phrases ul {
+    margin: 0.5rem 0 0 0;
+    padding-left: 1.5rem;
+  }
+  .fallacy-warning {
+    margin: 0.75rem 0;
+    padding: 0.5rem;
+    border-radius: var(--border-radius-sm);
+    background: color-mix(in srgb, #f59e0b 10%, var(--color-surface-alt));
+    border-left: 3px solid #f59e0b;
+  }
+  .improvements ul {
+    margin: 0.25rem 0 0 0;
+    padding-left: 1.5rem;
+  }
+  .improvements li {
+    margin: 0.125rem 0;
+  }
+  
+  .cache-indicator {
+    font-size: 0.8rem;
+    margin-left: 0.5rem;
+    opacity: 0.7;
   }
 
   /* Citation Picker Modal */

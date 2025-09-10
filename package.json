@@ -42,11 +42,13 @@
 		]
 	},
 	"dependencies": {
+		"@anthropic-ai/sdk": "^0.62.0",
 		"@apollo/client": "^3.14.0",
 		"@nhost/nhost-js": "^3.3.1",
 		"@tiptap/extension-bubble-menu": "^3.3.1",
 		"@vercel/analytics": "^1.5.0",
 		"graphql": "^16.11.0",
+		"openai": "^5.20.0",
 		"svelte-tiptap": "^2.2.0"
 	}
 }

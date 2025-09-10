@@ -14,7 +14,7 @@ export interface GoodFaithScoreResult {
 }
 
 const OPENAI_API_KEY = envAny.OPENAI_API_KEY || envAny.OPEN_API_KEY; // support both naming styles
-const GOOD_FAITH_MODEL = envAny.GOOD_FAITH_MODEL || 'gpt-4o-mini';
+const GOOD_FAITH_MODEL = envAny.GOOD_FAITH_MODEL || 'gpt-5-mini';
 const OPENAI_TIMEOUT_MS = Number(envAny.OPENAI_TIMEOUT_MS || 12000);
 
 // Basic deterministic label mapping fallback if model omits label
@@ -34,7 +34,7 @@ export async function getGoodFaithScoreLLM(content: string): Promise<GoodFaithSc
   try {
     const body = {
       model: GOOD_FAITH_MODEL,
-      temperature: 0,
+      temperature: 1,
       messages: [
         { role: 'system', content: 'You are an impartial assistant that evaluates whether a discussion message is written in good faith. Return ONLY valid JSON with fields: score (0..1), label (string), rationale (short constructive feedback), flags (array of short machine-friendly slugs identifying issues like ad_hominem, sarcasm, hostility, unsupported_claim). Keep rationale <= 240 chars. If text is empty set score=0 and label="hostile".' },
         { role: 'user', content: truncated }
@@ -52,6 +52,7 @@ export async function getGoodFaithScoreLLM(content: string): Promise<GoodFaithSc
     });
     if (!resp.ok) throw new Error(`OpenAI ${resp.status}`);
     const json = await resp.json();
+    console.log('OpenAI response:', json);
     const raw = json?.choices?.[0]?.message?.content;
     if (!raw) throw new Error('Empty LLM content');
     let parsed: any;
