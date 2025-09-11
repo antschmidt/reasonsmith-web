@@ -10,7 +10,7 @@ export const handle: Handle = async ({ event, resolve }) => {
       'Content-Security-Policy',
       [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline' https://vercel.live", // Allow inline scripts for SvelteKit and Vercel live feedback
+        "script-src 'self' 'unsafe-inline' https://vercel.live https://va.vercel-scripts.com", // Allow inline scripts for SvelteKit, Vercel live feedback, and Analytics
         "style-src 'self' 'unsafe-inline'",   // Allow inline styles
         "img-src 'self' data: https:",        // Allow images from self, data URLs, and HTTPS
         "font-src 'self' https:",             // Allow fonts from self and HTTPS
@@ -25,7 +25,7 @@ export const handle: Handle = async ({ event, resolve }) => {
       'Content-Security-Policy',
       [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Allow eval in development
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com", // Allow eval in development and Vercel Analytics
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: https: blob:",
         "font-src 'self' https: data:",

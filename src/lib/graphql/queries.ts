@@ -19,6 +19,7 @@ const POST_FIELDS = gql`
     good_faith_score
     good_faith_label
     good_faith_last_evaluated
+    good_faith_analysis
     writing_style
     style_metadata
     style_word_count
@@ -83,6 +84,10 @@ export const GET_DISCUSSION_DETAILS = gql`
       title
       description
       created_at
+      good_faith_score
+      good_faith_label
+      good_faith_last_evaluated
+      good_faith_analysis
       contributor {
         ...ContributorFields
       }
@@ -364,6 +369,40 @@ export const DELETE_DISCUSSION = gql`
     
     # Then delete the discussion itself
     delete_discussion_by_pk(id: $discussionId) {
+      id
+    }
+  }
+`;
+
+// Mutation to update good faith analysis for a discussion
+export const UPDATE_DISCUSSION_GOOD_FAITH = gql`
+  mutation UpdateDiscussionGoodFaith($discussionId: uuid!, $score: numeric!, $label: String!, $analysis: jsonb) {
+    update_discussion_by_pk(
+      pk_columns: { id: $discussionId }
+      _set: {
+        good_faith_score: $score
+        good_faith_label: $label
+        good_faith_last_evaluated: "now()"
+        good_faith_analysis: $analysis
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+// Mutation to update good faith analysis for a post
+export const UPDATE_POST_GOOD_FAITH = gql`
+  mutation UpdatePostGoodFaith($postId: uuid!, $score: numeric!, $label: String!, $analysis: jsonb) {
+    update_post_by_pk(
+      pk_columns: { id: $postId }
+      _set: {
+        good_faith_score: $score
+        good_faith_label: $label
+        good_faith_last_evaluated: "now()"
+        good_faith_analysis: $analysis
+      }
+    ) {
       id
     }
   }

@@ -3,7 +3,7 @@
   // Avoid importing gql to prevent type resolution issues; use plain string
   import { nhost } from '$lib/nhostClient';
   import { onMount } from 'svelte';
-  import { CREATE_POST_DRAFT } from '$lib/graphql/queries';
+  import { CREATE_POST_DRAFT, UPDATE_DISCUSSION_GOOD_FAITH, UPDATE_POST_GOOD_FAITH, GET_DISCUSSION_DETAILS as IMPORTED_GET_DISCUSSION_DETAILS } from '$lib/graphql/queries';
   import { createDraftAutosaver, type DraftAutosaver } from '$lib';
   import { getStyleConfig, WRITING_STYLES, validateStyleRequirements, formatChicagoCitation, formatChicagoSource, processCitationReferences, type WritingStyle, type StyleMetadata, type Citation, type Source } from '$lib/types/writingStyle';
   import CitationForm from '$lib/components/CitationForm.svelte';
@@ -32,26 +32,6 @@
   let focusReplyOnMount = false;
 
 
-  const GET_DISCUSSION_DETAILS = `
-    query GetDiscussionDetails($discussionId: uuid!) {
-      discussion(where: { id: { _eq: $discussionId } }) {
-        id
-        title
-        description
-        current_version_id
-        # current_version: discussion_version(where: {id: {_eq: current_version_id}}) @skip(if: true) # placeholder - disabled
-        created_at
-        contributor { id display_name }
-        posts(where: { status: { _eq: "approved" } }, order_by: { created_at: asc }) {
-          id
-          content
-          created_at
-          context_version_id
-          contributor { id display_name }
-        }
-      }
-    }
-  `;
 
 
   const GET_EXISTING_DRAFT = `
@@ -166,6 +146,12 @@
   let claudeGoodFaithTesting = false;
   let claudeGoodFaithResult: { good_faith_score: number; good_faith_label: string; rationale: string; claims?: any[]; cultishPhrases?: string[]; fromCache?: boolean } | null = null;
   let claudeGoodFaithError: string | null = null;
+
+  // Good faith analysis visibility toggle for published posts
+  let showGoodFaithAnalysis = false;
+  
+  // Good faith analysis visibility toggle for discussion description
+  let showDiscussionGoodFaithAnalysis = false;
 
   // Analysis cache
   interface CachedAnalysis {
@@ -438,7 +424,7 @@
   }
 
   async function refreshApprovedPosts(discussionId: string) {
-    const result = await nhost.graphql.request(GET_DISCUSSION_DETAILS, { discussionId });
+    const result = await nhost.graphql.request(IMPORTED_GET_DISCUSSION_DETAILS, { discussionId });
     if ((result as any).error) return;
     const fresh = (result as any).data?.discussion?.[0];
     if (fresh) discussion.posts = fresh.posts; // only need posts
@@ -447,15 +433,24 @@
   async function loadDiscussion() {
     try {
       const discussionId = $page.params.id as string;
-      const result = await nhost.graphql.request(GET_DISCUSSION_DETAILS, { discussionId });
-      if ((result as any).error) { throw (result as any).error; }
-      const discussions = (result as any).data.discussion;
+      const result = await nhost.graphql.request(IMPORTED_GET_DISCUSSION_DETAILS, { discussionId });
+      
+      if ((result as any).error) { 
+        console.error('GraphQL Error:', (result as any).error);
+        throw new Error(Array.isArray((result as any).error) ? 
+          (result as any).error.map((e: any) => e.message || 'Unknown error').join(', ') : 
+          (result as any).error.message || 'GraphQL request failed');
+      }
+      
+      const discussions = (result as any).data?.discussion;
       if (!discussions || discussions.length === 0) {
         throw new Error('Discussion not found');
       }
+      
       discussion = discussions[0];
       await loadExistingDraft();
     } catch (e: any) {
+      console.error('Load discussion error:', e);
       error = e;
     } finally {
       loading = false;
@@ -1100,6 +1095,9 @@
       // Cache the result
       cacheAnalysis(editDescription, 'openai', goodFaithResult);
 
+      // Save to database
+      await saveGoodFaithAnalysisToDatabase(goodFaithResult, 'openai');
+
     } catch (error: any) {
       goodFaithError = error.message || 'Failed to analyze content';
     } finally {
@@ -1158,11 +1156,111 @@
       // Cache the result
       cacheAnalysis(editDescription, 'claude', claudeGoodFaithResult);
 
+      // Save to database
+      await saveGoodFaithAnalysisToDatabase(claudeGoodFaithResult, 'claude');
+
     } catch (error: any) {
       claudeGoodFaithError = error.message || 'Failed to analyze content with Claude';
     } finally {
       claudeGoodFaithTesting = false;
     }
+  }
+
+  // Save good faith analysis to database
+  async function saveGoodFaithAnalysisToDatabase(result: any, provider: 'openai' | 'claude') {
+    if (!discussion || !result) return;
+
+    try {
+      // Create the analysis object to store
+      const analysisData = {
+        provider,
+        score: result.good_faith_score,
+        label: result.good_faith_label,
+        rationale: result.rationale,
+        claims: result.claims || [],
+        cultishPhrases: result.cultishPhrases || [],
+        fallacyOverload: result.fallacyOverload || false,
+        analyzedAt: new Date().toISOString()
+      };
+
+      console.log(`📊 Saving ${provider} analysis to database for discussion ${discussion.id}`);
+      
+      // Update the discussion's good faith analysis
+      const { error } = await nhost.graphql.request(UPDATE_DISCUSSION_GOOD_FAITH, {
+        discussionId: discussion.id,
+        score: result.good_faith_score,
+        label: result.good_faith_label,
+        analysis: analysisData
+      });
+
+      if (error) {
+        console.warn(`❌ Database save failed (GraphQL schema may not be refreshed):`, error);
+        console.log(`💡 The database has the columns, but GraphQL schema needs refresh`);
+      } else {
+        console.log(`✅ Successfully saved ${provider} analysis to database!`);
+      }
+
+      // Always update the local discussion object (works regardless of DB save success)
+      if (discussion) {
+        discussion.good_faith_score = result.good_faith_score;
+        discussion.good_faith_label = result.good_faith_label;
+        discussion.good_faith_last_evaluated = new Date().toISOString();
+        discussion.good_faith_analysis = analysisData;
+      }
+
+    } catch (error) {
+      console.warn(`❌ Error saving ${provider} good faith analysis:`, error);
+      console.log(`💡 Database columns exist, likely a GraphQL schema refresh issue`);
+      
+      // Still update local state so UI works
+      if (discussion) {
+        discussion.good_faith_score = result.good_faith_score;
+        discussion.good_faith_label = result.good_faith_label;
+        discussion.good_faith_last_evaluated = new Date().toISOString();
+        discussion.good_faith_analysis = {
+          provider,
+          score: result.good_faith_score,
+          label: result.good_faith_label,
+          rationale: result.rationale,
+          claims: result.claims || [],
+          cultishPhrases: result.cultishPhrases || [],
+          fallacyOverload: result.fallacyOverload || false,
+          analyzedAt: new Date().toISOString()
+        };
+      }
+    }
+  }
+
+  // Helper function to test if GraphQL schema supports good faith fields
+  // You can call this from the browser console: window.testGoodFaithSchema()
+  if (typeof window !== 'undefined') {
+    (window as any).testGoodFaithSchema = async () => {
+      if (!discussion) {
+        console.log('❌ No discussion loaded to test');
+        return;
+      }
+      
+      try {
+        console.log('🧪 Testing if GraphQL schema supports good faith fields...');
+        const { error } = await nhost.graphql.request(UPDATE_DISCUSSION_GOOD_FAITH, {
+          discussionId: discussion.id,
+          score: 0.5,
+          label: 'test',
+          analysis: { test: true }
+        });
+        
+        if (error) {
+          console.log('❌ Schema not ready:', error);
+          return false;
+        } else {
+          console.log('✅ Schema is ready! You can now re-enable database saving.');
+          return true;
+        }
+      } catch (e) {
+        console.log('❌ Schema test failed:', e);
+        return false;
+      }
+    };
   }
 
   // Extract citation data from post content (temporary solution until database migration)
@@ -1621,6 +1719,102 @@
             </div>
           </div>
         {/if}
+        
+        <!-- Good Faith Analysis Display for Discussion Description -->
+        {#if discussion?.good_faith_score != null && typeof discussion.good_faith_score === 'number' && discussion.good_faith_label && !editing}
+          <div class="good-faith-analysis-section">
+            <button 
+              type="button" 
+              class="good-faith-toggle"
+              onclick={() => showDiscussionGoodFaithAnalysis = !showDiscussionGoodFaithAnalysis}
+              aria-expanded={showDiscussionGoodFaithAnalysis}
+            >
+              <span class="toggle-icon">{showDiscussionGoodFaithAnalysis ? '▼' : '▶'}</span>
+              Good Faith Analysis
+              <span class="good-faith-score-inline">
+                <span class="score-value">{(discussion.good_faith_score * 100).toFixed(0)}%</span>
+                <span class="score-label {discussion.good_faith_label}">{discussion.good_faith_label}</span>
+              </span>
+            </button>
+            
+            {#if showDiscussionGoodFaithAnalysis}
+              <div class="good-faith-details">
+                <div class="score-breakdown">
+                  <div class="score-row">
+                    <span class="score-label-text">Score:</span>
+                    <span class="score-value-large">{(discussion.good_faith_score * 100).toFixed(0)}%</span>
+                    <span class="score-label-badge {discussion.good_faith_label}">{discussion.good_faith_label}</span>
+                  </div>
+                  {#if discussion.good_faith_last_evaluated}
+                    <div class="evaluation-date">
+                      Evaluated: {new Date(discussion.good_faith_last_evaluated).toLocaleString()}
+                    </div>
+                  {/if}
+                </div>
+
+                <!-- Full Analysis Breakdown -->
+                {#if discussion.good_faith_analysis}
+                  {@const analysis = discussion.good_faith_analysis}
+                  
+                  {#if analysis.claims && analysis.claims.length > 0}
+                    <div class="analysis-section">
+                      <strong>Claims Analysis:</strong>
+                      {#each analysis.claims as claim}
+                        <div class="claim-item">
+                          <div class="claim-text"><strong>Claim:</strong> {claim.claim}</div>
+                          {#if claim.arguments}
+                            {#each claim.arguments as arg}
+                              <div class="argument-item">
+                                <span class="argument-score">Score: {arg.score}/10</span>
+                                {#if arg.fallacies && arg.fallacies.length > 0}
+                                  <span class="fallacies">Fallacies: {arg.fallacies.join(', ')}</span>
+                                {/if}
+                              </div>
+                            {/each}
+                          {/if}
+                          {#if claim.supportingArguments}
+                            {#each claim.supportingArguments as arg}
+                              <div class="argument-item">
+                                <span class="argument-score">Score: {arg.score}/10</span>
+                                {#if arg.fallacies && arg.fallacies.length > 0}
+                                  <span class="fallacies">Fallacies: {arg.fallacies.join(', ')}</span>
+                                {/if}
+                              </div>
+                            {/each}
+                          {/if}
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+
+                  {#if analysis.cultishPhrases && analysis.cultishPhrases.length > 0}
+                    <div class="analysis-section">
+                      <strong>Manipulative Language:</strong> {analysis.cultishPhrases.join(', ')}
+                    </div>
+                  {/if}
+
+                  {#if analysis.fallacyOverload}
+                    <div class="analysis-section fallacy-warning">
+                      <strong>⚠️ Fallacy Overload:</strong> This content contains a high proportion of fallacious arguments.
+                    </div>
+                  {/if}
+
+                  {#if analysis.rationale}
+                    <div class="analysis-section">
+                      <strong>Analysis Summary:</strong> {analysis.rationale}
+                    </div>
+                  {/if}
+
+                  {#if analysis.provider}
+                    <div class="analysis-meta">
+                      <small>Analyzed by: {analysis.provider.charAt(0).toUpperCase() + analysis.provider.slice(1)}</small>
+                    </div>
+                  {/if}
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
       {/if}
     </header>
 
@@ -1701,6 +1895,114 @@
             {/if}
           {/snippet}
           {@render postWithCitations()}
+          
+          <!-- Good Faith Analysis Display -->
+          {#if post?.good_faith_score != null && typeof post.good_faith_score === 'number' && post.good_faith_label}
+            <div class="good-faith-analysis-section">
+              <button 
+                type="button" 
+                class="good-faith-toggle"
+                onclick={() => showGoodFaithAnalysis = !showGoodFaithAnalysis}
+                aria-expanded={showGoodFaithAnalysis}
+              >
+                <span class="toggle-icon">{showGoodFaithAnalysis ? '▼' : '▶'}</span>
+                Good Faith Analysis
+                <span class="good-faith-score-inline">
+                  <span class="score-value">{(post.good_faith_score * 100).toFixed(0)}%</span>
+                  <span class="score-label {post.good_faith_label}">{post.good_faith_label}</span>
+                </span>
+              </button>
+              
+              {#if showGoodFaithAnalysis}
+                <div class="good-faith-details">
+                  <div class="score-breakdown">
+                    <div class="score-row">
+                      <span class="score-label-text">Score:</span>
+                      <span class="score-value-large">{(post.good_faith_score * 100).toFixed(0)}%</span>
+                      <span class="score-label-badge {post.good_faith_label}">{post.good_faith_label}</span>
+                    </div>
+                    {#if post.good_faith_last_evaluated}
+                      <div class="evaluation-date">
+                        Evaluated: {new Date(post.good_faith_last_evaluated).toLocaleString()}
+                      </div>
+                    {/if}
+                  </div>
+
+                  <!-- Full Analysis Breakdown for Post -->
+                  {#if post.good_faith_analysis && typeof post.good_faith_analysis === 'object'}
+                    {@const analysis = post.good_faith_analysis}
+                    
+                    <!-- Claims Analysis -->
+                    {#if analysis.claims_analysis?.claims && Array.isArray(analysis.claims_analysis.claims)}
+                      <div class="analysis-section">
+                        <h4>Claims Analysis</h4>
+                        <div class="claims-list">
+                          {#each analysis.claims_analysis.claims as claim, index}
+                            <div class="claim-item">
+                              <div class="claim-header">
+                                <strong>Claim {index + 1}:</strong> {claim.claim}
+                              </div>
+                              {#if claim.supporting_arguments && Array.isArray(claim.supporting_arguments)}
+                                <div class="supporting-args">
+                                  <h5>Supporting Arguments:</h5>
+                                  {#each claim.supporting_arguments as arg}
+                                    <div class="argument-item">
+                                      <div class="argument-text">{arg.argument}</div>
+                                      <div class="argument-meta">
+                                        <span class="score">Score: {arg.good_faith_score}/10</span>
+                                        {#if arg.fallacies && Array.isArray(arg.fallacies) && arg.fallacies.length > 0}
+                                          <span class="fallacies">Fallacies: {arg.fallacies.join(', ')}</span>
+                                        {/if}
+                                      </div>
+                                    </div>
+                                  {/each}
+                                </div>
+                              {/if}
+                            </div>
+                          {/each}
+                        </div>
+                      </div>
+                    {/if}
+
+                    <!-- Manipulative Language -->
+                    {#if analysis.manipulative_language && Array.isArray(analysis.manipulative_language) && analysis.manipulative_language.length > 0}
+                      <div class="analysis-section warning">
+                        <h4>Manipulative Language Detected</h4>
+                        <div class="manipulative-phrases">
+                          {#each analysis.manipulative_language as phrase}
+                            <span class="phrase-badge">{phrase}</span>
+                          {/each}
+                        </div>
+                      </div>
+                    {/if}
+
+                    <!-- Fallacy Overload Warning -->
+                    {#if analysis.fallacy_overload}
+                      <div class="analysis-section critical">
+                        <h4>⚠️ Fallacy Overload Detected</h4>
+                        <p>This content contains an unusually high concentration of logical fallacies, which may indicate bad-faith argumentation.</p>
+                      </div>
+                    {/if}
+
+                    <!-- Analysis Rationale -->
+                    {#if analysis.rationale || analysis.summary}
+                      <div class="analysis-section">
+                        <h4>Analysis Summary</h4>
+                        <p class="rationale-text">{analysis.rationale || analysis.summary}</p>
+                      </div>
+                    {/if}
+
+                    <!-- Provider Attribution -->
+                    {#if analysis.provider}
+                      <div class="analysis-attribution">
+                        <small>Analysis by: {analysis.provider === 'openai' ? 'OpenAI' : 'Claude'}</small>
+                      </div>
+                    {/if}
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
         </div>
       {:else}
         <p>No posts in this discussion yet. Be the first to contribute!</p>
@@ -2931,5 +3233,151 @@
   .delete-discussion-btn {
     font-size: 0.8rem;
     padding: 0.3rem 0.6rem;
+  }
+
+  /* Good faith analysis toggle styles */
+  .good-faith-analysis-section {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .good-faith-toggle {
+    width: 100%;
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-sm);
+    padding: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--color-text-primary);
+    transition: background-color 0.2s;
+  }
+
+  .good-faith-toggle:hover {
+    background: var(--color-input-bg);
+  }
+
+  .toggle-icon {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+    transition: transform 0.2s;
+  }
+
+  .good-faith-score-inline {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .good-faith-score-inline .score-value {
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  .good-faith-score-inline .score-label {
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--border-radius-sm);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .good-faith-details {
+    padding: 1rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-top: none;
+    border-radius: 0 0 var(--border-radius-sm) var(--border-radius-sm);
+  }
+
+  .score-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .score-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .score-label-text {
+    font-weight: 600;
+    color: var(--color-text-secondary);
+  }
+
+  .score-value-large {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+  }
+
+  .score-label-badge {
+    padding: 0.3rem 0.7rem;
+    border-radius: var(--border-radius-sm);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .evaluation-date {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+    font-style: italic;
+  }
+
+  /* Score label colors (reusing existing styles) */
+  .score-label.hostile,
+  .score-label-badge.hostile {
+    background-color: #fef2f2;
+    color: #dc2626;
+  }
+
+  .score-label.questionable,
+  .score-label-badge.questionable {
+    background-color: #fffbeb;
+    color: #d97706;
+  }
+
+  .score-label.neutral,
+  .score-label-badge.neutral {
+    background-color: #f3f4f6;
+    color: #6b7280;
+  }
+
+  .score-label.constructive,
+  .score-label-badge.constructive {
+    background-color: #f0f9ff;
+    color: #0369a1;
+  }
+
+  [data-theme="dark"] .score-label.hostile,
+  [data-theme="dark"] .score-label-badge.hostile {
+    background-color: #450a0a;
+    color: #fca5a5;
+  }
+
+  [data-theme="dark"] .score-label.questionable,
+  [data-theme="dark"] .score-label-badge.questionable {
+    background-color: #451a03;
+    color: #fbbf24;
+  }
+
+  [data-theme="dark"] .score-label.neutral,
+  [data-theme="dark"] .score-label-badge.neutral {
+    background-color: #374151;
+    color: #d1d5db;
+  }
+
+  [data-theme="dark"] .score-label.constructive,
+  [data-theme="dark"] .score-label-badge.constructive {
+    background-color: #0c4a6e;
+    color: #7dd3fc;
   }
 </style>
