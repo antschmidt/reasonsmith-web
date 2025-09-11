@@ -15,18 +15,12 @@ if (!PUBLIC_NHOST_SUBDOMAIN || !PUBLIC_NHOST_REGION) {
 // Use SvelteKit's dev flag for reliable environment detection
 const useCustomDomains = !dev && isBrowser;
 
-// Add debug logging for production deployment
-if (isBrowser) {
-  console.log('[nhostClient] Hostname:', window.location.hostname);
-  console.log('[nhostClient] Dev mode:', dev);
-  console.log('[nhostClient] Using custom domains:', useCustomDomains);
-}
-
 const nhostConfig = useCustomDomains ? {
   // Production: Use custom domains
   authUrl: 'https://auth.reasonsmith.com/v1',
   graphqlUrl: 'https://graphql.reasonsmith.com/v1/graphql',
   storageUrl: 'https://storage.reasonsmith.com/v1',
+  functionsUrl: 'https://functions.reasonsmith.com/v1',
   clientStorage: localStorage,
   clientStorageType: 'web' as const,
   autoLogin: true
@@ -38,8 +32,6 @@ const nhostConfig = useCustomDomains ? {
   clientStorageType: isBrowser ? 'web' as const : undefined,
   autoLogin: true
 };
-
-console.log('[nhostClient] Final configuration:', JSON.stringify(nhostConfig, null, 2));
 
 export const nhost = new NhostClient(nhostConfig);
 
