@@ -1,7 +1,7 @@
 [global]
 [[global.environment]]
 name = 'OPENAI_API_KEY'
-value = '[REDACTED_OPENAI_API_KEY]'
+value = '{{ secrets.OPENAI_API_KEY }}'
 
 [hasura]
 version = 'v2.46.0-ce'
@@ -126,7 +126,7 @@ enabled = false
 [auth.method.oauth.github]
 enabled = true
 clientId = 'Ov23lihjwwgE7Iu3gE0F'
-clientSecret = '[REDACTED_GITHUB_OAUTH_SECRET]'
+clientSecret = '{{ secrets.GITHUB_OAUTH_CLIENT_SECRET }}'
 
 [auth.method.oauth.gitlab]
 enabled = false
