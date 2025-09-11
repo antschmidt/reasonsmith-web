@@ -10,11 +10,11 @@ export const handle: Handle = async ({ event, resolve }) => {
       'Content-Security-Policy',
       [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline'", // Allow inline scripts for SvelteKit
+        "script-src 'self' 'unsafe-inline' https://vercel.live", // Allow inline scripts for SvelteKit and Vercel live feedback
         "style-src 'self' 'unsafe-inline'",   // Allow inline styles
         "img-src 'self' data: https:",        // Allow images from self, data URLs, and HTTPS
         "font-src 'self' https:",             // Allow fonts from self and HTTPS
-        "connect-src 'self' https://graphql.reasonsmith.com https://auth.reasonsmith.com https://storage.reasonsmith.com https://functions.reasonsmith.com https://api.vercel.com https://*.nhost.run", // API connections (includes fallback for Nhost subdomain)
+        "connect-src 'self' https://*.nhost.run https://graphql.reasonsmith.com https://auth.reasonsmith.com https://storage.reasonsmith.com https://functions.reasonsmith.com https://api.vercel.com", // API connections (Nhost subdomain + custom domains)
         "frame-src 'none'",                   // No frames
         "object-src 'none'",                  // No objects
       ].join('; ')

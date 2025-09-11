@@ -13,7 +13,7 @@ type = 'HS256'
 key = '{{ secrets.HASURA_GRAPHQL_JWT_SECRET }}'
 
 [hasura.settings]
-corsDomain = ['*']
+corsDomain = ['*', 'https://reasonsmith-web-git-dev-antschmidts-projects.vercel.app', 'https://*.vercel.app', 'http://localhost:5173', 'http://localhost:3000']
 devMode = true
 enableAllowList = false
 enableConsole = true

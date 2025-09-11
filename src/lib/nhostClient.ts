@@ -13,7 +13,8 @@ if (!PUBLIC_NHOST_SUBDOMAIN || !PUBLIC_NHOST_REGION) {
 
 // Create configuration based on environment
 // Use SvelteKit's dev flag for reliable environment detection
-const useCustomDomains = !dev && isBrowser;
+// TEMPORARY: Disable custom domains until CORS is properly configured
+const useCustomDomains = false; // !dev && isBrowser;
 
 const nhostConfig = useCustomDomains ? {
   // Production: Use custom domains
