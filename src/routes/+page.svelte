@@ -95,8 +95,13 @@
 			class="cta-button"
 			type="button"
 			onclick={() => {
+				console.log('[Get Started] Button clicked in production');
+				console.log('[Get Started] showAuthOverlay before:', showAuthOverlay);
+				console.log('[Get Started] user:', user);
+				console.log('[Get Started] nhost client:', nhost);
 				showAuthOverlay = true;
 				toggleAuthModeView(true);
+				console.log('[Get Started] showAuthOverlay after:', showAuthOverlay);
 			}}
 		>
 			Get Started

@@ -1,5 +1,6 @@
 import { NhostClient } from '@nhost/nhost-js';
 import { env } from '$env/dynamic/public';
+import { dev } from '$app/environment';
 
 const isBrowser = typeof window !== 'undefined';
 
@@ -11,9 +12,18 @@ if (!PUBLIC_NHOST_SUBDOMAIN || !PUBLIC_NHOST_REGION) {
 }
 
 // Create configuration based on environment
-const isProduction = typeof window !== 'undefined' && (window.location.hostname === 'reasonsmith.com' || window.location.hostname.endsWith('.vercel.app'));
+// Use SvelteKit's dev flag for reliable environment detection
+// TEMPORARY: Disable custom domains to test if they're causing the issue
+const useCustomDomains = false; // !dev && isBrowser;
 
-const nhostConfig = isBrowser && isProduction ? {
+// Add debug logging for production deployment
+if (isBrowser) {
+  console.log('[nhostClient] Hostname:', window.location.hostname);
+  console.log('[nhostClient] Dev mode:', dev);
+  console.log('[nhostClient] Using custom domains:', useCustomDomains);
+}
+
+const nhostConfig = useCustomDomains ? {
   // Production: Use custom domains
   authUrl: 'https://auth.reasonsmith.com/v1',
   graphqlUrl: 'https://graphql.reasonsmith.com/v1/graphql',
@@ -29,6 +39,8 @@ const nhostConfig = isBrowser && isProduction ? {
   clientStorageType: isBrowser ? 'web' as const : undefined,
   autoLogin: true
 };
+
+console.log('[nhostClient] Final configuration:', nhostConfig);
 
 export const nhost = new NhostClient(nhostConfig);
 
