@@ -12,27 +12,23 @@ if (!PUBLIC_NHOST_SUBDOMAIN || !PUBLIC_NHOST_REGION) {
 }
 
 // Create configuration based on environment
-// Use SvelteKit's dev flag for reliable environment detection
-// TEMPORARY: Disable custom domains until CORS is properly configured
-const useCustomDomains = false; // !dev && isBrowser;
-
-const nhostConfig = useCustomDomains ? {
-  // Production: Use custom domains
-  authUrl: 'https://auth.reasonsmith.com/v1',
-  graphqlUrl: 'https://graphql.reasonsmith.com/v1/graphql',
-  storageUrl: 'https://storage.reasonsmith.com/v1',
-  functionsUrl: 'https://functions.reasonsmith.com/v1',
-  clientStorage: localStorage,
-  clientStorageType: 'web' as const,
-  autoLogin: true
-} : {
-  // Development/SSR: Use subdomain/region
+// FORCE subdomain usage to avoid CORS issues with custom domains
+const nhostConfig = {
   subdomain: PUBLIC_NHOST_SUBDOMAIN,
   region: PUBLIC_NHOST_REGION,
   clientStorage: isBrowser ? localStorage : undefined,
   clientStorageType: isBrowser ? 'web' as const : undefined,
   autoLogin: true
 };
+
+// Add debugging to confirm configuration
+if (isBrowser) {
+  console.log('[nhostClient] FORCED subdomain config:', {
+    subdomain: PUBLIC_NHOST_SUBDOMAIN,
+    region: PUBLIC_NHOST_REGION,
+    hostname: window.location.hostname
+  });
+}
 
 export const nhost = new NhostClient(nhostConfig);
 
