@@ -11,14 +11,18 @@ if (!PUBLIC_NHOST_SUBDOMAIN || !PUBLIC_NHOST_REGION) {
 }
 
 export const nhost = new NhostClient({
-  subdomain: PUBLIC_NHOST_SUBDOMAIN,
-  region: PUBLIC_NHOST_REGION,
+  // Use custom domains in browser, fallback to subdomain for SSR
+  ...(isBrowser ? {
+    authUrl: 'https://auth.reasonsmith.com/v1',
+    graphqlUrl: 'https://graphql.reasonsmith.com/v1/graphql',
+    storageUrl: 'https://storage.reasonsmith.com/v1'
+  } : {
+    subdomain: PUBLIC_NHOST_SUBDOMAIN,
+    region: PUBLIC_NHOST_REGION
+  }),
   clientStorage: isBrowser ? localStorage : undefined,
   clientStorageType: 'web',
-  autoLogin: true,
-  authUrl: isBrowser ? 'https://auth.reasonsmith.com/v1' : undefined,
-  graphqlUrl: isBrowser ? 'https://graphql.reasonsmith.com/v1/graphql' : undefined,
-  storageUrl: isBrowser ? 'https://storage.reasonsmith.com/v1' : undefined
+  autoLogin: true
 });
 
 // Apply GraphQL role header dynamically (anonymous before auth; me after sign-in)
