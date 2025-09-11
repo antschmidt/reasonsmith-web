@@ -13,8 +13,7 @@ if (!PUBLIC_NHOST_SUBDOMAIN || !PUBLIC_NHOST_REGION) {
 
 // Create configuration based on environment
 // Use SvelteKit's dev flag for reliable environment detection
-// TEMPORARY: Disable custom domains to test if they're causing the issue
-const useCustomDomains = false; // !dev && isBrowser;
+const useCustomDomains = !dev && isBrowser;
 
 // Add debug logging for production deployment
 if (isBrowser) {

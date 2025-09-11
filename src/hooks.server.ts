@@ -14,7 +14,7 @@ export const handle: Handle = async ({ event, resolve }) => {
         "style-src 'self' 'unsafe-inline'",   // Allow inline styles
         "img-src 'self' data: https:",        // Allow images from self, data URLs, and HTTPS
         "font-src 'self' https:",             // Allow fonts from self and HTTPS
-        "connect-src 'self' https://graphql.reasonsmith.com https://auth.reasonsmith.com https://storage.reasonsmith.com https://api.vercel.com", // API connections
+        "connect-src 'self' https://graphql.reasonsmith.com https://auth.reasonsmith.com https://storage.reasonsmith.com https://api.vercel.com https://*.nhost.run", // API connections (includes fallback for Nhost subdomain)
         "frame-src 'none'",                   // No frames
         "object-src 'none'",                  // No objects
       ].join('; ')
