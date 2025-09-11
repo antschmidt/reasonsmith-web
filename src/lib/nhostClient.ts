@@ -10,20 +10,27 @@ if (!PUBLIC_NHOST_SUBDOMAIN || !PUBLIC_NHOST_REGION) {
   console.warn('[nhostClient] Missing PUBLIC_NHOST_SUBDOMAIN or PUBLIC_NHOST_REGION; configure in Vercel project settings.');
 }
 
-export const nhost = new NhostClient({
-  // Use custom domains in browser, fallback to subdomain for SSR
-  ...(isBrowser ? {
-    authUrl: 'https://auth.reasonsmith.com/v1',
-    graphqlUrl: 'https://graphql.reasonsmith.com/v1/graphql',
-    storageUrl: 'https://storage.reasonsmith.com/v1'
-  } : {
-    subdomain: PUBLIC_NHOST_SUBDOMAIN,
-    region: PUBLIC_NHOST_REGION
-  }),
-  clientStorage: isBrowser ? localStorage : undefined,
-  clientStorageType: 'web',
+// Create configuration based on environment
+const isProduction = typeof window !== 'undefined' && (window.location.hostname === 'reasonsmith.com' || window.location.hostname.endsWith('.vercel.app'));
+
+const nhostConfig = isBrowser && isProduction ? {
+  // Production: Use custom domains
+  authUrl: 'https://auth.reasonsmith.com/v1',
+  graphqlUrl: 'https://graphql.reasonsmith.com/v1/graphql',
+  storageUrl: 'https://storage.reasonsmith.com/v1',
+  clientStorage: localStorage,
+  clientStorageType: 'web' as const,
   autoLogin: true
-});
+} : {
+  // Development/SSR: Use subdomain/region
+  subdomain: PUBLIC_NHOST_SUBDOMAIN,
+  region: PUBLIC_NHOST_REGION,
+  clientStorage: isBrowser ? localStorage : undefined,
+  clientStorageType: isBrowser ? 'web' as const : undefined,
+  autoLogin: true
+};
+
+export const nhost = new NhostClient(nhostConfig);
 
 // Apply GraphQL role header dynamically (anonymous before auth; me after sign-in)
 function applyGraphqlRoleHeader() {
