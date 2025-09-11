@@ -10,9 +10,13 @@
 	const SITE_URL = publicEnv.PUBLIC_SITE_URL;
 
 	function getRedirect() {
-		if (SITE_URL) return SITE_URL.replace(/\/$/, '') + '/auth/callback';
-		if (typeof window !== 'undefined') return window.location.origin + '/auth/callback';
-		return undefined;
+		const redirectUrl = SITE_URL 
+			? SITE_URL.replace(/\/$/, '') + '/auth/callback'
+			: (typeof window !== 'undefined' ? window.location.origin + '/auth/callback' : undefined);
+		
+		console.log('[Redirect] SITE_URL:', SITE_URL);
+		console.log('[Redirect] Generated URL:', redirectUrl);
+		return redirectUrl;
 	}
 
 	const isOpen = writable(false);
@@ -44,8 +48,26 @@
 	}
 
 	async function logout() { await nhost.auth.signOut(); user = null; }
-	async function signInWithGitHub() { await nhost.auth.signIn({ provider: 'github', options: { redirectTo: getRedirect() } }); }
-	async function signInWithGoogle() { await nhost.auth.signIn({ provider: 'google', options: { redirectTo: getRedirect() } }); }
+	async function signInWithGitHub() { 
+		console.log('[GitHub Auth] Starting GitHub sign-in');
+		console.log('[GitHub Auth] Redirect URL:', getRedirect());
+		try {
+			await nhost.auth.signIn({ provider: 'github', options: { redirectTo: getRedirect() } }); 
+		} catch (e: any) {
+			console.error('[GitHub Auth] Error:', e);
+			authError = e.message;
+		}
+	}
+	async function signInWithGoogle() { 
+		console.log('[Google Auth] Starting Google sign-in');
+		console.log('[Google Auth] Redirect URL:', getRedirect());
+		try {
+			await nhost.auth.signIn({ provider: 'google', options: { redirectTo: getRedirect() } }); 
+		} catch (e: any) {
+			console.error('[Google Auth] Error:', e);
+			authError = e.message;
+		}
+	}
 	async function login() {
 		authError = null;
 		try { await nhost.auth.signIn({ email, password }); } catch (e: any) { authError = e.message; }
@@ -55,12 +77,21 @@
 		try { await nhost.auth.signUp({ email, password }); } catch (e: any) { authError = e.message; }
 	}
 	async function sendMagicLink() {
+		console.log('[Magic Link] Starting magic link process');
+		console.log('[Magic Link] Email:', email);
+		console.log('[Magic Link] Redirect URL:', getRedirect());
+		console.log('[Magic Link] Nhost client:', nhost);
+		
 		authError = null; magicLinkSent = false;
 		if (!email) { authError = 'Please enter an email first.'; return; }
 		try {
-			await nhost.auth.signIn({ email, options: { redirectTo: getRedirect() } });
+			const result = await nhost.auth.signIn({ email, options: { redirectTo: getRedirect() } });
+			console.log('[Magic Link] Result:', result);
 			magicLinkSent = true;
-		} catch (e: any) { authError = e.message; }
+		} catch (e: any) { 
+			console.error('[Magic Link] Error:', e);
+			authError = e.message; 
+		}
 	}
 	async function signInWithSecurityKey() { alert('Security key sign-in not yet implemented.'); }
 	async function signUpWithSecurityKey() { alert('Security key sign-up not yet implemented.'); }
@@ -151,7 +182,17 @@
 				{/if}
 
 				{#if authError}
-					<p class="auth-error" aria-live="polite">{authError}</p>
+					<div class="auth-error" aria-live="polite">
+						<p><strong>Error:</strong> {authError}</p>
+						<details style="margin-top: 0.5rem; font-size: 0.8rem;">
+							<summary>Debug Info</summary>
+							<pre style="white-space: pre-wrap; font-size: 0.75rem;">
+Site URL: {SITE_URL || 'Not set'}
+Redirect URL: {getRedirect()}
+Hostname: {typeof window !== 'undefined' ? window.location.hostname : 'Server-side'}
+							</pre>
+						</details>
+					</div>
 				{/if}
 				{#if magicLinkSent}
 					<p class="auth-success" aria-live="polite">Magic link sent. Check your email.</p>

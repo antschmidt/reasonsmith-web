@@ -1,4 +1,7 @@
 [global]
+[[global.environment]]
+name = 'OPENAI_API_KEY'
+value = '[REDACTED_OPENAI_API_KEY]'
 
 [hasura]
 version = 'v2.46.0-ce'
@@ -35,10 +38,6 @@ fqdn = ['hasura.reasonsmith.com']
 [functions.node]
 version = 22
 
-[[functions.resources.compute]]
-cpu = 0.5
-memory = 1024
-
 [functions.resources]
 [functions.resources.networking]
 [[functions.resources.networking.ingresses]]
@@ -57,6 +56,7 @@ mode = 'disabled'
 
 [auth.redirections]
 clientUrl = 'http://slarti.tonyschmidt.io:5173'
+allowedUrls = ['https://*.vercel.app', 'http://slarti.tonyschmidt.io:5173', 'http://localhost:5173', 'http://localhost:3000']
 
 [auth.signUp]
 enabled = true
@@ -125,8 +125,8 @@ enabled = false
 
 [auth.method.oauth.github]
 enabled = true
-clientId = '{{ secrets.GITHUB_CLIENT_ID }}'
-clientSecret = '{{ secrets.GITHUB_CLIENT_SECRET }}'
+clientId = 'Ov23lihjwwgE7Iu3gE0F'
+clientSecret = '[REDACTED_GITHUB_OAUTH_SECRET]'
 
 [auth.method.oauth.gitlab]
 enabled = false
