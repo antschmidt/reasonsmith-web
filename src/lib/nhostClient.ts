@@ -40,7 +40,7 @@ const nhostConfig = useCustomDomains ? {
   autoLogin: true
 };
 
-console.log('[nhostClient] Final configuration:', nhostConfig);
+console.log('[nhostClient] Final configuration:', JSON.stringify(nhostConfig, null, 2));
 
 export const nhost = new NhostClient(nhostConfig);
 
