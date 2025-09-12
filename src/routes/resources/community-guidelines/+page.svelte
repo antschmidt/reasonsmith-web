@@ -157,9 +157,8 @@
 
   let activeItem: string | null = null;
   let activeKind: 'fallacy' | 'cultish' | null = null;
-  let currentItem: Info | null = null;
-
-  $: currentItem = activeItem && activeKind ? (activeKind === 'fallacy' ? fallacies : cultish)[activeItem] : null;
+  
+  let currentItem = $derived(activeItem && activeKind ? (activeKind === 'fallacy' ? fallacies : cultish)[activeItem] : null);
 
   function openItem(kind: 'fallacy' | 'cultish', name: string) { activeKind = kind; activeItem = name; }
   function closeModal() { activeItem = null; activeKind = null; }

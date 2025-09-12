@@ -9,27 +9,14 @@ export interface Citation {
   publishDate?: string; // Optional publish date
   pointSupported: string; // The specific point this citation supports
   relevantQuote: string; // Quote from the source
-  pageNumber?: string; // For PDFs, documents, books
+  pageNumber?: string; // For PDFs, documents, books (academic style)
   author?: string; // Optional author
-  publisher?: string; // Optional publisher
-}
-
-export interface Source {
-  id: string;
-  title: string;
-  url: string;
-  accessed?: string;
-  pointSupported: string;
-  relevantQuote: string;
-  publishDate?: string;
-  author?: string;
+  publisher?: string; // Optional publisher (academic style)
+  accessed?: string; // Access date for web sources (journalistic style)
 }
 
 export interface StyleMetadata {
-  // For journalistic posts
-  sources?: Source[];
-  
-  // For academic posts
+  // Citations for all writing styles (replaces both sources and citations)
   citations?: Citation[];
   
   // Common fields
@@ -95,7 +82,7 @@ export function formatChicagoCitation(citation: Citation): string {
   const title = `"${citation.title}"`;
   formatted += (formatted ? '. ' : '') + title;
   
-  // Publisher (if available)
+  // Publisher (if available) - typically for academic citations
   if (citation.publisher) {
     formatted += `. ${citation.publisher}`;
   }
@@ -108,42 +95,17 @@ export function formatChicagoCitation(citation: Citation): string {
     formatted += '.';
   }
   
-  // URL
-  formatted += ` ${citation.url}`;
+  // URL (clickable)
+  formatted += ` <a href="${citation.url}" target="_blank" rel="noopener noreferrer">${citation.url}</a>`;
   
-  // Page number (if available) - comes after URL for web sources
+  // Page number (if available) - comes after URL for academic citations
   if (citation.pageNumber) {
     formatted += `, ${citation.pageNumber}`;
   }
   
-  return formatted + '.';
-}
-
-export function formatChicagoSource(source: Source): string {
-  let formatted = '';
-  
-  // Author (Last, First format)
-  if (source.author) {
-    formatted += source.author;
-  }
-  
-  // Title in quotes (for web sources and articles)  
-  const title = `"${source.title}"`;
-  formatted += (formatted ? '. ' : '') + title;
-  
-  // Publication date (if available)
-  if (source.publishDate) {
-    formatted += `. ${source.publishDate}`;
-  } else {
-    formatted += '.';
-  }
-  
-  // URL
-  formatted += ` ${source.url}`;
-  
-  // Access date (for web sources)
-  if (source.accessed) {
-    formatted += `. Accessed ${source.accessed}`;
+  // Access date (for web sources) - typically for journalistic sources
+  if (citation.accessed) {
+    formatted += `. Accessed ${citation.accessed}`;
   }
   
   return formatted + '.';
@@ -162,12 +124,12 @@ export function insertCitationReference(content: string, position: number, citat
   return `${beforeText}[${citationNumber}]${afterText}`;
 }
 
-export function getCitationNumberById(citationId: string, citations: (Citation | Source)[]): number {
+export function getCitationNumberById(citationId: string, citations: Citation[]): number {
   const index = citations.findIndex(citation => citation.id === citationId);
   return index >= 0 ? index + 1 : 1;
 }
 
-export function processCitationReferences(content: string, citations: (Citation | Source)[]): string {
+export function processCitationReferences(content: string, citations: Citation[]): string {
   // Replace [1], [2], etc. with proper superscript links
   return content.replace(/\[(\d+)\]/g, (match, num) => {
     const citationNumber = parseInt(num);
@@ -198,22 +160,9 @@ export function validateStyleRequirements(
   // Style-specific validation
   switch (style) {
     case 'journalistic':
-      if (!metadata.sources || metadata.sources.length === 0) {
-        issues.push('At least one source is required for journalistic posts');
-      } else {
-        // Validate each source has required fields
-        metadata.sources.forEach((source, index) => {
-          if (!source.title.trim()) issues.push(`Source ${index + 1}: Title is required`);
-          if (!source.url.trim()) issues.push(`Source ${index + 1}: URL is required`);
-          if (!source.pointSupported.trim()) issues.push(`Source ${index + 1}: Point supported is required`);
-          if (!source.relevantQuote.trim()) issues.push(`Source ${index + 1}: Relevant quote is required`);
-        });
-      }
-      break;
-    
     case 'academic':
       if (!metadata.citations || metadata.citations.length === 0) {
-        issues.push('At least one citation is required for academic posts');
+        issues.push(`At least one citation is required for ${style} posts`);
       } else {
         // Validate each citation has required fields
         metadata.citations.forEach((citation, index) => {

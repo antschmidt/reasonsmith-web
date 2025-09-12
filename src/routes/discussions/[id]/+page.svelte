@@ -5,31 +5,31 @@
   import { onMount } from 'svelte';
   import { CREATE_POST_DRAFT, UPDATE_DISCUSSION_GOOD_FAITH, UPDATE_POST_GOOD_FAITH, GET_DISCUSSION_DETAILS as IMPORTED_GET_DISCUSSION_DETAILS } from '$lib/graphql/queries';
   import { createDraftAutosaver, type DraftAutosaver } from '$lib';
-  import { getStyleConfig, WRITING_STYLES, validateStyleRequirements, formatChicagoCitation, formatChicagoSource, processCitationReferences, type WritingStyle, type StyleMetadata, type Citation, type Source } from '$lib/types/writingStyle';
+  import { getStyleConfig, WRITING_STYLES, validateStyleRequirements, formatChicagoCitation, processCitationReferences, type WritingStyle, type StyleMetadata, type Citation } from '$lib/types/writingStyle';
   import CitationForm from '$lib/components/CitationForm.svelte';
   import { checkPostDeletable, deletePost, checkDiscussionDeletable, deleteDiscussion, confirmDeletion } from '$lib/utils/deletePost';
 
-  let discussion: any = null;
-  let loading = true;
-  let error: Error | null = null;
-  let authReady = false;
+  let discussion = $state<any>(null);
+  let loading = $state(true);
+  let error = $state<Error | null>(null);
+  let authReady = $state(false);
 
   // New comment form state
-  let newComment = '';
-  let submitting = false;
-  let submitError: string | null = null;
-  let user = nhost.auth.getUser();
+  let newComment = $state('');
+  let submitting = $state(false);
+  let submitError = $state<string | null>(null);
+  let user = $state(nhost.auth.getUser());
   nhost.auth.onAuthStateChanged(() => { 
     user = nhost.auth.getUser(); 
     authReady = true;
   });
 
-  let draftPostId: string | null = null;
-  let draftAutosaver: DraftAutosaver | null = null;
-  let draftLoaded = false; // prevents duplicate fetch
-  let lastSavedAt: number | null = null;
-  let hasPending = false;
-  let focusReplyOnMount = false;
+  let draftPostId = $state<string | null>(null);
+  let draftAutosaver = $state<DraftAutosaver | null>(null);
+  let draftLoaded = $state(false); // prevents duplicate fetch
+  let lastSavedAt = $state<number | null>(null);
+  let hasPending = $state(false);
+  let focusReplyOnMount = $state(false);
 
 
 
@@ -78,11 +78,11 @@
     }
   `;
 
-  let historicalVersion: any = null;
-  let versionLoading = false;
-  let versionError: string | null = null;
+  let historicalVersion = $state<any>(null);
+  let versionLoading = $state(false);
+  let versionError = $state<string | null>(null);
 
-  $: {
+  $effect(() => {
     const versionRef = $page.url.searchParams.get('versionRef');
     if (versionRef) {
       versionLoading = true;
@@ -103,55 +103,61 @@
       versionError = null;
       versionLoading = false;
     }
-  }
+  });
 
-  let editing = false;
-  let editTitle = '';
-  let editDescription = '';
-  let editError: string | null = null;
-  let editAutoSaveTimeout: ReturnType<typeof setTimeout> | null = null;
-  let editLastSavedAt: number | null = null;
+  let editing = $state(false);
+  let editTitle = $state('');
+  let editDescription = $state('');
+  let editError = $state<string | null>(null);
+  let editAutoSaveTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
+  let editLastSavedAt = $state<number | null>(null);
   
   // Revision draft state
-  let hasUnsavedChanges = false;
-  let draftLastSavedAt: number | null = null;
-  let publishLoading = false;
+  let hasUnsavedChanges = $state(false);
+  let draftLastSavedAt = $state<number | null>(null);
+  let publishLoading = $state(false);
 
   // Writing style and citation state for editing
-  let editSelectedStyle: WritingStyle = 'journalistic';
-  let editStyleMetadata: StyleMetadata = {
-    citations: [],
-    sources: []
-  };
-  let editStyleValidation: { isValid: boolean; issues: string[] } = { isValid: true, issues: [] };
-  let showEditCitationForm = false;
-  let editCitationFormType: 'citation' | 'source' = 'citation';
+  let editSelectedStyle = $state<WritingStyle>('journalistic');
+  let editStyleMetadata = $state<StyleMetadata>({
+    citations: []
+  });
+  let editStyleValidation = $state<{ isValid: boolean; issues: string[] }>({ isValid: true, issues: [] });
+  let showEditCitationForm = $state(false);
 
-  // Comment writing style state
-  let commentSelectedStyle: WritingStyle = 'quick_point';
-  let commentStyleMetadata: StyleMetadata = {
-    citations: [],
-    sources: []
-  };
-  let commentStyleValidation: { isValid: boolean; issues: string[] } = { isValid: true, issues: [] };
-  let showCommentCitationForm = false;
-  let commentCitationFormType: 'citation' | 'source' = 'citation';
+  // Comment writing style state (automatically inferred)
+  let commentStyleMetadata = $state<StyleMetadata>({
+    citations: []
+  });
+  let commentStyleValidation = $state<{ isValid: boolean; issues: string[] }>({ isValid: true, issues: [] });
+  let commentWordCount = $state(0);
+  let showCommentCitationReminder = $state(false);
+  let showCommentCitationForm = $state(false);
+  
+  // Automatically infer comment writing style based on content length
+  function getInferredCommentStyle(): WritingStyle {
+    if (commentWordCount <= 100) return 'quick_point';
+    if (commentWordCount <= 500) return 'journalistic';
+    return 'academic';
+  }
+  
+  let commentSelectedStyle = $derived(getInferredCommentStyle());
 
   // Good faith testing state
-  let goodFaithTesting = false;
-  let goodFaithResult: { good_faith_score: number; good_faith_label: string; rationale: string; claims?: any[]; cultishPhrases?: string[]; fallacyOverload?: boolean; fromCache?: boolean } | null = null;
-  let goodFaithError: string | null = null;
+  let goodFaithTesting = $state(false);
+  let goodFaithResult = $state<{ good_faith_score: number; good_faith_label: string; rationale: string; claims?: any[]; cultishPhrases?: string[]; fallacyOverload?: boolean; fromCache?: boolean } | null>(null);
+  let goodFaithError = $state<string | null>(null);
   
   // Claude good faith testing state
-  let claudeGoodFaithTesting = false;
-  let claudeGoodFaithResult: { good_faith_score: number; good_faith_label: string; rationale: string; claims?: any[]; cultishPhrases?: string[]; fromCache?: boolean } | null = null;
-  let claudeGoodFaithError: string | null = null;
+  let claudeGoodFaithTesting = $state(false);
+  let claudeGoodFaithResult = $state<{ good_faith_score: number; good_faith_label: string; rationale: string; claims?: any[]; cultishPhrases?: string[]; fromCache?: boolean } | null>(null);
+  let claudeGoodFaithError = $state<string | null>(null);
 
   // Good faith analysis visibility toggle for published posts
-  let showGoodFaithAnalysis = false;
+  let showGoodFaithAnalysis = $state(false);
   
   // Good faith analysis visibility toggle for discussion description
-  let showDiscussionGoodFaithAnalysis = false;
+  let showDiscussionGoodFaithAnalysis = $state(false);
 
   // Analysis cache
   interface CachedAnalysis {
@@ -349,6 +355,15 @@
 
   function onCommentInput(e: Event) {
     newComment = (e.target as HTMLTextAreaElement).value;
+    
+    // Calculate word count for comments
+    commentWordCount = newComment.trim() ? newComment.trim().split(/\s+/).length : 0;
+    
+    // Show citation reminder for comments with substantial content but no citations
+    const hasNoCitations = !commentStyleMetadata.citations || commentStyleMetadata.citations.length === 0;
+    const hasSubstantialContent = commentWordCount >= 50;
+    showCommentCitationReminder = hasSubstantialContent && hasNoCitations;
+    
     if (!draftPostId) {
       ensureDraftCreated();
     } else {
@@ -375,8 +390,7 @@
       
       // Prepare content with citations included (until database migration is applied)
       let contentWithCitations = newComment;
-      const hasCitations = (commentStyleMetadata.citations && commentStyleMetadata.citations.length > 0) || 
-                          (commentStyleMetadata.sources && commentStyleMetadata.sources.length > 0);
+      const hasCitations = (commentStyleMetadata.citations && commentStyleMetadata.citations.length > 0);
       
       if (hasCitations) {
         contentWithCitations += '\n\n<!-- CITATION_DATA:' + JSON.stringify({
@@ -412,8 +426,7 @@
       draftPostId = null;
       draftLoaded = false;
       commentStyleMetadata = {
-        citations: [],
-        sources: []
+        citations: []
       };
       commentSelectedStyle = 'quick_point';
       await refreshApprovedPosts($page.params.id as string);
@@ -484,9 +497,11 @@
   });
 
   // Reactive: load discussion when auth becomes ready
-  $: if (authReady && !discussion && !error) {
-    loadDiscussion();
-  }
+  $effect(() => {
+    if (authReady && !discussion && !error) {
+      loadDiscussion();
+    }
+  });
 
   function startEdit() {
     editing = true;
@@ -508,7 +523,7 @@
       } else {
         // Reset to defaults if no citation data found
         editSelectedStyle = 'journalistic';
-        editStyleMetadata = { citations: [], sources: [] };
+        editStyleMetadata = { citations: [] };
       }
       
       hasUnsavedChanges = false;
@@ -571,7 +586,7 @@
         editTitle = draft.title || discussion.title;
         editDescription = draft.description || discussion.description;
         editSelectedStyle = draft.selectedStyle || 'journalistic';
-        editStyleMetadata = ensureIdsForCitationData(draft.styleMetadata || { citations: [], sources: [] });
+        editStyleMetadata = ensureIdsForCitationData(draft.styleMetadata || { citations: [] });
         draftLastSavedAt = draft.lastSaved;
         hasUnsavedChanges = true;
         return true;
@@ -616,7 +631,7 @@
       // Embed citation data in the description if we have citations/sources
       let descriptionWithCitations = editDescription.trim();
       
-      if (editStyleMetadata.citations?.length || editStyleMetadata.sources?.length) {
+      if (editStyleMetadata.citations?.length) {
         const citationData = {
           writing_style: editSelectedStyle,
           style_metadata: editStyleMetadata
@@ -715,58 +730,36 @@
   // Note: submitEdit function removed - replaced with publishDraftChanges
 
   // Citation management functions for editing
-  function addEditCitation(item: Citation | Source) {
-    if (editCitationFormType === 'citation') {
-      const citation = item as Citation;
-      editStyleMetadata.citations = [...(editStyleMetadata.citations || []), citation];
-    } else {
-      const source = item as Source;
-      editStyleMetadata.sources = [...(editStyleMetadata.sources || []), source];
-    }
+  function addEditCitation(item: Citation) {
+    editStyleMetadata.citations = [...(editStyleMetadata.citations || []), item];
     showEditCitationForm = false;
     validateEditStyle();
     // Trigger autosave when citation is added
     scheduleEditAutoSave();
   }
 
-  function removeEditCitation(type: 'citation' | 'source', id: string) {
-    if (type === 'citation') {
-      editStyleMetadata.citations = editStyleMetadata.citations?.filter(c => c.id !== id) || [];
-    } else {
-      editStyleMetadata.sources = editStyleMetadata.sources?.filter(s => s.id !== id) || [];
-    }
+  function removeEditCitation(id: string) {
+    editStyleMetadata.citations = editStyleMetadata.citations?.filter(c => c.id !== id) || [];
     validateEditStyle();
     // Trigger autosave when citation is removed
     scheduleEditAutoSave();
   }
 
-  function startEditCitation(type: 'citation' | 'source', id: string) {
-    let itemToEdit: Citation | Source | null = null;
+  function startEditCitation(id: string) {
+    let itemToEdit: Citation | null = null;
     
-    if (type === 'citation') {
-      itemToEdit = editStyleMetadata.citations?.find(c => c.id === id) || null;
-    } else {
-      itemToEdit = editStyleMetadata.sources?.find(s => s.id === id) || null;
-    }
+    itemToEdit = editStyleMetadata.citations?.find(c => c.id === id) || null;
     
     if (itemToEdit) {
       editingEditCitation = itemToEdit;
-      editCitationFormType = type;
       showEditCitationForm = true;
     }
   }
 
-  function updateEditCitation(updatedItem: Citation | Source) {
-    if (editCitationFormType === 'citation') {
-      const index = editStyleMetadata.citations?.findIndex(c => c.id === updatedItem.id) || -1;
-      if (index !== -1) {
-        editStyleMetadata.citations![index] = updatedItem as Citation;
-      }
-    } else {
-      const index = editStyleMetadata.sources?.findIndex(s => s.id === updatedItem.id) || -1;
-      if (index !== -1) {
-        editStyleMetadata.sources![index] = updatedItem as Source;
-      }
+  function updateEditCitation(updatedItem: Citation) {
+    const index = editStyleMetadata.citations?.findIndex(c => c.id === updatedItem.id) || -1;
+    if (index !== -1) {
+      editStyleMetadata.citations![index] = updatedItem;
     }
     
     showEditCitationForm = false;
@@ -789,7 +782,7 @@
     const textarea = document.querySelector('#edit-description') as HTMLTextAreaElement;
     if (!textarea) return;
     
-    const allCitations = [...(editStyleMetadata.sources || []), ...(editStyleMetadata.citations || [])];
+    const allCitations = editStyleMetadata.citations || [];
     const citationNumber = allCitations.findIndex(c => c.id === citationId) + 1;
     
     const start = textarea.selectionStart;
@@ -810,10 +803,10 @@
   }
 
   // Show citation picker for editing
-  let showEditCitationPicker = false;
+  let showEditCitationPicker = $state(false);
   
   function openEditCitationPicker() {
-    const allCitations = [...(editStyleMetadata.sources || []), ...(editStyleMetadata.citations || [])];
+    const allCitations = editStyleMetadata.citations || [];
     if (allCitations.length === 0) {
       alert('Please add citations or sources first before inserting references.');
       return;
@@ -822,15 +815,14 @@
   }
 
   // Citation management functions for comments
-  async function addCommentCitation(item: Citation | Source) {
-    if (commentCitationFormType === 'citation') {
-      const citation = item as Citation;
-      commentStyleMetadata.citations = [...(commentStyleMetadata.citations || []), citation];
-    } else {
-      const source = item as Source;
-      commentStyleMetadata.sources = [...(commentStyleMetadata.sources || []), source];
-    }
+  async function addCommentCitation(item: Citation) {
+    commentStyleMetadata.citations = [...(commentStyleMetadata.citations || []), item];
     showCommentCitationForm = false;
+    
+    // Update citation reminder status
+    const hasSubstantialContent = commentWordCount >= 50;
+    showCommentCitationReminder = hasSubstantialContent && commentStyleMetadata.citations.length === 0;
+    
     validateCommentStyle();
     
     // Ensure draft exists and save citation metadata
@@ -845,12 +837,13 @@
     }
   }
 
-  async function removeCommentCitation(type: 'citation' | 'source', id: string) {
-    if (type === 'citation') {
-      commentStyleMetadata.citations = commentStyleMetadata.citations?.filter(c => c.id !== id) || [];
-    } else {
-      commentStyleMetadata.sources = commentStyleMetadata.sources?.filter(s => s.id !== id) || [];
-    }
+  async function removeCommentCitation(id: string) {
+    commentStyleMetadata.citations = commentStyleMetadata.citations?.filter(c => c.id !== id) || [];
+    
+    // Update citation reminder status
+    const hasSubstantialContent = commentWordCount >= 50;
+    showCommentCitationReminder = hasSubstantialContent && commentStyleMetadata.citations.length === 0;
+    
     validateCommentStyle();
     
     // Update stored citation data
@@ -863,33 +856,20 @@
     }
   }
 
-  function startEditCommentCitation(type: 'citation' | 'source', id: string) {
-    let itemToEdit: Citation | Source | null = null;
-    
-    if (type === 'citation') {
-      itemToEdit = commentStyleMetadata.citations?.find(c => c.id === id) || null;
-    } else {
-      itemToEdit = commentStyleMetadata.sources?.find(s => s.id === id) || null;
-    }
+  function startEditCommentCitation(id: string) {
+    let itemToEdit: Citation | null = null;
+    itemToEdit = commentStyleMetadata.citations?.find(c => c.id === id) || null;
     
     if (itemToEdit) {
       editingCommentCitation = itemToEdit;
-      commentCitationEditFormType = type;
       showCommentCitationEditForm = true;
     }
   }
 
-  function updateCommentCitation(updatedItem: Citation | Source) {
-    if (commentCitationEditFormType === 'citation') {
-      const index = commentStyleMetadata.citations?.findIndex(c => c.id === updatedItem.id) || -1;
-      if (index !== -1) {
-        commentStyleMetadata.citations![index] = updatedItem as Citation;
-      }
-    } else {
-      const index = commentStyleMetadata.sources?.findIndex(s => s.id === updatedItem.id) || -1;
-      if (index !== -1) {
-        commentStyleMetadata.sources![index] = updatedItem as Source;
-      }
+  function updateCommentCitation(updatedItem: Citation) {
+    const index = commentStyleMetadata.citations?.findIndex(c => c.id === updatedItem.id) || -1;
+    if (index !== -1) {
+      commentStyleMetadata.citations![index] = updatedItem;
     }
     
     showCommentCitationEditForm = false;
@@ -920,7 +900,7 @@
     const textarea = document.querySelector('textarea[aria-label="New comment"]') as HTMLTextAreaElement;
     if (!textarea) return;
     
-    const allCitations = [...(commentStyleMetadata.sources || []), ...(commentStyleMetadata.citations || [])];
+    const allCitations = commentStyleMetadata.citations || [];
     const citationNumber = allCitations.findIndex(c => c.id === citationId) + 1;
     
     const start = textarea.selectionStart;
@@ -943,17 +923,16 @@
   }
 
   // Show citation picker for comments
-  let showCommentCitationPicker = false;
+  let showCommentCitationPicker = $state(false);
 
   // Edit citation/source state
-  let editingEditCitation: Citation | Source | null = null;
+  let editingEditCitation = $state<Citation | null>(null);
 
-  let editingCommentCitation: Citation | Source | null = null;
-  let commentCitationEditFormType: 'citation' | 'source' = 'citation';
-  let showCommentCitationEditForm = false;
+  let editingCommentCitation = $state<Citation | null>(null);
+  let showCommentCitationEditForm = $state(false);
   
   function openCommentCitationPicker() {
-    const allCitations = [...(commentStyleMetadata.sources || []), ...(commentStyleMetadata.citations || [])];
+    const allCitations = commentStyleMetadata.citations || [];
     if (allCitations.length === 0) {
       alert('Please add citations or sources first before inserting references.');
       return;
@@ -1032,11 +1011,7 @@
       citations: metadata.citations?.map(citation => ({
         ...citation,
         id: (citation as any).id || generateId()
-      } as Citation)) || [],
-      sources: metadata.sources?.map(source => ({
-        ...source,
-        id: (source as any).id || generateId()
-      } as Source)) || []
+      } as Citation)) || []
     };
   }
 
@@ -1522,16 +1497,9 @@
               <h4>References</h4>
               <div class="citation-buttons">
                 <button type="button" class="btn-secondary" onclick={() => {
-                  editCitationFormType = 'citation';
-                  showEditCitationForm = true;
+                              showEditCitationForm = true;
                 }}>
                   Add Citation
-                </button>
-                <button type="button" class="btn-secondary" onclick={() => {
-                  editCitationFormType = 'source';
-                  showEditCitationForm = true;
-                }}>
-                  Add Source
                 </button>
               </div>
             </div>
@@ -1539,7 +1507,6 @@
               <!-- Add Citation Form -->
               {#if showEditCitationForm && !editingEditCitation}
                 <CitationForm
-                  type={editCitationFormType}
                   onAdd={addEditCitation}
                   onCancel={() => showEditCitationForm = false}
                 />
@@ -1548,26 +1515,25 @@
               <!-- Edit Citation Form -->
               {#if showEditCitationForm && editingEditCitation}
                 <CitationForm
-                  type={editCitationFormType}
                   editingItem={editingEditCitation}
                   onAdd={updateEditCitation}
                   onCancel={cancelEditCitation}
                 />
               {/if}
 
+
               <!-- Display existing citations -->
               {#if editStyleMetadata.citations?.length}
                 <div class="citations-list">
                   <h5>Citations:</h5>
-                  {#each (editStyleMetadata.citations as Citation[]) as citation}
+                  {#each editStyleMetadata.citations as citation}
                     <div class="citation-item">
                       <div class="citation-content">
                         <div class="citation-title">{citation.title}</div>
                         <div class="citation-url"><a href={citation.url} target="_blank">{citation.url}</a></div>
-                        {#if citation.author}<div class="citation-author">Author: {citation.author}</div>{/if}
-                        {#if citation.publishDate}<div class="citation-date">Published: {citation.publishDate}</div>{/if}
-                        {#if citation.publisher}<div class="citation-publisher">Publisher: {citation.publisher}</div>{/if}
-                        {#if citation.pageNumber}<div class="citation-page">Page: {citation.pageNumber}</div>{/if}
+                        {#if citation.author}<div class="source-author">Author: {citation.author}</div>{/if}
+                        {#if citation.publishDate}<div class="source-date">Published: {citation.publishDate}</div>{/if}
+                        {#if citation.accessed}<div class="source-accessed">Accessed: {citation.accessed}</div>{/if}
                         <details class="citation-details">
                           <summary>
                             <span class="summary-arrow">▶</span>
@@ -1580,42 +1546,9 @@
                         </details>
                       </div>
                       <div class="citation-actions">
-                        <button type="button" class="insert-ref-btn" onclick={() => insertEditCitationReference(citation.id)} title="Insert citation reference at cursor">Insert Ref</button>
-                        <button type="button" class="edit-btn" onclick={() => startEditCitation('citation', citation.id)} title="Edit citation">Edit</button>
-                        <button type="button" class="remove-btn" onclick={() => removeEditCitation('citation', citation.id)}>Remove</button>
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-
-              <!-- Display existing sources -->
-              {#if editStyleMetadata.sources?.length}
-                <div class="citations-list">
-                  <h5>Sources:</h5>
-                  {#each (editStyleMetadata.sources as Source[]) as source}
-                    <div class="citation-item">
-                      <div class="citation-content">
-                        <div class="citation-title">{source.title}</div>
-                        <div class="citation-url"><a href={source.url} target="_blank">{source.url}</a></div>
-                        {#if source.author}<div class="source-author">Author: {source.author}</div>{/if}
-                        {#if source.publishDate}<div class="source-date">Published: {source.publishDate}</div>{/if}
-                        {#if source.accessed}<div class="source-accessed">Accessed: {source.accessed}</div>{/if}
-                        <details class="citation-details">
-                          <summary>
-                            <span class="summary-arrow">▶</span>
-                            <span class="summary-text">Context</span>
-                          </summary>
-                          <div class="citation-context">
-                            <div class="citation-point"><strong>Supports:</strong> {source.pointSupported}</div>
-                            <div class="citation-quote"><strong>Quote:</strong> "{source.relevantQuote}"</div>
-                          </div>
-                        </details>
-                      </div>
-                      <div class="citation-actions">
-                        <button type="button" class="insert-ref-btn" onclick={() => insertEditCitationReference(source.id)} title="Insert source reference at cursor">Insert Ref</button>
-                        <button type="button" class="edit-btn" onclick={() => startEditCitation('source', source.id)} title="Edit source">Edit</button>
-                        <button type="button" class="remove-btn" onclick={() => removeEditCitation('source', source.id)}>Remove</button>
+                        <button type="button" class="insert-ref-btn" onclick={() => insertEditCitationReference(citation.id)} title="Insert source reference at cursor">Insert Ref</button>
+                        <button type="button" class="edit-btn" onclick={() => startEditCitation(citation.id)} title="Edit citation">Edit</button>
+                        <button type="button" class="remove-btn" onclick={() => removeEditCitation(citation.id)}>Remove</button>
                       </div>
                     </div>
                   {/each}
@@ -1625,7 +1558,7 @@
 
             <!-- Citation Picker Modal -->
             {#if showEditCitationPicker}
-              {@const allEditCitations = [...(editStyleMetadata.sources || []), ...(editStyleMetadata.citations || [])]}
+              {@const allEditCitations = editStyleMetadata.citations || []}
               <div class="citation-picker-overlay">
                 <div class="citation-picker-modal">
                   <div class="citation-picker-header">
@@ -1639,11 +1572,7 @@
                         <div class="picker-reference-item" onclick={() => { insertEditCitationReference(item.id); showEditCitationPicker = false; }}>
                           <div class="picker-citation-number">[{index + 1}]</div>
                           <div class="picker-citation-preview">
-                            {#if 'accessed' in item}
-                              {formatChicagoSource(item)}
-                            {:else}
-                              {formatChicagoCitation(item)}
-                            {/if}
+                            {@html formatChicagoCitation(item)}
                           </div>
                         </div>
                       {/each}
@@ -1683,7 +1612,7 @@
       {/if}
       {#if discussion.description}
         {@const extraction = extractCitationData(discussion.description)}
-        {@const allCitations = [...(extraction.citationData?.style_metadata?.sources || []), ...(extraction.citationData?.style_metadata?.citations || [])]}
+        {@const allCitations = extraction.citationData?.style_metadata?.citations || []}
         {@const processedContent = processCitationReferences(extraction.cleanContent, allCitations)}
         <div class="discussion-description">{@html processedContent.replace(/\n/g, '<br>')}</div>
         
@@ -1697,11 +1626,7 @@
                   <div class="reference-item" id="citation-{index + 1}">
                     <div class="chicago-citation">
                       <span class="citation-number">{index + 1}.</span>
-                      {#if 'accessed' in item}
-                        {formatChicagoSource(item)}
-                      {:else}
-                        {formatChicagoCitation(item)}
-                      {/if}
+                        {@html formatChicagoCitation(item)}
                     </div>
                     <details class="citation-details">
                       <summary>
@@ -1853,15 +1778,15 @@
           <!-- Extract and display post content with citations -->
           {#snippet postWithCitations()}
             {@const { cleanContent, citationData } = extractCitationData(post.content)}
-            {@const allPostCitations = [...(citationData?.style_metadata?.sources || []), ...(citationData?.style_metadata?.citations || [])]}
+            {@const allPostCitations = citationData?.style_metadata?.citations || []}
             {@const processedPostContent = processCitationReferences(cleanContent, allPostCitations)}
             <div class="post-content">
               {@html processedPostContent}
             </div>
             
             <!-- Display citations if they exist (either from database or extracted from content) -->
-            {@const displayMetadata = ensureIdsForCitationData(post.style_metadata || citationData?.style_metadata || { citations: [], sources: [] })}
-            {@const allPostReferences = [...(displayMetadata.sources || []), ...(displayMetadata.citations || [])]}
+            {@const displayMetadata = ensureIdsForCitationData(post.style_metadata || citationData?.style_metadata || { citations: [] })}
+            {@const allPostReferences = displayMetadata.citations || []}
             {#if displayMetadata && allPostReferences.length > 0}
             <div class="post-metadata">
               <div class="references-section">
@@ -1871,11 +1796,7 @@
                     <div class="reference-item" id="citation-{index + 1}">
                       <div class="chicago-citation">
                         <span class="citation-number">{index + 1}.</span>
-                        {#if 'accessed' in item}
-                          {formatChicagoSource(item)}
-                        {:else}
-                          {formatChicagoCitation(item)}
-                        {/if}
+                          {@html formatChicagoCitation(item)}
                       </div>
                       <details class="citation-details">
                         <summary>
@@ -2015,21 +1936,28 @@
         <p class="signin-hint">Please sign in to participate.</p>
       {:else}
         <form onsubmit={(e) => { e.preventDefault(); publishDraft(); }} class="comment-form">
-          <!-- Writing Style Selection for Comments -->
-          <div class="writing-style-selector">
-            <span class="style-label">Comment Style</span>
-            <div class="style-options" role="radiogroup" aria-labelledby="comment-style-label">
-              {#each Object.entries(WRITING_STYLES) as [key, config]}
-                <label class="style-option" class:selected={commentSelectedStyle === key}>
-                  <input type="radio" bind:group={commentSelectedStyle} value={key} onchange={validateCommentStyle} name="comment-writing-style" />
-                  <div class="style-content">
-                    <strong>{config.label}</strong>
-                    <span>{config.description}</span>
-                    <small>{config.minWords}-{config.maxWords} words</small>
-                  </div>
-                </label>
-              {/each}
+          <!-- Comment Word Count and Style Info -->
+          <div class="comment-writing-info">
+            <div class="word-count">
+              <span class="word-count-label">Words: {commentWordCount}</span>
+              <span class="style-indicator">({getStyleConfig(commentSelectedStyle).label})</span>
             </div>
+            
+            {#if showCommentCitationReminder}
+              <div class="citation-reminder">
+                <div class="reminder-icon">📚</div>
+                <div class="reminder-text">
+                  <strong>Add citations</strong> to support any claims and improve credibility.
+                </div>
+                <button 
+                  type="button" 
+                  class="btn-add-citation-inline"
+                  onclick={() => showCommentCitationForm = true}
+                >
+                  Add Citation
+                </button>
+              </div>
+            {/if}
           </div>
 
           <textarea 
@@ -2037,7 +1965,7 @@
             oninput={(e) => { onCommentInput(e); validateCommentStyle(); }} 
             onfocus={loadExistingDraft} 
             rows="5" 
-            placeholder={getStyleConfig(commentSelectedStyle).placeholder}
+            placeholder="Add your comment... (Style will be automatically determined by length)"
             aria-label="New comment"
           ></textarea>
           
@@ -2052,16 +1980,9 @@
                 <h4>References</h4>
                 <div class="citation-buttons">
                   <button type="button" class="btn-secondary" onclick={() => {
-                    commentCitationFormType = 'citation';
                     showCommentCitationForm = true;
                   }}>
                     Add Citation
-                  </button>
-                  <button type="button" class="btn-secondary" onclick={() => {
-                    commentCitationFormType = 'source';
-                    showCommentCitationForm = true;
-                  }}>
-                    Add Source
                   </button>
                 </div>
               </div>
@@ -2069,7 +1990,6 @@
               <!-- Add Comment Citation Form -->
               {#if showCommentCitationForm && !editingCommentCitation}
                 <CitationForm
-                  type={commentCitationFormType}
                   onAdd={addCommentCitation}
                   onCancel={() => showCommentCitationForm = false}
                 />
@@ -2078,7 +1998,6 @@
               <!-- Edit Comment Citation Form -->
               {#if showCommentCitationEditForm && editingCommentCitation}
                 <CitationForm
-                  type={commentCitationEditFormType}
                   editingItem={editingCommentCitation}
                   onAdd={updateCommentCitation}
                   onCancel={cancelCommentCitationEdit}
@@ -2111,51 +2030,19 @@
                       </div>
                       <div class="citation-actions">
                         <button type="button" class="insert-ref-btn" onclick={() => insertCommentCitationReference(citation.id)} title="Insert citation reference at cursor">Insert Ref</button>
-                        <button type="button" class="edit-btn" onclick={() => startEditCommentCitation('citation', citation.id)} title="Edit citation">Edit</button>
-                        <button type="button" class="remove-btn" onclick={() => removeCommentCitation('citation', citation.id)}>Remove</button>
+                        <button type="button" class="edit-btn" onclick={() => startEditCommentCitation(citation.id)} title="Edit citation">Edit</button>
+                        <button type="button" class="remove-btn" onclick={() => removeCommentCitation(citation.id)}>Remove</button>
                       </div>
                     </div>
                   {/each}
                 </div>
               {/if}
 
-              <!-- Display existing sources -->
-              {#if commentStyleMetadata.sources?.length}
-                <div class="citations-list">
-                  <h5>Sources:</h5>
-                  {#each (commentStyleMetadata.sources as Source[]) as source}
-                    <div class="citation-item">
-                      <div class="citation-content">
-                        <div class="citation-title">{source.title}</div>
-                        <div class="citation-url"><a href={source.url} target="_blank">{source.url}</a></div>
-                        {#if source.author}<div class="source-author">Author: {source.author}</div>{/if}
-                        {#if source.publishDate}<div class="source-date">Published: {source.publishDate}</div>{/if}
-                        {#if source.accessed}<div class="source-accessed">Accessed: {source.accessed}</div>{/if}
-                        <details class="citation-details">
-                          <summary>
-                            <span class="summary-arrow">▶</span>
-                            <span class="summary-text">Context</span>
-                          </summary>
-                          <div class="citation-context">
-                            <div class="citation-point"><strong>Supports:</strong> {source.pointSupported}</div>
-                            <div class="citation-quote"><strong>Quote:</strong> "{source.relevantQuote}"</div>
-                          </div>
-                        </details>
-                      </div>
-                      <div class="citation-actions">
-                        <button type="button" class="insert-ref-btn" onclick={() => insertCommentCitationReference(source.id)} title="Insert source reference at cursor">Insert Ref</button>
-                        <button type="button" class="edit-btn" onclick={() => startEditCommentCitation('source', source.id)} title="Edit source">Edit</button>
-                        <button type="button" class="remove-btn" onclick={() => removeCommentCitation('source', source.id)}>Remove</button>
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
             </div>
 
             <!-- Citation Picker Modal for Comments -->
             {#if showCommentCitationPicker}
-              {@const allCommentCitations = [...(commentStyleMetadata.sources || []), ...(commentStyleMetadata.citations || [])]}
+              {@const allCommentCitations = commentStyleMetadata.citations || []}
               <div class="citation-picker-overlay">
                 <div class="citation-picker-modal">
                   <div class="citation-picker-header">
@@ -2169,11 +2056,7 @@
                         <div class="picker-reference-item" onclick={() => { insertCommentCitationReference(item.id); showCommentCitationPicker = false; }}>
                           <div class="picker-citation-number">[{index + 1}]</div>
                           <div class="picker-citation-preview">
-                            {#if 'accessed' in item}
-                              {formatChicagoSource(item)}
-                            {:else}
-                              {formatChicagoCitation(item)}
-                            {/if}
+                            {@html formatChicagoCitation(item)}
                           </div>
                         </div>
                       {/each}
@@ -2253,32 +2136,6 @@
     line-height: 1.6;
     white-space: pre-wrap;
     word-wrap: break-word;
-  }
-
-  .discussion-description p {
-    margin: 0 0 1rem 0;
-  }
-
-  .discussion-description p:last-child {
-    margin-bottom: 0;
-  }
-
-  .discussion-description strong {
-    font-weight: 600;
-    color: var(--color-text-primary);
-  }
-
-  .discussion-description em {
-    font-style: italic;
-  }
-
-  .discussion-description ul, .discussion-description ol {
-    margin: 1rem 0;
-    padding-left: 2rem;
-  }
-
-  .discussion-description li {
-    margin-bottom: 0.5rem;
   }
 
   .discussion-metadata {
@@ -2710,13 +2567,6 @@
     margin-top: 0.5rem;
   }
 
-  .historical-description p {
-    margin: 0 0 1rem 0;
-  }
-
-  .historical-description p:last-child {
-    margin-bottom: 0;
-  }
   .posts-list {
     display: flex;
     flex-direction: column;
@@ -3356,28 +3206,35 @@
     background-color: #f0f9ff;
     color: #0369a1;
   }
-
-  [data-theme="dark"] .score-label.hostile,
-  [data-theme="dark"] .score-label-badge.hostile {
-    background-color: #450a0a;
-    color: #fca5a5;
+  
+  /* Nuclear approach - override ALL link colors in dark mode */
+  :global([data-theme="dark"] a),
+  :global([data-theme="dark"] a:link) {
+    color: #a9c8ff;
   }
 
-  [data-theme="dark"] .score-label.questionable,
-  [data-theme="dark"] .score-label-badge.questionable {
-    background-color: #451a03;
-    color: #fbbf24;
+  /* Comment Writing Info Styles */
+  .comment-writing-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 1rem;
   }
-
-  [data-theme="dark"] .score-label.neutral,
-  [data-theme="dark"] .score-label-badge.neutral {
-    background-color: #374151;
-    color: #d1d5db;
+  
+  .comment-writing-info .word-count {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
   }
-
-  [data-theme="dark"] .score-label.constructive,
-  [data-theme="dark"] .score-label-badge.constructive {
-    background-color: #0c4a6e;
-    color: #7dd3fc;
+  
+  .comment-writing-info .word-count-label {
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+  
+  .comment-writing-info .style-indicator {
+    color: var(--color-text-secondary);
+    font-style: italic;
   }
 </style>

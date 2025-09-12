@@ -548,7 +548,7 @@
   }
 
   /* Buttons */
-  .btn-primary, .btn-secondary {
+  .btn-primary {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -567,16 +567,8 @@
   .btn-primary:hover {
     opacity: 0.9;
   }
-  .btn-secondary {
-    background-color: var(--color-surface);
-    color: var(--color-text-primary);
-    border: 1px solid var(--color-border);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  }
-  .btn-secondary:hover {
-    background-color: var(--color-surface-alt);
-  }
-  .btn-primary:focus, .btn-secondary:focus {
+
+  .btn-primary:focus {
     outline: none;
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
   }

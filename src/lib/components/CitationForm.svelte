@@ -1,36 +1,41 @@
 <script lang="ts">
-  import type { Citation, Source } from '$lib/types/writingStyle';
+  import type { Citation } from '$lib/types/writingStyle';
   
-  export let type: 'citation' | 'source' = 'citation';
-  export let onAdd: (item: Citation | Source) => void;
-  export let onCancel: () => void;
-  export let editingItem: Citation | Source | null = null; // For editing existing items
+  interface Props {
+    onAdd: (item: Citation) => void;
+    onCancel: () => void;
+    editingItem?: Citation | null;
+  }
   
-  let title = '';
-  let url = '';
-  let publishDate = '';
-  let pointSupported = '';
-  let relevantQuote = '';
-  let pageNumber = ''; // For citations only
-  let author = '';
-  let publisher = ''; // For citations only
+  let { onAdd, onCancel, editingItem = null }: Props = $props();
   
-  let errors: Record<string, string> = {};
+  let title = $state('');
+  let url = $state('');
+  let publishDate = $state('');
+  let pointSupported = $state('');
+  let relevantQuote = $state('');
+  let pageNumber = $state(''); // For academic citations
+  let author = $state('');
+  let publisher = $state(''); // For academic citations  
+  let accessed = $state(''); // For journalistic sources
+  
+  let errors = $state<Record<string, string>>({});
 
   // Initialize form fields if editing
-  $: if (editingItem) {
-    title = editingItem.title || '';
-    url = editingItem.url || '';
-    publishDate = editingItem.publishDate || '';
-    pointSupported = editingItem.pointSupported || '';
-    relevantQuote = editingItem.relevantQuote || '';
-    author = editingItem.author || '';
-    
-    if (type === 'citation' && 'pageNumber' in editingItem) {
+  $effect(() => {
+    if (editingItem) {
+      title = editingItem.title || '';
+      url = editingItem.url || '';
+      publishDate = editingItem.publishDate || '';
+      pointSupported = editingItem.pointSupported || '';
+      relevantQuote = editingItem.relevantQuote || '';
+      author = editingItem.author || '';
+      
       pageNumber = editingItem.pageNumber || '';
       publisher = editingItem.publisher || '';
+      accessed = editingItem.accessed || '';
     }
-  }
+  });
   
   function validateForm(): boolean {
     errors = {};
@@ -65,20 +70,13 @@
       author: author.trim() || undefined,
     };
     
-    if (type === 'citation') {
-      const citation: Citation = {
-        ...baseData,
-        pageNumber: pageNumber.trim() || undefined,
-        publisher: publisher.trim() || undefined,
-      };
-      onAdd(citation);
-    } else {
-      const source: Source = {
-        ...baseData,
-        accessed: editingItem && 'accessed' in editingItem ? editingItem.accessed : new Date().toLocaleDateString(),
-      };
-      onAdd(source);
-    }
+    const citation: Citation = {
+      ...baseData,
+      pageNumber: pageNumber.trim() || undefined,
+      publisher: publisher.trim() || undefined,
+      accessed: accessed.trim() || undefined, // Include accessed date for journalistic sources
+    };
+    onAdd(citation);
     
     // Reset form only if not editing (editing form will be closed by parent)
     if (!editingItem) {
@@ -95,12 +93,13 @@
     pageNumber = '';
     author = '';
     publisher = '';
+    accessed = '';
     errors = {};
   }
 </script>
 
 <div class="citation-form">
-  <h4>{editingItem ? 'Edit' : 'Add'} {type === 'citation' ? 'Citation' : 'Source'}</h4>
+  <h4>{editingItem ? 'Edit' : 'Add'} Citation</h4>
   
   <div class="form-grid">
     <div class="form-field">
@@ -147,27 +146,35 @@
       <div class="field-help">Optional - leave blank if unknown</div>
     </div>
     
-    {#if type === 'citation'}
-      <div class="form-field">
-        <label for="publisher">Publisher</label>
-        <input 
-          id="publisher"
-          type="text" 
-          bind:value={publisher}
-          placeholder="Publisher name (optional)"
-        />
-      </div>
-      
-      <div class="form-field">
-        <label for="pageNumber">Page Number</label>
-        <input 
-          id="pageNumber"
-          type="text" 
-          bind:value={pageNumber}
-          placeholder="e.g., 42, 15-18 (optional)"
-        />
-      </div>
-    {/if}
+    <div class="form-field">
+      <label for="publisher">Publisher</label>
+      <input 
+        id="publisher"
+        type="text" 
+        bind:value={publisher}
+        placeholder="Publisher name (optional, for academic sources)"
+      />
+    </div>
+    
+    <div class="form-field">
+      <label for="pageNumber">Page Number</label>
+      <input 
+        id="pageNumber"
+        type="text" 
+        bind:value={pageNumber}
+        placeholder="e.g., 42, 15-18 (optional, for academic sources)"
+      />
+    </div>
+    
+    <div class="form-field">
+      <label for="accessed">Access Date</label>
+      <input 
+        id="accessed"
+        type="text" 
+        bind:value={accessed}
+        placeholder="e.g., March 15, 2024 (optional, for web sources)"
+      />
+    </div>
   </div>
   
   <div class="form-field">
@@ -196,7 +203,7 @@
   
   <div class="form-actions">
     <button type="button" class="btn-primary" onclick={handleSubmit}>
-      {editingItem ? 'Update' : 'Add'} {type === 'citation' ? 'Citation' : 'Source'}
+      {editingItem ? 'Update' : 'Add'} Citation
     </button>
     <button type="button" class="btn-secondary" onclick={onCancel}>
       Cancel

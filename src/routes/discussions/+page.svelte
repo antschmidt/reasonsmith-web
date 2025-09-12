@@ -3,25 +3,25 @@
   import { nhost } from '$lib/nhostClient';
   import { goto } from '$app/navigation';
 
-  let loading = true;
-  let error: string | null = null;
-  let categories: Array<{ key: string; label: string }> = [
+  let loading = $state(true);
+  let error = $state<string | null>(null);
+  let categories = $state([
     { key: 'latest', label: 'Latest' },
     { key: 'popular', label: 'Popular' },
     { key: 'ethics', label: 'Ethics' },
     { key: 'policy', label: 'Policy' },
     { key: 'tech', label: 'Technology' }
-  ];
-  let activeCategory = 'latest';
-  let q = '';
-  let results: Array<{ id: string; title: string; description?: string | null; created_at: string; contributor?: { display_name?: string|null } }>|null = null;
-  let discussions: Array<{ id: string; title: string; description?: string | null; created_at: string; contributor?: { display_name?: string|null } }>|null = null;
-  let filtered: Array<{ id: string; title: string; description?: string | null; created_at: string; contributor?: { display_name?: string|null } }>|null = null;
+  ]);
+  let activeCategory = $state('latest');
+  let q = $state('');
+  let results = $state<Array<{ id: string; title: string; description?: string | null; created_at: string; contributor?: { display_name?: string|null } }> | null>(null);
+  let discussions = $state<Array<{ id: string; title: string; description?: string | null; created_at: string; contributor?: { display_name?: string|null } }> | null>(null);
+  let filtered = $state<Array<{ id: string; title: string; description?: string | null; created_at: string; contributor?: { display_name?: string|null } }> | null>(null);
   const PAGE_SIZE = 20;
-  let page = 0;
-  let waitingForAuth = false;
+  let page = $state(0);
+  let waitingForAuth = $state(false);
   let unsubAuth: (() => void) | null = null;
-  let hasMoreDiscussions = true;
+  let hasMoreDiscussions = $state(true);
 
   const SEARCH_DISCUSSIONS = `
     query SearchDiscussions($q: String!, $limit: Int = 20) {
@@ -115,6 +115,8 @@
           });
           unsubAuth = () => { try { (off as any)?.(); } catch {} };
         }
+        // Important: still set loading = false even when waiting for auth
+        loading = false;
         return;
       }
       error = msg || 'Failed to load discussions';
@@ -154,7 +156,7 @@
     );
   }
 
-  $: {
+  $effect(() => {
     const term = q.trim();
     if (!term) {
       filtered = discussions ?? [];
@@ -163,7 +165,7 @@
     } else {
       filtered = discussions ? clientFilter(discussions, term) : [];
     }
-  }
+  });
 
   function escapeHtml(s: string) {
     return s
@@ -209,7 +211,9 @@
   {/if}
 
   <section class="results">
-    {#if filtered && filtered.length > 0}
+    {#if loading && (!discussions || discussions.length === 0)}
+      <p class="hint">Loading discussions...</p>
+    {:else if filtered && filtered.length > 0}
       {#each filtered as d}
         <div class="discussion-card" role="button" tabindex="0"
           on:click={() => goto(`/discussions/${d.id}`)}

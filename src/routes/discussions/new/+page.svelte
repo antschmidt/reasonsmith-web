@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { nhost } from '$lib/nhostClient';
   import { goto } from '$app/navigation';
-  import { WRITING_STYLES, getStyleConfig, validateStyleRequirements, type WritingStyle, type StyleMetadata, type Citation, type Source } from '$lib/types/writingStyle';
+  import { WRITING_STYLES, getStyleConfig, validateStyleRequirements, type WritingStyle, type StyleMetadata, type Citation } from '$lib/types/writingStyle';
   import CitationForm from '$lib/components/CitationForm.svelte';
 
   // --- State (Runes) ---
@@ -17,15 +17,23 @@
   let lastSavedAt = $state<number | null>(null);
   let autoSaveTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
 
-  // Writing style state
-  let selectedStyle = $state<WritingStyle>('journalistic');
+  // Writing style state (automatically inferred)
   let styleMetadata = $state<StyleMetadata>({});
   let styleValidation = $state<{ isValid: boolean; issues: string[] }>({ isValid: true, issues: [] });
-  let showStyleHelper = $state(false);
+  let wordCount = $state(0);
+  let showCitationReminder = $state(false);
+  
+  // Automatically infer writing style based on content length
+  function getInferredStyle(): WritingStyle {
+    if (wordCount <= 100) return 'quick_point';
+    if (wordCount <= 500) return 'journalistic';
+    return 'academic';
+  }
+  
+  let selectedStyle = $derived(getInferredStyle());
   
   // Citation management
   let showCitationForm = $state(false);
-  let citationFormType = $state<'citation' | 'source'>('citation');
 
   // GraphQL mutation documents (without writing style fields until migration is applied)
   const CREATE_DISCUSSION = `mutation CreateDiscussion($title: String!, $description: String, $authorId: uuid!) { insert_discussion_one(object:{ title:$title, description:$description, created_by:$authorId }) { id } }`;
@@ -98,18 +106,21 @@
   function onContentInput(e: Event) {
     content = (e.target as HTMLTextAreaElement).value;
     
-    // Update style validation
+    // Calculate word count
+    wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
+    
+    // Show citation reminder based on content and style
+    const hasNoCitations = !styleMetadata.citations || styleMetadata.citations.length === 0;
+    const hasSubstantialContent = wordCount >= 50; // Any meaningful content can benefit from citations
+    showCitationReminder = hasSubstantialContent && hasNoCitations;
+    
+    // Update style validation using the derived selectedStyle
     styleValidation = validateStyleRequirements(selectedStyle, content, styleMetadata);
     
     // Schedule auto-save
     scheduleAutoSave();
   }
 
-  function onStyleChange(style: WritingStyle) {
-    selectedStyle = style;
-    styleMetadata = {}; // Reset metadata when style changes
-    styleValidation = validateStyleRequirements(selectedStyle, content, styleMetadata);
-  }
 
   function addCitation(citation: Citation) {
     if (!styleMetadata.citations) {
@@ -117,34 +128,27 @@
     }
     styleMetadata.citations = [...styleMetadata.citations, citation];
     showCitationForm = false;
-    styleValidation = validateStyleRequirements(selectedStyle, content, styleMetadata);
-  }
-
-  function addSource(source: Source) {
-    if (!styleMetadata.sources) {
-      styleMetadata.sources = [];
-    }
-    styleMetadata.sources = [...styleMetadata.sources, source];
-    showCitationForm = false;
+    
+    // Update citation reminder status
+    const hasSubstantialContent = wordCount >= 50;
+    showCitationReminder = hasSubstantialContent && styleMetadata.citations.length === 0;
+    
     styleValidation = validateStyleRequirements(selectedStyle, content, styleMetadata);
   }
 
   function removeCitation(id: string) {
     if (styleMetadata.citations) {
       styleMetadata.citations = styleMetadata.citations.filter(c => c.id !== id);
+      
+      // Update citation reminder status
+      const hasSubstantialContent = wordCount >= 50;
+      showCitationReminder = hasSubstantialContent && styleMetadata.citations.length === 0;
+      
       styleValidation = validateStyleRequirements(selectedStyle, content, styleMetadata);
     }
   }
 
-  function removeSource(id: string) {
-    if (styleMetadata.sources) {
-      styleMetadata.sources = styleMetadata.sources.filter(s => s.id !== id);
-      styleValidation = validateStyleRequirements(selectedStyle, content, styleMetadata);
-    }
-  }
-
-  function showAddCitationForm(type: 'citation' | 'source') {
-    citationFormType = type;
+  function showAddCitationForm() {
     showCitationForm = true;
   }
 
@@ -192,65 +196,49 @@
       <input id="title" type="text" bind:value={title} placeholder="Enter a clear and concise title" oninput={onTitleInput} required />
     </div>
     
-    <!-- Writing Style Selector -->
+    <!-- Word Count and Style Info -->
     <div class="form-group">
-      <div class="style-selector">
-        <div class="style-selector-header">
-          <div class="style-label">Writing Style:</div>
-          <button type="button" class="style-help-btn" onclick={() => showStyleHelper = !showStyleHelper}>
-            {showStyleHelper ? 'Hide' : 'Show'} Help
-          </button>
-        </div>
-        <div class="style-options">
-          {#each Object.entries(WRITING_STYLES) as [value, config]}
-            <label class="style-option" class:selected={selectedStyle === value}>
-              <input 
-                type="radio" 
-                bind:group={selectedStyle} 
-                value={value}
-                onchange={() => onStyleChange(value as WritingStyle)}
-              />
-              <div class="style-option-content">
-                <div class="style-title">{config.label}</div>
-                <div class="style-description">{config.description}</div>
-              </div>
-            </label>
-          {/each}
+      <div class="writing-info">
+        <div class="word-count">
+          <span class="word-count-label">Words: {wordCount}</span>
+          <span class="style-indicator">({getStyleConfig(selectedStyle).label})</span>
         </div>
         
-        {#if showStyleHelper}
-          <div class="style-helper">
-            <h4>{getStyleConfig(selectedStyle).label} Guidelines:</h4>
-            <ul>
-              {#each getStyleConfig(selectedStyle).requirements as req}
-                <li>{req}</li>
-              {/each}
-            </ul>
-            <div class="word-count-guide">
-              Word count: {getStyleConfig(selectedStyle).minWords}-{getStyleConfig(selectedStyle).maxWords} words
+        {#if showCitationReminder}
+          <div class="citation-reminder">
+            <div class="reminder-icon">📚</div>
+            <div class="reminder-text">
+              <strong>Add citations</strong> to support any claims and improve credibility.
             </div>
+            <button 
+              type="button" 
+              class="btn-add-citation-inline"
+              onclick={() => showAddCitationForm()}
+            >
+              Add Citation
+            </button>
           </div>
         {/if}
       </div>
     </div>
 
-    <!-- Citations/Sources Management -->
-    {#if selectedStyle === 'academic' || selectedStyle === 'journalistic'}
+    <!-- Citations Management -->
+    {#if wordCount > 0}
       <div class="form-group">
         <div class="citations-section">
           <div class="citations-header">
-            <h3>{selectedStyle === 'academic' ? 'Citations' : 'Sources'}</h3>
+            <h3>Citations</h3>
             <button 
               type="button" 
               class="btn-add-citation"
-              onclick={() => showAddCitationForm(selectedStyle === 'academic' ? 'citation' : 'source')}
+              onclick={() => showAddCitationForm()}
             >
-              + Add {selectedStyle === 'academic' ? 'Citation' : 'Source'}
+              + Add Citation
             </button>
           </div>
           
-          <!-- Display existing citations/sources -->
-          {#if selectedStyle === 'academic' && styleMetadata.citations && styleMetadata.citations.length > 0}
+          <!-- Display existing citations -->
+          {#if styleMetadata.citations && styleMetadata.citations.length > 0}
             <div class="citations-list">
               {#each styleMetadata.citations as citation}
                 <div class="citation-item">
@@ -261,6 +249,7 @@
                       {#if citation.publishDate}({citation.publishDate}){/if}
                       {#if citation.publisher}. {citation.publisher}{/if}
                       {#if citation.pageNumber}, p. {citation.pageNumber}{/if}
+                      {#if citation.accessed}. Accessed: {citation.accessed}{/if}
                     </div>
                     <div class="citation-point">
                       <strong>Supporting:</strong> {citation.pointSupported}
@@ -282,42 +271,10 @@
             </div>
           {/if}
           
-          {#if selectedStyle === 'journalistic' && styleMetadata.sources && styleMetadata.sources.length > 0}
-            <div class="citations-list">
-              {#each styleMetadata.sources as source}
-                <div class="citation-item">
-                  <div class="citation-content">
-                    <div class="citation-title">{source.title}</div>
-                    <div class="citation-details">
-                      {#if source.author}<strong>{source.author}</strong>{/if}
-                      {#if source.publishDate}({source.publishDate}){/if}
-                      {#if source.accessed}. Accessed: {source.accessed}{/if}
-                    </div>
-                    <div class="citation-point">
-                      <strong>Supporting:</strong> {source.pointSupported}
-                    </div>
-                    <div class="citation-quote">
-                      <strong>Quote:</strong> "{source.relevantQuote}"
-                    </div>
-                    <div class="citation-url">
-                      <a href={source.url} target="_blank" rel="noopener">{source.url}</a>
-                    </div>
-                  </div>
-                  <button 
-                    type="button" 
-                    class="remove-citation"
-                    onclick={() => removeSource(source.id)}
-                  >×</button>
-                </div>
-              {/each}
-            </div>
-          {/if}
-          
           <!-- Citation Form -->
           {#if showCitationForm}
             <CitationForm 
-              type={citationFormType}
-              onAdd={citationFormType === 'citation' ? addCitation : addSource}
+              onAdd={addCitation}
               onCancel={() => showCitationForm = false}
             />
           {/if}
@@ -331,7 +288,7 @@
         id="description" 
         bind:value={content} 
         rows="8" 
-        placeholder={getStyleConfig(selectedStyle).placeholder}
+        placeholder="Share your thoughts... (Style will be automatically determined by length)"
         oninput={onContentInput}
       ></textarea>
       
@@ -432,114 +389,78 @@
   }
   .btn-secondary:hover { background-color: var(--color-surface-alt); }
 
-  /* Writing Style Selector */
-  .style-selector {
-    padding: 1rem;
-    background: var(--color-surface-alt);
-    border: 1px solid var(--color-border);
-    border-radius: var(--border-radius-md);
-  }
-
-  .style-selector-header {
+  /* Writing Info and Citation Reminder */
+  .writing-info {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.75rem;
+    flex-direction: column;
+    gap: 1rem;
   }
 
-  .style-label {
-    font-weight: 600;
+  .word-count {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     font-size: 0.875rem;
+  }
+
+  .word-count-label {
+    font-weight: 600;
     color: var(--color-text-primary);
   }
 
-  .style-help-btn {
-    background: none;
-    border: none;
-    color: var(--color-primary);
-    font-size: 0.75rem;
-    cursor: pointer;
-    text-decoration: underline;
-  }
-
-  .style-options {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 0.75rem;
-  }
-
-  .style-option {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    border: 2px solid var(--color-border);
-    border-radius: var(--border-radius-sm);
-    cursor: pointer;
-    transition: border-color 0.2s, background-color 0.2s;
-  }
-
-  .style-option:hover {
-    border-color: var(--color-primary);
-    background-color: color-mix(in srgb, var(--color-primary) 5%, transparent);
-  }
-
-  .style-option.selected {
-    border-color: var(--color-primary);
-    background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  }
-
-  .style-option input[type="radio"] {
-    margin: 0;
-    margin-top: 0.125rem;
-    width: 2rem;
-  }
-
-  .style-option-content {
-    flex: 1;
-  }
-
-  .style-title {
-    font-weight: 600;
-    font-size: 0.875rem;
-    margin-bottom: 0.25rem;
-  }
-
-  .style-description {
-    font-size: 0.75rem;
-    color: var(--color-text-secondary);
-    line-height: 1.3;
-  }
-
-  .style-helper {
-    margin-top: 1rem;
-    padding: 0.75rem;
-    background: var(--color-surface);
-    border-radius: var(--border-radius-sm);
-    border: 1px solid var(--color-border);
-  }
-
-  .style-helper h4 {
-    margin: 0 0 0.5rem 0;
-    font-size: 0.875rem;
-    font-weight: 600;
-  }
-
-  .style-helper ul {
-    margin: 0 0 0.5rem 0;
-    padding-left: 1.25rem;
-    font-size: 0.8rem;
-  }
-
-  .style-helper li {
-    margin-bottom: 0.25rem;
-    color: var(--color-text-secondary);
-  }
-
-  .word-count-guide {
-    font-size: 0.75rem;
+  .style-indicator {
     color: var(--color-text-secondary);
     font-style: italic;
+  }
+
+  .citation-reminder {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 1px solid #f59e0b;
+    border-radius: var(--border-radius-md);
+    animation: slideIn 0.3s ease-out;
+  }
+
+  .reminder-icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+  }
+
+  .reminder-text {
+    flex: 1;
+    font-size: 0.875rem;
+    color: #92400e;
+  }
+
+  .btn-add-citation-inline {
+    background: #f59e0b;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: var(--border-radius-sm);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    flex-shrink: 0;
+  }
+
+  .btn-add-citation-inline:hover {
+    background: #d97706;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .style-validation-errors {
