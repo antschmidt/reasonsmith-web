@@ -117,62 +117,6 @@
 
   onMount(loadData);
 
-  // Seed sample discussions and drafts for this user
-  const SEED_DISCUSSIONS = `
-    mutation SeedDiscussions($userId: uuid!) {
-      insert_discussion(objects: [
-        { title: "The role of AI in moderating online discourse", description: "Context, intent, and the limits of automated moderation.", created_by: $userId },
-        { title: "Decentralized social media: pros and cons", description: "Balancing freedom with responsibility and safety.", created_by: $userId }
-      ]) {
-        returning { id }
-      }
-    }
-  `;
-
-  const SEED_DRAFTS = `
-    mutation SeedDrafts($objects: [post_insert_input!]!) {
-      insert_post(objects: $objects) { affected_rows }
-    }
-  `;
-
-  async function seedSampleData() {
-    const res1 = await nhost.graphql.request(SEED_DISCUSSIONS, { userId: user.id as unknown as string });
-    if ((res1 as any).error) {
-      error = (res1 as any).error.message || 'Failed to seed discussions';
-      return;
-    }
-    const ids: string[] = (res1 as any).data?.insert_discussion?.returning?.map((r: { id: string }) => r.id) ?? [];
-
-    if (!ids.length) {
-      error = 'No discussions were created';
-      return;
-    }
-
-    const draftObjects = [
-      {
-        author_id: user.id as unknown as string,
-        discussion_id: ids[0],
-        draft_content: 'I argue that while useful, it fails to account for rights and justice.',
-        status: 'draft'
-      },
-      ids[1]
-        ? {
-            author_id: user.id as unknown as string,
-            discussion_id: ids[1],
-            draft_content: 'Algorithms can assist but must be guided by transparent community norms.',
-            status: 'draft'
-          }
-        : null
-    ].filter(Boolean) as any[];
-
-    const res2 = await nhost.graphql.request(SEED_DRAFTS, { objects: draftObjects });
-    if ((res2 as any).error) {
-      error = (res2 as any).error.message || 'Failed to seed drafts';
-      return;
-    }
-
-    await loadData();
-  }
 
   function goToDraft(d: { id: string; discussion_id?: string | null; type?: string; original_discussion_id?: string }) {
     if (d.type === 'discussion' && d.original_discussion_id) {
@@ -330,7 +274,7 @@
         {#if (myDiscussions.length + repliedDiscussions.length) === 0}
           <div class="card" style="margin-bottom: 1rem;">
             <p>No discussions yet.</p>
-            <button class="btn-primary" on:click={seedSampleData} style="margin-top: 0.75rem;">Seed sample data</button>
+
           </div>
         {/if}
 
