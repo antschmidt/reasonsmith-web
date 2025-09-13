@@ -289,7 +289,7 @@
                 {/if}
                 <p class="discussion-meta">
                   {#if discussion.contributor?.display_name}
-                    by {discussion.contributor.display_name}
+                    by {displayName(discussion.contributor.display_name)}
                   {/if}
                   {#if discussion.created_at}
                     &middot; {new Date(discussion.created_at).toLocaleString()}
@@ -311,7 +311,7 @@
                 {/if}
                 <p class="discussion-meta">
                   {#if discussion.contributor?.display_name}
-                    by {discussion.contributor.display_name}
+                    by {displayName(discussion.contributor.display_name)}
                   {/if}
                   {#if discussion.created_at}
                     &middot; {new Date(discussion.created_at).toLocaleString()}
@@ -589,3 +589,9 @@
   }
   .pending-badge { background: color-mix(in srgb, var(--color-accent) 18%, transparent); color: var(--color-accent); padding:2px 6px; border-radius: 999px; font-size:0.6rem; font-weight:600; letter-spacing:0.5px; border:1px solid color-mix(in srgb, var(--color-accent) 55%, transparent); }
 </style>
+  function displayName(name?: string | null): string {
+    if (!name) return '';
+    const n = String(name).trim();
+    if (n.includes('@')) return n.split('@')[0];
+    return n;
+  }

@@ -188,6 +188,14 @@
     const pattern = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi');
     return safe.replace(pattern, '<mark>$1</mark>');
   }
+
+  // Prefer a human-friendly display over raw email-like strings
+  function displayName(name?: string | null): string {
+    if (!name) return '';
+    const n = String(name).trim();
+    if (n.includes('@')) return n.split('@')[0];
+    return n;
+  }
 </script>
 
 <div class="container">
@@ -223,7 +231,7 @@
           {#if d.description}
             <p class="discussion-snippet">{@html highlight(d.description, q)}</p>
           {/if}
-          <p class="discussion-meta">{#if d.contributor?.display_name}by {@html highlight(d.contributor.display_name, q)} · {/if}{new Date(d.created_at).toLocaleString()}</p>
+          <p class="discussion-meta">{#if d.contributor?.display_name}by {@html highlight(displayName(d.contributor.display_name), q)} · {/if}{new Date(d.created_at).toLocaleString()}</p>
         </div>
       {/each}
       {#if !q.trim() && hasMoreDiscussions}

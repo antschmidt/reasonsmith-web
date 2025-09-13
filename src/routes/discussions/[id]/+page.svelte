@@ -134,6 +134,12 @@
   let showCommentCitationReminder = $state(false);
   let showCommentCitationForm = $state(false);
   
+  // Comment good-faith gating state
+  let commentGoodFaithTesting = $state(false);
+  let commentGoodFaithResult = $state<{ good_faith_score: number; good_faith_label: string; rationale: string; claims?: any[]; cultishPhrases?: string[]; fallacyOverload?: boolean } | null>(null);
+  let commentGoodFaithError = $state<string | null>(null);
+  const COMMENT_GOOD_FAITH_THRESHOLD = 0.7; // 70%
+  
   // Automatically infer comment writing style based on content length
   function getInferredCommentStyle(): WritingStyle {
     if (commentWordCount <= 100) return 'quick_point';
@@ -374,6 +380,8 @@
 
   async function publishDraft() {
     submitError = null;
+    commentGoodFaithError = null;
+    commentGoodFaithResult = null;
     if (!user) { submitError = 'You must be signed in to comment.'; return; }
     if (!newComment.trim()) { submitError = 'Comment cannot be empty.'; return; }
     
@@ -388,8 +396,79 @@
       // Flush current content through autosaver logic
       draftAutosaver?.handleChange(newComment);
       
+      // Good-faith analysis gate
+      commentGoodFaithTesting = true;
+      try {
+        const response = await fetch('/api/goodFaithClaude', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ postId: draftPostId, content: newComment })
+        });
+        if (!response.ok) {
+          throw new Error(`Analysis failed with status ${response.status}`);
+        }
+        const data = await response.json();
+        const score01 = typeof data.good_faith_score === 'number' ? data.good_faith_score : (typeof data.goodFaithScore === 'number' ? data.goodFaithScore / 100 : 0);
+        const analysisData = {
+          provider: 'claude',
+          score: score01,
+          label: data.good_faith_label,
+          rationale: data.rationale,
+          claims: data.claims || [],
+          cultishPhrases: data.cultishPhrases || [],
+          fallacyOverload: data.fallacyOverload || false,
+          analyzedAt: new Date().toISOString()
+        } as any;
+        const { error: gfErr } = await nhost.graphql.request(UPDATE_POST_GOOD_FAITH, {
+          postId: draftPostId,
+          score: analysisData.score,
+          label: analysisData.label,
+          analysis: analysisData
+        });
+        if (gfErr) console.warn('Failed to save post good-faith analysis (GraphQL):', gfErr);
+        
+        if (score01 < COMMENT_GOOD_FAITH_THRESHOLD) {
+          // Keep as draft and show analysis
+          commentGoodFaithResult = {
+            good_faith_score: score01,
+            good_faith_label: data.good_faith_label,
+            rationale: data.rationale,
+            claims: data.claims,
+            cultishPhrases: data.cultishPhrases,
+            fallacyOverload: data.fallacyOverload
+          };
+          submitError = `Comment saved as draft. Good-faith score ${(score01 * 100).toFixed(0)}% is below the 70% threshold.`;
+          return; // Don't publish
+        }
+      } catch (e: any) {
+        console.warn('Good-faith analysis failed; keeping comment as draft:', e);
+        commentGoodFaithError = e?.message || 'Failed to analyze comment for good faith.';
+        submitError = 'Could not verify good-faith score. Comment saved as draft.';
+        return; // Don't publish when analysis fails
+      } finally {
+        commentGoodFaithTesting = false;
+      }
+      
       // Prepare content with citations included (until database migration is applied)
       let contentWithCitations = newComment;
+      
+      // If replying to a post, embed a hidden reply reference with snapshot
+      if (replyingToPost) {
+        const { cleanContent: parentNoReply } = extractReplyRef(replyingToPost.content || '');
+        const { cleanContent: parentClean, citationData: parentCitations } = extractCitationData(parentNoReply);
+        const replyRef = {
+          post_id: replyingToPost.id,
+          author_id: replyingToPost.contributor?.id,
+          created_at: replyingToPost.created_at,
+          content_hash: hashContent(parentClean || ''),
+          snapshot: {
+            content: parentClean || '',
+            writing_style: replyingToPost.writing_style || null,
+            style_metadata: parentCitations?.style_metadata || null
+          }
+        };
+        contentWithCitations += `\n\n<!-- REPLY_TO:${JSON.stringify(replyRef)} -->`;
+      }
       const hasCitations = (commentStyleMetadata.citations && commentStyleMetadata.citations.length > 0);
       
       if (hasCitations) {
@@ -430,6 +509,7 @@
       };
       commentSelectedStyle = 'quick_point';
       await refreshApprovedPosts($page.params.id as string);
+      clearReplying();
       
     } catch (e: any) {
       submitError = e.message || 'Failed to publish comment.';
@@ -1276,6 +1356,93 @@
     }
     return { cleanContent: content };
   }
+
+  // Extract reply reference from post content
+  function extractReplyRef(content: string): { cleanContent: string; replyRef?: any } {
+    const match = content.match(/<!-- REPLY_TO:(.*?)-->/s);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        const cleanContent = content.replace(/\n\n?<!-- REPLY_TO:.*?-->/s, '');
+        return { cleanContent, replyRef: parsed };
+      } catch (e) {
+        return { cleanContent: content };
+      }
+    }
+    return { cleanContent: content };
+  }
+
+  // Replying to a specific post
+  let replyingToPost = $state<any | null>(null);
+  function startReply(post: any) {
+    replyingToPost = post;
+    // Focus main comment textarea
+    setTimeout(() => {
+      const ta = document.querySelector('textarea[aria-label="New comment"]') as HTMLTextAreaElement | null;
+      if (ta) ta.focus();
+    }, 50);
+  }
+
+  function clearReplying() { replyingToPost = null; }
+
+  // Editing a published post (author-only)
+  let editingPostId = $state<string | null>(null);
+  let editingPostContent = $state('');
+  let editingPostReplyRef: any | null = $state(null);
+  let editingPostCitationData: { writing_style: WritingStyle; style_metadata: StyleMetadata } | null = $state(null);
+  let editPostError = $state<string | null>(null);
+  let editPostSaving = $state(false);
+
+  function startEditPost(post: any) {
+    editPostError = null;
+    const { cleanContent: noReply, replyRef } = extractReplyRef(post.content || '');
+    const { cleanContent, citationData } = extractCitationData(noReply);
+    editingPostReplyRef = replyRef || null;
+    editingPostCitationData = citationData || null;
+    editingPostContent = cleanContent;
+    editingPostId = post.id;
+  }
+
+  function cancelEditPost() {
+    editingPostId = null;
+    editingPostContent = '';
+    editingPostReplyRef = null;
+    editingPostCitationData = null;
+    editPostError = null;
+  }
+
+  async function savePostEdit(post: any) {
+    if (!editingPostId || editingPostId !== post.id) return;
+    editPostSaving = true;
+    editPostError = null;
+    try {
+      let updated = editingPostContent.trim();
+      if (editingPostReplyRef) {
+        updated += `\n\n<!-- REPLY_TO:${JSON.stringify(editingPostReplyRef)} -->`;
+      }
+      if (editingPostCitationData) {
+        updated += `\n<!-- CITATION_DATA:${JSON.stringify(editingPostCitationData)} -->`;
+      }
+      const MUT = `mutation UpdatePostContent($postId: uuid!, $content: String!) { update_post_by_pk(pk_columns: {id: $postId}, _set: { content: $content }) { id content } }`;
+      const { data, error } = await nhost.graphql.request(MUT, { postId: post.id, content: updated });
+      if (error) throw error;
+      // Update local post
+      post.content = updated;
+      cancelEditPost();
+    } catch (e: any) {
+      editPostError = e?.message || 'Failed to save edits.';
+    } finally {
+      editPostSaving = false;
+    }
+  }
+
+  // Format contributor name to avoid showing raw emails
+  function displayName(name?: string | null): string {
+    if (!name) return '';
+    const n = String(name).trim();
+    if (n.includes('@')) return n.split('@')[0];
+    return n;
+  }
 </script>
 
 <div class="container">
@@ -1287,7 +1454,7 @@
     <header class="discussion-header">
       <h1 class="discussion-title">{discussion.title}</h1>
       <p class="discussion-meta">
-        Started by {discussion.contributor.display_name} on {new Date(discussion.created_at).toLocaleDateString()}
+        Started by {displayName(discussion.contributor.display_name)} on {new Date(discussion.created_at).toLocaleDateString()}
         {#if user && user.id === discussion.contributor.id}
           <button class="edit-btn" onclick={startEdit}>Edit</button>
           <button class="delete-discussion-btn" onclick={handleDeleteDiscussion} title="Delete discussion">
@@ -1758,9 +1925,9 @@
 
     <div class="posts-list">
       {#each discussion.posts as post}
-        <div class="post-card" class:journalistic-post={post.writing_style === 'journalistic'} class:academic-post={post.writing_style === 'academic'}>
+        <div id={`post-${post.id}`} class="post-card" class:journalistic-post={post.writing_style === 'journalistic'} class:academic-post={post.writing_style === 'academic'}>
           <div class="post-meta">
-            <strong>{post.contributor.display_name}</strong>
+            <strong>{displayName(post.contributor.display_name)}</strong>
             <span>&middot;</span>
             <time>{new Date(post.created_at).toLocaleString()}</time>
             <span class="writing-style-badge" class:journalistic={post.writing_style === 'journalistic'} class:academic={post.writing_style === 'academic'}>
@@ -1769,18 +1936,31 @@
             {#if post.context_version_id}
               <a class="post-version-link" href={`?versionRef=${post.context_version_id}`}>context version</a>
             {/if}
+            <span class="spacer"></span>
+            <button type="button" class="reply-post-btn" onclick={() => startReply(post)} title="Reply to this comment">↩️ Reply</button>
             {#if user && post.contributor.id === user.id}
-              <button type="button" class="delete-post-btn" onclick={() => handleDeletePost(post)} title="Delete post">
-                🗑️
-              </button>
+              <button type="button" class="edit-post-btn" onclick={() => startEditPost(post)} title="Edit post">✏️</button>
+              <button type="button" class="delete-post-btn" onclick={() => handleDeletePost(post)} title="Delete post">🗑️</button>
             {/if}
           </div>
           <!-- Extract and display post content with citations -->
           {#snippet postWithCitations()}
-            {@const { cleanContent, citationData } = extractCitationData(post.content)}
+            {@const { cleanContent: withoutReply, replyRef } = extractReplyRef(post.content)}
+            {@const { cleanContent, citationData } = extractCitationData(withoutReply)}
             {@const allPostCitations = citationData?.style_metadata?.citations || []}
             {@const processedPostContent = processCitationReferences(cleanContent, allPostCitations)}
             <div class="post-content">
+              {#if replyRef}
+                <div class="reply-context">
+                  Replying to <a href={`#post-${replyRef.post_id}`}>this comment</a>
+                  {#if replyRef.snapshot?.content}
+                    <details class="snapshot-details">
+                      <summary>View snapshot at time of reply</summary>
+                      <div class="snapshot-content">{@html replyRef.snapshot.content.replace(/\n/g, '<br>')}</div>
+                    </details>
+                  {/if}
+                </div>
+              {/if}
               {@html processedPostContent}
             </div>
             
@@ -1815,7 +1995,18 @@
             </div>
             {/if}
           {/snippet}
-          {@render postWithCitations()}
+          {#if editingPostId === post.id}
+            <div class="post-edit-block">
+              <textarea rows="4" bind:value={editingPostContent}></textarea>
+              {#if editPostError}<div class="error-message" style="margin-top:0.25rem;">{editPostError}</div>{/if}
+              <div class="post-edit-actions">
+                <button type="button" class="btn-secondary" onclick={cancelEditPost} disabled={editPostSaving}>Cancel</button>
+                <button type="button" class="btn-primary" onclick={() => savePostEdit(post)} disabled={editPostSaving || !editingPostContent.trim()}>{editPostSaving ? 'Saving…' : 'Save Changes'}</button>
+              </div>
+            </div>
+          {:else}
+            {@render postWithCitations()}
+          {/if}
           
           <!-- Good Faith Analysis Display -->
           {#if post?.good_faith_score != null && typeof post.good_faith_score === 'number' && post.good_faith_label}
@@ -2077,6 +2268,62 @@
                 </ul>
               </div>
             {/if}
+
+            <!-- Comment Good-Faith Result / Error -->
+            {#if commentGoodFaithResult}
+              <div class="good-faith-result claude-result" style="margin-top:0.5rem;">
+                <div class="good-faith-header">
+                  <h4>Comment Analysis</h4>
+                  <div class="good-faith-score">
+                    <span class="score-value">{(commentGoodFaithResult.good_faith_score * 100).toFixed(0)}%</span>
+                    <span class="score-label {commentGoodFaithResult.good_faith_label}">{commentGoodFaithResult.good_faith_label}</span>
+                  </div>
+                </div>
+                
+                {#if commentGoodFaithResult.claims && commentGoodFaithResult.claims.length > 0}
+                  <div class="claude-claims">
+                    <strong>Claims Analysis:</strong>
+                    {#each commentGoodFaithResult.claims as claim}
+                      <div class="claim-item">
+                        <div class="claim-text"><strong>Claim:</strong> {claim.claim}</div>
+                        {#if claim.supportingArguments}
+                          {#each claim.supportingArguments as arg}
+                            <div class="argument-item">
+                              <div class="argument-text">{arg.argument}</div>
+                              <div class="argument-details">
+                                <span class="argument-score">Score: {arg.score}/10</span>
+                                {#if arg.fallacies && arg.fallacies.length > 0}
+                                  <span class="fallacies">Fallacies: {arg.fallacies.join(', ')}</span>
+                                {/if}
+                              </div>
+                              {#if arg.improvements}
+                                <div class="improvements">Improvement: {arg.improvements}</div>
+                              {/if}
+                            </div>
+                          {/each}
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+                
+                {#if commentGoodFaithResult.cultishPhrases && commentGoodFaithResult.cultishPhrases.length > 0}
+                  <div class="cultish-phrases">
+                    <strong>Manipulative Language:</strong> {commentGoodFaithResult.cultishPhrases.join(', ')}
+                  </div>
+                {/if}
+                
+                <div class="good-faith-rationale">
+                  <strong>Analysis:</strong> {commentGoodFaithResult.rationale}
+                </div>
+              </div>
+            {/if}
+            {#if commentGoodFaithError}
+              <div class="good-faith-error" style="margin-top:0.5rem;">
+                <strong>Analysis Error:</strong> {commentGoodFaithError}
+              </div>
+            {/if}
+
           {#if submitError}<p class="error-message" style="margin-top:0.5rem;">{submitError}</p>{/if}
           
           <div class="comment-actions" style="flex-direction:column; align-items:flex-end; gap:0.4rem;">
@@ -2091,6 +2338,12 @@
                 {/if}
               {/if}
             </div>
+            {#if replyingToPost}
+              <div class="replying-indicator">
+                Replying to <a href={`#post-${replyingToPost.id}`}>@{replyingToPost.contributor?.display_name || 'comment'}</a>
+                <button type="button" class="btn-link" onclick={clearReplying}>Cancel</button>
+              </div>
+            {/if}
             <button type="submit" class="btn-primary" disabled={submitting || !newComment.trim() || !commentStyleValidation.isValid}>
               {#if submitting}
                 Publishing…
@@ -2586,7 +2839,16 @@
     color: var(--color-text-secondary);
     margin-bottom: 1rem;
   }
+  .post-meta .spacer { flex: 1 1 auto; }
+  .reply-post-btn, .edit-post-btn, .delete-post-btn { background: transparent; border: none; cursor: pointer; font-size: 0.9rem; }
+  .reply-post-btn:hover, .edit-post-btn:hover, .delete-post-btn:hover { text-decoration: underline; }
   .post-content { line-height: 1.6; }
+  .reply-context { font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 0.5rem; }
+  .snapshot-details { margin-top: 0.25rem; }
+  .snapshot-content { background: var(--color-surface); border:1px dashed var(--color-border); padding:0.5rem; border-radius: var(--border-radius-sm); }
+  .post-edit-block { margin-top: 0.5rem; }
+  .post-edit-block textarea { width: 100%; }
+  .post-edit-actions { display:flex; gap:0.5rem; justify-content:flex-end; margin-top: 0.4rem; }
   .add-comment { margin-top: 3rem; }
   .add-comment-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.75rem; }
   .signin-hint { color: var(--color-text-secondary); }
@@ -2606,6 +2868,8 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
   }
   .comment-actions { display: flex; justify-content: flex-end; }
+  .replying-indicator { font-size: 0.85rem; color: var(--color-text-secondary); align-self:flex-start; }
+  .btn-link { background: none; border: none; padding: 0; margin-left: 0.5rem; color: var(--color-primary); cursor: pointer; }
   .btn-primary {
     background-color: var(--color-primary);
     color: var(--color-surface);
