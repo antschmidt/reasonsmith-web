@@ -3,7 +3,7 @@
   // Avoid importing gql to prevent type resolution issues; use plain string
   import { nhost } from '$lib/nhostClient';
   import { onMount } from 'svelte';
-  import { CREATE_POST_DRAFT, UPDATE_DISCUSSION_GOOD_FAITH, UPDATE_POST_GOOD_FAITH, GET_DISCUSSION_DETAILS as IMPORTED_GET_DISCUSSION_DETAILS } from '$lib/graphql/queries';
+  import { CREATE_POST_DRAFT, UPDATE_DISCUSSION_GOOD_FAITH, UPDATE_POST_GOOD_FAITH, GET_DISCUSSION_DETAILS as IMPORTED_GET_DISCUSSION_DETAILS, ANONYMIZE_POST, ANONYMIZE_DISCUSSION, UNANONYMIZE_POST, UNANONYMIZE_DISCUSSION } from '$lib/graphql/queries';
   import { createDraftAutosaver, type DraftAutosaver } from '$lib';
   import { getStyleConfig, WRITING_STYLES, validateStyleRequirements, formatChicagoCitation, processCitationReferences, type WritingStyle, type StyleMetadata, type Citation } from '$lib/types/writingStyle';
   import CitationForm from '$lib/components/CitationForm.svelte';
@@ -30,6 +30,10 @@
   let lastSavedAt = $state<number | null>(null);
   let hasPending = $state(false);
   let focusReplyOnMount = $state(false);
+  
+  // Track which posts can be deleted vs need ghosting
+  let postDeletionStatus = $state<Record<string, { canDelete: boolean; reason?: string }>>({});
+  let discussionCanDelete = $state(true);
 
 
 
@@ -600,6 +604,13 @@
     }
   });
 
+  // Check deletion status when discussion and user are loaded
+  $effect(() => {
+    if (discussion && user) {
+      checkAllDeletionStatus();
+    }
+  });
+
   function startEdit() {
     editing = true;
     
@@ -1099,6 +1110,131 @@
     }
   }
 
+  // Check deletion status for all posts and discussion
+  async function checkAllDeletionStatus() {
+    if (!user || !discussion) return;
+    
+    // Check discussion deletion status
+    if (user.id === discussion.contributor.id) {
+      try {
+        const discussionCheck = await checkDiscussionDeletable(discussion.id, user.id);
+        discussionCanDelete = discussionCheck.canDelete;
+      } catch (error) {
+        console.error('Error checking discussion deletion status:', error);
+      }
+    }
+    
+    // Check post deletion status for user's posts
+    const userPosts = discussion.posts.filter(post => post.contributor.id === user.id);
+    const statusChecks: Record<string, { canDelete: boolean; reason?: string }> = {};
+    
+    for (const post of userPosts) {
+      try {
+        const postCheck = await checkPostDeletable(post.id, user.id, discussion.id, post.created_at);
+        statusChecks[post.id] = postCheck;
+      } catch (error) {
+        console.error(`Error checking deletion status for post ${post.id}:`, error);
+        statusChecks[post.id] = { canDelete: false, reason: 'Error checking status' };
+      }
+    }
+    
+    postDeletionStatus = statusChecks;
+  }
+
+  // Anonymization functions
+  async function handleAnonymizePost(post: any) {
+    if (!user || post.contributor.id !== user.id) return;
+    
+    if (!confirm(`Make this post anonymous? This will hide your name from other users but cannot be undone.`)) return;
+
+    try {
+      const { error } = await nhost.graphql.request(ANONYMIZE_POST, { postId: post.id });
+      if (error) {
+        throw error;
+      }
+      
+      // Update the post in the local state to reflect the change
+      if (discussion) {
+        discussion.posts = discussion.posts.map(p => 
+          p.id === post.id ? { ...p, is_anonymous: true } : p
+        );
+      }
+      
+      alert('Post has been made anonymous');
+    } catch (error) {
+      console.error('Error anonymizing post:', error);
+      alert('Error making post anonymous');
+    }
+  }
+
+  async function handleAnonymizeDiscussion() {
+    if (!user || !discussion || discussion.contributor.id !== user.id) return;
+    
+    if (!confirm(`Make this discussion anonymous? This will hide your name from other users but cannot be undone.`)) return;
+
+    try {
+      const { error } = await nhost.graphql.request(ANONYMIZE_DISCUSSION, { discussionId: discussion.id });
+      if (error) {
+        throw error;
+      }
+      
+      // Update the discussion in the local state to reflect the change
+      discussion.is_anonymous = true;
+      
+      alert('Discussion has been made anonymous');
+    } catch (error) {
+      console.error('Error anonymizing discussion:', error);
+      alert('Error making discussion anonymous');
+    }
+  }
+
+  // Un-anonymization functions
+  async function handleUnanonymizePost(post: any) {
+    if (!user || post.contributor.id !== user.id) return;
+    
+    if (!confirm(`Reveal your identity on this post? Your name will be visible to other users.`)) return;
+
+    try {
+      const { error } = await nhost.graphql.request(UNANONYMIZE_POST, { postId: post.id });
+      if (error) {
+        throw error;
+      }
+      
+      // Update the post in the local state to reflect the change
+      if (discussion) {
+        discussion.posts = discussion.posts.map(p => 
+          p.id === post.id ? { ...p, is_anonymous: false } : p
+        );
+      }
+      
+      alert('Post identity has been revealed');
+    } catch (error) {
+      console.error('Error revealing post identity:', error);
+      alert('Error revealing post identity');
+    }
+  }
+
+  async function handleUnanonymizeDiscussion() {
+    if (!user || !discussion || discussion.contributor.id !== user.id) return;
+    
+    if (!confirm(`Reveal your identity on this discussion? Your name will be visible to other users.`)) return;
+
+    try {
+      const { error } = await nhost.graphql.request(UNANONYMIZE_DISCUSSION, { discussionId: discussion.id });
+      if (error) {
+        throw error;
+      }
+      
+      // Update the discussion in the local state to reflect the change
+      discussion.is_anonymous = false;
+      
+      alert('Discussion identity has been revealed');
+    } catch (error) {
+      console.error('Error revealing discussion identity:', error);
+      alert('Error revealing discussion identity');
+    }
+  }
+
   // Ensure all citations and sources have IDs
   function ensureIdsForCitationData(metadata: StyleMetadata): StyleMetadata {
     const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -1472,12 +1608,22 @@
     <header class="discussion-header">
       <h1 class="discussion-title">{discussion.title}</h1>
       <p class="discussion-meta">
-        Started by <a href={`/u/${discussion.contributor.handle || discussion.contributor.id}`}>{displayName(discussion.contributor.display_name)}</a> on {new Date(discussion.created_at).toLocaleDateString()}
+        Started by {#if discussion.is_anonymous}
+          <span class="anonymous-author">Anonymous</span>
+        {:else}
+          <a href={`/u/${discussion.contributor.handle || discussion.contributor.id}`}>{displayName(discussion.contributor.display_name)}</a>
+        {/if} on {new Date(discussion.created_at).toLocaleDateString()}
         {#if user && user.id === discussion.contributor.id}
           <button class="edit-btn" onclick={startEdit}>Edit</button>
-          <button class="delete-discussion-btn" onclick={handleDeleteDiscussion} title="Delete discussion">
-            🗑️ Delete
-          </button>
+          {#if discussion.is_anonymous}
+            <button class="reveal-identity-btn" onclick={handleUnanonymizeDiscussion} title="Reveal your identity">
+              Reveal Identity
+            </button>
+          {:else}
+            <button class="delete-discussion-btn" onclick={discussionCanDelete ? handleDeleteDiscussion : handleAnonymizeDiscussion} title={discussionCanDelete ? "Delete discussion" : "Make anonymous - others have replied"}>
+              {discussionCanDelete ? 'Delete' : '👻'}
+            </button>
+          {/if}
         {/if}
       </p>
       {#if editing}
@@ -1945,7 +2091,11 @@
       {#each discussion.posts as post}
         <div id={`post-${post.id}`} class="post-card" class:journalistic-post={post.writing_style === 'journalistic'} class:academic-post={post.writing_style === 'academic'}>
           <div class="post-meta">
-            <strong><a href={`/u/${post.contributor.handle || post.contributor.id}`}>{displayName(post.contributor.display_name)}</a></strong>
+            <strong>{#if post.is_anonymous}
+              <span class="anonymous-author">Anonymous</span>
+            {:else}
+              <a href={`/u/${post.contributor.handle || post.contributor.id}`}>{displayName(post.contributor.display_name)}</a>
+            {/if}</strong>
             <span>&middot;</span>
             <time>{new Date(post.created_at).toLocaleString()}</time>
             <span class="writing-style-badge" class:journalistic={post.writing_style === 'journalistic'} class:academic={post.writing_style === 'academic'}>
@@ -1955,10 +2105,18 @@
               <a class="post-version-link" href={`?versionRef=${post.context_version_id}`}>context version</a>
             {/if}
             <span class="spacer"></span>
-            <button type="button" class="reply-post-btn" onclick={() => startReply(post)} title="Reply to this comment">↩️ Reply</button>
+            <button type="button" class="reply-post-btn" onclick={() => startReply(post)} title="Reply to this comment">Reply</button>
             {#if user && post.contributor.id === user.id}
-              <button type="button" class="edit-post-btn" onclick={() => startEditPost(post)} title="Edit post">✏️</button>
-              <button type="button" class="delete-post-btn" onclick={() => handleDeletePost(post)} title="Delete post">🗑️</button>
+              <button type="button" class="edit-post-btn" onclick={() => startEditPost(post)} title="Edit post">Edit</button>
+              {#if post.is_anonymous}
+                <button type="button" class="reveal-identity-btn" onclick={() => handleUnanonymizePost(post)} title="Reveal your identity">
+                  Reveal Identity
+                </button>
+              {:else}
+                <button type="button" class="delete-post-btn" onclick={() => postDeletionStatus[post.id]?.canDelete !== false ? handleDeletePost(post) : handleAnonymizePost(post)} title={postDeletionStatus[post.id]?.canDelete !== false ? "Delete post" : "Make anonymous - " + (postDeletionStatus[post.id]?.reason || "cannot delete")}>
+                  {postDeletionStatus[post.id]?.canDelete !== false ? 'Delete' : '👻'}
+                </button>
+              {/if}
             {/if}
           </div>
           <!-- Extract and display post content with citations -->
@@ -2534,18 +2692,27 @@
   }
 
   .insert-ref-btn {
-    background: var(--color-primary);
+    background: linear-gradient(135deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 80%, #10b981) 100%);
     color: white;
     border: none;
     padding: 0.25rem 0.75rem;
     border-radius: var(--border-radius-sm);
     font-size: 0.8rem;
     cursor: pointer;
-    transition: opacity 0.2s;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--color-primary) 25%, transparent);
   }
 
   .insert-ref-btn:hover {
-    opacity: 0.8;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 35%, transparent);
+  }
+
+  .insert-ref-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--color-primary) 25%, transparent);
   }
 
   /* Superscript citation reference styling */
@@ -2934,8 +3101,57 @@
     margin-bottom: 1rem;
   }
   .post-meta .spacer { flex: 1 1 auto; }
-  .reply-post-btn, .edit-post-btn, .delete-post-btn { background: transparent; border: none; cursor: pointer; font-size: 0.9rem; }
-  .reply-post-btn:hover, .edit-post-btn:hover, .delete-post-btn:hover { text-decoration: underline; }
+  /* Modern Action Button Base Styles */
+  .reply-post-btn, .edit-post-btn, .delete-post-btn {
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.4rem 0.8rem;
+    border-radius: var(--border-radius-md);
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    text-decoration: none;
+  }
+  
+  .reply-post-btn {
+    color: var(--color-primary);
+    border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  }
+  
+  .reply-post-btn:hover {
+    background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-alt));
+    border-color: var(--color-primary);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 20%, transparent);
+  }
+  
+  .edit-post-btn {
+    color: #059669;
+    border-color: color-mix(in srgb, #059669 30%, transparent);
+  }
+  
+  .edit-post-btn:hover {
+    background: color-mix(in srgb, #059669 8%, var(--color-surface-alt));
+    border-color: #059669;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px color-mix(in srgb, #059669 20%, transparent);
+  }
+  
+  .delete-post-btn {
+    color: #dc2626;
+    border-color: color-mix(in srgb, #dc2626 30%, transparent);
+  }
+  
+  .delete-post-btn:hover {
+    background: color-mix(in srgb, #dc2626 8%, var(--color-surface-alt));
+    border-color: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px color-mix(in srgb, #dc2626 20%, transparent);
+  }
   .post-content { line-height: 1.6; }
   .reply-context { font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 0.5rem; }
   .snapshot-details { margin-top: 0.25rem; }
@@ -2975,6 +3191,87 @@
   }
   .btn-primary:hover { opacity: 0.9; }
   .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+  
+  /* Modern Secondary Button Styling */
+  .btn-secondary {
+    background: transparent;
+    color: var(--color-primary);
+    padding: 0.6rem 1.2rem;
+    border: 1.5px solid var(--color-primary);
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+  }
+  
+  .btn-secondary:hover {
+    background: var(--color-primary);
+    color: var(--color-surface);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 25%, transparent);
+  }
+  
+  .btn-secondary:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 20%, transparent);
+  }
+  
+  /* Modern Inline Citation Button */
+  .btn-add-citation-inline {
+    background: linear-gradient(135deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 80%, #8b5cf6) 100%);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: all 0.25s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .btn-add-citation-inline::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: left 0.5s ease;
+  }
+  
+  .btn-add-citation-inline:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--color-primary) 30%, transparent);
+    filter: brightness(1.1);
+  }
+  
+  .btn-add-citation-inline:hover::before {
+    left: 100%;
+  }
+  
+  .btn-add-citation-inline:active {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px color-mix(in srgb, var(--color-primary) 25%, transparent);
+  }
+  
+  /* Add icon styling */
+  .btn-add-citation-inline::after {
+    content: '📚';
+    font-size: 0.9rem;
+  }
+  
   .error-message { color: #ef4444; }
   .draft-status { 
     font-size: 0.75rem; 
@@ -2988,8 +3285,30 @@
   @keyframes pulse { 0% { opacity:0.2; } 50% { opacity:1; } 100% { opacity:0.2; } }
   .post-version-link { font-size:0.65rem; color:var(--color-primary); margin-left:0.5rem; }
   .post-version-link:hover { text-decoration:underline; }
-  .edit-btn { margin-left:1rem; font-size:0.85rem; background:none; border:none; color:var(--color-primary); cursor:pointer; }
-  .edit-btn:hover, .edit-btn:focus { text-decoration:underline; outline:none; }
+  /* Modern Discussion Edit Button */
+  .edit-btn { 
+    margin-left: 1rem; 
+    font-size: 0.85rem; 
+    background: var(--color-surface-alt);
+    border: 1px solid color-mix(in srgb, #059669 30%, transparent);
+    color: #059669;
+    cursor: pointer;
+    padding: 0.4rem 0.8rem;
+    border-radius: var(--border-radius-md);
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .edit-btn:hover, .edit-btn:focus { 
+    background: color-mix(in srgb, #059669 8%, var(--color-surface-alt));
+    border-color: #059669;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px color-mix(in srgb, #059669 20%, transparent);
+    outline: none;
+    text-decoration: none;
+  }
   .edit-form { margin-top:1rem; display:flex; flex-direction:column; gap:0.75rem; background:var(--color-surface-alt); padding:1rem; border-radius:var(--border-radius-md); border:1px solid var(--color-border); }
   .edit-form label { font-size:0.85rem; font-weight:600; color:var(--color-text-secondary); margin-bottom:0.25rem; }
   .edit-form input[type=text], .edit-form textarea { width:100%; padding:0.5rem; border-radius:var(--border-radius-sm); border:1px solid var(--color-border); font:inherit; }
@@ -3259,7 +3578,7 @@
   }
 
   .edit-btn {
-    background: #3b82f6;
+    background: linear-gradient(135deg, #3b82f6 0%, color-mix(in srgb, #3b82f6 80%, #8b5cf6) 100%);
     color: white;
     border: none;
     padding: 0.25rem 0.5rem;
@@ -3267,14 +3586,24 @@
     font-size: 0.75rem;
     cursor: pointer;
     height: fit-content;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px color-mix(in srgb, #3b82f6 25%, transparent);
   }
 
   .edit-btn:hover {
-    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px color-mix(in srgb, #3b82f6 35%, transparent);
+  }
+
+  .edit-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px color-mix(in srgb, #3b82f6 25%, transparent);
   }
 
   .remove-btn {
-    background: #ef4444;
+    background: linear-gradient(135deg, #ef4444 0%, color-mix(in srgb, #ef4444 80%, #f97316) 100%);
     color: white;
     border: none;
     padding: 0.25rem 0.5rem;
@@ -3282,10 +3611,20 @@
     font-size: 0.75rem;
     cursor: pointer;
     height: fit-content;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px color-mix(in srgb, #ef4444 25%, transparent);
   }
 
   .remove-btn:hover {
-    background: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px color-mix(in srgb, #ef4444 35%, transparent);
+  }
+
+  .remove-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px color-mix(in srgb, #ef4444 25%, transparent);
   }
 
   /* Style Validation */
@@ -3411,39 +3750,63 @@
     box-sizing: border-box;
   }
 
-  /* Delete Button Styles */
-  .delete-post-btn,
+  /* Delete Discussion Button - Match the modern style */
   .delete-discussion-btn {
-    background: #ef4444;
-    color: white;
-    border: none;
-    padding: 0.25rem 0.5rem;
-    border-radius: var(--border-radius-sm);
-    font-size: 0.75rem;
+    background: var(--color-surface-alt);
+    border: 1px solid color-mix(in srgb, #dc2626 30%, transparent);
+    color: #dc2626;
     cursor: pointer;
-    margin-left: 0.5rem;
-    transition: background-color 0.2s;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.4rem 0.8rem;
+    border-radius: var(--border-radius-md);
+    transition: all 0.2s ease;
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.3rem;
+    text-decoration: none;
+    margin-left: 0.5rem;
   }
 
-  .delete-post-btn:hover,
   .delete-discussion-btn:hover {
-    background: #dc2626;
+    background: color-mix(in srgb, #dc2626 8%, var(--color-surface-alt));
+    border-color: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px color-mix(in srgb, #dc2626 20%, transparent);
   }
 
-  .delete-post-btn {
-    font-size: 0.7rem;
-    padding: 0.2rem 0.4rem;
-  }
-
-  .delete-discussion-btn {
+  /* Reveal Identity Button */
+  .reveal-identity-btn {
+    background: var(--color-surface-alt);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+    color: var(--color-accent);
+    cursor: pointer;
     font-size: 0.8rem;
-    padding: 0.3rem 0.6rem;
+    font-weight: 500;
+    padding: 0.4rem 0.8rem;
+    border-radius: var(--border-radius-md);
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    text-decoration: none;
+    margin-left: 0.5rem;
+  }
+
+  .reveal-identity-btn:hover {
+    background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-alt));
+    border-color: var(--color-accent);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent) 20%, transparent);
   }
 
   /* Good faith analysis toggle styles */
+  /* Anonymous author styling */
+  .anonymous-author {
+    color: var(--color-text-secondary);
+    font-style: italic;
+  }
+
   .good-faith-analysis-section {
     margin-top: 1rem;
     padding-top: 1rem;

@@ -17,6 +17,7 @@ const POST_FIELDS = gql`
     content
     status
     created_at
+    is_anonymous
     good_faith_score
     good_faith_label
     good_faith_last_evaluated
@@ -89,6 +90,7 @@ export const GET_DISCUSSION_DETAILS = gql`
       title
       description
       created_at
+      is_anonymous
       good_faith_score
       good_faith_label
       good_faith_last_evaluated
@@ -409,6 +411,58 @@ export const UPDATE_POST_GOOD_FAITH = gql`
       }
     ) {
       id
+    }
+  }
+`;
+
+// Mutation to anonymize a post
+export const ANONYMIZE_POST = gql`
+  mutation AnonymizePost($postId: uuid!) {
+    update_post_by_pk(
+      pk_columns: { id: $postId }
+      _set: { is_anonymous: true }
+    ) {
+      id
+      is_anonymous
+    }
+  }
+`;
+
+// Mutation to anonymize a discussion
+export const ANONYMIZE_DISCUSSION = gql`
+  mutation AnonymizeDiscussion($discussionId: uuid!) {
+    update_discussion_by_pk(
+      pk_columns: { id: $discussionId }
+      _set: { is_anonymous: true }
+    ) {
+      id
+      is_anonymous
+    }
+  }
+`;
+
+// Mutation to un-anonymize a post
+export const UNANONYMIZE_POST = gql`
+  mutation UnanonymizePost($postId: uuid!) {
+    update_post_by_pk(
+      pk_columns: { id: $postId }
+      _set: { is_anonymous: false }
+    ) {
+      id
+      is_anonymous
+    }
+  }
+`;
+
+// Mutation to un-anonymize a discussion
+export const UNANONYMIZE_DISCUSSION = gql`
+  mutation UnanonymizeDiscussion($discussionId: uuid!) {
+    update_discussion_by_pk(
+      pk_columns: { id: $discussionId }
+      _set: { is_anonymous: false }
+    ) {
+      id
+      is_anonymous
     }
   }
 `;

@@ -116,8 +116,8 @@ export async function deleteDiscussion(discussionId: string, createdBy: string):
 export function confirmDeletion(type: 'post' | 'discussion', title?: string): boolean {
   const itemName = type === 'post' ? 'comment' : 'discussion';
   const message = title 
-    ? `Are you sure you want to delete this ${itemName} "${title}"? This action cannot be undone.`
-    : `Are you sure you want to delete this ${itemName}? This action cannot be undone.`;
+    ? `Are you sure you want to delete this ${itemName} "${title}"?`
+    : `Are you sure you want to delete this ${itemName}?`;
   
   return confirm(message);
 }
