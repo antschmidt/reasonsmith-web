@@ -4,6 +4,7 @@ import { gql } from '@apollo/client/core';
 const CONTRIBUTOR_FIELDS = gql`
   fragment ContributorFields on contributor {
     id
+    handle
     display_name
     email
     role
@@ -70,6 +71,10 @@ export const GET_DASHBOARD_DATA = gql`
       discussion_id
       status
       updated_at
+      good_faith_score
+      good_faith_label
+      good_faith_last_evaluated
+      good_faith_analysis
       discussion { id title }
     }
   }

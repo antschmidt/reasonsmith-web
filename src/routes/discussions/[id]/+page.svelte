@@ -40,6 +40,10 @@
         id
         draft_content
         updated_at
+        good_faith_score
+        good_faith_label
+        good_faith_last_evaluated
+        good_faith_analysis
       }
     }
   `;
@@ -138,6 +142,8 @@
   let commentGoodFaithTesting = $state(false);
   let commentGoodFaithResult = $state<{ good_faith_score: number; good_faith_label: string; rationale: string; claims?: any[]; cultishPhrases?: string[]; fallacyOverload?: boolean } | null>(null);
   let commentGoodFaithError = $state<string | null>(null);
+  let draftGoodFaithAnalysis = $state<{ good_faith_score: number; good_faith_label: string; good_faith_last_evaluated: string; good_faith_analysis: any } | null>(null);
+  let draftAnalysisExpanded = $state(false);
   const COMMENT_GOOD_FAITH_THRESHOLD = 0.7; // 70%
   
   // Automatically infer comment writing style based on content length
@@ -322,6 +328,16 @@
       newComment = existing.draft_content || '';
       initAutosaver();
       
+      // Load existing good faith analysis if available
+      if (existing.good_faith_score !== null && existing.good_faith_score !== undefined) {
+        draftGoodFaithAnalysis = {
+          good_faith_score: existing.good_faith_score,
+          good_faith_label: existing.good_faith_label,
+          good_faith_last_evaluated: existing.good_faith_last_evaluated,
+          good_faith_analysis: existing.good_faith_analysis
+        };
+      }
+      
       // Load citation data from localStorage (until database migration is applied)
       if (typeof localStorage !== 'undefined' && draftPostId) {
         const citationKey = `citations:${draftPostId}`;
@@ -382,6 +398,7 @@
     submitError = null;
     commentGoodFaithError = null;
     commentGoodFaithResult = null;
+    draftGoodFaithAnalysis = null;
     if (!user) { submitError = 'You must be signed in to comment.'; return; }
     if (!newComment.trim()) { submitError = 'Comment cannot be empty.'; return; }
     
@@ -1440,7 +1457,8 @@
   function displayName(name?: string | null): string {
     if (!name) return '';
     const n = String(name).trim();
-    if (n.includes('@')) return n.split('@')[0];
+    const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n);
+    if (isEmail) return n.split('@')[0];
     return n;
   }
 </script>
@@ -1454,7 +1472,7 @@
     <header class="discussion-header">
       <h1 class="discussion-title">{discussion.title}</h1>
       <p class="discussion-meta">
-        Started by {displayName(discussion.contributor.display_name)} on {new Date(discussion.created_at).toLocaleDateString()}
+        Started by <a href={`/u/${discussion.contributor.handle || discussion.contributor.id}`}>{displayName(discussion.contributor.display_name)}</a> on {new Date(discussion.created_at).toLocaleDateString()}
         {#if user && user.id === discussion.contributor.id}
           <button class="edit-btn" onclick={startEdit}>Edit</button>
           <button class="delete-discussion-btn" onclick={handleDeleteDiscussion} title="Delete discussion">
@@ -1927,7 +1945,7 @@
       {#each discussion.posts as post}
         <div id={`post-${post.id}`} class="post-card" class:journalistic-post={post.writing_style === 'journalistic'} class:academic-post={post.writing_style === 'academic'}>
           <div class="post-meta">
-            <strong>{displayName(post.contributor.display_name)}</strong>
+            <strong><a href={`/u/${post.contributor.handle || post.contributor.id}`}>{displayName(post.contributor.display_name)}</a></strong>
             <span>&middot;</span>
             <time>{new Date(post.created_at).toLocaleString()}</time>
             <span class="writing-style-badge" class:journalistic={post.writing_style === 'journalistic'} class:academic={post.writing_style === 'academic'}>
@@ -2266,6 +2284,82 @@
                     <li>{issue}</li>
                   {/each}
                 </ul>
+              </div>
+            {/if}
+
+            <!-- Existing Draft Good-Faith Analysis -->
+            {#if draftGoodFaithAnalysis && !commentGoodFaithResult}
+              <div class="draft-good-faith-analysis good-faith-result claude-result" style="margin-top:0.5rem;">
+                <button type="button" class="collapsible-header" onclick={() => draftAnalysisExpanded = !draftAnalysisExpanded}>
+                  <div class="good-faith-header">
+                    <div class="header-content">
+                      <h4>Saved Draft Analysis</h4>
+                      <div class="expand-icon" class:expanded={draftAnalysisExpanded}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="6,9 12,15 18,9"></polyline>
+                        </svg>
+                      </div>
+                    </div>
+                    <div class="good-faith-score">
+                      <span class="score-value">{(draftGoodFaithAnalysis.good_faith_score * 100).toFixed(0)}%</span>
+                      <span class="score-label {draftGoodFaithAnalysis.good_faith_label}">{draftGoodFaithAnalysis.good_faith_label}</span>
+                    </div>
+                  </div>
+                </button>
+                
+                {#if draftAnalysisExpanded}
+                  <div class="analysis-content">
+                    <div class="analysis-note" style="margin-bottom: 1rem;">
+                      <small><em>This analysis was performed on a previous version of your draft. The score may change if you edit and republish.</em></small>
+                    </div>
+
+                    <!-- Full Claims Analysis -->
+                    {#if draftGoodFaithAnalysis.good_faith_analysis?.claims && draftGoodFaithAnalysis.good_faith_analysis.claims.length > 0}
+                      <div class="claude-claims">
+                        <strong>Claims Analysis:</strong>
+                        {#each draftGoodFaithAnalysis.good_faith_analysis.claims as claim}
+                          <div class="claim-item">
+                            <div class="claim-text"><strong>Claim:</strong> {claim.claim}</div>
+                            {#if claim.supportingArguments}
+                              {#each claim.supportingArguments as arg}
+                                <div class="argument-item">
+                                  <div class="argument-text">{arg.argument}</div>
+                                  <div class="argument-details">
+                                    <span class="argument-score">Score: {arg.score}/10</span>
+                                    {#if arg.fallacies && arg.fallacies.length > 0}
+                                      <span class="fallacies">Fallacies: {arg.fallacies.join(', ')}</span>
+                                    {/if}
+                                  </div>
+                                  {#if arg.improvements}
+                                    <div class="improvements">Improvement: {arg.improvements}</div>
+                                  {/if}
+                                </div>
+                              {/each}
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
+                    {/if}
+                    
+                    <!-- Cultish/Manipulative Phrases -->
+                    {#if draftGoodFaithAnalysis.good_faith_analysis?.cultishPhrases && draftGoodFaithAnalysis.good_faith_analysis.cultishPhrases.length > 0}
+                      <div class="cultish-phrases">
+                        <strong>Manipulative Language:</strong> {draftGoodFaithAnalysis.good_faith_analysis.cultishPhrases.join(', ')}
+                      </div>
+                    {/if}
+                    
+                    <!-- Overall Analysis/Rationale -->
+                    {#if draftGoodFaithAnalysis.good_faith_analysis?.overallAnalysis || draftGoodFaithAnalysis.good_faith_analysis?.summary || draftGoodFaithAnalysis.good_faith_analysis?.rationale}
+                      <div class="good-faith-rationale">
+                        <strong>Analysis:</strong> {draftGoodFaithAnalysis.good_faith_analysis.overallAnalysis || draftGoodFaithAnalysis.good_faith_analysis.summary || draftGoodFaithAnalysis.good_faith_analysis.rationale}
+                      </div>
+                    {/if}
+
+                    <div class="analysis-date" style="margin-top: 1rem; text-align: right;">
+                      <small>Analyzed: {new Date(draftGoodFaithAnalysis.good_faith_last_evaluated).toLocaleString()}</small>
+                    </div>
+                  </div>
+                {/if}
               </div>
             {/if}
 
@@ -3500,5 +3594,165 @@
   .comment-writing-info .style-indicator {
     color: var(--color-text-secondary);
     font-style: italic;
+  }
+  
+  /* Draft Good Faith Analysis Styles */
+  .draft-good-faith-analysis {
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    padding: 1rem;
+  }
+  
+  .analysis-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  
+  .analysis-header h4 {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--color-text-primary);
+  }
+  
+  .good-faith-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: 16px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  
+  .good-faith-pill.hostile {
+    background: color-mix(in srgb, #dc2626 15%, transparent);
+    color: #dc2626;
+    border-color: color-mix(in srgb, #dc2626 30%, transparent);
+  }
+  
+  .good-faith-pill.questionable {
+    background: color-mix(in srgb, #ea580c 15%, transparent);
+    color: #ea580c;
+    border-color: color-mix(in srgb, #ea580c 30%, transparent);
+  }
+  
+  .good-faith-pill.neutral {
+    background: color-mix(in srgb, #6b7280 15%, transparent);
+    color: #6b7280;
+    border-color: color-mix(in srgb, #6b7280 30%, transparent);
+  }
+  
+  .good-faith-pill.constructive {
+    background: color-mix(in srgb, #059669 15%, transparent);
+    color: #059669;
+    border-color: color-mix(in srgb, #059669 30%, transparent);
+  }
+  
+  .good-faith-pill.exemplary {
+    background: color-mix(in srgb, #0284c7 15%, transparent);
+    color: #0284c7;
+    border-color: color-mix(in srgb, #0284c7 30%, transparent);
+  }
+  
+  .gf-score {
+    font-weight: 700;
+  }
+  
+  .gf-label {
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+  
+  .analysis-date {
+    margin-bottom: 0.5rem;
+  }
+  
+  .analysis-date small {
+    color: var(--color-text-secondary);
+  }
+  
+  .analysis-note {
+    padding: 0.75rem;
+    background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+    border-radius: var(--border-radius-sm);
+    border-left: 4px solid var(--color-primary);
+    margin: 0.5rem 0;
+  }
+  
+  .analysis-note small {
+    color: var(--color-text-primary);
+    font-weight: 500;
+    font-size: 0.875rem;
+  }
+  
+  /* Enhanced styling for draft analysis */
+  .draft-good-faith-analysis {
+    border: 2px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+    overflow: hidden;
+  }
+  
+  .draft-good-faith-analysis .good-faith-header h4 {
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+  
+  /* Collapsible header styles */
+  .collapsible-header {
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+  }
+  
+  .collapsible-header:hover {
+    background-color: color-mix(in srgb, var(--color-primary) 3%, transparent);
+  }
+  
+  .header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+  
+  .expand-icon {
+    transition: transform 0.2s ease;
+    display: flex;
+    align-items: center;
+    color: var(--color-text-secondary);
+  }
+  
+  .expand-icon.expanded {
+    transform: rotate(180deg);
+  }
+  
+  .expand-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+  
+  /* Analysis content with smooth animation */
+  .analysis-content {
+    animation: slideDown 0.3s ease-out;
+    padding-top: 0.5rem;
+  }
+  
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 </style>

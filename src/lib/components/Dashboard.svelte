@@ -40,6 +40,10 @@
     status?: string | null;
     type?: string;
     original_discussion_id?: string;
+    good_faith_score?: number | null;
+    good_faith_label?: string | null;
+    good_faith_last_evaluated?: string | null;
+    good_faith_analysis?: any;
   }> = [];
 
   let loading = true;
@@ -67,7 +71,11 @@
         updated_at: draft.updated_at,
         discussion_title: draft.discussion?.title ?? null,
         status: draft.status,
-        type: 'comment'
+        type: 'comment',
+        good_faith_score: draft.good_faith_score,
+        good_faith_label: draft.good_faith_label,
+        good_faith_last_evaluated: draft.good_faith_last_evaluated,
+        good_faith_analysis: draft.good_faith_analysis
       }));
       
       // Get discussion description drafts from localStorage
@@ -118,16 +126,14 @@
   onMount(loadData);
 
 
-  function goToDraft(d: { id: string; discussion_id?: string | null; type?: string; original_discussion_id?: string }) {
+
+  function getDraftHref(d: { id: string; discussion_id?: string | null; type?: string; original_discussion_id?: string }) {
     if (d.type === 'discussion' && d.original_discussion_id) {
-      // Discussion description draft - go to the discussion page to edit
-      goto(`/discussions/${d.original_discussion_id}`);
+      return `/discussions/${d.original_discussion_id}`;
     } else if (d.discussion_id) {
-      // Comment draft - go to discussion with reply draft ID
-      goto(`/discussions/${d.discussion_id}?replyDraftId=${d.id}`);
+      return `/discussions/${d.discussion_id}?replyDraftId=${d.id}`;
     } else {
-      // New discussion draft
-      goto(`/discussions/new?draftId=${d.id}`);
+      return `/discussions/new?draftId=${d.id}`;
     }
   }
 
@@ -171,6 +177,15 @@
       }
       drafts = drafts.filter(dr => dr.id !== d.id);
     }
+  }
+  
+  // Prefer a human-friendly display over raw email-like strings
+  function displayName(name?: string | null): string {
+    if (!name) return '';
+    const n = String(name).trim();
+    const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n);
+    if (isEmail) return n.split('@')[0];
+    return n;
   }
 </script>
 
@@ -220,11 +235,11 @@
               {#each drafts as draft}
                 <li class="list-item">
                   <div class="draft-row">
-                    <div style="flex:1;">
-                      <button type="button" class="draft-button" on:click={() => goToDraft(draft)} on:keydown={(e: KeyboardEvent)=> e.key==='Enter' && goToDraft(draft)}>
+                    <div>
+                      <a href="{getDraftHref(draft)}" class="draft-button">
                         {extractSnippet(draft.draft_content || '')}
-                      </button>
-                      <div class="draft-meta" style="font-size:0.8em; color:var(--color-text-secondary); margin-top:2px; display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                      </a>
+                      <div class="draft-meta" style="font-size:0.8em; color:var(--color-text-secondary); margin-top:2px; display:flex; flex-wrap:wrap; align-items:center;">
                         {#if draft.type === 'discussion'}
                           <span>Discussion description draft</span>
                           {#if draft.discussion_title}
@@ -233,7 +248,7 @@
                         {:else if draft.discussion_id}
                           <span>Reply draft</span>
                           {#if draft.discussion_title}
-                            &nbsp;to <span style="font-weight:500; text-decoration:underline;">{draft.discussion_title}</span>
+                            &nbsp;to&nbsp;<span style="font-weight:500; text-decoration:underline;">{draft.discussion_title}</span>
                           {/if}
                         {:else}
                           <span>Discussion draft</span>
@@ -242,6 +257,21 @@
                           <span class="pending-badge" title="Awaiting moderation / processing">Pending…</span>
                         {/if}
                       </div>
+                      
+                      <!-- Good Faith Analysis Display -->
+                      {#if draft.good_faith_score !== null && draft.good_faith_score !== undefined}
+                        <div class="draft-analysis" style="margin-top:4px;">
+                          <div class="good-faith-pill {draft.good_faith_label || 'neutral'}" title="Good faith score: {(draft.good_faith_score * 100).toFixed(0)}%">
+                            <span class="gf-score">{(draft.good_faith_score * 100).toFixed(0)}%</span>
+                            <span class="gf-label">{draft.good_faith_label || 'unrated'}</span>
+                          </div>
+                          {#if draft.good_faith_last_evaluated}
+                            <span class="analysis-date" style="font-size:0.7em; color:var(--color-text-secondary); margin-left:6px;">
+                              Analyzed {new Date(draft.good_faith_last_evaluated).toLocaleDateString()}
+                            </span>
+                          {/if}
+                        </div>
+                      {/if}
                     </div>
                     <button type="button" class="draft-delete" aria-label="Delete draft" title="Delete draft" on:click={() => deleteDraft(draft)}>
                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -430,7 +460,7 @@
     text-align: center;;
     font-size: 1.25rem;
     font-weight: 600;
-    margin-bottom: 1rem;
+    margin-bottom: 0rem;
     font-family: var(--font-family-display);
     color: var(--color-text-primary);
   }
@@ -478,17 +508,22 @@
   /* Sidebar Lists */
   .list {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 0.5rem;
     list-style: none;
     padding: 0;
+    flex-wrap: wrap;
   }
   .list-item {
     color: var(--color-primary);
     cursor: pointer;
+    max-width: 15rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    padding: 0.5rem;
   }
   .list-item:hover {
-    text-decoration: underline;
+    background-color: var(--color-surface-alt);
   }
 
   /* Buttons */
@@ -545,20 +580,20 @@
   /* Draft Delete Button */
   .draft-row { display:flex; align-items:center; justify-content:space-between; gap:0.5rem; }
   .draft-meta {
-    margin-left: 1rem;
-    padding: 1rem;
+    padding: 0.5rem 0 0.5rem 0;
   }
   .draft-button {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
+    border: none;
     border-radius: var(--border-radius-md);
     color: var(--color-primary);
     cursor: pointer;
     font: inherit;
     text-align: left;
-    padding: 0.5rem 1rem;
     transition: background-color 150ms, box-shadow 150ms;
     box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    text-decoration: none;
+    display: block;
+    width: 100%;
   }
   .draft-button:hover, .draft-button:focus {
     background: var(--color-surface-alt);
@@ -588,10 +623,67 @@
     height: 24px;
   }
   .pending-badge { background: color-mix(in srgb, var(--color-accent) 18%, transparent); color: var(--color-accent); padding:2px 6px; border-radius: 999px; font-size:0.6rem; font-weight:600; letter-spacing:0.5px; border:1px solid color-mix(in srgb, var(--color-accent) 55%, transparent); }
-</style>
-  function displayName(name?: string | null): string {
-    if (!name) return '';
-    const n = String(name).trim();
-    if (n.includes('@')) return n.split('@')[0];
-    return n;
+  
+  /* Good Faith Analysis Display */
+  .draft-analysis {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
   }
+  
+  .good-faith-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  
+  .good-faith-pill.hostile {
+    background: color-mix(in srgb, #dc2626 15%, transparent);
+    color: #dc2626;
+    border-color: color-mix(in srgb, #dc2626 30%, transparent);
+  }
+  
+  .good-faith-pill.questionable {
+    background: color-mix(in srgb, #ea580c 15%, transparent);
+    color: #ea580c;
+    border-color: color-mix(in srgb, #ea580c 30%, transparent);
+  }
+  
+  .good-faith-pill.neutral {
+    background: color-mix(in srgb, #6b7280 15%, transparent);
+    color: #6b7280;
+    border-color: color-mix(in srgb, #6b7280 30%, transparent);
+  }
+  
+  .good-faith-pill.constructive {
+    background: color-mix(in srgb, #059669 15%, transparent);
+    color: #059669;
+    border-color: color-mix(in srgb, #059669 30%, transparent);
+  }
+  
+  .good-faith-pill.exemplary {
+    background: color-mix(in srgb, #0284c7 15%, transparent);
+    color: #0284c7;
+    border-color: color-mix(in srgb, #0284c7 30%, transparent);
+  }
+  
+  .gf-score {
+    font-weight: 700;
+  }
+  
+  .gf-label {
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+  
+  .analysis-date {
+    opacity: 0.8;
+  }
+</style>

@@ -41,11 +41,13 @@ function applyGraphqlRoleHeader() {
 applyGraphqlRoleHeader();
 
 // Correct constraint name (user_pkey) per contributor_constraint enum
+// Important: do NOT overwrite an existing display_name on conflict.
+// Only update the email; keep display_name as user-configured value.
 const UPSERT_CONTRIBUTOR = `
   mutation UpsertContributor($id: uuid!, $display_name: String, $email: String) {
     insert_contributor_one(
       object: { id: $id, display_name: $display_name, email: $email },
-      on_conflict: { constraint: user_pkey, update_columns: [display_name, email] }
+      on_conflict: { constraint: user_pkey, update_columns: [email] }
     ) { id }
   }
 `;
@@ -54,7 +56,8 @@ export async function ensureContributor() {
   const user = nhost.auth.getUser();
   if (!user) return;
 
-  const displayName = user.displayName || user.email?.split('@')[0] || 'Anonymous';
+  let displayName = user.displayName || user.email?.split('@')[0] || 'Anonymous';
+  if (displayName.length > 50) displayName = displayName.slice(0, 50);
   const res = await nhost.graphql.request(UPSERT_CONTRIBUTOR, {
     id: user.id,
     display_name: displayName,

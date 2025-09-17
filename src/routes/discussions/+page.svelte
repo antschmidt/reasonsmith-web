@@ -40,7 +40,7 @@
         title
         description
         created_at
-        contributor { display_name }
+        contributor { id handle display_name }
       }
     }
   `;
@@ -52,7 +52,7 @@
         title
         description
         created_at
-        contributor { display_name }
+        contributor { id handle display_name }
       }
     }
   `;
@@ -193,7 +193,8 @@
   function displayName(name?: string | null): string {
     if (!name) return '';
     const n = String(name).trim();
-    if (n.includes('@')) return n.split('@')[0];
+    const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n);
+    if (isEmail) return n.split('@')[0];
     return n;
   }
 </script>
@@ -231,7 +232,7 @@
           {#if d.description}
             <p class="discussion-snippet">{@html highlight(d.description, q)}</p>
           {/if}
-          <p class="discussion-meta">{#if d.contributor?.display_name}by {@html highlight(displayName(d.contributor.display_name), q)} · {/if}{new Date(d.created_at).toLocaleString()}</p>
+          <p class="discussion-meta">{#if d.contributor?.display_name}by <a href={`/u/${d.contributor.handle || d.contributor.id}`}>@{@html highlight(displayName(d.contributor.display_name), q)}</a> · {/if}{new Date(d.created_at).toLocaleString()}</p>
         </div>
       {/each}
       {#if !q.trim() && hasMoreDiscussions}

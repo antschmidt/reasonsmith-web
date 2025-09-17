@@ -4,6 +4,7 @@
 	import { writable } from 'svelte/store';
 	import { nhost } from '$lib/nhostClient';
 	import Dashboard from '$lib/components/Dashboard.svelte';
+ 	import TopPostsCarousel from '$lib/components/TopPostsCarousel.svelte';
 	import { theme, toggleTheme } from '$lib/themeStore';
 	import { env as publicEnv } from '$env/dynamic/public';
 
@@ -114,6 +115,11 @@
 			Get Started
 		</button>
 
+		<!-- Featured Top Posts for guests -->
+		<div class="landing-featured">
+			<TopPostsCarousel />
+		</div>
+
 		<div class="public-resources" aria-labelledby="public-resources-title">
 			<h2 id="public-resources-title" class="public-resources-title">Learn More</h2>
 			<ul class="public-resources-list">
@@ -215,6 +221,7 @@
 		background: var(--color-surface);
 		color: var(--color-text-primary);
 	}
+.landing-featured { max-width: 900px; margin: 1rem auto 0; padding: 0 1rem; }
 	.landing-hero h1 {
 		font-size: 2rem;
 		margin-bottom: 1rem;

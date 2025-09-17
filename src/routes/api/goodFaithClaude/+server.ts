@@ -24,7 +24,7 @@ interface ClaudeScoreResponse {
   goodFaithScore: number; // 0-100
   cultishPhrases: string[];
   overallAnalysis: string;
-  
+
   // Legacy fields for backward compatibility
   good_faith_score?: number;
   good_faith_label?: string;
@@ -42,7 +42,7 @@ function getLabel(score: number): string {
 async function analyzeWithClaude(content: string): Promise<ClaudeScoreResponse> {
   try {
     console.log('Starting Claude API call...');
-    
+
     if (!process.env.ANTHROPIC_API_KEY) {
       throw new Error('ANTHROPIC_API_KEY not set');
     }
@@ -50,7 +50,7 @@ async function analyzeWithClaude(content: string): Promise<ClaudeScoreResponse> 
     const msg = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 20000,
-      temperature: 1,
+      temperature: 0.2,
       system: `You are an expert in logic, rhetoric, and argumentation analysis.
 
 Analyze the given text for logical fallacies, manipulative language, and good faith communication.
@@ -102,6 +102,13 @@ Evaluation criteria:
    - Admits uncertainty when appropriate
    - Focuses on ideas not persons
 
+5. CALIBRATION REMINDER:
+  Before finalizing scores, verify:
+- short agreements/disagreements without supporting evidence = 1-2
+- Claims without any supporting evidence = 3-4 maximum
+- Only award 7+ for arguments with actual evidence or logical structure
+- Consistency: similar argument types should receive similar scores
+
 Extract EVERY distinct claim made. For each claim, analyze ALL supporting arguments (or note their absence).
 
 Return ONLY the JSON object, no additional text.`,
@@ -114,9 +121,9 @@ Return ONLY the JSON object, no additional text.`,
     });
 
     console.log('Claude API response received');
-    
+
     const responseText = msg.content[0]?.type === 'text' ? msg.content[0].text : '';
-    
+
     if (!responseText) {
       throw new Error('No response from Claude');
     }
@@ -130,18 +137,18 @@ Return ONLY the JSON object, no additional text.`,
     }
 
     console.log('Claude cleaned response length:', cleanedResponse.length);
-    
+
     // Parse the JSON response
     const result: ClaudeScoreResponse = JSON.parse(cleanedResponse);
     console.log('Claude parsed result successfully');
-    
+
     // Add backward compatibility fields
     result.good_faith_score = result.goodFaithScore / 100; // Convert 0-100 to 0-1
     result.good_faith_label = getLabel(result.good_faith_score); // Use 0-1 scale
     result.rationale = result.overallAnalysis;
-    
+
     return result;
-    
+
   } catch (error: any) {
     console.error('Claude API error:', error);
     console.error('Error details:', error.message, error.stack);
@@ -153,16 +160,16 @@ Return ONLY the JSON object, no additional text.`,
 function heuristicScore(content: string): ClaudeScoreResponse {
   const lower = content.toLowerCase();
   let score = 50; // 0-100 scale
-  
+
   // Basic heuristic analysis
   if (/(thank|appreciate)/.test(lower)) score += 10;
   if (/(evidence|source|reference)/.test(lower)) score += 15;
   if (/(idiot|stupid|hate|moron|trash)/.test(lower)) score -= 30;
   if (/(I understand|I see your point|you might be right)/.test(lower)) score += 10;
   if (/(always|never|all|none|everyone|no one)/.test(lower)) score -= 5; // Absolute statements
-  
+
   score = Math.max(0, Math.min(100, score));
-  
+
   // Create basic structured response
   const claims: ClaudeClaim[] = [{
     claim: content.length > 100 ? content.substring(0, 100) + '...' : content,
@@ -190,18 +197,18 @@ export const POST: RequestHandler = async ({ request }) => {
   try {
     const body = await request.json();
     const { postId, content } = body as { postId?: string; content?: string };
-    
+
     if (typeof content !== 'string' || !content.trim()) {
       return json({ error: 'content required' }, { status: 400 });
     }
-    
+
     console.log('Claude API key present:', !!process.env.ANTHROPIC_API_KEY);
     console.log('Processing request for content length:', content.length);
-    
+
     // Use Claude analysis
     const scored = await analyzeWithClaude(content);
     return json({ ...scored, postId: postId || null });
-    
+
   } catch (e: any) {
     console.error('POST handler error:', e);
     return json({ error: e?.message || 'Internal error' }, { status: 500 });
