@@ -14,9 +14,18 @@
   ]);
   let activeCategory = $state('latest');
   let q = $state('');
-  let results = $state<Array<{ id: string; title: string; description?: string | null; created_at: string; contributor?: { display_name?: string|null } }> | null>(null);
-  let discussions = $state<Array<{ id: string; title: string; description?: string | null; created_at: string; contributor?: { display_name?: string|null } }> | null>(null);
-  let filtered = $state<Array<{ id: string; title: string; description?: string | null; created_at: string; contributor?: { display_name?: string|null } }> | null>(null);
+  type DiscussionSummary = {
+    id: string;
+    title: string;
+    description?: string | null;
+    created_at: string;
+    is_anonymous?: boolean | null;
+    contributor?: { id: string; handle?: string | null; display_name?: string | null } | null;
+  };
+
+  let results = $state<DiscussionSummary[] | null>(null);
+  let discussions = $state<DiscussionSummary[] | null>(null);
+  let filtered = $state<DiscussionSummary[] | null>(null);
   const PAGE_SIZE = 20;
   let page = $state(0);
   let waitingForAuth = $state(false);
@@ -40,6 +49,7 @@
         title
         description
         created_at
+        is_anonymous
         contributor { id handle display_name }
       }
     }
@@ -52,6 +62,7 @@
         title
         description
         created_at
+        is_anonymous
         contributor { id handle display_name }
       }
     }
@@ -147,6 +158,7 @@
       parts.length === 0 || parts.some((p) =>
         (d.title && d.title.toLowerCase().includes(p)) ||
         (d.description && d.description.toLowerCase().includes(p)) ||
+        (d.is_anonymous && 'anonymous'.includes(p)) ||
         (d.contributor?.display_name && d.contributor.display_name.toLowerCase().includes(p)) ||
         (Array.isArray((d as any).tags) && (d as any).tags.some((tag: any) =>
           (typeof tag === 'string' && tag.toLowerCase().includes(p)) ||
@@ -232,7 +244,16 @@
           {#if d.description}
             <p class="discussion-snippet">{@html highlight(d.description, q)}</p>
           {/if}
-          <p class="discussion-meta">{#if d.contributor?.display_name}by <a href={`/u/${d.contributor.handle || d.contributor.id}`}>@{@html highlight(displayName(d.contributor.display_name), q)}</a> · {/if}{new Date(d.created_at).toLocaleString()}</p>
+          <p class="discussion-meta">
+            {#if d.is_anonymous}
+              <span class="anonymous-author">by Anonymous</span>
+              {' · '}{new Date(d.created_at).toLocaleString()}
+            {:else if d.contributor?.display_name}
+              by <a href={`/u/${d.contributor.handle || d.contributor.id}`}>@{@html highlight(displayName(d.contributor.display_name), q)}</a> · {new Date(d.created_at).toLocaleString()}
+            {:else}
+              {new Date(d.created_at).toLocaleString()}
+            {/if}
+          </p>
         </div>
       {/each}
       {#if !q.trim() && hasMoreDiscussions}
@@ -263,6 +284,7 @@
   .discussion-title { color: var(--color-primary); font-weight:600; }
   .discussion-snippet { color: var(--color-text-secondary); font-size:0.9rem; margin:0.25rem 0; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; text-overflow:ellipsis; line-clamp:2; }
   .discussion-meta { font-size:0.8rem; color:var(--color-text-secondary); }
+  .anonymous-author { font-weight: 600; color: var(--color-text-primary); }
   :global(mark) { background: color-mix(in srgb, var(--color-primary) 25%, transparent); padding: 0 0.1em; border-radius: 2px; }
   /* back-link removed (nav provides dashboard access) */
   .hint { color: var(--color-text-secondary); margin-top: 1rem; }

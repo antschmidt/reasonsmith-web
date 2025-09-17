@@ -3,33 +3,35 @@
   import { onMount } from 'svelte';
   // Avoid importing gql to prevent type resolution issues; use plain strings
   import { nhost } from '$lib/nhostClient';
-  import { GET_DASHBOARD_DATA } from '$lib/graphql/queries';
+  import { GET_DASHBOARD_DATA, GET_USER_STATS } from '$lib/graphql/queries';
   import { goto } from '$app/navigation';
+  import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
 
   export let user: User;
 
-  // Keep placeholder stats for now; can be backed by a view later
-  const stats = {
-    goodFaithRate: 88,
-    sourceAccuracy: 95,
-    reputationScore: 750
+  // Real user statistics
+  let stats: UserStats = {
+    goodFaithRate: 0,
+    sourceAccuracy: 0,
+    reputationScore: 0,
+    totalPosts: 0,
+    totalDiscussions: 0,
+    participatedDiscussions: 0
+  };
+  let statsLoading = true;
+
+  type DashboardDiscussion = {
+    id: string;
+    title: string;
+    description?: string | null;
+    created_at: string;
+    is_anonymous?: boolean | null;
+    contributor?: { id: string; handle?: string | null; display_name?: string | null } | null;
   };
 
   // Live data
-  let myDiscussions: Array<{
-    id: string;
-    title: string;
-    description?: string | null;
-    created_at: string;
-    contributor?: { id: string; display_name?: string | null } | null;
-  }> = [];
-  let repliedDiscussions: Array<{
-    id: string;
-    title: string;
-    description?: string | null;
-    created_at: string;
-    contributor?: { id: string; display_name?: string | null } | null;
-  }> = [];
+  let myDiscussions: DashboardDiscussion[] = [];
+  let repliedDiscussions: DashboardDiscussion[] = [];
 
   let drafts: Array<{
     id: string;
@@ -51,44 +53,70 @@
 
   async function loadData() {
     loading = true;
+    statsLoading = true;
     error = null;
-    const { data, error: gqlError } = await nhost.graphql.request(GET_DASHBOARD_DATA, {
-      userId: user.id as unknown as string
-    });
-    if (gqlError) {
-      error = Array.isArray(gqlError)
-        ? gqlError.map((e: any) => e.message ?? String(e)).join('; ')
-        : ((gqlError as any).message ?? 'Failed to load data');
-    } else if (data) {
-      myDiscussions = data.myDiscussions ?? [];
-      repliedDiscussions = data.repliedDiscussions ?? [];
+    
+    try {
+      // Load dashboard data and user stats in parallel
+      const [dashboardResult, statsResult] = await Promise.all([
+        nhost.graphql.request(GET_DASHBOARD_DATA, {
+          userId: user.id as unknown as string
+        }),
+        nhost.graphql.request(GET_USER_STATS, {
+          userId: user.id as unknown as string
+        })
+      ]);
+
+      // Handle dashboard data
+      if (dashboardResult.error) {
+        error = Array.isArray(dashboardResult.error)
+          ? dashboardResult.error.map((e: any) => e.message ?? String(e)).join('; ')
+          : ((dashboardResult.error as any).message ?? 'Failed to load dashboard data');
+      } else if (dashboardResult.data) {
+        myDiscussions = dashboardResult.data.myDiscussions ?? [];
+        repliedDiscussions = dashboardResult.data.repliedDiscussions ?? [];
+        
+        // Get database drafts (comment drafts)
+        const dbDrafts = (dashboardResult.data.myDrafts ?? []).map((draft: any) => ({
+          id: draft.id,
+          draft_content: draft.draft_content,
+          discussion_id: draft.discussion_id,
+          updated_at: draft.updated_at,
+          discussion_title: draft.discussion?.title ?? null,
+          status: draft.status,
+          type: 'comment',
+          good_faith_score: draft.good_faith_score,
+          good_faith_label: draft.good_faith_label,
+          good_faith_last_evaluated: draft.good_faith_last_evaluated,
+          good_faith_analysis: draft.good_faith_analysis
+        }));
+        
+        // Get discussion description drafts from localStorage
+        const discussionDrafts = getDiscussionDraftsFromLocalStorage();
+        
+        // Combine both types of drafts
+        drafts = [...dbDrafts, ...discussionDrafts].sort((a, b) => {
+          const dateA = new Date(a.updated_at || 0).getTime();
+          const dateB = new Date(b.updated_at || 0).getTime();
+          return dateB - dateA; // Most recent first
+        });
+      }
+
+      // Handle user stats
+      if (statsResult.error) {
+        console.warn('Failed to load user stats:', statsResult.error);
+        // Keep default stats values
+      } else if (statsResult.data) {
+        stats = calculateUserStats(statsResult.data);
+      }
       
-      // Get database drafts (comment drafts)
-      const dbDrafts = (data.myDrafts ?? []).map((draft: any) => ({
-        id: draft.id,
-        draft_content: draft.draft_content,
-        discussion_id: draft.discussion_id,
-        updated_at: draft.updated_at,
-        discussion_title: draft.discussion?.title ?? null,
-        status: draft.status,
-        type: 'comment',
-        good_faith_score: draft.good_faith_score,
-        good_faith_label: draft.good_faith_label,
-        good_faith_last_evaluated: draft.good_faith_last_evaluated,
-        good_faith_analysis: draft.good_faith_analysis
-      }));
-      
-      // Get discussion description drafts from localStorage
-      const discussionDrafts = getDiscussionDraftsFromLocalStorage();
-      
-      // Combine both types of drafts
-      drafts = [...dbDrafts, ...discussionDrafts].sort((a, b) => {
-        const dateA = new Date(a.updated_at || 0).getTime();
-        const dateB = new Date(b.updated_at || 0).getTime();
-        return dateB - dateA; // Most recent first
-      });
+    } catch (err) {
+      error = `Failed to load data: ${err}`;
+      console.error('Error loading dashboard data:', err);
     }
+    
     loading = false;
+    statsLoading = false;
   }
 
   function getDiscussionDraftsFromLocalStorage() {
@@ -187,6 +215,16 @@
     if (isEmail) return n.split('@')[0];
     return n;
   }
+
+  function authorLabel(discussion: DashboardDiscussion, isOwner = false): string {
+    if (discussion.is_anonymous) {
+      return isOwner ? 'by You (anonymous to others)' : 'by Anonymous';
+    }
+    if (discussion.contributor?.display_name) {
+      return `by ${displayName(discussion.contributor.display_name)}`;
+    }
+    return isOwner ? 'by You' : '';
+  }
 </script>
 
 <div class="dashboard-container">
@@ -201,15 +239,33 @@
         <div class="stats-container">
           <div class="stat-item">
             <h3 class="stat-title">Good-Faith Rate</h3>
-            <p class="stat-value">{stats.goodFaithRate}%</p>
+            <p class="stat-value">
+              {#if statsLoading}
+                <span class="loading-text">...</span>
+              {:else}
+                {stats.goodFaithRate}%
+              {/if}
+            </p>
           </div>
           <div class="stat-item">
             <h3 class="stat-title">Source Accuracy</h3>
-            <p class="stat-value">{stats.sourceAccuracy}%</p>
+            <p class="stat-value">
+              {#if statsLoading}
+                <span class="loading-text">...</span>
+              {:else}
+                {stats.sourceAccuracy}%
+              {/if}
+            </p>
           </div>
           <div class="stat-item">
             <h3 class="stat-title">Reputation Score</h3>
-            <p class="stat-value">{stats.reputationScore}</p>
+            <p class="stat-value">
+              {#if statsLoading}
+                <span class="loading-text">...</span>
+              {:else}
+                {stats.reputationScore.toLocaleString()}
+              {/if}
+            </p>
           </div>
         </div>
       </section>
@@ -312,17 +368,21 @@
           <div class="discussions-list">
             <h3 class="subsection-title">Discussions</h3>
             {#each myDiscussions as discussion}
+              {@const label = authorLabel(discussion, true)}
               <div class="discussion-card" role="button" tabindex="0" on:click={() => goto(`/discussions/${discussion.id}`)} on:keydown={(e) => (e.key === 'Enter' ? goto(`/discussions/${discussion.id}`) : null)}>
                 <h3 class="discussion-title">{discussion.title}</h3>
                 {#if discussion.description}
                   <p class="discussion-snippet">{discussion.description}</p>
                 {/if}
                 <p class="discussion-meta">
-                  {#if discussion.contributor?.display_name}
-                    by {displayName(discussion.contributor.display_name)}
+                  {#if label}
+                    <span class:anonymous-author={discussion.is_anonymous}>{label}</span>
                   {/if}
                   {#if discussion.created_at}
-                    &middot; {new Date(discussion.created_at).toLocaleString()}
+                    {#if label}
+                      <span class="dot-separator" aria-hidden="true">·</span>
+                    {/if}
+                    <span>{new Date(discussion.created_at).toLocaleString()}</span>
                   {/if}
                 </p>
               </div>
@@ -334,17 +394,21 @@
           <h3 class="subsection-title">You replied to</h3>
           <div class="discussions-list">
             {#each repliedDiscussions as discussion}
+              {@const label = authorLabel(discussion, false)}
               <div class="discussion-card" role="button" tabindex="0" on:click={() => goto(`/discussions/${discussion.id}`)} on:keydown={(e) => (e.key === 'Enter' ? goto(`/discussions/${discussion.id}`) : null)}>
                 <h3 class="discussion-title">{discussion.title}</h3>
                 {#if discussion.description}
                   <p class="discussion-snippet">{discussion.description}</p>
                 {/if}
                 <p class="discussion-meta">
-                  {#if discussion.contributor?.display_name}
-                    by {displayName(discussion.contributor.display_name)}
+                  {#if label}
+                    <span class:anonymous-author={discussion.is_anonymous}>{label}</span>
                   {/if}
                   {#if discussion.created_at}
-                    &middot; {new Date(discussion.created_at).toLocaleString()}
+                    {#if label}
+                      <span class="dot-separator" aria-hidden="true">·</span>
+                    {/if}
+                    <span>{new Date(discussion.created_at).toLocaleString()}</span>
                   {/if}
                 </p>
               </div>
@@ -502,6 +566,17 @@
   .discussion-meta {
     font-size: 0.75rem;
     color: var(--color-text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
+  .discussion-meta .dot-separator {
+    color: var(--color-text-secondary);
+  }
+  .discussion-meta .anonymous-author {
+    font-weight: 600;
+    color: var(--color-text-primary);
   }
   /* .load-more removed: no longer used */
 
@@ -685,5 +760,11 @@
   
   .analysis-date {
     opacity: 0.8;
+  }
+
+  /* Loading text for stats */
+  .loading-text {
+    color: var(--color-text-secondary);
+    font-weight: 400;
   }
 </style>

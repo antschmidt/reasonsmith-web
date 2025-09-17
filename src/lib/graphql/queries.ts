@@ -42,6 +42,7 @@ export const GET_DASHBOARD_DATA = gql`
       title
       description
       created_at
+      is_anonymous
       contributor {
         ...ContributorFields
       }
@@ -57,6 +58,7 @@ export const GET_DASHBOARD_DATA = gql`
       title
       description
       created_at
+      is_anonymous
       contributor {
         ...ContributorFields
       }
@@ -250,6 +252,54 @@ export const UPDATE_POST_STYLE = gql`
       style_metadata
       style_word_count
       style_requirements_met
+    }
+  }
+`;
+
+// Query to get real user statistics
+export const GET_USER_STATS = gql`
+  query GetUserStats($userId: uuid!) {
+    # Get user's posts with good faith scores
+    userPosts: post(where: { author_id: { _eq: $userId }, status: { _in: ["approved", "pending"] } }) {
+      id
+      good_faith_score
+      good_faith_label
+      created_at
+      style_metadata
+    }
+    
+    # Get user's discussions with good faith scores  
+    userDiscussions: discussion(where: { created_by: { _eq: $userId } }) {
+      id
+      good_faith_score
+      good_faith_label
+      created_at
+    }
+    
+    # Count total discussions created
+    discussionCount: discussion_aggregate(where: { created_by: { _eq: $userId } }) {
+      aggregate {
+        count
+      }
+    }
+    
+    # Count total posts/replies made
+    postCount: post_aggregate(where: { author_id: { _eq: $userId }, status: { _in: ["approved", "pending"] } }) {
+      aggregate {
+        count
+      }
+    }
+    
+    # Count discussions user has participated in (replied to)
+    participatedDiscussions: discussion_aggregate(
+      where: { 
+        created_by: { _neq: $userId }, 
+        posts: { author_id: { _eq: $userId }, status: { _in: ["approved", "pending"] } } 
+      }
+    ) {
+      aggregate {
+        count
+      }
     }
   }
 `;

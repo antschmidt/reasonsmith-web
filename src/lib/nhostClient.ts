@@ -11,6 +11,62 @@ if (!PUBLIC_NHOST_SUBDOMAIN || !PUBLIC_NHOST_REGION) {
   console.warn('[nhostClient] Missing PUBLIC_NHOST_SUBDOMAIN or PUBLIC_NHOST_REGION; configure in Vercel project settings.');
 }
 
+const REFRESH_TOKEN_KEY = 'nhostRefreshToken';
+const REFRESH_TOKEN_ID_KEY = 'nhostRefreshTokenId';
+const REFRESH_TOKEN_EXPIRES_AT_KEY = 'nhostRefreshTokenExpiresAt';
+const SESSION_CACHE_META_SUBDOMAIN = '__nhost_last_subdomain';
+const SESSION_CACHE_META_REGION = '__nhost_last_region';
+const TOKEN_ENDPOINT_PATH = '/v1/token';
+const FETCH_PATCH_FLAG = '__nhost_token_interceptor__';
+
+function clearCachedSession() {
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_ID_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_EXPIRES_AT_KEY);
+}
+
+function sanitiseCachedSession() {
+  const invalidValues = new Set(['', 'null', 'undefined']);
+
+  const cachedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!cachedRefreshToken || invalidValues.has(cachedRefreshToken.trim()) || cachedRefreshToken.trim().length < 20) {
+    clearCachedSession();
+  }
+
+  const cachedRefreshTokenId = localStorage.getItem(REFRESH_TOKEN_ID_KEY);
+  if (cachedRefreshTokenId && invalidValues.has(cachedRefreshTokenId.trim())) {
+    clearCachedSession();
+  }
+
+  const expiresAtRaw = localStorage.getItem(REFRESH_TOKEN_EXPIRES_AT_KEY);
+  if (expiresAtRaw) {
+    const expiresAt = new Date(expiresAtRaw);
+    if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+      clearCachedSession();
+    }
+  }
+
+  if (PUBLIC_NHOST_SUBDOMAIN) {
+    const previous = localStorage.getItem(SESSION_CACHE_META_SUBDOMAIN);
+    if (previous && previous !== PUBLIC_NHOST_SUBDOMAIN) {
+      clearCachedSession();
+    }
+  }
+  if (PUBLIC_NHOST_REGION) {
+    const previous = localStorage.getItem(SESSION_CACHE_META_REGION);
+    if (previous && previous !== PUBLIC_NHOST_REGION) {
+      clearCachedSession();
+    }
+  }
+
+  if (PUBLIC_NHOST_SUBDOMAIN) {
+    localStorage.setItem(SESSION_CACHE_META_SUBDOMAIN, PUBLIC_NHOST_SUBDOMAIN);
+  }
+  if (PUBLIC_NHOST_REGION) {
+    localStorage.setItem(SESSION_CACHE_META_REGION, PUBLIC_NHOST_REGION);
+  }
+}
+
 // Create configuration based on environment
 // FORCE subdomain usage to avoid CORS issues with custom domains
 const nhostConfig = {
@@ -23,6 +79,34 @@ const nhostConfig = {
 
 // Add debugging to confirm configuration
 if (isBrowser) {
+  const globalAny = window as typeof window & { [FETCH_PATCH_FLAG]?: boolean };
+  if (!globalAny[FETCH_PATCH_FLAG] && typeof fetch === 'function') {
+    const originalFetch = window.fetch.bind(window);
+    globalAny[FETCH_PATCH_FLAG] = true;
+    window.fetch = async (...args) => {
+      const [input, init] = args;
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : '';
+      try {
+        const response = await originalFetch(input as RequestInfo, init as RequestInit);
+        if (url.includes(TOKEN_ENDPOINT_PATH) && !response.ok) {
+          console.warn('[nhostClient] Clearing cached session after token endpoint failure', response.status);
+          clearCachedSession();
+        }
+        return response;
+      } catch (error) {
+        if (url.includes(TOKEN_ENDPOINT_PATH)) {
+          console.warn('[nhostClient] Clearing cached session after token endpoint error', error);
+          clearCachedSession();
+        }
+        throw error;
+      }
+    };
+  }
+  try {
+    sanitiseCachedSession();
+  } catch (error) {
+    console.warn('[nhostClient] Failed to sanitise cached session', error);
+  }
   console.log('[nhostClient] FORCED subdomain config:', {
     subdomain: PUBLIC_NHOST_SUBDOMAIN,
     region: PUBLIC_NHOST_REGION,

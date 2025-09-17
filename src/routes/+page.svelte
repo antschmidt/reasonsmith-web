@@ -70,11 +70,21 @@
 	async function sendMagicLink() {
 		authError = null; magicLinkSent = false;
 		if (!email) { authError = 'Please enter an email first.'; return; }
-		try {
-			await nhost.auth.signIn({ email, options: { redirectTo: getRedirect() } });
-			magicLinkSent = true;
-		} catch (e: any) { authError = e.message; }
+	try {
+		const redirectTo = getRedirect();
+		await nhost.auth.signIn({
+			email,
+			...(redirectTo ? { options: { redirectTo } } : {})
+		});
+		magicLinkSent = true;
+	} catch (e: any) {
+		console.error('Magic link request failed', e);
+		const errorPayload = e?.error ?? e;
+		if (errorPayload?.message) authError = errorPayload.message;
+		else if (errorPayload?.error) authError = `${errorPayload.error}`;
+		else authError = 'Failed to request magic link. Please try again shortly.';
 	}
+}
 	async function signInWithSecurityKey() { alert('Security key sign-in not yet implemented.'); }
 	async function signUpWithSecurityKey() { alert('Security key sign-up not yet implemented.'); }
 </script>

@@ -2,6 +2,8 @@
   import { nhost } from '$lib/nhostClient';
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
+  import { GET_USER_STATS } from '$lib/graphql/queries';
+  import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
 
   let userId = '';
   let loading = true;
@@ -10,6 +12,15 @@
   let contributor: any = null;
   let discussions: any[] = [];
   let posts: any[] = [];
+  let stats: UserStats = {
+    goodFaithRate: 0,
+    sourceAccuracy: 0,
+    reputationScore: 0,
+    totalPosts: 0,
+    totalDiscussions: 0,
+    participatedDiscussions: 0
+  };
+  let statsLoading = true;
 
   const GET_PUBLIC_PROFILE = `
     query GetPublicProfile($id: uuid!) {
@@ -141,6 +152,7 @@
 
   async function load() {
     loading = true;
+    statsLoading = true;
     error = null;
     try {
       // Ensure auth is initialized so role header is applied if signed in
@@ -155,12 +167,28 @@
         contributor = c;
         resolved = c.id;
       }
-      const { data, error: gqlError } = await nhost.graphql.request(GET_PUBLIC_PROFILE, { id: resolved });
-      if (gqlError) throw (Array.isArray(gqlError) ? new Error(gqlError.map((e:any)=>e.message).join('; ')) : gqlError);
-      contributor = contributor || (data as any)?.contributor_by_pk || null;
-      discussions = (data as any)?.discussion || [];
-      posts = (data as any)?.post || [];
+      
+      // Load profile data and stats in parallel
+      const [profileResult, statsResult] = await Promise.all([
+        nhost.graphql.request(GET_PUBLIC_PROFILE, { id: resolved }),
+        nhost.graphql.request(GET_USER_STATS, { userId: resolved })
+      ]);
+      
+      // Handle profile data
+      if (profileResult.error) throw (Array.isArray(profileResult.error) ? new Error(profileResult.error.map((e:any)=>e.message).join('; ')) : profileResult.error);
+      contributor = contributor || (profileResult.data as any)?.contributor_by_pk || null;
+      discussions = (profileResult.data as any)?.discussion || [];
+      posts = (profileResult.data as any)?.post || [];
       if (!contributor) throw new Error('Profile not found');
+      
+      // Handle stats data
+      if (statsResult.error) {
+        console.warn('Failed to load user stats:', statsResult.error);
+        // Keep default stats values
+      } else if (statsResult.data) {
+        stats = calculateUserStats(statsResult.data);
+      }
+      
     } catch (e:any) {
       const msg = e?.message || String(e);
       if (/field\s+'?contributor_by_pk'?\s+not\s+found\s+in\s+type/i.test(msg)) {
@@ -170,6 +198,7 @@
       }
     } finally {
       loading = false;
+      statsLoading = false;
     }
   }
 
@@ -208,6 +237,57 @@
         {/if}
       </div>
     </header>
+
+    <!-- Stats Section -->
+    <section class="profile-section stats-section">
+      <h2>Statistics</h2>
+      <div class="stats-container">
+        <div class="stat-item">
+          <h3 class="stat-title">Good-Faith Rate</h3>
+          <p class="stat-value">
+            {#if statsLoading}
+              <span class="loading-text">...</span>
+            {:else}
+              {stats.goodFaithRate}%
+            {/if}
+          </p>
+        </div>
+        <div class="stat-item">
+          <h3 class="stat-title">Source Accuracy</h3>
+          <p class="stat-value">
+            {#if statsLoading}
+              <span class="loading-text">...</span>
+            {:else}
+              {stats.sourceAccuracy}%
+            {/if}
+          </p>
+        </div>
+        <div class="stat-item">
+          <h3 class="stat-title">Reputation Score</h3>
+          <p class="stat-value">
+            {#if statsLoading}
+              <span class="loading-text">...</span>
+            {:else}
+              {stats.reputationScore.toLocaleString()}
+            {/if}
+          </p>
+        </div>
+      </div>
+      <div class="activity-summary">
+        <p class="activity-item">
+          <span class="activity-count">{stats.totalDiscussions.toLocaleString()}</span>
+          <span class="activity-label">discussions created</span>
+        </p>
+        <p class="activity-item">
+          <span class="activity-count">{stats.totalPosts.toLocaleString()}</span>
+          <span class="activity-label">comments posted</span>
+        </p>
+        <p class="activity-item">
+          <span class="activity-count">{stats.participatedDiscussions.toLocaleString()}</span>
+          <span class="activity-label">discussions joined</span>
+        </p>
+      </div>
+    </section>
 
     <section class="profile-section">
       <h2>Discussions</h2>
@@ -256,5 +336,102 @@
   .item a:hover { text-decoration: underline; }
   .meta { color: var(--color-text-secondary); font-size: 0.85rem; margin-left: 0.35rem; }
   .error { color: var(--color-accent); }
-  @media (max-width: 560px) { .profile-public-container { padding: 0.75rem; } }
+  
+  /* Stats Section */
+  .stats-section {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+  }
+  
+  .stats-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .stat-item {
+    padding: 0.75rem;
+    border-radius: var(--border-radius-sm);
+    transition: background-color 150ms ease-in-out;
+    background-color: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    text-align: center;
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .stat-item:hover {
+    background-color: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface-alt));
+  }
+  
+  .stat-title {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    margin: 0 0 0.25rem 0;
+    line-height: 1.2;
+  }
+  
+  .stat-value {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin: 0;
+    line-height: 1.2;
+  }
+  
+  .loading-text {
+    color: var(--color-text-secondary);
+    font-weight: 400;
+  }
+  
+  .activity-summary {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 1rem;
+    border-top: 1px solid var(--color-border);
+    padding-top: 1.5rem;
+  }
+  
+  .activity-item {
+    text-align: center;
+    margin: 0;
+  }
+  
+  .activity-count {
+    display: block;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    margin-bottom: 0.25rem;
+  }
+  
+  .activity-label {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+  }
+  
+  @media (max-width: 768px) {
+    .stats-container {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    
+    .activity-summary {
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+  }
+  
+  @media (max-width: 560px) { 
+    .profile-public-container { padding: 0.75rem; }
+    .stats-section { padding: 1rem; }
+  }
 </style>

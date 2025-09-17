@@ -110,6 +110,7 @@
 			0 2px 4px rgba(0, 0, 0, 0.35),
 			0 0 0 1px color-mix(in srgb, var(--color-primary) 35%, transparent);
 	}
+
 	.brand-icon img {
 		width: 100%;
 		height: 100%;

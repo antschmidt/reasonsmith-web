@@ -55,7 +55,7 @@ fqdn = ['auth.reasonsmith.com']
 mode = 'disabled'
 
 [auth.redirections]
-clientUrl = 'https://reasonsmith-web-git-dev-antschmidts-projects.vercel.app/'
+clientUrl = 'http://slarti.tonyschmidt.io:5173'
 allowedUrls = ['https://*.vercel.app', 'http://slarti.tonyschmidt.io:5173', 'http://localhost:5173', 'http://localhost:3000']
 
 [auth.signUp]
@@ -104,7 +104,7 @@ emailVerificationRequired = true
 passwordMinLength = 9
 
 [auth.method.smsPasswordless]
-enabled = false
+enabled = true
 
 [auth.method.oauth]
 [auth.method.oauth.apple]
