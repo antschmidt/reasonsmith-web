@@ -214,17 +214,18 @@
 <div class="container">
   <header class="header">
     <div class="search-row">
-      <input type="search" placeholder="Search topics..." bind:value={q} on:input={onSearchInput} on:keydown={(e)=> e.key==='Enter' && search()} />
-      <button class="btn-primary" on:click={search}>Search</button>
+      <input id="search" type="search" placeholder="Search topics..." bind:value={q} oninput={onSearchInput} onkeydown={(e)=> e.key==='Enter' && search()} />
+      <button class="btn-primary" onclick={search}>Search</button>
     </div>
-    <nav class="categories">
+    <!-- add later once you have a few articles to pull categories from -->
+    <!-- <nav class="categories">
       {#each categories as c}
         <button
           class:active={c.key===activeCategory}
           on:click={() => activeCategory=c.key}
         >{c.label}</button>
       {/each}
-    </nav>
+    </nav> -->
   </header>
 
   {#if error}
@@ -237,8 +238,8 @@
     {:else if filtered && filtered.length > 0}
       {#each filtered as d}
         <div class="discussion-card" role="button" tabindex="0"
-          on:click={() => goto(`/discussions/${d.id}`)}
-          on:keydown={(e)=> e.key==='Enter' && goto(`/discussions/${d.id}`)}
+          onclick={() => goto(`/discussions/${d.id}`)}
+          onkeydown={(e)=> e.key==='Enter' && goto(`/discussions/${d.id}`)}
         >
           <h3 class="discussion-title">{@html highlight(d.title, q)}</h3>
           {#if d.description}
@@ -258,7 +259,7 @@
       {/each}
       {#if !q.trim() && hasMoreDiscussions}
         <div class="load-more-row">
-          <button class="btn-secondary" on:click={() => fetchAll(false)} disabled={loading}>Load more</button>
+          <button class="btn-secondary" onclick={() => fetchAll(false)} disabled={loading}>Load more</button>
         </div>
       {/if}
     {:else if q.trim().length > 0 && !loading}
@@ -270,10 +271,10 @@
 </div>
 
 <style>
-  .container { max-width: 900px; margin: 0 auto; padding: 1rem; }
+  .container { margin: 0 auto; padding: 1rem; }
   .header h1 { font-size: 1.5rem; margin: 0.25rem 0 0.75rem; }
   .search-row { display:flex; gap:0.5rem; }
-  .search-row input { flex:1; padding:0.5rem 0.75rem; border:1px solid var(--color-border); border-radius: var(--border-radius-md); }
+  .search-row input { flex:1; padding:0.5rem 0.75rem; margin-bottom: 0; border:1px solid var(--color-border); border-radius: var(--border-radius-md); }
   .categories { display:flex; gap:0.5rem; margin-top:0.75rem; }
   .categories button { padding:0.25rem 0.5rem; border:1px solid var(--color-border); border-radius: 999px; background:var(--color-surface); cursor:pointer; }
   .categories button.active { background: var(--color-primary); color: var(--color-surface); border-color: var(--color-primary); }

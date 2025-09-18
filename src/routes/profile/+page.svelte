@@ -358,7 +358,7 @@
   }
 </script>
 
-<div class="profile-container">
+<div class="profile-container {editing ? 'editing' : ''}">
   {#if !user}
     <p>Please sign in to view your profile.</p>
   {:else}
@@ -628,8 +628,12 @@
 
 <style>
   .profile-container {
-    max-width: 900px;
+	justify-self: center;
     padding: 1.5rem;
+  }
+  .profile-container.editing {
+	max-width: 700px;
+	width: 100%;
   }
 
   .profile-view {
