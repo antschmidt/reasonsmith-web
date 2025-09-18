@@ -7,9 +7,29 @@
 
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = nhost.auth.getUser();
+	let hasMeRole = false;
+
+	function collectRoles(u) {
+		if (!u) return [];
+		const roles = new Set();
+		if (Array.isArray(u?.roles)) u.roles.forEach((r) => typeof r === 'string' && roles.add(r));
+		const defaultRole = u?.defaultRole ?? u?.default_role;
+		if (typeof defaultRole === 'string') roles.add(defaultRole);
+		if (Array.isArray(u?.metadata?.roles)) u.metadata.roles.forEach((r) => typeof r === 'string' && roles.add(r));
+		if (Array.isArray(u?.app_metadata?.roles)) u.app_metadata.roles.forEach((r) => typeof r === 'string' && roles.add(r));
+		if (typeof u?.role === 'string') roles.add(u.role);
+		return Array.from(roles);
+	}
+
+	function refreshUser() {
+		user = nhost.auth.getUser();
+		hasMeRole = collectRoles(user).includes('me');
+	}
+
+	refreshUser();
 	if (typeof window !== 'undefined') {
 		nhost.auth.onAuthStateChanged(() => {
-			user = nhost.auth.getUser();
+			refreshUser();
 		});
 	}
 
@@ -33,6 +53,13 @@
 		</a>
 		<div class="nav-spacer"></div>
 		<div class="nav-actions" role="group" aria-label="Primary actions">
+			{#if hasMeRole}
+				<a href="/public" class="nav-icon" aria-label="Manage public showcase">
+					<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+						<path d="M6 2a2 2 0 0 0-2 2v16l8-4 8 4V4a2 2 0 0 0-2-2H6Zm0 2h12v13.17l-6-3-6 3V4Z" />
+					</svg>
+				</a>
+			{/if}
 			<a href="/discussions" class="nav-icon" aria-label="Browse all discussions">
 				<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"
 					><path

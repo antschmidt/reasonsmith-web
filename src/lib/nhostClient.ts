@@ -120,7 +120,7 @@ export const nhost = new NhostClient(nhostConfig);
 function applyGraphqlRoleHeader() {
   const user = nhost.auth.getUser();
   if (user) nhost.graphql.setHeaders({ 'x-hasura-role': 'me' });
-  else nhost.graphql.setHeaders({}); // let Hasura use its unauthorized role
+  else nhost.graphql.setHeaders({ 'x-hasura-role': 'anonymous' }); // let Hasura use its unauthorized role
 }
 applyGraphqlRoleHeader();
 

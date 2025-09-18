@@ -516,3 +516,69 @@ export const UNANONYMIZE_DISCUSSION = gql`
     }
   }
 `;
+
+// Public showcase content surfaced on landing/discussions pages
+const PUBLIC_SHOWCASE_FIELDS = gql`
+  fragment PublicShowcaseFields on public_showcase_item {
+    id
+    title
+    subtitle
+    media_type
+    creator
+    source_url
+    summary
+    analysis
+    tags
+    display_order
+    published
+    created_at
+    updated_at
+  }
+`;
+
+export const GET_PUBLIC_SHOWCASE_PUBLISHED = gql`
+  query GetPublicShowcasePublished {
+    public_showcase_item(
+      where: { published: { _eq: true } }
+      order_by: [{ display_order: desc }, { created_at: desc }]
+    ) {
+      ...PublicShowcaseFields
+    }
+  }
+  ${PUBLIC_SHOWCASE_FIELDS}
+`;
+
+export const GET_PUBLIC_SHOWCASE_ADMIN = gql`
+  query GetPublicShowcaseAdmin {
+    public_showcase_item(order_by: [{ display_order: desc }, { created_at: desc }]) {
+      ...PublicShowcaseFields
+    }
+  }
+  ${PUBLIC_SHOWCASE_FIELDS}
+`;
+
+export const CREATE_PUBLIC_SHOWCASE_ITEM = gql`
+  mutation CreatePublicShowcaseItem($input: public_showcase_item_insert_input!) {
+    insert_public_showcase_item_one(object: $input) {
+      ...PublicShowcaseFields
+    }
+  }
+  ${PUBLIC_SHOWCASE_FIELDS}
+`;
+
+export const UPDATE_PUBLIC_SHOWCASE_ITEM = gql`
+  mutation UpdatePublicShowcaseItem($id: uuid!, $changes: public_showcase_item_set_input!) {
+    update_public_showcase_item_by_pk(pk_columns: { id: $id }, _set: $changes) {
+      ...PublicShowcaseFields
+    }
+  }
+  ${PUBLIC_SHOWCASE_FIELDS}
+`;
+
+export const DELETE_PUBLIC_SHOWCASE_ITEM = gql`
+  mutation DeletePublicShowcaseItem($id: uuid!) {
+    delete_public_showcase_item_by_pk(id: $id) {
+      id
+    }
+  }
+`;

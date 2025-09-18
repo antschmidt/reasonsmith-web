@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { nhost } from '$lib/nhostClient';
   import { goto } from '$app/navigation';
+  import { GET_PUBLIC_SHOWCASE_PUBLISHED } from '$lib/graphql/queries';
 
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -31,6 +32,22 @@
   let waitingForAuth = $state(false);
   let unsubAuth: (() => void) | null = null;
   let hasMoreDiscussions = $state(true);
+
+  type PublicShowcaseItem = {
+    id: string;
+    title: string;
+    subtitle?: string | null;
+    media_type?: string | null;
+    creator?: string | null;
+    source_url?: string | null;
+    summary?: string | null;
+    analysis?: string | null;
+    created_at: string;
+  };
+
+  let showcaseLoading = $state(true);
+  let showcaseError = $state<string | null>(null);
+  let showcaseItems = $state<PublicShowcaseItem[]>([]);
 
   const SEARCH_DISCUSSIONS = `
     query SearchDiscussions($q: String!, $limit: Int = 20) {
@@ -143,8 +160,23 @@
   // headers are managed globally by nhostClient
   }
 
+  async function loadShowcase() {
+    showcaseLoading = true;
+    showcaseError = null;
+    try {
+      const { data, error: gqlError } = await nhost.graphql.request(GET_PUBLIC_SHOWCASE_PUBLISHED);
+      if (gqlError) throw (Array.isArray(gqlError) ? new Error(gqlError.map((e:any)=>e.message).join('; ')) : gqlError);
+      showcaseItems = (data as any)?.public_showcase_item ?? [];
+    } catch (e: any) {
+      showcaseError = e?.message ?? 'Failed to load featured analyses.';
+    } finally {
+      showcaseLoading = false;
+    }
+  }
+
   onMount(async () => {
     await ensureAuthReadyAndHeaders();
+    loadShowcase();
     await fetchAll(true);
   });
 
@@ -209,6 +241,17 @@
     if (isEmail) return n.split('@')[0];
     return n;
   }
+
+  function renderShowcaseText(value?: string | null) {
+    if (!value) return '';
+    const escaped = value
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+    return escaped.replace(/(?:\r\n|\r|\n)/g, '<br />');
+  }
 </script>
 
 <div class="container">
@@ -227,6 +270,46 @@
       {/each}
     </nav> -->
   </header>
+
+  <section class="showcase-block" aria-labelledby="showcase-block-title">
+    <div class="showcase-block-heading">
+      <h2 id="showcase-block-title">Curated Analyses</h2>
+      <p>Explore highlighted evaluations of noteworthy public rhetoric.</p>
+    </div>
+    {#if showcaseLoading}
+      <p class="showcase-block-status">Loading curated analyses…</p>
+    {:else if showcaseError}
+      <p class="showcase-block-status error">{showcaseError}</p>
+    {:else if showcaseItems.length === 0}
+      <p class="showcase-block-status">Curated analyses will appear here as they are published.</p>
+    {:else}
+      <ul class="showcase-block-list">
+        {#each showcaseItems as item}
+          <li>
+            <div class="showcase-block-header">
+              <h3>{item.title}</h3>
+              {#if item.media_type || item.creator}
+                <div class="showcase-block-meta">
+                  {#if item.media_type}<span>{item.media_type}</span>{/if}
+                  {#if item.creator}<span>{item.creator}</span>{/if}
+                  <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                </div>
+              {/if}
+            </div>
+            {#if item.summary}
+              <p class="showcase-block-summary">{@html renderShowcaseText(item.summary)}</p>
+            {/if}
+            {#if item.analysis}
+              <p class="showcase-block-analysis">{@html renderShowcaseText(item.analysis)}</p>
+            {/if}
+            {#if item.source_url}
+              <a class="showcase-block-link" href={item.source_url} target="_blank" rel="noopener">View original ↗</a>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
 
   {#if error}
     <p class="error">{error}</p>
@@ -278,6 +361,21 @@
   .categories { display:flex; gap:0.5rem; margin-top:0.75rem; }
   .categories button { padding:0.25rem 0.5rem; border:1px solid var(--color-border); border-radius: 999px; background:var(--color-surface); cursor:pointer; }
   .categories button.active { background: var(--color-primary); color: var(--color-surface); border-color: var(--color-primary); }
+  .showcase-block { margin: 1.5rem 0 2rem; border: 1px solid var(--color-border); border-radius: var(--border-radius-md); padding: 1.25rem; background: var(--color-surface); }
+  .showcase-block-heading { display:flex; flex-direction:column; gap:0.35rem; margin-bottom: 1rem; }
+  .showcase-block-heading h2 { margin:0; font-size:1.35rem; }
+  .showcase-block-heading p { margin:0; color: var(--color-text-secondary); }
+  .showcase-block-status { color: var(--color-text-secondary); font-size:0.9rem; }
+  .showcase-block-status.error { color:#f87171; }
+  .showcase-block-list { list-style:none; padding:0; margin:0; display:grid; gap:1rem; }
+  .showcase-block-list li { border:1px solid var(--color-border); border-radius: var(--border-radius-sm); padding:1rem; background: var(--color-surface-alt); box-shadow: 0 4px 12px color-mix(in srgb, var(--color-border) 20%, transparent); }
+  .showcase-block-header { display:flex; flex-direction:column; gap:0.35rem; margin-bottom:0.5rem; }
+  .showcase-block-header h3 { margin:0; font-size:1.1rem; }
+  .showcase-block-meta { display:flex; gap:0.75rem; flex-wrap:wrap; font-size:0.8rem; color:var(--color-text-secondary); }
+  .showcase-block-summary { margin:0 0 0.5rem; font-weight:600; }
+  .showcase-block-analysis { margin:0 0 0.75rem; }
+  .showcase-block-link { color: var(--color-primary); font-weight:600; text-decoration:none; }
+  .showcase-block-link:hover { text-decoration:underline; }
   .results { display:flex; flex-direction:column; gap:1rem; margin-top: 1rem; }
   .load-more-row { display:flex; justify-content:center; margin-top: 0.5rem; }
   .discussion-card { background: var(--color-surface); border:1px solid var(--color-border); border-radius: var(--border-radius-md); padding:1rem; cursor:pointer; }

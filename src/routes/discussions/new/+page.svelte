@@ -46,6 +46,7 @@
 
 	// Citation management
 	let showCitationForm = $state(false);
+	const hasCitations = $derived(Array.isArray(styleMetadata.citations) && styleMetadata.citations.length > 0);
 
 	// GraphQL mutation documents (without writing style fields until migration is applied)
 	const CREATE_DISCUSSION = `mutation CreateDiscussion($title: String!, $description: String, $authorId: uuid!) { insert_discussion_one(object:{ title:$title, description:$description, created_by:$authorId }) { id } }`;

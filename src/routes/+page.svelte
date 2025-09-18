@@ -5,6 +5,7 @@
 	import { nhost } from '$lib/nhostClient';
 	import Dashboard from '$lib/components/Dashboard.svelte';
  	import TopPostsCarousel from '$lib/components/TopPostsCarousel.svelte';
+	import { GET_PUBLIC_SHOWCASE_PUBLISHED } from '$lib/graphql/queries';
 	import { theme, toggleTheme } from '$lib/themeStore';
 	import { env as publicEnv } from '$env/dynamic/public';
 
@@ -22,9 +23,52 @@
 
 	let user = $state(nhost.auth.getUser());
 	let themeValue = $state('light');
+	type PublicShowcaseItem = {
+		id: string;
+		title: string;
+		subtitle?: string | null;
+		media_type?: string | null;
+		creator?: string | null;
+		source_url?: string | null;
+		summary?: string | null;
+		analysis?: string | null;
+		tags?: string[] | null;
+		created_at: string;
+	};
+
+	let showcaseLoading = $state(true);
+	let showcaseError = $state<string | null>(null);
+	let showcaseItems = $state<PublicShowcaseItem[]>([]);
+
+	async function loadShowcaseItems() {
+		showcaseLoading = true;
+		showcaseError = null;
+		try {
+			const { data, error: gqlError } = await nhost.graphql.request(GET_PUBLIC_SHOWCASE_PUBLISHED);
+			if (gqlError) throw (Array.isArray(gqlError) ? new Error(gqlError.map((e:any)=>e.message).join('; ')) : gqlError);
+			showcaseItems = (data as any)?.public_showcase_item ?? [];
+		} catch (err: any) {
+			showcaseError = err?.message ?? 'Failed to load featured analyses.';
+		} finally {
+			showcaseLoading = false;
+		}
+	}
+
+	function formatShowcaseText(value?: string | null) {
+		if (!value) return '';
+		const escaped = value
+			.replaceAll('&', '&amp;')
+			.replaceAll('<', '&lt;')
+			.replaceAll('>', '&gt;')
+			.replaceAll('"', '&quot;')
+			.replaceAll("'", '&#39;');
+		return escaped.replace(/(?:\r\n|\r|\n)/g, '<br />');
+	}
+
 	onMount(() => {
 		const unsubTheme = theme.subscribe(v => themeValue = v || 'light');
 		nhost.auth.onAuthStateChanged((_event: string) => { user = nhost.auth.getUser(); });
+		loadShowcaseItems();
 		return () => { unsubTheme(); };
 	});
 
@@ -130,6 +174,47 @@
 			<TopPostsCarousel />
 		</div>
 
+		<section class="showcase" aria-labelledby="showcase-title">
+			<div class="showcase-heading">
+				<h2 id="showcase-title">Featured Analyses</h2>
+				<p>Hand-curated evaluations of notable speeches, podcasts, and essays.</p>
+			</div>
+			{#if showcaseLoading}
+				<p class="showcase-status">Loading featured analyses…</p>
+			{:else if showcaseError}
+				<p class="showcase-status error">{showcaseError}</p>
+			{:else if showcaseItems.length === 0}
+				<p class="showcase-status">Curated analyses will appear here soon.</p>
+			{:else}
+				<ul class="showcase-list">
+					{#each showcaseItems as item}
+						<li>
+							<h3>{item.title}</h3>
+							{#if item.subtitle}
+								<p class="showcase-subtitle">{@html formatShowcaseText(item.subtitle)}</p>
+							{/if}
+							<div class="showcase-meta">
+								{#if item.media_type}<span>{item.media_type}</span>{/if}
+								{#if item.creator}<span>{item.creator}</span>{/if}
+								<span>{new Date(item.created_at).toLocaleDateString()}</span>
+							</div>
+							{#if item.summary}
+								<p class="showcase-summary">{@html formatShowcaseText(item.summary)}</p>
+							{/if}
+							{#if item.analysis}
+								<p class="showcase-analysis">{@html formatShowcaseText(item.analysis)}</p>
+							{/if}
+							{#if item.source_url}
+								<a class="showcase-link" href={item.source_url} target="_blank" rel="noopener">
+									Original source ↗
+								</a>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+
 		<div class="public-resources" aria-labelledby="public-resources-title">
 			<h2 id="public-resources-title" class="public-resources-title">Learn More</h2>
 			<ul class="public-resources-list">
@@ -232,6 +317,22 @@
 		color: var(--color-text-primary);
 	}
 .landing-featured { max-width: 900px; margin: 1rem auto 0; padding: 0 1rem; }
+
+.showcase { max-width: 900px; margin: 2rem auto 0; padding: 0 1rem 2rem; }
+.showcase-heading { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+.showcase-heading h2 { margin: 0; font-size: 1.5rem; }
+.showcase-heading p { margin: 0; color: var(--color-text-secondary); }
+.showcase-status { color: var(--color-text-secondary); font-size: 0.95rem; }
+.showcase-status.error { color: #f87171; }
+.showcase-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+.showcase-list li { border: 1px solid var(--color-border); border-radius: var(--border-radius-md); padding: 1rem; background: var(--color-surface); box-shadow: 0 6px 18px color-mix(in srgb, var(--color-border) 18%, transparent); }
+.showcase-list h3 { margin: 0 0 0.35rem; font-size: 1.15rem; }
+.showcase-subtitle { margin: 0 0 0.5rem; color: var(--color-text-secondary); }
+.showcase-meta { display: flex; gap: 0.75rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--color-text-secondary); margin-bottom: 0.65rem; }
+.showcase-summary { margin: 0 0 0.5rem; font-weight: 500; }
+.showcase-analysis { margin: 0 0 0.75rem; }
+.showcase-link { color: var(--color-primary); font-weight: 600; text-decoration: none; }
+.showcase-link:hover { text-decoration: underline; }
 	.landing-hero h1 {
 		font-size: 2rem;
 		margin-bottom: 1rem;
