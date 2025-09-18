@@ -296,7 +296,8 @@
       {:else}
         <ul class="list">
           {#each discussions as d}
-            <li class="item"><a href={`/discussions/${d.id}`}>{d.title}</a> <span class="meta">· {new Date(d.created_at).toLocaleString()}</span></li>
+            <li class="item discussion-title"><a href={`/discussions/${d.id}`}>{d.title}</a> <span class="meta">· {new Date(d.created_at).toLocaleString()}</span></li>
+            <hr />
           {/each}
         </ul>
       {/if}
@@ -313,6 +314,7 @@
               <a href={`/discussions/${p.discussion_id}`}>{toTextSnippet(p.content)}</a>
               <span class="meta">· {new Date(p.created_at).toLocaleString()}</span>
             </li>
+            <hr />
           {/each}
         </ul>
       {/if}
@@ -336,6 +338,7 @@
   .item a:hover { text-decoration: underline; }
   .meta { color: var(--color-text-secondary); font-size: 0.85rem; margin-left: 0.35rem; }
   .error { color: var(--color-accent); }
+  .discussion-title { font-weight: 600; }
   
   /* Stats Section */
   .stats-section {
@@ -420,12 +423,12 @@
   
   @media (max-width: 768px) {
     .stats-container {
-      flex-direction: column;
+      flex-direction: row;
       gap: 0.5rem;
     }
     
     .activity-summary {
-      flex-direction: column;
+      flex-direction: row;
       gap: 0.75rem;
     }
   }

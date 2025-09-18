@@ -359,8 +359,6 @@
 </script>
 
 <div class="profile-container">
-  <h1>Your Profile</h1>
-
   {#if !user}
     <p>Please sign in to view your profile.</p>
   {:else}
@@ -532,11 +530,8 @@
           {/if}
 
           <section class="profile-section account-card">
-            <h2>Account Details</h2>
             <dl class="account-list">
-              <dt>Sign-in Email</dt>
               <dd>{authEmail || 'Unavailable'}</dd>
-              <dt>Profile Link</dt>
               <dd>
                 {#if profilePath}
                   <a href={profilePath}>{profilePath}</a>
@@ -549,7 +544,6 @@
           </section>
 
           <section class="profile-section stats-section">
-            <h2>Statistics</h2>
             <div class="stats-container">
               <div class="stat-item">
                 <p class="stat-title">Good-Faith Rate</p>
@@ -599,7 +593,7 @@
           </section>
 
           <section class="profile-section">
-            <h2>Discussions</h2>
+            <h3>Discussions</h3>
             {#if discussions.length === 0}
               <p>No discussions yet.</p>
             {:else}
@@ -612,7 +606,7 @@
           </section>
 
           <section class="profile-section">
-            <h2>Comments</h2>
+            <h3>Comments</h3>
             {#if posts.length === 0}
               <p>No comments yet.</p>
             {:else}
@@ -635,12 +629,9 @@
 <style>
   .profile-container {
     max-width: 900px;
-    margin: 2rem auto;
     padding: 1.5rem;
   }
-  h1 {
-    margin-bottom: 1rem;
-  }
+
   .profile-view {
     display: flex;
     flex-direction: column;
@@ -739,15 +730,11 @@
   .account-list dt:last-of-type {
     border-bottom: none;
   }
-  .profile-section {
-    margin-top: 1.5rem;
-  }
   .stats-section {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--border-radius-md);
     padding: 1.5rem;
-    margin-top: 1.5rem;
   }
   .stats-section h2 {
     margin: 0 0 1rem 0;
@@ -971,11 +958,11 @@
   }
   @media (max-width: 768px) {
     .stats-container {
-      flex-direction: column;
+      flex-direction: row;
       gap: 0.5rem;
     }
     .activity-summary {
-      flex-direction: column;
+      flex-direction: row;
       gap: 0.75rem;
     }
     .view-header {

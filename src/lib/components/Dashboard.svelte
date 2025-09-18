@@ -299,12 +299,12 @@
                         {#if draft.type === 'discussion'}
                           <span>Discussion description draft</span>
                           {#if draft.discussion_title}
-                            &nbsp;for <span style="font-weight:500; text-decoration:underline;">{draft.discussion_title}</span>
+                            &nbsp;for <span class="discussion-title">{draft.discussion_title}</span>
                           {/if}
                         {:else if draft.discussion_id}
                           <span>Reply draft</span>
                           {#if draft.discussion_title}
-                            &nbsp;to&nbsp;<span style="font-weight:500; text-decoration:underline;">{draft.discussion_title}</span>
+                            &nbsp;to&nbsp;<span class="discussion-title">{draft.discussion_title}</span>
                           {/if}
                         {:else}
                           <span>Discussion draft</span>
@@ -596,6 +596,10 @@
     border: 1px solid var(--color-border);
     border-radius: var(--border-radius-md);
     padding: 0.5rem;
+  }
+
+  .discussion-title {
+    font-weight: 600;
   }
   .list-item:hover {
     background-color: var(--color-surface-alt);

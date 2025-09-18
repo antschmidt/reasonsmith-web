@@ -2309,22 +2309,21 @@
               <span class="word-count-label">Words: {commentWordCount}</span>
               <span class="style-indicator">({getStyleConfig(commentSelectedStyle).label})</span>
             </div>
-            
-            {#if showCommentCitationReminder}
-              <div class="citation-reminder">
-                <div class="reminder-icon">📚</div>
-                <div class="reminder-text">
-                  <strong>Add citations</strong> to support any claims and improve credibility.
-                </div>
-                <button 
-                  type="button" 
-                  class="btn-add-citation-inline"
-                  onclick={() => showCommentCitationForm = true}
-                >
-                  Add Citation
-                </button>
+
+            <div class="citation-reminder" class:active={showCommentCitationReminder}>
+              <div class="reminder-icon">📚</div>
+              <div class="reminder-text">
+                <strong>{showCommentCitationReminder ? 'Add citations' : 'Cite your sources'}</strong>
+                <span>{showCommentCitationReminder ? 'Support your claims with references for better credibility.' : 'Adding sources now makes it easier to reference them later.'}</span>
               </div>
-            {/if}
+              <button 
+                type="button" 
+                class="btn-add-citation-inline"
+                onclick={() => showCommentCitationForm = true}
+              >
+                Add Citation
+              </button>
+            </div>
           </div>
 
           <textarea 
@@ -2345,13 +2344,6 @@
             <div class="citation-section">
               <div class="citation-header">
                 <h4>References</h4>
-                <div class="citation-buttons">
-                  <button type="button" class="btn-secondary" onclick={() => {
-                    showCommentCitationForm = true;
-                  }}>
-                    Add Citation
-                  </button>
-                </div>
               </div>
 
               <!-- Add Comment Citation Form -->
@@ -2649,11 +2641,6 @@
     border-radius: var(--border-radius-md);
     padding: 1rem;
     margin-top: 1rem;
-  }
-
-  .citation-buttons {
-    display: flex;
-    gap: 0.5rem;
   }
 
   .chicago-citation {
@@ -3947,6 +3934,61 @@
     align-items: center;
     gap: 0.5rem;
     font-size: 0.875rem;
+  }
+
+  .citation-reminder {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: var(--border-radius-md);
+    border: 1px dashed color-mix(in srgb, var(--color-border) 85%, transparent);
+    background: var(--color-surface-alt);
+    transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  }
+
+  .citation-reminder.active {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border-color: #f59e0b;
+    box-shadow: 0 6px 18px color-mix(in srgb, #f59e0b 25%, transparent);
+  }
+
+  .citation-reminder .reminder-icon {
+    font-size: 1.35rem;
+  }
+
+  .citation-reminder .reminder-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+  }
+
+  .citation-reminder .reminder-text strong {
+    font-size: 1rem;
+    color: var(--color-text-primary);
+  }
+
+  .citation-reminder.active .reminder-text strong {
+    color: #92400e;
+  }
+
+  .citation-reminder.active .reminder-text span {
+    color: #b45309;
+  }
+
+  .citation-reminder .btn-add-citation-inline {
+    margin-left: auto;
+  }
+
+  @media (max-width: 640px) {
+    .citation-reminder .btn-add-citation-inline {
+      margin-left: 0;
+      width: 100%;
+      justify-content: center;
+    }
   }
   
   .comment-writing-info .word-count-label {
