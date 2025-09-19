@@ -119,7 +119,7 @@
   $: if (!loading && slides.length > 1) startTimer();
 </script>
 
-<div class="top-posts">
+<!-- <div class="top-posts">
   <h2 class="title">Featured Top Posts</h2>
   {#if loading}
     <div class="hint">Loading top posts…</div>
@@ -161,7 +161,7 @@
       {/if}
     </div>
   {/if}
-</div>
+</div> -->
 
 <style>
   .top-posts { margin-top: 2rem; }

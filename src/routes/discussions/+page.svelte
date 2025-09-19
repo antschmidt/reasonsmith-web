@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { nhost } from '$lib/nhostClient';
   import { goto } from '$app/navigation';
-  import { GET_PUBLIC_SHOWCASE_PUBLISHED } from '$lib/graphql/queries';
+  import type { PageData } from './$types';
 
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -45,9 +45,15 @@
     created_at: string;
   };
 
-  let showcaseLoading = $state(true);
-  let showcaseError = $state<string | null>(null);
-  let showcaseItems = $state<PublicShowcaseItem[]>([]);
+  const props = $props<{ data: PageData }>();
+  let showcaseLoading = $state(false);
+  let showcaseError = $state<string | null>(props.data?.showcaseError ?? null);
+  let showcaseItems = $state<PublicShowcaseItem[]>(props.data?.showcaseItems ?? []);
+
+  $effect(() => {
+    showcaseItems = props.data?.showcaseItems ?? [];
+    showcaseError = props.data?.showcaseError ?? null;
+  });
 
   const SEARCH_DISCUSSIONS = `
     query SearchDiscussions($q: String!, $limit: Int = 20) {
@@ -160,23 +166,8 @@
   // headers are managed globally by nhostClient
   }
 
-  async function loadShowcase() {
-    showcaseLoading = true;
-    showcaseError = null;
-    try {
-      const { data, error: gqlError } = await nhost.graphql.request(GET_PUBLIC_SHOWCASE_PUBLISHED);
-      if (gqlError) throw (Array.isArray(gqlError) ? new Error(gqlError.map((e:any)=>e.message).join('; ')) : gqlError);
-      showcaseItems = (data as any)?.public_showcase_item ?? [];
-    } catch (e: any) {
-      showcaseError = e?.message ?? 'Failed to load featured analyses.';
-    } finally {
-      showcaseLoading = false;
-    }
-  }
-
   onMount(async () => {
     await ensureAuthReadyAndHeaders();
-    loadShowcase();
     await fetchAll(true);
   });
 

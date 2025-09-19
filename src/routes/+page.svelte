@@ -1,13 +1,15 @@
 <svelte:options runes={true} />
+
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { writable } from 'svelte/store';
 	import { nhost } from '$lib/nhostClient';
 	import Dashboard from '$lib/components/Dashboard.svelte';
- 	import TopPostsCarousel from '$lib/components/TopPostsCarousel.svelte';
-	import { GET_PUBLIC_SHOWCASE_PUBLISHED } from '$lib/graphql/queries';
+	import TopPostsCarousel from '$lib/components/TopPostsCarousel.svelte';
+	import FeaturedAnalysesCarousel from '$lib/components/FeaturedAnalysesCarousel.svelte';
 	import { theme, toggleTheme } from '$lib/themeStore';
 	import { env as publicEnv } from '$env/dynamic/public';
+	import type { PageData } from './$types';
 
 	const SITE_URL = publicEnv.PUBLIC_SITE_URL;
 
@@ -18,8 +20,12 @@
 	}
 
 	const isOpen = writable(false);
-	function toggle() { isOpen.update((v: boolean) => !v); }
-	function close() { isOpen.set(false); }
+	function toggle() {
+		isOpen.update((v: boolean) => !v);
+	}
+	function close() {
+		isOpen.set(false);
+	}
 
 	let user = $state(nhost.auth.getUser());
 	let themeValue = $state('light');
@@ -36,40 +42,24 @@
 		created_at: string;
 	};
 
-	let showcaseLoading = $state(true);
-	let showcaseError = $state<string | null>(null);
-	let showcaseItems = $state<PublicShowcaseItem[]>([]);
+	const props = $props<{ data: PageData }>();
+	let showcaseLoading = $state(false);
+	let showcaseError = $state<string | null>(props.data?.showcaseError ?? null);
+	let showcaseItems = $state<PublicShowcaseItem[]>(props.data?.showcaseItems ?? []);
 
-	async function loadShowcaseItems() {
-		showcaseLoading = true;
-		showcaseError = null;
-		try {
-			const { data, error: gqlError } = await nhost.graphql.request(GET_PUBLIC_SHOWCASE_PUBLISHED);
-			if (gqlError) throw (Array.isArray(gqlError) ? new Error(gqlError.map((e:any)=>e.message).join('; ')) : gqlError);
-			showcaseItems = (data as any)?.public_showcase_item ?? [];
-		} catch (err: any) {
-			showcaseError = err?.message ?? 'Failed to load featured analyses.';
-		} finally {
-			showcaseLoading = false;
-		}
-	}
-
-	function formatShowcaseText(value?: string | null) {
-		if (!value) return '';
-		const escaped = value
-			.replaceAll('&', '&amp;')
-			.replaceAll('<', '&lt;')
-			.replaceAll('>', '&gt;')
-			.replaceAll('"', '&quot;')
-			.replaceAll("'", '&#39;');
-		return escaped.replace(/(?:\r\n|\r|\n)/g, '<br />');
-	}
+	$effect(() => {
+		showcaseItems = props.data?.showcaseItems ?? [];
+		showcaseError = props.data?.showcaseError ?? null;
+	});
 
 	onMount(() => {
-		const unsubTheme = theme.subscribe(v => themeValue = v || 'light');
-		nhost.auth.onAuthStateChanged((_event: string) => { user = nhost.auth.getUser(); });
-		loadShowcaseItems();
-		return () => { unsubTheme(); };
+		const unsubTheme = theme.subscribe((v) => (themeValue = v || 'light'));
+		nhost.auth.onAuthStateChanged((_event: string) => {
+			user = nhost.auth.getUser();
+		});
+		return () => {
+			unsubTheme();
+		};
 	});
 
 	// Auth UI state
@@ -82,55 +72,75 @@
 	let magicLinkSent = $state(false);
 
 	function toggleAuthModeView(toLogin?: boolean) {
-		if (typeof toLogin === 'boolean') isLoginView = toLogin; else isLoginView = !isLoginView;
+		if (typeof toLogin === 'boolean') isLoginView = toLogin;
+		else isLoginView = !isLoginView;
 		activeAuthView = 'initial';
 		authError = null;
 		magicLinkSent = false;
 	}
 
-	async function logout() { await nhost.auth.signOut(); user = null; }
-	async function signInWithGitHub() { 
+	async function logout() {
+		await nhost.auth.signOut();
+		user = null;
+	}
+	async function signInWithGitHub() {
 		try {
-			await nhost.auth.signIn({ provider: 'github', options: { redirectTo: getRedirect() } }); 
+			await nhost.auth.signIn({ provider: 'github', options: { redirectTo: getRedirect() } });
 		} catch (e: any) {
 			authError = e.message;
 		}
 	}
-	async function signInWithGoogle() { 
+	async function signInWithGoogle() {
 		try {
-			await nhost.auth.signIn({ provider: 'google', options: { redirectTo: getRedirect() } }); 
+			await nhost.auth.signIn({ provider: 'google', options: { redirectTo: getRedirect() } });
 		} catch (e: any) {
 			authError = e.message;
 		}
 	}
 	async function login() {
 		authError = null;
-		try { await nhost.auth.signIn({ email, password }); } catch (e: any) { authError = e.message; }
+		try {
+			await nhost.auth.signIn({ email, password });
+		} catch (e: any) {
+			authError = e.message;
+		}
 	}
 	async function signup() {
 		authError = null;
-		try { await nhost.auth.signUp({ email, password }); } catch (e: any) { authError = e.message; }
+		try {
+			await nhost.auth.signUp({ email, password });
+		} catch (e: any) {
+			authError = e.message;
+		}
 	}
 	async function sendMagicLink() {
-		authError = null; magicLinkSent = false;
-		if (!email) { authError = 'Please enter an email first.'; return; }
-	try {
-		const redirectTo = getRedirect();
-		await nhost.auth.signIn({
-			email,
-			...(redirectTo ? { options: { redirectTo } } : {})
-		});
-		magicLinkSent = true;
-	} catch (e: any) {
-		console.error('Magic link request failed', e);
-		const errorPayload = e?.error ?? e;
-		if (errorPayload?.message) authError = errorPayload.message;
-		else if (errorPayload?.error) authError = `${errorPayload.error}`;
-		else authError = 'Failed to request magic link. Please try again shortly.';
+		authError = null;
+		magicLinkSent = false;
+		if (!email) {
+			authError = 'Please enter an email first.';
+			return;
+		}
+		try {
+			const redirectTo = getRedirect();
+			await nhost.auth.signIn({
+				email,
+				...(redirectTo ? { options: { redirectTo } } : {})
+			});
+			magicLinkSent = true;
+		} catch (e: any) {
+			console.error('Magic link request failed', e);
+			const errorPayload = e?.error ?? e;
+			if (errorPayload?.message) authError = errorPayload.message;
+			else if (errorPayload?.error) authError = `${errorPayload.error}`;
+			else authError = 'Failed to request magic link. Please try again shortly.';
+		}
 	}
-}
-	async function signInWithSecurityKey() { alert('Security key sign-in not yet implemented.'); }
-	async function signUpWithSecurityKey() { alert('Security key sign-up not yet implemented.'); }
+	async function signInWithSecurityKey() {
+		alert('Security key sign-in not yet implemented.');
+	}
+	async function signUpWithSecurityKey() {
+		alert('Security key sign-up not yet implemented.');
+	}
 </script>
 
 {#if user}
@@ -141,7 +151,7 @@
 		<div class="user-email">{user.email}</div>
 		<button type="button" onclick={logout} class="logout-button">Logout</button>
 	</nav>
-	<Dashboard user={user} />
+	<Dashboard {user} />
 {:else}
 	<div class="landing-hero">
 		<h1>Welcome to ReasonSmith</h1>
@@ -150,10 +160,17 @@
 		</p>
 		<ul class="features-list">
 			<li>
-				<strong>Structured Argumentation</strong>: Build clear and logical arguments with a structured format.
+				<strong>Structured Argumentation</strong>: Build clear and logical arguments with a
+				structured format.
 			</li>
-			<li><strong>Good Faith Enforcement</strong>: Mechanisms to ensure respectful and productive debate.</li>
-			<li><strong>Collaborative Forging</strong>: Work with others to strengthen and refine your arguments.</li>
+			<li>
+				<strong>Good Faith Enforcement</strong>: Mechanisms to ensure respectful and productive
+				debate.
+			</li>
+			<li>
+				<strong>Collaborative Forging</strong>: Work with others to strengthen and refine your
+				arguments.
+			</li>
 			<li>
 				<strong>Secure Access</strong>: Sign in with email, magic link, OAuth, or security keys.
 			</li>
@@ -186,32 +203,7 @@
 			{:else if showcaseItems.length === 0}
 				<p class="showcase-status">Curated analyses will appear here soon.</p>
 			{:else}
-				<ul class="showcase-list">
-					{#each showcaseItems as item}
-						<li>
-							<h3>{item.title}</h3>
-							{#if item.subtitle}
-								<p class="showcase-subtitle">{@html formatShowcaseText(item.subtitle)}</p>
-							{/if}
-							<div class="showcase-meta">
-								{#if item.media_type}<span>{item.media_type}</span>{/if}
-								{#if item.creator}<span>{item.creator}</span>{/if}
-								<span>{new Date(item.created_at).toLocaleDateString()}</span>
-							</div>
-							{#if item.summary}
-								<p class="showcase-summary">{@html formatShowcaseText(item.summary)}</p>
-							{/if}
-							{#if item.analysis}
-								<p class="showcase-analysis">{@html formatShowcaseText(item.analysis)}</p>
-							{/if}
-							{#if item.source_url}
-								<a class="showcase-link" href={item.source_url} target="_blank" rel="noopener">
-									Original source ↗
-								</a>
-							{/if}
-						</li>
-					{/each}
-				</ul>
+				<FeaturedAnalysesCarousel items={showcaseItems} />
 			{/if}
 		</section>
 
@@ -226,36 +218,99 @@
 	</div>
 
 	{#if showAuthOverlay}
-		<div class="login-page-wrapper" role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+		<div
+			class="login-page-wrapper"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="auth-dialog-title"
+		>
 			<div class="login-container">
-				<button class="close-auth-overlay" type="button" onclick={() => (showAuthOverlay = false)} aria-label="Close authentication panel">&times;</button>
+				<button
+					class="close-auth-overlay"
+					type="button"
+					onclick={() => (showAuthOverlay = false)}
+					aria-label="Close authentication panel">&times;</button
+				>
 				<h2 id="auth-dialog-title">{isLoginView ? 'Login' : 'Sign Up'}</h2>
 
 				{#if activeAuthView === 'initial'}
 					<div class="auth-method-buttons">
-						<button type="button" onclick={() => (activeAuthView = 'emailPassword')}>Continue with Email/Password</button>
-						<button type="button" class="oauth-button" onclick={() => (activeAuthView = 'magicLink')}>{isLoginView ? 'Use Magic Link to Sign In' : 'Use Magic Link to Sign Up'}</button>
-						<button type="button" class="oauth-button" onclick={() => (activeAuthView = 'securityKey')}>{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key</button>
+						<button type="button" onclick={() => (activeAuthView = 'emailPassword')}
+							>Continue with Email/Password</button
+						>
+						<button
+							type="button"
+							class="oauth-button"
+							onclick={() => (activeAuthView = 'magicLink')}
+							>{isLoginView ? 'Use Magic Link to Sign In' : 'Use Magic Link to Sign Up'}</button
+						>
+						<button
+							type="button"
+							class="oauth-button"
+							onclick={() => (activeAuthView = 'securityKey')}
+							>{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key</button
+						>
 					</div>
 
 					<div class="oauth-buttons">
-						<button type="button" class="oauth-button" onclick={signInWithGoogle} aria-label="Sign in with Google"><span>Sign in with Google</span></button>
-						<button type="button" class="oauth-button" onclick={signInWithGitHub} aria-label="Sign in with GitHub"><span>Sign in with GitHub</span></button>
+						<button
+							type="button"
+							class="oauth-button"
+							onclick={signInWithGoogle}
+							aria-label="Sign in with Google"><span>Sign in with Google</span></button
+						>
+						<button
+							type="button"
+							class="oauth-button"
+							onclick={signInWithGitHub}
+							aria-label="Sign in with GitHub"><span>Sign in with GitHub</span></button
+						>
 					</div>
-					<button type="button" class="toggle-auth-mode" onclick={() => toggleAuthModeView(!isLoginView)}>{isLoginView ? "Don't have an account? Sign up" : 'Already have an account? Log in'}</button>
+					<button
+						type="button"
+						class="toggle-auth-mode"
+						onclick={() => toggleAuthModeView(!isLoginView)}
+						>{isLoginView
+							? "Don't have an account? Sign up"
+							: 'Already have an account? Log in'}</button
+					>
 				{:else if activeAuthView === 'emailPassword'}
 					<input type="email" placeholder="Email" bind:value={email} />
 					<input type="password" placeholder="Password" bind:value={password} />
-					<button type="button" class="auth-primary-action" onclick={isLoginView ? login : signup}>{isLoginView ? 'Login' : 'Sign Up'}</button>
-					<button type="button" class="toggle-auth-mode" onclick={() => (activeAuthView = 'initial')}>Back to options</button>
+					<button type="button" class="auth-primary-action" onclick={isLoginView ? login : signup}
+						>{isLoginView ? 'Login' : 'Sign Up'}</button
+					>
+					<button
+						type="button"
+						class="toggle-auth-mode"
+						onclick={() => (activeAuthView = 'initial')}>Back to options</button
+					>
 				{:else if activeAuthView === 'magicLink'}
 					<input type="email" placeholder="Email" bind:value={email} />
-					<button type="button" class="oauth-button" onclick={sendMagicLink} disabled={magicLinkSent}>{magicLinkSent ? 'Magic Link Sent' : 'Send Magic Link'}</button>
-					<button type="button" class="toggle-auth-mode" onclick={() => (activeAuthView = 'initial')}>Back to options</button>
+					<button
+						type="button"
+						class="oauth-button"
+						onclick={sendMagicLink}
+						disabled={magicLinkSent}>{magicLinkSent ? 'Magic Link Sent' : 'Send Magic Link'}</button
+					>
+					<button
+						type="button"
+						class="toggle-auth-mode"
+						onclick={() => (activeAuthView = 'initial')}>Back to options</button
+					>
 				{:else if activeAuthView === 'securityKey'}
 					<input type="email" placeholder="Email (required for Security Key)" bind:value={email} />
-					<button type="button" class="oauth-button" onclick={isLoginView ? signInWithSecurityKey : signUpWithSecurityKey}>{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key</button>
-					<button type="button" class="toggle-auth-mode" onclick={() => (activeAuthView = 'initial')}>Back to options</button>
+					<button
+						type="button"
+						class="oauth-button"
+						onclick={isLoginView ? signInWithSecurityKey : signUpWithSecurityKey}
+						>{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key</button
+					>
+					<button
+						type="button"
+						class="toggle-auth-mode"
+						onclick={() => (activeAuthView = 'initial')}>Back to options</button
+					>
 				{/if}
 
 				{#if authError}
@@ -316,23 +371,37 @@
 		background: var(--color-surface);
 		color: var(--color-text-primary);
 	}
-.landing-featured { max-width: 900px; margin: 1rem auto 0; padding: 0 1rem; }
+	.landing-featured {
+		max-width: 900px;
+		margin: 1rem auto 0;
+		padding: 0 1rem;
+	}
 
-.showcase { max-width: 900px; margin: 2rem auto 0; padding: 0 1rem 2rem; }
-.showcase-heading { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
-.showcase-heading h2 { margin: 0; font-size: 1.5rem; }
-.showcase-heading p { margin: 0; color: var(--color-text-secondary); }
-.showcase-status { color: var(--color-text-secondary); font-size: 0.95rem; }
-.showcase-status.error { color: #f87171; }
-.showcase-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
-.showcase-list li { border: 1px solid var(--color-border); border-radius: var(--border-radius-md); padding: 1rem; background: var(--color-surface); box-shadow: 0 6px 18px color-mix(in srgb, var(--color-border) 18%, transparent); }
-.showcase-list h3 { margin: 0 0 0.35rem; font-size: 1.15rem; }
-.showcase-subtitle { margin: 0 0 0.5rem; color: var(--color-text-secondary); }
-.showcase-meta { display: flex; gap: 0.75rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--color-text-secondary); margin-bottom: 0.65rem; }
-.showcase-summary { margin: 0 0 0.5rem; font-weight: 500; }
-.showcase-analysis { margin: 0 0 0.75rem; }
-.showcase-link { color: var(--color-primary); font-weight: 600; text-decoration: none; }
-.showcase-link:hover { text-decoration: underline; }
+	.showcase {
+		max-width: 900px;
+		margin: 1rem auto 0;
+		padding: 0 1rem 2rem;
+	}
+	.showcase-heading {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.showcase-heading h2 {
+		margin: 0;
+		font-size: 1.5rem;
+	}
+	.showcase-heading p {
+		margin: 0;
+		color: var(--color-text-secondary);
+	}
+	.showcase-status {
+		color: var(--color-text-secondary);
+		font-size: 0.95rem;
+	}
+	.showcase-status.error {
+		color: #f87171;
+	}
 	.landing-hero h1 {
 		font-size: 2rem;
 		margin-bottom: 1rem;
@@ -482,14 +551,53 @@
 		text-decoration: underline;
 		color: var(--color-primary);
 	}
-	.auth-error { color: #ef4444; margin-top: 0.75rem; font-size: 0.875rem; }
-	.auth-success { color: #16a34a; margin-top: 0.75rem; font-size: 0.875rem; }
-	.oauth-button[disabled] { opacity: 0.6; cursor: default; }
+	.auth-error {
+		color: #ef4444;
+		margin-top: 0.75rem;
+		font-size: 0.875rem;
+	}
+	.auth-success {
+		color: #16a34a;
+		margin-top: 0.75rem;
+		font-size: 0.875rem;
+	}
+	.oauth-button[disabled] {
+		opacity: 0.6;
+		cursor: default;
+	}
 
-	.public-resources { margin:2.5rem auto 0; max-width:800px; text-align:left; }
-	.public-resources-title { font-size:1.25rem; font-weight:600; margin:0 0 0.75rem; font-family: var(--font-family-display); }
-	.public-resources-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:0.5rem; }
-	.public-resources-list a { color: var(--color-primary); text-decoration:none; font-size:0.95rem; }
-	.public-resources-list a:hover { text-decoration:underline; }
-	@media (min-width:640px){ .public-resources-list { flex-direction:row; flex-wrap:wrap; gap:0.75rem 1.5rem; } }
+	.public-resources {
+		margin: 2.5rem auto 0;
+		max-width: 800px;
+		text-align: left;
+	}
+	.public-resources-title {
+		font-size: 1.25rem;
+		font-weight: 600;
+		margin: 0 0 0.75rem;
+		font-family: var(--font-family-display);
+	}
+	.public-resources-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.public-resources-list a {
+		color: var(--color-primary);
+		text-decoration: none;
+		font-size: 0.95rem;
+	}
+	.public-resources-list a:hover {
+		text-decoration: underline;
+	}
+	@media (min-width: 640px) {
+		.public-resources-list {
+			flex-direction: row;
+			flex-wrap: wrap;
+			gap: 0.75rem 1.5rem;
+		}
+	}
 </style>

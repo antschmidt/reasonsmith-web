@@ -548,6 +548,15 @@ export const GET_PUBLIC_SHOWCASE_PUBLISHED = gql`
   ${PUBLIC_SHOWCASE_FIELDS}
 `;
 
+export const GET_PUBLIC_SHOWCASE_ITEM = gql`
+  query GetPublicShowcaseItem($id: uuid!) {
+    public_showcase_item_by_pk(id: $id) {
+      ...PublicShowcaseFields
+    }
+  }
+  ${PUBLIC_SHOWCASE_FIELDS}
+`;
+
 export const GET_PUBLIC_SHOWCASE_ADMIN = gql`
   query GetPublicShowcaseAdmin {
     public_showcase_item(order_by: [{ display_order: desc }, { created_at: desc }]) {
