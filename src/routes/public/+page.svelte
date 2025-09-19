@@ -64,6 +64,12 @@
   let error = $state<string | null>(null);
   let success = $state<string | null>(null);
   let form = $state<ShowcaseForm>({ ...blankForm });
+  let rawContent = $state('');
+  let analyzing = $state(false);
+  let analysisStatus = $state<string | null>(null);
+  let analysisError = $state<string | null>(null);
+  let extractedExamples = $state('');
+  let analysisProvider = $state<'claude' | 'openai'>('claude');
 
   function collectRoles(u: any): string[] {
     if (!u) return [];
@@ -116,6 +122,10 @@
     form = reset;
     success = null;
     error = null;
+    rawContent = '';
+    analysisStatus = null;
+    analysisError = null;
+    extractedExamples = '';
   }
 
   function editItem(item: ShowcaseItem) {
@@ -132,6 +142,18 @@
       display_order: item.display_order ?? 0,
       published: !!item.published
     };
+    rawContent = '';
+    analysisStatus = null;
+    analysisError = null;
+    extractedExamples = '';
+    if (item.analysis) {
+      try {
+        const parsed = JSON.parse(item.analysis);
+        extractedExamples = extractExamples(parsed);
+      } catch {
+        extractedExamples = '';
+      }
+    }
   }
 
   function parseTags(input: string): string[] {
@@ -186,6 +208,149 @@
       error = e?.message ?? 'Failed to save showcase item.';
     } finally {
       saving = false;
+    }
+  }
+
+  function buildSummaryFromAnalysis(result: any, fallbackSummary: string): string {
+    if (!result || typeof result !== 'object') return fallbackSummary;
+    const sections: string[] = [];
+    if (Array.isArray(result.good_faith) && result.good_faith.length > 0) {
+      sections.push(`Good Faith: ${result.good_faith.map((item: any) => item?.name).filter(Boolean).join(', ')}`);
+    }
+    if (Array.isArray(result.logical_fallacies) && result.logical_fallacies.length > 0) {
+      sections.push(`Fallacies: ${result.logical_fallacies.map((item: any) => item?.name).filter(Boolean).join(', ')}`);
+    }
+    if (Array.isArray(result.cultish_language) && result.cultish_language.length > 0) {
+      sections.push(`Cultish Language: ${result.cultish_language.map((item: any) => item?.name).filter(Boolean).join(', ')}`);
+    }
+    if (Array.isArray(result.fact_checking) && result.fact_checking.length > 0) {
+      const flagged = result.fact_checking
+        .map((item: any) => `${item?.claim ? item.claim + ' — ' : ''}${item?.verdict || 'Unverified'}`)
+        .slice(0, 3)
+        .join('; ');
+      if (flagged) sections.push(`Fact Check Highlights: ${flagged}`);
+    }
+    return sections.length > 0 ? sections.join('\n') : fallbackSummary;
+  }
+
+  function extractExamples(result: any): string {
+    if (!result || typeof result !== 'object') return '';
+    const sections: string[] = [];
+
+    const collect = (items: any, label: string) => {
+      if (!Array.isArray(items) || items.length === 0) return;
+      const examples: string[] = [];
+      for (const item of items) {
+        const raw = Array.isArray(item?.examples)
+          ? item.examples
+          : typeof item?.example === 'string'
+            ? [item.example]
+            : [];
+        for (const example of raw) {
+          if (typeof example === 'string') {
+            const trimmed = example.trim();
+            if (trimmed.length > 0) examples.push(trimmed);
+          }
+        }
+      }
+      if (examples.length > 0) {
+        sections.push(`${label}:\n${examples.map((ex) => `• ${ex}`).join('\n')}`);
+      }
+    };
+
+    collect(result.good_faith, 'Good Faith Examples');
+    collect(result.logical_fallacies, 'Fallacy Examples');
+    collect(result.cultish_language, 'Cultish Language Examples');
+    collect(result.fact_checking, 'Fact Check Examples');
+
+    return sections.join('\n\n');
+  }
+
+  $effect(() => {
+    const text = form.analysis;
+    if (typeof text !== 'string' || text.trim().length === 0) {
+      extractedExamples = '';
+      return;
+    }
+    try {
+      const parsed = JSON.parse(text);
+      extractedExamples = extractExamples(parsed);
+    } catch {
+      extractedExamples = '';
+    }
+  });
+
+  async function generateFeaturedAnalysis(options?: { force?: boolean }) {
+    if (!hasAccess) return;
+    const force = options?.force ?? false;
+    analysisError = null;
+    analysisStatus = null;
+    success = null;
+    extractedExamples = '';
+    if (!rawContent.trim()) {
+      analysisError = 'Provide source text to analyze first.';
+      return;
+    }
+    analyzing = true;
+    try {
+      const response = await fetch(`/api/goodFaithClaudeFeatured${force ? '?force=1' : ''}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: rawContent, provider: analysisProvider })
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || 'Failed to analyze content.');
+      }
+      const result = await response.json();
+      const formatted = JSON.stringify(result, null, 2);
+      const tagsFromResult = new Set<string>();
+      if (Array.isArray(result.good_faith)) result.good_faith.forEach((item: any) => item?.name && tagsFromResult.add(item.name));
+      if (Array.isArray(result.logical_fallacies)) result.logical_fallacies.forEach((item: any) => item?.name && tagsFromResult.add(item.name));
+      if (Array.isArray(result.cultish_language)) result.cultish_language.forEach((item: any) => item?.name && tagsFromResult.add(item.name));
+      const tagString = Array.from(tagsFromResult).join(', ');
+      const summaryText = buildSummaryFromAnalysis(result, force ? '' : form.summary);
+      extractedExamples = extractExamples(result);
+      form = {
+        ...form,
+        summary: summaryText,
+        analysis: formatted,
+        tags: tagString
+      };
+
+      const providerLabel = analysisProvider === 'openai' ? 'OpenAI' : 'Claude';
+      const statusPrefix = force ? `Forced ${providerLabel}` : `${providerLabel}`;
+
+      if (form.id) {
+        try {
+          const { data, error: gqlError } = await nhost.graphql.request(UPDATE_PUBLIC_SHOWCASE_ITEM, {
+            id: form.id,
+            changes: {
+              summary: summaryText || null,
+              analysis: formatted,
+              tags: parseTags(tagString),
+              updated_at: new Date().toISOString()
+            }
+          });
+          if (gqlError) throw (Array.isArray(gqlError) ? new Error(gqlError.map((e: any) => e.message).join('; ')) : gqlError);
+          const updated = (data as any)?.update_public_showcase_item_by_pk;
+          if (updated) {
+            items = items.map((it) => (it.id === updated.id ? updated : it));
+            analysisStatus = `${statusPrefix} analysis generated and saved.`;
+          } else {
+            analysisStatus = `${statusPrefix} analysis generated; review and save changes.`;
+          }
+        } catch (saveError: any) {
+          analysisStatus = `${statusPrefix} analysis generated; review before saving.`;
+          analysisError = saveError?.message || 'Failed to auto-save analysis.';
+        }
+      } else {
+        analysisStatus = `${statusPrefix} analysis generated successfully. Review and adjust before saving.`;
+      }
+    } catch (e: any) {
+      analysisError = e?.message || 'Failed to generate analysis.';
+    } finally {
+      analyzing = false;
     }
   }
 
@@ -334,8 +499,60 @@
             </label>
           </div>
 
+          <section class="analysis-generator">
+            <div class="analysis-header">
+              <h3>Generate Featured Analysis</h3>
+              <p>Paste relevant excerpts or notes and let Claude produce the structured assessment.</p>
+            </div>
+            <textarea
+              rows="6"
+              bind:value={rawContent}
+              placeholder="Paste transcript excerpts, statements, or notes to analyze…"
+            />
+            <div class="analysis-provider" role="group" aria-label="Choose analysis model">
+              <span class="provider-label">Model</span>
+              <label class={`provider-option ${analysisProvider === 'claude' ? 'is-active' : ''}`}>
+                <input type="radio" value="claude" bind:group={analysisProvider} disabled={analyzing} />
+                <span>Claude</span>
+              </label>
+              <label class={`provider-option ${analysisProvider === 'openai' ? 'is-active' : ''}`}>
+                <input type="radio" value="openai" bind:group={analysisProvider} disabled={analyzing} />
+                <span>OpenAI</span>
+              </label>
+            </div>
+            <div class="analysis-actions">
+              <button
+                type="button"
+                class="btn-secondary"
+                onclick={() => generateFeaturedAnalysis()}
+                disabled={analyzing}
+              >
+                {analyzing ? 'Analyzing…' : 'Analyze with Claude'}
+              </button>
+              <button
+                type="button"
+                class="btn-secondary"
+                onclick={() => generateFeaturedAnalysis({ force: true })}
+                disabled={analyzing}
+              >
+                {analyzing ? 'Analyzing…' : 'Force fresh Claude run'}
+              </button>
+              {#if analysisStatus}
+                <span class="analysis-status success">{analysisStatus}</span>
+              {:else if analysisError}
+                <span class="analysis-status error">{analysisError}</span>
+              {/if}
+            </div>
+            {#if extractedExamples}
+              <div class="analysis-examples">
+                <h4>Extracted Examples</h4>
+                <pre>{extractedExamples}</pre>
+              </div>
+            {/if}
+          </section>
+
           <label>
-            <span>Summary</span>
+            <span>Highlights</span>
             <textarea rows="3" bind:value={form.summary} placeholder="Short context for the source material." />
           </label>
 
@@ -497,6 +714,92 @@
   textarea {
     min-height: 5rem;
     resize: vertical;
+  }
+  .analysis-generator {
+    border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+    border-radius: var(--border-radius-md);
+    padding: 1rem;
+    background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .analysis-header h3 {
+    margin: 0;
+    font-size: 1rem;
+  }
+  .analysis-header p {
+    margin: 0.35rem 0 0;
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+  }
+  .analysis-generator textarea {
+    min-height: 8rem;
+    resize: vertical;
+    font-size: 0.95rem;
+    padding: 0.75rem;
+  }
+  .analysis-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .analysis-provider {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .analysis-provider .provider-label {
+    font-weight: 600;
+    margin-right: 0.25rem;
+  }
+  .provider-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+  }
+  .provider-option input {
+    margin: 0;
+  }
+  .provider-option.is-active {
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  }
+  .provider-option input:disabled + span {
+    opacity: 0.6;
+  }
+  .analysis-examples {
+    padding: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    border-radius: var(--border-radius-sm);
+    background: color-mix(in srgb, var(--color-surface) 88%, var(--color-background));
+  }
+  .analysis-examples h4 {
+    margin: 0 0 0.5rem;
+    font-size: 0.95rem;
+  }
+  .analysis-examples pre {
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+  .analysis-status {
+    font-size: 0.85rem;
+  }
+  .analysis-status.success {
+    color: color-mix(in srgb, var(--color-primary) 85%, transparent);
+  }
+  .analysis-status.error {
+    color: #ef4444;
   }
   .form-grid {
     display: grid;

@@ -45,7 +45,19 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
       throw error(404, 'Featured analysis not found.');
     }
 
-    return { item };
+    let structuredAnalysis: any = null;
+    if (item.analysis && typeof item.analysis === 'string') {
+      try {
+        const parsed = JSON.parse(item.analysis);
+        if (parsed && typeof parsed === 'object') {
+          structuredAnalysis = parsed;
+        }
+      } catch (parseError) {
+        console.warn('Failed to parse featured analysis JSON', parseError);
+      }
+    }
+
+    return { item, structuredAnalysis };
   } catch (err: any) {
     if (err?.status && err?.body) {
       throw err;

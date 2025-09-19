@@ -3917,7 +3917,10 @@
   
   /* Nuclear approach - override ALL link colors in dark mode */
   :global([data-theme="dark"] a),
-  :global([data-theme="dark"] a:link) {
+  :global([data-theme="dark"] a:link),
+  :global([data-theme="dark"] a:visited),
+  :global([data-theme="dark"] a:hover),
+  :global([data-theme="dark"] a:active) {
     color: #a9c8ff;
   }
 

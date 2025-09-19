@@ -9,6 +9,9 @@
     media_type?: string | null;
     creator?: string | null;
     summary?: string | null;
+    analysis?: string | null;
+    tags?: string[] | null;
+    source_url?: string | null;
     created_at: string;
   };
 
@@ -86,9 +89,22 @@
           {#if item.summary}
             <p class="summary">{@html sanitizeMultiline(item.summary)}</p>
           {/if}
+          <!-- {#if item.analysis}
+            <p class="analysis">{@html sanitizeMultiline(item.analysis)}</p>
+          {/if} -->
+          {#if item.tags && item.tags.length > 0}
+            <ul class="tag-list">
+              {#each item.tags as tag}
+                <li>{tag}</li>
+              {/each}
+            </ul>
+          {/if}
           <footer class="card-footer">
             <span class="card-cta">Read analysis</span>
             <span class="card-arrow" aria-hidden="true">→</span>
+            {#if item.source_url}
+              <a class="source-link" href={item.source_url} target="_blank" rel="noopener">Source ↗</a>
+            {/if}
           </footer>
         </a>
       {/each}
@@ -140,7 +156,7 @@
     min-width: clamp(220px, 48vw, 280px);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.25rem;
     padding: 1.05rem clamp(1rem, 3vw, 1.35rem);
     border-radius: var(--border-radius-md);
     border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
@@ -164,7 +180,7 @@
   .card-header {
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    /* gap: 0.15rem; */
   }
 
   .card-header h3 {
@@ -175,7 +191,8 @@
 
   .subtitle {
     margin: 0;
-    font-size: 0.9rem;
+    text-align: left;
+    font-size: 0.7rem;
     color: var(--color-text-secondary);
     line-height: 1.35;
     display: -webkit-box;
@@ -186,6 +203,7 @@
 
   .summary {
     margin: 0;
+    text-align: left;
     font-size: 0.86rem;
     line-height: 1.4;
     color: color-mix(in srgb, var(--color-text-secondary) 90%, transparent);
@@ -193,6 +211,39 @@
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .analysis {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    color: color-mix(in srgb, var(--color-text-secondary) 80%, transparent);
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+
+  .tag-list li {
+    padding: 0.25rem 0.25rem;
+    border-radius: 999px;
+    font-size: 0.5rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    /* letter-spacing: 0.05em; */
+    background: color-mix(in srgb, var(--color-surface-alt) 85%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    color: color-mix(in srgb, var(--color-text-secondary) 92%, transparent);
   }
 
   .meta-tags {
@@ -215,7 +266,7 @@
   .card-footer {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.5rem;
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--color-primary);
@@ -232,6 +283,19 @@
 
   .carousel-card:hover .card-arrow {
     transform: translateX(2px);
+  }
+
+  .source-link {
+    margin-left: auto;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: color-mix(in srgb, var(--color-primary) 90%, transparent);
+    text-decoration: none;
+  }
+
+  .source-link:hover,
+  .source-link:focus-visible {
+    text-decoration: underline;
   }
 
   .nav-button {
@@ -265,8 +329,7 @@
     }
 
     .nav-button {
-      order: 3;
-      justify-self: center;
+      display: none;
     }
 
     .carousel-viewport {
