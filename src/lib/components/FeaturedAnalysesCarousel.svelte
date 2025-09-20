@@ -226,6 +226,8 @@
 
   .tag-list {
     display: flex;
+    max-height: 10rem;
+    overflow: auto;
     flex-wrap: wrap;
     gap: 0.35rem;
     margin: 0;
