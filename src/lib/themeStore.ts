@@ -2,7 +2,7 @@ import { writable } from 'svelte/store';
 
 const isBrowser = typeof window !== 'undefined';
 
-const storedTheme = isBrowser ? localStorage.getItem('theme') : 'light';
+const storedTheme = isBrowser ? localStorage.getItem('theme') : 'dark';
 
 export const theme = writable(storedTheme);
 

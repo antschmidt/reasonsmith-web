@@ -226,10 +226,10 @@
 
   .tag-list {
     display: flex;
-    max-height: 10rem;
+    max-height: 8rem;
     overflow: auto;
     flex-wrap: wrap;
-    gap: 0.35rem;
+    gap: 0.25rem;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -239,7 +239,7 @@
   .tag-list li {
     padding: 0.25rem 0.25rem;
     border-radius: 999px;
-    font-size: 0.5rem;
+    font-size: 0.7rem;
     font-weight: 500;
     text-transform: uppercase;
     /* letter-spacing: 0.05em; */

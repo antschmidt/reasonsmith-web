@@ -160,8 +160,8 @@
 		</p>
 		<ul class="features-list">
 			<li>
-				<strong>Structured Argumentation</strong>: Build clear and logical arguments with a
-				structured format.
+				<strong>Structured Argumentation</strong>: <hr /><div>Build clear and logical arguments with a
+				structured format.</div>
 			</li>
 			<li>
 				<strong>Good Faith Enforcement</strong>: Mechanisms to ensure respectful and productive
@@ -415,6 +415,7 @@
 	.features-list {
 		list-style: none;
 		margin: 1rem 0 1.5rem;
+		font-size: 0.5rem;
 		padding: 0;
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -422,11 +423,18 @@
 	}
 	.features-list li {
 		background: var(--color-surface-alt);
+		max-width: 10rem;
 		padding: 1rem;
 		border-radius: var(--border-radius-sm);
 		text-align: left;
 		font-size: 0.95rem;
 		color: var(--color-text-primary);
+	}
+
+	.features-list strong {
+		color: var(--color-text-primary);
+		font-weight: 700;
+		font-size: 1rem;
 	}
 	.cta-button {
 		background: var(--color-accent);

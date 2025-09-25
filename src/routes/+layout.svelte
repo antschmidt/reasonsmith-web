@@ -38,7 +38,7 @@
 	theme.subscribe((value) => {
 		currentTheme = value;
 		if (typeof window !== 'undefined') {
-			document.documentElement.setAttribute('data-theme', value || 'light');
+			document.documentElement.setAttribute('data-theme', value || 'dark');
 		}
 	});
 </script>
