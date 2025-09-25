@@ -160,19 +160,19 @@
 		</p>
 		<ul class="features-list">
 			<li>
-				<strong>Structured Argumentation</strong>: <hr /><div>Build clear and logical arguments with a
+				<strong>Structured Argumentation</strong>
+				<div>Build clear and logical arguments with a
 				structured format.</div>
 			</li>
 			<li>
-				<strong>Good Faith Enforcement</strong>: Mechanisms to ensure respectful and productive
-				debate.
+				<strong>Good Faith Enforcement</strong>
+				<div>Mechanisms to ensure respectful and productive
+				debate.</div>
 			</li>
 			<li>
-				<strong>Collaborative Forging</strong>: Work with others to strengthen and refine your
-				arguments.
-			</li>
-			<li>
-				<strong>Secure Access</strong>: Sign in with email, magic link, OAuth, or security keys.
+				<strong>Collaborative Forging</strong>
+				<div>Work with others to strengthen and refine your
+				arguments.</div>
 			</li>
 		</ul>
 		<button
@@ -193,7 +193,6 @@
 
 		<section class="showcase" aria-labelledby="showcase-title">
 			<div class="showcase-heading">
-				<h2 id="showcase-title">Featured Analyses</h2>
 				<p>Hand-curated evaluations of notable speeches, podcasts, and essays.</p>
 			</div>
 			{#if showcaseLoading}
@@ -208,7 +207,6 @@
 		</section>
 
 		<div class="public-resources" aria-labelledby="public-resources-title">
-			<h2 id="public-resources-title" class="public-resources-title">Learn More</h2>
 			<ul class="public-resources-list">
 				<li><a href="/resources/good-faith-arguments">Good-Faith Arguments Guide</a></li>
 				<li><a href="/resources/citation-best-practices">Citation Best Practices</a></li>
@@ -366,21 +364,65 @@
 	}
 
 	.landing-hero {
-		text-align: center;
-		padding: 2rem;
-		background: var(--color-surface);
-		color: var(--color-text-primary);
+		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
+		padding: 4rem 2rem;
+		background: linear-gradient(135deg,
+			var(--color-surface) 0%,
+			color-mix(in srgb, var(--color-primary) 8%, var(--color-surface)) 35%,
+			color-mix(in srgb, var(--color-accent) 6%, var(--color-surface)) 100%
+		);
+		position: relative;
+		overflow: hidden;
+	}
+
+	.landing-hero::before {
+		content: '';
+		position: absolute;
+		top: -50%;
+		left: -50%;
+		width: 200%;
+		height: 200%;
+		background: radial-gradient(
+			circle at 30% 20%,
+			color-mix(in srgb, var(--color-primary) 12%, transparent) 0%,
+			transparent 50%
+		),
+		radial-gradient(
+			circle at 70% 80%,
+			color-mix(in srgb, var(--color-accent) 8%, transparent) 0%,
+			transparent 50%
+		);
+		z-index: -1;
+		animation: float 20s ease-in-out infinite;
+	}
+
+	@keyframes float {
+		0%, 100% { transform: translate(0, 0) rotate(0deg); }
+		33% { transform: translate(-2%, -1%) rotate(1deg); }
+		66% { transform: translate(1%, -2%) rotate(-1deg); }
 	}
 	.landing-featured {
-		max-width: 900px;
-		margin: 1rem auto 0;
-		padding: 0 1rem;
+		max-width: 1200px;
+		margin: 4rem auto 0;
+		padding: 0 2rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
+		backdrop-filter: blur(20px);
+		border-radius: 30px;
+		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
 	}
 
 	.showcase {
-		max-width: 900px;
-		margin: 1rem auto 0;
-		padding: 0 1rem 2rem;
+		max-width: 1200px;
+		margin: 4rem auto 0;
+		padding: 3rem 2rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
+		backdrop-filter: blur(20px);
+		border-radius: 30px;
+		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
 	}
 	.showcase-heading {
 		display: flex;
@@ -389,11 +431,17 @@
 	}
 	.showcase-heading h2 {
 		margin: 0;
-		font-size: 1.5rem;
+		font-size: clamp(2rem, 4vw, 2.5rem);
+		font-weight: 800;
+		color: var(--color-text-primary);
+		font-family: var(--font-family-display);
+		letter-spacing: -0.01em;
 	}
 	.showcase-heading p {
 		margin: 0;
 		color: var(--color-text-secondary);
+		font-size: 1.125rem;
+		line-height: 1.6;
 	}
 	.showcase-status {
 		color: var(--color-text-secondary);
@@ -403,52 +451,144 @@
 		color: #f87171;
 	}
 	.landing-hero h1 {
-		font-size: 2rem;
-		margin-bottom: 1rem;
+		font-size: clamp(3rem, 8vw, 7rem);
+		font-weight: 900;
+		margin-bottom: 1.5rem;
+		background: linear-gradient(135deg,
+			var(--color-text-primary),
+			var(--color-primary),
+			var(--color-accent)
+		);
+		background-clip: text;
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		line-height: 1.1;
+		letter-spacing: -0.02em;
+		text-align: center;
+		position: relative;
+	}
+
+	.landing-hero h1::after {
+		content: '';
+		position: absolute;
+		bottom: -10px;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 60px;
+		height: 4px;
+		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+		border-radius: 2px;
 	}
 	.landing-hero p {
-		max-width: 600px;
-		margin: 0 auto 1.5rem auto;
-		font-size: 1rem;
+		max-width: 700px;
+		margin: 0 auto 3rem auto;
+		font-size: clamp(1.125rem, 2.5vw, 1.375rem);
 		color: var(--color-text-secondary);
+		line-height: 1.6;
+		text-align: center;
+		font-weight: 400;
 	}
 	.features-list {
 		list-style: none;
-		margin: 1rem 0 1.5rem;
-		font-size: 0.5rem;
+		margin: 3rem 0 4rem;
 		padding: 0;
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-		gap: 1rem;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		gap: 2rem;
+		max-width: 1200px;
+		width: 100%;
 	}
+
 	.features-list li {
-		background: var(--color-surface-alt);
-		max-width: 10rem;
-		padding: 1rem;
-		border-radius: var(--border-radius-sm);
+		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+		backdrop-filter: blur(20px) saturate(1.2);
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		padding: 2rem;
+		border-radius: 20px;
 		text-align: left;
-		font-size: 0.95rem;
+		font-size: 1rem;
 		color: var(--color-text-primary);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		position: relative;
+		overflow: hidden;
+	}
+
+	.features-list li::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 3px;
+		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+		border-radius: 20px 20px 0 0;
+	}
+
+	.features-list li:hover {
+		transform: translateY(-8px);
+		box-shadow: 0 20px 40px color-mix(in srgb, var(--color-primary) 20%, transparent);
+		background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
 	}
 
 	.features-list strong {
 		color: var(--color-text-primary);
 		font-weight: 700;
-		font-size: 1rem;
+		font-size: 1.25rem;
+		display: block;
+		margin-bottom: 0.75rem;
+		font-family: var(--font-family-display);
+	}
+
+	.features-list hr {
+		display: none;
+	}
+
+	.features-list div {
+		color: var(--color-text-secondary);
+		line-height: 1.5;
 	}
 	.cta-button {
-		background: var(--color-accent);
+		background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
 		color: var(--color-surface);
-		padding: 0.75rem 2rem;
-		font-size: 1rem;
+		padding: 1rem 3rem;
+		font-size: 1.125rem;
+		font-weight: 600;
 		border: none;
-		border-radius: var(--border-radius-md);
+		border-radius: 50px;
 		cursor: pointer;
-		transition: background-color var(--transition-speed) ease;
-		margin-top: 1rem;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		margin-top: 2rem;
+		position: relative;
+		overflow: hidden;
+		box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 30%, transparent);
+		font-family: var(--font-family-display);
+		letter-spacing: 0.025em;
 	}
+
+	.cta-button::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+		transition: left 0.5s;
+	}
+
 	.cta-button:hover {
-		background: var(--color-primary);
+		transform: translateY(-2px);
+		box-shadow: 0 20px 40px color-mix(in srgb, var(--color-primary) 40%, transparent);
+		filter: brightness(1.1);
+	}
+
+	.cta-button:hover::before {
+		left: 100%;
+	}
+
+	.cta-button:active {
+		transform: translateY(0);
 	}
 
 	.login-page-wrapper {
@@ -575,37 +715,82 @@
 	}
 
 	.public-resources {
-		margin: 2.5rem auto 0;
-		max-width: 800px;
+		margin: 4rem auto 0;
+		max-width: 1200px;
 		text-align: left;
+		padding: 3rem 2rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
+		backdrop-filter: blur(20px);
+		border-radius: 30px;
+		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
 	}
 	.public-resources-title {
-		font-size: 1.25rem;
-		font-weight: 600;
-		margin: 0 0 0.75rem;
+		font-size: clamp(1.75rem, 3vw, 2.25rem);
+		font-weight: 800;
+		margin: 0 0 1.5rem;
 		font-family: var(--font-family-display);
+		color: var(--color-text-primary);
+		letter-spacing: -0.01em;
 	}
 	.public-resources-list {
 		list-style: none;
 		padding: 0;
 		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+		gap: 1rem;
 	}
+
+	.public-resources-list li {
+		background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+		padding: 1.5rem;
+		border-radius: 16px;
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		transition: all 0.2s ease;
+	}
+
+	.public-resources-list li:hover {
+		background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+		transform: translateY(-2px);
+		box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+
 	.public-resources-list a {
 		color: var(--color-primary);
 		text-decoration: none;
-		font-size: 0.95rem;
+		font-size: 1rem;
+		font-weight: 500;
+		display: block;
 	}
+
 	.public-resources-list a:hover {
-		text-decoration: underline;
+		color: var(--color-accent);
 	}
-	@media (min-width: 640px) {
-		.public-resources-list {
-			flex-direction: row;
-			flex-wrap: wrap;
-			gap: 0.75rem 1.5rem;
+	/* Add bottom spacing to the hero */
+	.landing-hero {
+		margin-bottom: 4rem;
+	}
+
+	@media (max-width: 768px) {
+		.landing-hero {
+			padding: 2rem 1rem;
+			min-height: 90vh;
+		}
+
+		.features-list {
+			grid-template-columns: 1fr;
+			gap: 1.5rem;
+		}
+
+		.features-list li {
+			padding: 1.5rem;
+		}
+
+		.landing-featured,
+		.showcase,
+		.public-resources {
+			margin: 2rem auto 0;
+			padding: 2rem 1rem;
 		}
 	}
 </style>

@@ -134,42 +134,72 @@
   .carousel-viewport {
     position: relative;
     display: flex;
-    gap: 1rem;
+    gap: 1.5rem;
     overflow-x: auto;
-    padding: 0.25rem;
+    padding: 1rem 0.5rem;
     scroll-snap-type: x mandatory;
     scroll-behavior: smooth;
     scrollbar-width: thin;
   }
 
   .carousel-viewport::-webkit-scrollbar {
-    height: 6px;
+    height: 8px;
+  }
+
+  .carousel-viewport::-webkit-scrollbar-track {
+    background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
+    border-radius: 10px;
   }
 
   .carousel-viewport::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--color-border) 80%, transparent);
-    border-radius: 999px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    border-radius: 10px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  .carousel-viewport::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(90deg,
+      color-mix(in srgb, var(--color-primary) 80%, transparent),
+      color-mix(in srgb, var(--color-accent) 80%, transparent)
+    );
   }
 
   .carousel-card {
     scroll-snap-align: start;
-    min-width: clamp(220px, 48vw, 280px);
+    min-width: clamp(280px, 45vw, 350px);
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    padding: 1.05rem clamp(1rem, 3vw, 1.35rem);
-    border-radius: var(--border-radius-md);
-    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
-    background: var(--color-surface);
+    gap: 1rem;
+    padding: 2rem;
+    border-radius: 24px;
+    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+    background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+    backdrop-filter: blur(20px) saturate(1.2);
     color: inherit;
     text-decoration: none;
-    box-shadow: 0 6px 16px color-mix(in srgb, var(--color-border) 16%, transparent);
-    transition: transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 8%, transparent);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .carousel-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    border-radius: 24px 24px 0 0;
   }
 
   .carousel-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 22px color-mix(in srgb, var(--color-border) 22%, transparent);
+    transform: translateY(-8px);
+    box-shadow: 0 20px 50px color-mix(in srgb, var(--color-primary) 15%, transparent);
+    background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
   }
 
   .carousel-card:focus-visible {
@@ -185,28 +215,32 @@
 
   .card-header h3 {
     margin: 0;
-    font-size: 1.05rem;
-    line-height: 1.35;
+    font-size: 1.25rem;
+    line-height: 1.3;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    font-family: var(--font-family-display);
   }
 
   .subtitle {
     margin: 0;
     text-align: left;
-    font-size: 0.7rem;
+    font-size: 0.875rem;
     color: var(--color-text-secondary);
-    line-height: 1.35;
+    line-height: 1.5;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    font-weight: 500;
   }
 
   .summary {
     margin: 0;
     text-align: left;
-    font-size: 0.86rem;
-    line-height: 1.4;
-    color: color-mix(in srgb, var(--color-text-secondary) 90%, transparent);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: var(--color-text-secondary);
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
@@ -237,26 +271,34 @@
 
 
   .tag-list li {
-    padding: 0.25rem 0.25rem;
-    border-radius: 999px;
-    font-size: 0.7rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    /* letter-spacing: 0.05em; */
-    background: color-mix(in srgb, var(--color-surface-alt) 85%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
-    color: color-mix(in srgb, var(--color-text-secondary) 92%, transparent);
+    padding: 0.5rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0.025em;
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+    color: var(--color-primary);
+    transition: all 0.2s ease;
+  }
+
+  .tag-list li:hover {
+    background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
   }
 
   .meta-tags {
     order: -1;
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem 0.6rem;
-    font-size: 0.78rem;
-    color: color-mix(in srgb, var(--color-text-secondary) 95%, transparent);
+    gap: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
   }
 
   .meta-tags span + span::before {
@@ -268,10 +310,13 @@
   .card-footer {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.8rem;
+    gap: 0.75rem;
+    font-size: 0.9rem;
     font-weight: 600;
     color: var(--color-primary);
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
   }
 
   .card-cta {
@@ -301,23 +346,27 @@
   }
 
   .nav-button {
-    width: 2.35rem;
-    height: 2.35rem;
-    border-radius: 999px;
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
+    width: 3rem;
+    height: 3rem;
+    border-radius: 20px;
+    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+    background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+    backdrop-filter: blur(20px);
     color: var(--color-text-primary);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     font-size: 1.5rem;
     cursor: pointer;
-    transition: background var(--transition-speed) ease, transform var(--transition-speed) ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 8%, transparent);
   }
 
   .nav-button:hover:not(:disabled) {
     background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 15%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
   }
 
   .nav-button:disabled {
@@ -325,9 +374,27 @@
     cursor: default;
   }
 
+  @media (max-width: 768px) {
+    .carousel-card {
+      min-width: clamp(250px, 85vw, 320px);
+      padding: 1.5rem;
+    }
+
+    .card-header h3 {
+      font-size: 1.125rem;
+    }
+
+    .nav-button {
+      width: 2.5rem;
+      height: 2.5rem;
+      font-size: 1.25rem;
+    }
+  }
+
   @media (max-width: 640px) {
     .featured-carousel {
       grid-template-columns: 1fr;
+      gap: 1rem;
     }
 
     .nav-button {
@@ -337,7 +404,12 @@
     .carousel-viewport {
       order: 2;
       margin: 0 -1rem;
-      padding: 0.25rem 1rem;
+      padding: 1rem;
+      gap: 1rem;
+    }
+
+    .carousel-card {
+      min-width: clamp(240px, 80vw, 300px);
     }
   }
 </style>
