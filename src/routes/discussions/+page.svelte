@@ -236,21 +236,23 @@
     </div>
   </header>
 
-  <section class="showcase-block" aria-labelledby="showcase-block-title">
-    <div class="showcase-block-heading">
-      <h2 id="showcase-block-title">Curated Analyses</h2>
-      <p>Explore highlighted evaluations of noteworthy public rhetoric.</p>
-    </div>
-    {#if showcaseLoading}
-      <p class="showcase-block-status">Loading curated analyses…</p>
-    {:else if showcaseError}
-      <p class="showcase-block-status error">{showcaseError}</p>
-    {:else if showcaseItems.length === 0}
-      <p class="showcase-block-status">Curated analyses will appear here as they are published.</p>
-    {:else}
-      <FeaturedAnalysesCarousel items={showcaseItems} />
-    {/if}
-  </section>
+  {#if !q.trim()}
+    <section class="showcase-block" aria-labelledby="showcase-block-title">
+      <div class="showcase-block-heading">
+        <h2 id="showcase-block-title">Curated Analyses</h2>
+        <p>Explore highlighted evaluations of noteworthy public rhetoric.</p>
+      </div>
+      {#if showcaseLoading}
+        <p class="showcase-block-status">Loading curated analyses…</p>
+      {:else if showcaseError}
+        <p class="showcase-block-status error">{showcaseError}</p>
+      {:else if showcaseItems.length === 0}
+        <p class="showcase-block-status">Curated analyses will appear here as they are published.</p>
+      {:else}
+        <FeaturedAnalysesCarousel items={showcaseItems} />
+      {/if}
+    </section>
+  {/if}
 
   {#if error}
     <p class="error">{error}</p>
@@ -295,31 +297,344 @@
 </div>
 
 <style>
-  .container { margin: 0 auto; padding: 1rem; }
-  .header h1 { font-size: 1.5rem; margin: 0.25rem 0 0.75rem; }
-  .search-row { display:flex; gap:0.5rem; }
-  .search-row input { flex:1; padding:0.5rem 0.75rem; margin-bottom: 0; border:1px solid var(--color-border); border-radius: var(--border-radius-md); }
-  .showcase-block { margin: 1.5rem 0 2rem; border: 1px solid var(--color-border); border-radius: var(--border-radius-md); padding: 1.25rem; background: var(--color-surface); }
-  .showcase-block-heading { display:flex; flex-direction:column; gap:0.35rem; margin-bottom: 1rem; }
-  .showcase-block-heading h2 { margin:0; font-size:1.35rem; }
-  .showcase-block-heading p { margin:0; color: var(--color-text-secondary); }
-  .showcase-block-status { color: var(--color-text-secondary); font-size:0.9rem; }
-  .showcase-block-status.error { color:#f87171; }
-  .results { display:flex; flex-direction:column; gap:1rem; margin-top: 1rem; }
-  .load-more-row { display:flex; justify-content:center; margin-top: 0.5rem; }
-  .discussion-card { background: var(--color-surface); border:1px solid var(--color-border); border-radius: var(--border-radius-md); padding:1rem; cursor:pointer; }
-  .discussion-card:hover { box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
-  .discussion-title { color: var(--color-primary); font-weight:600; }
-  .discussion-snippet { color: var(--color-text-secondary); font-size:0.9rem; margin:0.25rem 0; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; text-overflow:ellipsis; line-clamp:2; }
-  .discussion-meta { font-size:0.8rem; color:var(--color-text-secondary); }
-  .anonymous-author { font-weight: 600; color: var(--color-text-primary); }
-  :global(mark) { background: color-mix(in srgb, var(--color-primary) 25%, transparent); padding: 0 0.1em; border-radius: 2px; }
-  /* back-link removed (nav provides dashboard access) */
-  .hint { color: var(--color-text-secondary); margin-top: 1rem; }
-  .error { color: var(--color-accent); }
-  .btn-primary { background-color: var(--color-primary); color: var(--color-surface); border: none; border-radius: var(--border-radius-md); padding: 0.5rem 1rem; cursor: pointer; }
-  .btn-secondary { background: var(--color-surface); color: var(--color-text-primary); border:1px solid var(--color-border); border-radius: var(--border-radius-md); padding:0.5rem 1rem; cursor:pointer; }
-    /* Nuclear approach - override ALL link colors in dark mode */
+  .container {
+    margin: 0 auto;
+    padding: 2rem 1rem;
+    max-width: 1200px;
+    background: linear-gradient(135deg,
+      var(--color-surface) 0%,
+      color-mix(in srgb, var(--color-primary) 3%, var(--color-surface)) 50%,
+      color-mix(in srgb, var(--color-accent) 2%, var(--color-surface)) 100%
+    );
+    min-height: 100vh;
+    position: relative;
+  }
+
+  .container::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(
+      circle at 30% 20%,
+      color-mix(in srgb, var(--color-primary) 6%, transparent) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      circle at 70% 80%,
+      color-mix(in srgb, var(--color-accent) 4%, transparent) 0%,
+      transparent 50%
+    );
+    z-index: -1;
+    animation: float 20s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+    33% { transform: translate(-1%, -0.5%) rotate(0.5deg); }
+    66% { transform: translate(0.5%, -1%) rotate(-0.5deg); }
+  }
+
+  .header h1 {
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: 900;
+    margin: 0 0 2rem;
+    font-family: var(--font-family-display);
+    color: var(--color-text-primary);
+    text-align: center;
+    letter-spacing: -0.02em;
+    position: relative;
+  }
+
+  .header h1::after {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 4px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    border-radius: 2px;
+  }
+
+  .search-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+    backdrop-filter: blur(20px);
+    padding: 1.5rem;
+    border-radius: 20px;
+    border: 1px solid color-mix(in srgb, var(--color-border) 25%, transparent);
+    box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 8%, transparent);
+  }
+
+  .search-row input {
+    flex: 1;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0;
+    border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--color-input-bg) 70%, transparent);
+    backdrop-filter: blur(10px);
+    font-size: 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .search-row input:focus {
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-input-bg) 90%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+    transform: translateY(-1px);
+  }
+
+  .showcase-block {
+    margin: 2rem 0 3rem;
+    border: 1px solid color-mix(in srgb, var(--color-border) 25%, transparent);
+    border-radius: 24px;
+    padding: 2rem;
+    background: color-mix(in srgb, var(--color-surface-alt) 70%, transparent);
+    backdrop-filter: blur(20px) saturate(1.2);
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 8%, transparent);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .showcase-block::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    border-radius: 24px 24px 0 0;
+  }
+
+  .showcase-block-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+  .showcase-block-heading h2 {
+    margin: 0;
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 800;
+    font-family: var(--font-family-display);
+    color: var(--color-text-primary);
+    letter-spacing: -0.01em;
+  }
+  .showcase-block-heading p {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: 1.1rem;
+    line-height: 1.6;
+  }
+
+  .showcase-block-status {
+    color: var(--color-text-secondary);
+    font-size: 1rem;
+  }
+  .showcase-block-status.error {
+    color: #f87171;
+  }
+
+  .results {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin-top: 2rem;
+  }
+
+  .load-more-row {
+    display: flex;
+    justify-content: center;
+    margin-top: 2rem;
+  }
+
+  .discussion-card {
+    background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+    backdrop-filter: blur(15px) saturate(1.1);
+    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+    border-radius: 20px;
+    padding: 2rem;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--color-primary) 6%, transparent);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .discussion-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    border-radius: 20px 20px 0 0;
+  }
+
+  .discussion-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 15px 40px color-mix(in srgb, var(--color-primary) 15%, transparent);
+    background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  }
+
+  .discussion-title {
+    color: var(--color-text-primary);
+    font-weight: 700;
+    font-size: 1.375rem;
+    font-family: var(--font-family-display);
+    margin-bottom: 0.75rem;
+    line-height: 1.3;
+  }
+
+  .discussion-snippet {
+    color: var(--color-text-secondary);
+    font-size: 1rem;
+    margin: 0 0 1rem 0;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-clamp: 2;
+    line-height: 1.6;
+  }
+
+  .discussion-meta {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+  }
+
+  .anonymous-author {
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  :global(mark) {
+    background: color-mix(in srgb, var(--color-primary) 25%, transparent);
+    padding: 0 0.2em;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .hint {
+    color: var(--color-text-secondary);
+    margin-top: 2rem;
+    text-align: center;
+    font-size: 1rem;
+  }
+
+  .error {
+    color: #ef4444;
+    text-align: center;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+    color: var(--color-surface);
+    border: none;
+    border-radius: 50px;
+    padding: 1rem 2rem;
+    cursor: pointer;
+    font-weight: 700;
+    font-family: var(--font-family-display);
+    font-size: 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 25%, transparent);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-primary::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 15px 40px color-mix(in srgb, var(--color-primary) 35%, transparent);
+    filter: brightness(1.05);
+  }
+
+  .btn-primary:hover::before {
+    left: 100%;
+  }
+
+  .btn-secondary {
+    background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+    backdrop-filter: blur(10px);
+    color: var(--color-text-primary);
+    border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+    border-radius: 50px;
+    padding: 1rem 2rem;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 8%, transparent);
+  }
+
+  .btn-secondary:hover {
+    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 15%, transparent);
+    color: var(--color-primary);
+  }
+
+  /* Dark mode button text contrast fix */
+  :global([data-theme="dark"]) .btn-primary {
+    color: #000000;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.1);
+  }
+
+  /* Responsive Design */
+  @media (max-width: 768px) {
+    .container {
+      padding: 1rem 0.5rem;
+    }
+
+    .search-row {
+      padding: 1.25rem;
+      gap: 0.75rem;
+    }
+
+    .showcase-block {
+      padding: 1.5rem;
+      margin: 1.5rem 0 2rem;
+    }
+
+    .discussion-card {
+      padding: 1.5rem;
+    }
+
+    .discussion-title {
+      font-size: 1.25rem;
+    }
+
+    .results {
+      gap: 1.25rem;
+    }
+  }
+
+  /* Nuclear approach - override ALL link colors in dark mode */
   :global([data-theme="dark"] a),
   :global([data-theme="dark"] a:link),
   :global([data-theme="dark"] a:visited),

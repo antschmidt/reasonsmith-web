@@ -529,6 +529,7 @@ const PUBLIC_SHOWCASE_FIELDS = gql`
     summary
     analysis
     tags
+    date_published
     display_order
     published
     created_at

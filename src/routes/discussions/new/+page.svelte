@@ -210,14 +210,22 @@
 	);
 </script>
 
+<!-- Immersive background -->
+<div class="page-background">
+  <div class="floating-gradient gradient-1"></div>
+  <div class="floating-gradient gradient-2"></div>
+  <div class="floating-gradient gradient-3"></div>
+</div>
+
 <div class="container">
-	<h1 class="title">Create a New Discussion</h1>
-	<form
-		onsubmit={(e) => {
-			e.preventDefault();
-			publishNewDiscussion();
-		}}
-	>
+	<div class="glass-card main-card">
+		<h1 class="page-title">Create a New Discussion</h1>
+		<form
+			onsubmit={(e) => {
+				e.preventDefault();
+				publishNewDiscussion();
+			}}
+		>
 		<div class="form-group">
 			<label for="title">Title</label>
 			<input
@@ -335,116 +343,296 @@
 			{/if}
 		</div>
 
-		{#if publishError}<p style="color:var(--color-accent); font-size:0.75rem;">
+		{#if publishError}
+			<div class="error-message">
 				{publishError}
-			</p>{/if}
-		<div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
-			<button class="btn-primary" type="submit" disabled={!canPublish}
-				>{publishing ? 'Publishing…' : 'Publish Discussion'}</button
-			>
+			</div>
+		{/if}
+
+		<div class="form-actions">
+			<button class="btn-primary" type="submit" disabled={!canPublish}>
+				{publishing ? 'Publishing…' : 'Publish Discussion'}
+			</button>
 			<button type="button" class="btn-secondary" onclick={() => goto('/')}>Cancel</button>
 		</div>
 	</form>
+	</div>
 </div>
 
 <style>
-	.container {
-		max-width: 900px;
-		padding: 1rem;
+	/* Immersive background */
+	.page-background {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		z-index: -1;
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-alt)),
+			color-mix(in srgb, var(--color-accent) 6%, var(--color-surface-alt)),
+			var(--color-surface-alt)
+		);
 	}
-	.form-group {
-		margin-bottom: 0.25rem;
+
+	.floating-gradient {
+		position: absolute;
+		border-radius: 50%;
+		filter: blur(100px);
+		opacity: 0.3;
+		animation: float 20s ease-in-out infinite;
+	}
+
+	.gradient-1 {
+		width: 400px;
+		height: 400px;
+		background: radial-gradient(circle, var(--color-primary), transparent);
+		top: 10%;
+		right: 10%;
+		animation-delay: -5s;
+	}
+
+	.gradient-2 {
+		width: 300px;
+		height: 300px;
+		background: radial-gradient(circle, var(--color-accent), transparent);
+		bottom: 20%;
+		left: 15%;
+		animation-delay: -10s;
+	}
+
+	.gradient-3 {
+		width: 250px;
+		height: 250px;
+		background: radial-gradient(circle, color-mix(in srgb, var(--color-primary) 70%, var(--color-accent)), transparent);
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		animation-delay: -15s;
+	}
+
+	@keyframes float {
+		0%, 100% { transform: translateY(0px) rotate(0deg); }
+		33% { transform: translateY(-30px) rotate(120deg); }
+		66% { transform: translateY(15px) rotate(240deg); }
+	}
+
+	/* Glass morphism effects */
+	.glass-card {
+		background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+		backdrop-filter: blur(20px);
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		border-radius: 24px;
+		box-shadow:
+			0 8px 32px color-mix(in srgb, var(--color-primary) 8%, transparent),
+			0 2px 8px color-mix(in srgb, var(--color-text-primary) 4%, transparent);
+		position: relative;
+		overflow: hidden;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	.glass-card::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 1px;
+		background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-border) 50%, transparent), transparent);
+	}
+
+	.glass-card:hover {
+		transform: translateY(-2px);
+		box-shadow:
+			0 12px 40px color-mix(in srgb, var(--color-primary) 12%, transparent),
+			0 4px 12px color-mix(in srgb, var(--color-text-primary) 6%, transparent);
+	}
+
+	/* Layout */
+	.container {
+		min-height: 100vh;
+		padding: clamp(1rem, 4vw, 2rem);
+		display: flex;
+		justify-content: center;
+		align-items: flex-start;
+		position: relative;
+	}
+
+	.main-card {
+		width: 100%;
+		max-width: 800px;
+		padding: 2rem;
+		margin-top: 2rem;
+	}
+
+	.page-title {
+		font-size: clamp(1.75rem, 4vw, 2.5rem);
+		font-weight: 700;
+		font-family: var(--font-family-display);
+		margin: 0 0 2rem 0;
+		color: var(--color-text-primary);
+		text-shadow: 0 2px 4px color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+		text-align: center;
+	}
+
+	form {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 1.5rem;
+	}
+
+	.form-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
 	}
 
 	label {
 		font-weight: 600;
-		text-indent: 0.25rem;
 		color: var(--color-text-primary);
+		font-size: 1rem;
 	}
 
-	.title {
-		font-size: 1.75rem;
-		font-weight: 600;
-		font-family: var(--font-family-display);
-		margin-bottom: 1.5rem;
-	}
-	form {
-		display: flex;
-		flex-direction: column;
-	}
-	/* removed unused label span styling */
 	input[type='text'],
 	textarea {
-		border: 1px solid var(--color-border);
-		background: var(--color-surface);
+		padding: 1rem 1.25rem;
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: 16px;
+		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+		backdrop-filter: blur(10px);
 		color: var(--color-text-primary);
-		padding: 0.5rem 0.3rem;
-		border-radius: var(--border-radius-md);
-		font: inherit;
+		font-size: 1rem;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		font-family: inherit;
 	}
+
 	input[type='text']:focus,
 	textarea:focus {
 		outline: none;
-		box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 40%, transparent);
+		border-color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+		transform: translateY(-1px);
 	}
+
+	textarea {
+		resize: vertical;
+		min-height: 200px;
+		line-height: 1.6;
+	}
+
 	.autosave-indicator {
-		font-size: 0.65rem;
+		font-size: 0.85rem;
 		color: var(--color-text-secondary);
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
-		min-height: 1rem;
+		gap: 0.5rem;
+		min-height: 1.5rem;
+		font-weight: 500;
 	}
-	button.btn-primary {
-		margin-top: 0.5rem;
-	}
+
+	/* Buttons */
 	.btn-primary {
-		align-self: flex-start;
-		background-color: var(--color-primary);
-		color: var(--color-surface);
-		padding: 0.75rem 1.5rem;
-		border-radius: var(--border-radius-md);
+		background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+		color: #ffffff;
 		border: none;
+		padding: 1rem 2rem;
+		border-radius: 16px;
+		font-weight: 600;
+		font-size: 1rem;
 		cursor: pointer;
-		transition: opacity 150ms ease-in-out;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		box-shadow: 0 4px 16px color-mix(in srgb, var(--color-primary) 20%, transparent);
+		position: relative;
+		overflow: hidden;
 	}
+
+	:global([data-theme="dark"]) .btn-primary {
+		color: #000000;
+		text-shadow: 0 1px 2px rgba(255, 255, 255, 0.1);
+	}
+
+	.btn-primary::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+		transition: left 0.5s;
+	}
+
+	.btn-primary:hover::before {
+		left: 100%;
+	}
+
 	.btn-primary:hover {
-		opacity: 0.9;
+		transform: translateY(-2px);
+		box-shadow: 0 8px 24px color-mix(in srgb, var(--color-primary) 30%, transparent);
 	}
+
 	.btn-primary:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+		transform: none;
 	}
-	/* removed unused .actions */
+
 	.btn-secondary {
-		background-color: var(--color-surface);
+		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+		backdrop-filter: blur(10px);
 		color: var(--color-text-primary);
-		padding: 0.75rem 1.5rem;
-		border-radius: var(--border-radius-md);
-		border: 1px solid var(--color-border);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		padding: 1rem 2rem;
+		border-radius: 16px;
+		font-weight: 600;
+		font-size: 1rem;
 		cursor: pointer;
-		transition: background-color 150ms ease-in-out;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
+
 	.btn-secondary:hover {
-		background-color: var(--color-surface-alt);
+		background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+		transform: translateY(-1px);
+	}
+
+	.form-actions {
+		display: flex;
+		gap: 1rem;
+		justify-content: flex-start;
+		margin-top: 1rem;
+	}
+
+	.error-message {
+		background: color-mix(in srgb, #ef4444 15%, transparent);
+		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+		color: #ef4444;
+		padding: 1rem;
+		border-radius: 16px;
+		font-weight: 500;
+		backdrop-filter: blur(10px);
 	}
 
 	/* Writing Info and Citation Reminder */
 	.writing-info {
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+		gap: 1.5rem;
 	}
 
 	.word-count {
 		display: flex;
 		align-items: center;
 		align-self: flex-end;
-		gap: 0.5rem;
-		font-size: 0.875rem;
+		gap: 0.75rem;
+		font-size: 0.9rem;
+		padding: 0.5rem 1rem;
+		background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		border-radius: 12px;
+		backdrop-filter: blur(10px);
 	}
 
 	.word-count-label {
@@ -455,44 +643,49 @@
 	.style-indicator {
 		color: var(--color-text-secondary);
 		font-style: italic;
+		font-weight: 500;
 	}
 
 	.citation-reminder {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.75rem;
-		padding: 0.85rem 1rem;
-		border-radius: var(--border-radius-md);
-		border: 1px dashed color-mix(in srgb, var(--color-border) 85%, transparent);
-		background: var(--color-surface-alt);
-		transition:
-			background 160ms ease,
-			border-color 160ms ease,
-			box-shadow 160ms ease;
+		gap: 1rem;
+		padding: 1.25rem 1.5rem;
+		border-radius: 20px;
+		border: 1px dashed color-mix(in srgb, var(--color-border) 40%, transparent);
+		background: color-mix(in srgb, var(--color-surface) 30%, transparent);
+		backdrop-filter: blur(15px);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
 	.citation-reminder.active {
-		background: linear-gradient(135deg, #fef3c7, #fde68a);
-		border-color: #f59e0b;
-		box-shadow: 0 6px 18px color-mix(in srgb, #f59e0b 25%, transparent);
+		background: linear-gradient(135deg,
+			color-mix(in srgb, #f59e0b 20%, transparent),
+			color-mix(in srgb, #f59e0b 10%, transparent)
+		);
+		border-color: color-mix(in srgb, #f59e0b 50%, transparent);
+		box-shadow: 0 8px 24px color-mix(in srgb, #f59e0b 15%, transparent);
 	}
 
 	.citation-reminder .reminder-icon {
-		font-size: 1.35rem;
+		font-size: 1.5rem;
+		filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
 	}
 
 	.citation-reminder .reminder-text {
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
-		font-size: 0.9rem;
+		gap: 0.25rem;
+		font-size: 0.95rem;
 		color: var(--color-text-secondary);
+		flex: 1;
 	}
 
 	.citation-reminder .reminder-text strong {
-		font-size: 1rem;
+		font-size: 1.05rem;
 		color: var(--color-text-primary);
+		font-weight: 600;
 	}
 
 	.citation-reminder.active .reminder-text strong {
@@ -501,49 +694,59 @@
 
 	.citation-reminder.active .reminder-text span {
 		color: #b45309;
+		font-weight: 500;
 	}
 
 	.btn-add-citation-inline {
-		background: #f59e0b;
+		background: linear-gradient(135deg, #f59e0b, #d97706);
 		color: white;
 		border: none;
-		padding: 0.5rem 1rem;
-		border-radius: var(--border-radius-sm);
-		font-size: 0.8rem;
+		padding: 0.75rem 1.5rem;
+		border-radius: 12px;
+		font-size: 0.9rem;
 		font-weight: 600;
 		cursor: pointer;
-		transition: background-color 0.2s;
-		margin-left: auto;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		gap: 0.4rem;
+		gap: 0.5rem;
+		box-shadow: 0 4px 12px color-mix(in srgb, #f59e0b 20%, transparent);
 	}
 
 	.btn-add-citation-inline:hover {
-		background: #d97706;
+		background: linear-gradient(135deg, #d97706, #b45309);
+		transform: translateY(-1px);
+		box-shadow: 0 6px 16px color-mix(in srgb, #f59e0b 25%, transparent);
 	}
 
 	@media (max-width: 640px) {
 		.btn-add-citation-inline {
-			margin-left: 0;
 			width: 100%;
 			justify-content: center;
+		}
+
+		.citation-reminder {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 1rem;
 		}
 	}
 
 	.style-validation-errors {
-		background: color-mix(in srgb, #ef4444 10%, transparent);
-		border: 1px solid #ef4444;
-		border-radius: var(--border-radius-sm);
-		padding: 0.5rem;
-		margin-top: 0.5rem;
+		background: color-mix(in srgb, #ef4444 15%, transparent);
+		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+		border-radius: 16px;
+		padding: 1rem;
+		margin-top: 1rem;
+		backdrop-filter: blur(10px);
 	}
 
 	.validation-issue {
-		font-size: 0.75rem;
+		font-size: 0.9rem;
 		color: #ef4444;
-		margin-bottom: 0.25rem;
+		font-weight: 500;
+		margin-bottom: 0.5rem;
 	}
 
 	.validation-issue:last-child {
@@ -552,22 +755,24 @@
 
 	/* Citations Section */
 	.citations-section {
-		border: 1px solid var(--color-border);
-		border-radius: var(--border-radius-md);
-		padding: 1rem;
-		background: var(--color-surface-alt);
+		background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		border-radius: 20px;
+		padding: 1.5rem;
+		backdrop-filter: blur(15px);
+		box-shadow: 0 4px 16px color-mix(in srgb, var(--color-text-primary) 3%, transparent);
 	}
 
 	.citations-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 1rem;
+		margin-bottom: 1.5rem;
 	}
 
 	.citations-header h3 {
 		margin: 0;
-		font-size: 1rem;
+		font-size: 1.2rem;
 		font-weight: 600;
 		color: var(--color-text-primary);
 	}
@@ -575,80 +780,143 @@
 	.citations-list {
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+		gap: 1.5rem;
 	}
 
 	.citation-item {
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: var(--border-radius-sm);
-		padding: 1rem;
+		background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+		border-radius: 16px;
+		padding: 1.5rem;
 		position: relative;
+		backdrop-filter: blur(10px);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	.citation-item:hover {
+		background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 5%, transparent);
 	}
 
 	.citation-content {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.75rem;
+		padding-right: 2rem;
 	}
 
 	.citation-title {
 		font-weight: 600;
 		color: var(--color-text-primary);
-		line-height: 1.3;
+		line-height: 1.4;
+		font-size: 1rem;
 	}
 
 	.citation-details {
-		font-size: 0.875rem;
+		font-size: 0.9rem;
 		color: var(--color-text-secondary);
+		line-height: 1.5;
 	}
 
 	.citation-point,
 	.citation-quote {
-		font-size: 0.875rem;
-		line-height: 1.4;
+		font-size: 0.9rem;
+		line-height: 1.5;
 	}
 
 	.citation-quote {
 		font-style: italic;
-		padding-left: 0.5rem;
-		border-left: 3px solid var(--color-border);
+		padding: 0.75rem;
+		margin: 0.5rem 0;
+		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+		border-left: 4px solid var(--color-primary);
+		border-radius: 0 12px 12px 0;
+		backdrop-filter: blur(5px);
 	}
 
 	.citation-url {
-		font-size: 0.8rem;
+		font-size: 0.85rem;
 	}
 
 	.citation-url a {
 		color: var(--color-primary);
 		text-decoration: none;
 		word-break: break-all;
+		font-weight: 500;
+		transition: color 0.3s ease;
 	}
 
 	.citation-url a:hover {
+		color: var(--color-accent);
 		text-decoration: underline;
 	}
 
 	.remove-citation {
 		position: absolute;
-		top: 0.5rem;
-		right: 0.5rem;
-		background: #ef4444;
+		top: 1rem;
+		right: 1rem;
+		background: linear-gradient(135deg, #ef4444, #dc2626);
 		color: white;
 		border: none;
 		border-radius: 50%;
-		width: 24px;
-		height: 24px;
-		font-size: 1rem;
+		width: 32px;
+		height: 32px;
+		font-size: 1.1rem;
 		line-height: 1;
 		cursor: pointer;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		transition: opacity 0.2s;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		box-shadow: 0 2px 8px color-mix(in srgb, #ef4444 25%, transparent);
 	}
 
 	.remove-citation:hover {
-		opacity: 0.8;
+		background: linear-gradient(135deg, #dc2626, #b91c1c);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px color-mix(in srgb, #ef4444 30%, transparent);
+	}
+
+	/* Mobile responsiveness */
+	@media (max-width: 768px) {
+		.main-card {
+			padding: 1.5rem;
+			margin-top: 1rem;
+		}
+
+		.form-actions {
+			flex-direction: column;
+		}
+
+		.btn-primary,
+		.btn-secondary {
+			width: 100%;
+			text-align: center;
+		}
+
+		.citation-content {
+			padding-right: 2.5rem;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.container {
+			padding: 1rem;
+		}
+
+		.main-card {
+			padding: 1rem;
+			border-radius: 20px;
+		}
+
+		.citations-section {
+			padding: 1rem;
+		}
+
+		.citation-item {
+			padding: 1rem;
+		}
 	}
 </style>
