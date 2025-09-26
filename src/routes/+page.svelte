@@ -233,7 +233,11 @@
 
 				{#if activeAuthView === 'initial'}
 					<div class="auth-method-buttons">
-						<button type="button" onclick={() => (activeAuthView = 'emailPassword')}
+						<button 
+							aria-label="Continue with Email/Password"
+							type="button"
+							class="oauth-button"
+							onclick={() => (activeAuthView = 'emailPassword')}
 							>Continue with Email/Password</button
 						>
 						<button
@@ -597,33 +601,74 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		background-color: rgba(0, 0, 0, 0.6);
+		background: linear-gradient(135deg,
+			color-mix(in srgb, var(--color-surface) 40%, transparent) 0%,
+			color-mix(in srgb, var(--color-primary) 8%, transparent) 50%,
+			color-mix(in srgb, var(--color-accent) 6%, transparent) 100%
+		);
+		backdrop-filter: blur(20px) saturate(1.2);
 		display: flex;
 		justify-content: center;
 		align-items: center;
 		z-index: 1000;
 		padding: 1rem;
+		animation: fadeIn 0.3s ease-out;
+	}
+
+	@keyframes fadeIn {
+		from { opacity: 0; }
+		to { opacity: 1; }
 	}
 	.login-container {
 		position: relative;
 		margin: 0;
-		max-width: 420px;
+		max-width: 480px;
 		width: 100%;
-		background-color: var(--color-surface);
-		padding: 2.5rem;
-		border-radius: var(--border-radius-md);
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+		background: color-mix(in srgb, var(--color-surface-alt) 70%, transparent);
+		backdrop-filter: blur(30px) saturate(1.3);
+		border: 1px solid color-mix(in srgb, var(--color-border) 25%, transparent);
+		padding: 3rem;
+		border-radius: 30px;
+		box-shadow:
+			0 20px 60px color-mix(in srgb, var(--color-primary) 15%, transparent),
+			0 8px 32px color-mix(in srgb, var(--color-surface) 20%, transparent);
 		color: var(--color-text-primary);
 		display: flex;
 		flex-direction: column;
+		animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	@keyframes slideUp {
+		from {
+			transform: translateY(20px);
+			opacity: 0;
+		}
+		to {
+			transform: translateY(0);
+			opacity: 1;
+		}
 	}
 	#auth-dialog-title {
 		text-align: center;
-		font-size: 1.75rem;
-		font-weight: 700;
+		font-size: clamp(1.75rem, 4vw, 2.25rem);
+		font-weight: 900;
 		color: var(--color-text-primary);
-		margin-bottom: 1.5rem;
+		margin-bottom: 2rem;
 		font-family: var(--font-family-display);
+		letter-spacing: -0.02em;
+		position: relative;
+	}
+
+	#auth-dialog-title::after {
+		content: '';
+		position: absolute;
+		bottom: -10px;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 40px;
+		height: 3px;
+		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+		border-radius: 2px;
 	}
 	.auth-method-buttons,
 	.oauth-buttons {
@@ -644,46 +689,125 @@
 	.toggle-auth-mode {
 		background: none;
 		border: none;
-		color: var(--color-accent);
+		color: var(--color-primary);
 		cursor: pointer;
-		padding: 0.5rem 0;
+		padding: 1rem 0;
 		margin-top: 1.5rem;
-		text-decoration: underline;
+		text-decoration: none;
 		text-align: center;
 		width: 100%;
+		font-weight: 500;
+		transition: all 0.2s ease;
+		border-radius: 12px;
 	}
 	.toggle-auth-mode:hover {
-		color: var(--color-primary);
+		color: var(--color-accent);
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+	}
+
+	.auth-primary-action {
+		width: 100%;
+		padding: 1rem 2rem;
+		background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+		color: var(--color-surface);
+		border: none;
+		border-radius: 16px;
+		font-size: 1rem;
+		font-weight: 600;
+		font-family: var(--font-family-display);
+		cursor: pointer;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		box-shadow: 0 8px 20px color-mix(in srgb, var(--color-primary) 25%, transparent);
+		position: relative;
+		overflow: hidden;
+		margin-bottom: 1rem;
+	}
+
+	.auth-primary-action::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+		transition: left 0.5s;
+	}
+
+	.auth-primary-action:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 12px 30px color-mix(in srgb, var(--color-primary) 35%, transparent);
+		filter: brightness(1.05);
+	}
+
+	.auth-primary-action:hover::before {
+		left: 100%;
+	}
+
+	.auth-primary-action:active {
+		transform: translateY(0);
 	}
 	.close-auth-overlay {
 		position: absolute;
-		top: 0.75rem;
-		right: 0.75rem;
-		background: transparent;
-		border: none;
-		font-size: 1.75rem;
+		top: 1rem;
+		right: 1rem;
+		width: 40px;
+		height: 40px;
+		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+		backdrop-filter: blur(10px);
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		border-radius: 12px;
+		font-size: 1.5rem;
 		color: var(--color-text-secondary);
 		cursor: pointer;
-		padding: 0.5rem;
-		line-height: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.2s ease;
 	}
 	.close-auth-overlay:hover {
 		color: var(--color-text-primary);
+		background: color-mix(in srgb, var(--color-surface-alt) 70%, transparent);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 10%, transparent);
 	}
 	.oauth-button {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 0.5rem;
-		border-radius: var(--border-radius-sm);
+		gap: 0.75rem;
+		padding: 1rem 1.5rem;
+		border-radius: 16px;
 		cursor: pointer;
-		transition: background-color var(--transition-speed) ease;
-		border: 1px solid var(--color-border);
-		background-color: var(--color-surface);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+		backdrop-filter: blur(10px);
 		color: var(--color-text-primary);
+		font-weight: 500;
+		position: relative;
+		overflow: hidden;
+	}
+
+	.oauth-button::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+		transition: left 0.5s;
 	}
 	.oauth-button:hover {
-		background-color: var(--color-input-bg);
+		background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+		transform: translateY(-2px);
+		box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 12%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+	}
+
+	.oauth-button:hover::before {
+		left: 100%;
 	}
 	.legal-links {
 		margin-top: 1.5rem;
@@ -717,20 +841,13 @@
 	.public-resources {
 		margin: 4rem auto 0;
 		max-width: 1200px;
+		width: 90%;
 		text-align: left;
 		padding: 3rem 2rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
 		backdrop-filter: blur(20px);
 		border-radius: 30px;
 		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
-	}
-	.public-resources-title {
-		font-size: clamp(1.75rem, 3vw, 2.25rem);
-		font-weight: 800;
-		margin: 0 0 1.5rem;
-		font-family: var(--font-family-display);
-		color: var(--color-text-primary);
-		letter-spacing: -0.01em;
 	}
 	.public-resources-list {
 		list-style: none;

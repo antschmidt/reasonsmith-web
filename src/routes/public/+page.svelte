@@ -20,6 +20,7 @@
     summary?: string | null;
     analysis?: string | null;
     tags?: string[] | null;
+    date_published?: string | null;
     display_order: number;
     published: boolean;
     created_at: string;
@@ -36,6 +37,7 @@
     summary: string;
     analysis: string;
     tags: string;
+    date_published: string;
     display_order: number;
     published: boolean;
   };
@@ -50,6 +52,7 @@
     summary: '',
     analysis: '',
     tags: '',
+    date_published: '',
     display_order: 0,
     published: true
   };
@@ -139,6 +142,7 @@
       summary: item.summary ?? '',
       analysis: item.analysis ?? '',
       tags: item.tags?.join(', ') ?? '',
+      date_published: item.date_published ?? '',
       display_order: item.display_order ?? 0,
       published: !!item.published
     };
@@ -181,6 +185,7 @@
       summary: form.summary.trim() || null,
       analysis: form.analysis.trim() || null,
       tags: parseTags(form.tags),
+      date_published: form.date_published.trim() || null,
       display_order: form.display_order ?? 0,
       published: form.published
     };
@@ -486,6 +491,10 @@
               <input type="text" bind:value={form.creator} placeholder="Name of the author or speaker" />
             </label>
             <label>
+              <span>Date Published (optional)</span>
+              <input type="date" bind:value={form.date_published} placeholder="When was the source material originally published?" />
+            </label>
+            <label>
               <span>Source URL</span>
               <input type="url" bind:value={form.source_url} placeholder="https://" />
             </label>
@@ -589,38 +598,73 @@
     flex-wrap: wrap;
     justify-content: space-between;
     gap: 1rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: 2rem;
+    padding: 2rem;
+    border-radius: 24px;
+    background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+    backdrop-filter: blur(20px) saturate(1.2);
+    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 8%, transparent);
   }
   .page-header h1 {
     margin: 0;
-    font-size: 1.75rem;
+    font-size: 2rem;
+    font-family: var(--font-family-display);
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
   .lead {
-    margin: 0.35rem 0 0;
+    margin: 0.5rem 0 0;
     color: var(--color-text-secondary);
+    font-size: 1.1rem;
+    line-height: 1.6;
   }
   .nav-links {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
     align-items: center;
   }
   .content {
     display: grid;
-    grid-template-columns: minmax(240px, 320px) 1fr;
-    gap: 1.5rem;
+    grid-template-columns: minmax(280px, 350px) 1fr;
+    gap: 2rem;
   }
   .list-panel {
-    border: 1px solid var(--color-border);
-    border-radius: var(--border-radius-md);
-    background: var(--color-surface);
-    padding: 1rem;
+    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+    border-radius: 24px;
+    background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+    backdrop-filter: blur(20px) saturate(1.2);
+    padding: 1.5rem;
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 8%, transparent);
+    position: relative;
+    overflow: hidden;
+  }
+  .list-panel::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    border-radius: 24px 24px 0 0;
   }
   .panel-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+  .panel-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-family: var(--font-family-display);
+    font-weight: 700;
+    color: var(--color-text-primary);
   }
   .item-list {
     list-style: none;
@@ -628,61 +672,101 @@
     margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.75rem;
   }
   .item-list li {
     display: flex;
     align-items: stretch;
-    border: 1px solid var(--color-border);
-    border-radius: var(--border-radius-sm);
+    border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+    border-radius: 16px;
     overflow: hidden;
+    background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .item-list li:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 12%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
   }
   .item-list li.inactive {
-    opacity: 0.65;
+    opacity: 0.6;
   }
   .item-button {
     flex: 1;
     text-align: left;
-    padding: 0.75rem;
+    padding: 1rem;
     background: transparent;
     border: none;
     color: inherit;
     cursor: pointer;
+    transition: background 0.2s ease;
+  }
+  .item-button:hover {
+    background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   }
   .item-title {
-    font-weight: 600;
-    margin-bottom: 0.25rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    color: var(--color-text-primary);
+    font-size: 1rem;
   }
   .item-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    font-size: 0.8rem;
+    gap: 0.75rem;
+    font-size: 0.85rem;
     color: var(--color-text-secondary);
   }
   .delete-button {
     border: none;
-    background: #f87171;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
     color: white;
-    width: 2.25rem;
+    width: 3rem;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 1.25rem;
     cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px color-mix(in srgb, #ef4444 25%, transparent);
+  }
+  .delete-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px color-mix(in srgb, #ef4444 35%, transparent);
   }
   .delete-button:disabled {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
+    transform: none;
   }
   .form-panel {
-    border: 1px solid var(--color-border);
-    border-radius: var(--border-radius-md);
-    background: var(--color-surface);
-    padding: 1.25rem;
+    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+    border-radius: 24px;
+    background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+    backdrop-filter: blur(20px) saturate(1.2);
+    padding: 2rem;
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 8%, transparent);
+    position: relative;
+    overflow: hidden;
+  }
+  .form-panel::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    border-radius: 24px 24px 0 0;
   }
   .form-panel h2 {
     margin-top: 0;
+    font-size: 1.5rem;
+    font-family: var(--font-family-display);
+    font-weight: 700;
+    color: var(--color-text-primary);
   }
   form {
     display: flex;
@@ -702,27 +786,43 @@
   input[type='text'],
   input[type='url'],
   input[type='number'],
+  input[type='date'],
   textarea {
     width: 100%;
-    border: 1px solid var(--color-border);
-    border-radius: var(--border-radius-sm);
-    padding: 0.5rem 0.6rem;
-    background: var(--color-input-bg, var(--color-surface));
+    border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
+    backdrop-filter: blur(10px);
     color: var(--color-text-primary);
     box-sizing: border-box;
+    transition: all 0.3s ease;
+    font-size: 0.95rem;
+  }
+  input[type='text']:focus,
+  input[type='url']:focus,
+  input[type='number']:focus,
+  input[type='date']:focus,
+  textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
   }
   textarea {
     min-height: 5rem;
     resize: vertical;
   }
   .analysis-generator {
-    border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
-    border-radius: var(--border-radius-md);
-    padding: 1rem;
-    background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+    border-radius: 16px;
+    padding: 1.5rem;
+    background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+    backdrop-filter: blur(15px);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 1rem;
+    box-shadow: 0 4px 15px color-mix(in srgb, var(--color-primary) 6%, transparent);
   }
   .analysis-header h3 {
     margin: 0;
@@ -817,25 +917,42 @@
     flex-wrap: wrap;
   }
   .btn-primary {
-    background: var(--color-primary);
-    color: var(--color-surface);
+    background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+    color: white;
     border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--border-radius-sm);
+    padding: 0.75rem 1.5rem;
+    border-radius: 12px;
     cursor: pointer;
     font-weight: 600;
+    font-size: 0.95rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 15px color-mix(in srgb, var(--color-primary) 25%, transparent);
+  }
+  .btn-primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 35%, transparent);
   }
   .btn-primary:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+    transform: none;
   }
   .btn-secondary {
-    background: transparent;
+    background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+    backdrop-filter: blur(10px);
     color: var(--color-text-primary);
-    border: 1px solid var(--color-border);
-    padding: 0.55rem 1.1rem;
-    border-radius: var(--border-radius-sm);
+    border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+    padding: 0.7rem 1.4rem;
+    border-radius: 12px;
     cursor: pointer;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+  }
+  .btn-secondary:hover {
+    background: color-mix(in srgb, var(--color-surface-alt) 70%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+    transform: translateY(-1px);
   }
   .error {
     color: #ef4444;

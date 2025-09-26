@@ -358,17 +358,27 @@
   }
 </script>
 
+<!-- Immersive background -->
+<div class="page-background">
+  <div class="floating-gradient gradient-1"></div>
+  <div class="floating-gradient gradient-2"></div>
+  <div class="floating-gradient gradient-3"></div>
+</div>
+
 <div class="profile-container {editing ? 'editing' : ''}">
   {#if !user}
-    <p>Please sign in to view your profile.</p>
+    <div class="glass-card sign-in-prompt">
+      <p>Please sign in to view your profile.</p>
+    </div>
   {:else}
     {#if !editing && success}
-      <div class="success">{success}</div>
+      <div class="success-banner">{success}</div>
     {/if}
 
     {#if editing}
-      <form class="profile-form" on:submit|preventDefault={save}>
-        <fieldset disabled={loading || fetching}>
+      <div class="glass-card edit-form-container">
+        <form class="profile-form" on:submit|preventDefault={save}>
+          <fieldset disabled={loading || fetching}>
           <label class="field read-only">
             <span>Sign-in Email</span>
             <input type="email" bind:value={authEmail} readonly />
@@ -486,140 +496,161 @@
             <button class="btn-secondary" type="button" on:click={cancelEdit} disabled={loading}>Cancel</button>
           </div>
         </fieldset>
-      </form>
+        </form>
+      </div>
     {:else}
       {#if fetching}
-        <p>Loading…</p>
+        <div class="glass-card loading-card">
+          <p>Loading…</p>
+        </div>
       {:else if error}
-        <p class="error">{error}</p>
+        <div class="glass-card error-card">
+          <p class="error">{error}</p>
+        </div>
       {:else}
         <div class="profile-view">
-          <div class="view-header">
-            <div>
-              <h2>{displayNameText(displayName) || 'Your Profile'}</h2>
-              {#if handle}
-                <p class="handle">@{handle}</p>
-              {/if}
+          <div class="glass-card profile-header">
+            <div class="view-header">
+              <div class="profile-info">
+                <h1 class="profile-title">{displayNameText(displayName) || 'Your Profile'}</h1>
+                {#if handle}
+                  <p class="handle">@{handle}</p>
+                {/if}
+              </div>
+              <button class="btn-primary" type="button" on:click={enterEdit}>Edit Profile</button>
             </div>
-            <button class="btn-primary" type="button" on:click={enterEdit}>Edit Profile</button>
+
+            {#if bio}
+              <p class="bio">{bio}</p>
+            {/if}
+
+            {#if website || (contributor?.social_links && Object.values(contributor.social_links).some(Boolean))}
+              <div class="links">
+                {#if website}
+                  <a class="link website" href={website} target="_blank" rel="noopener">{websiteLabel(website)}</a>
+                {/if}
+                {#if contributor?.social_links}
+                  {#each Object.entries(contributor.social_links) as [key, val]}
+                    {#if val}
+                      {@const href = getSocialLink(key, String(val))}
+                      {#if href}
+                        <a class="link icon" href={href} target="_blank" rel="noopener" title={key} aria-label={key}>
+                          {@html socialIcon(key)}
+                          <span class="sr-only">{key}</span>
+                        </a>
+                      {/if}
+                    {/if}
+                  {/each}
+                {/if}
+              </div>
+            {/if}
           </div>
 
-          {#if bio}
-            <p class="bio">{bio}</p>
-          {/if}
-
-          {#if website || (contributor?.social_links && Object.values(contributor.social_links).some(Boolean))}
-            <div class="links">
-              {#if website}
-                <a class="link website" href={website} target="_blank" rel="noopener">{websiteLabel(website)}</a>
-              {/if}
-              {#if contributor?.social_links}
-                {#each Object.entries(contributor.social_links) as [key, val]}
-                  {#if val}
-                    {@const href = getSocialLink(key, String(val))}
-                    {#if href}
-                      <a class="link icon" href={href} target="_blank" rel="noopener" title={key} aria-label={key}>
-                        {@html socialIcon(key)}
-                        <span class="sr-only">{key}</span>
-                      </a>
-                    {/if}
+          <div class="glass-card account-section">
+            <h3 class="section-title">Account Details</h3>
+            <div class="account-details">
+              <div class="detail-row">
+                <span class="detail-label">Email</span>
+                <span class="detail-value">{authEmail || 'Unavailable'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Profile URL</span>
+                <span class="detail-value">
+                  {#if profilePath}
+                    <a href={profilePath} class="profile-link">{profilePath}</a>
+                  {:else}
+                    Not available
                   {/if}
-                {/each}
-              {/if}
+                </span>
+              </div>
             </div>
-          {/if}
+            <p class="section-hint">Contact support to update your login email.</p>
+          </div>
 
-          <section class="profile-section account-card">
-            <dl class="account-list">
-              <dd>{authEmail || 'Unavailable'}</dd>
-              <dd>
-                {#if profilePath}
-                  <a href={profilePath}>{profilePath}</a>
-                {:else}
-                  Not available
-                {/if}
-              </dd>
-            </dl>
-            <p class="hint">Contact support to update your login email.</p>
-          </section>
-
-          <section class="profile-section stats-section">
-            <div class="stats-container">
-              <div class="stat-item">
-                <p class="stat-title">Good-Faith Rate</p>
-                <p class="stat-value">
+          <div class="glass-card stats-section">
+            <div class="gradient-accent"></div>
+            <h3 class="section-title">Your Statistics</h3>
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-number">
                   {#if statsLoading}
                     <span class="loading-text">...</span>
                   {:else}
                     {stats.goodFaithRate}%
                   {/if}
-                </p>
+                </div>
+                <div class="stat-label">Good-Faith Rate</div>
               </div>
-              <div class="stat-item">
-                <p class="stat-title">Source Accuracy</p>
-                <p class="stat-value">
+              <div class="stat-card">
+                <div class="stat-number">
                   {#if statsLoading}
                     <span class="loading-text">...</span>
                   {:else}
                     {stats.sourceAccuracy}%
                   {/if}
-                </p>
+                </div>
+                <div class="stat-label">Source Accuracy</div>
               </div>
-              <div class="stat-item">
-                <p class="stat-title">Reputation Score</p>
-                <p class="stat-value">
+              <div class="stat-card">
+                <div class="stat-number">
                   {#if statsLoading}
                     <span class="loading-text">...</span>
                   {:else}
                     {stats.reputationScore.toLocaleString()}
                   {/if}
-                </p>
+                </div>
+                <div class="stat-label">Reputation Score</div>
               </div>
             </div>
-            <div class="activity-summary">
-              <p class="activity-item">
+            <div class="activity-grid">
+              <div class="activity-stat">
                 <span class="activity-count">{stats.totalDiscussions.toLocaleString()}</span>
                 <span class="activity-label">discussions created</span>
-              </p>
-              <p class="activity-item">
+              </div>
+              <div class="activity-stat">
                 <span class="activity-count">{stats.totalPosts.toLocaleString()}</span>
                 <span class="activity-label">comments posted</span>
-              </p>
-              <p class="activity-item">
+              </div>
+              <div class="activity-stat">
                 <span class="activity-count">{stats.participatedDiscussions.toLocaleString()}</span>
                 <span class="activity-label">discussions joined</span>
-              </p>
+              </div>
             </div>
-          </section>
+          </div>
 
-          <section class="profile-section">
-            <h3>Discussions</h3>
+          <div class="glass-card content-section">
+            <div class="gradient-accent"></div>
+            <h3 class="section-title">Recent Discussions</h3>
             {#if discussions.length === 0}
-              <p>No discussions yet.</p>
+              <p class="empty-state">No discussions yet.</p>
             {:else}
-              <ul class="list">
+              <div class="content-list">
                 {#each discussions as d}
-                  <li class="item"><a href={`/discussions/${d.id}`}>{d.title}</a> <span class="meta">· {new Date(d.created_at).toLocaleString()}</span></li>
+                  <div class="content-item">
+                    <a href={`/discussions/${d.id}`} class="content-link">{d.title}</a>
+                    <span class="content-meta">{new Date(d.created_at).toLocaleDateString()}</span>
+                  </div>
                 {/each}
-              </ul>
+              </div>
             {/if}
-          </section>
+          </div>
 
-          <section class="profile-section">
-            <h3>Comments</h3>
+          <div class="glass-card content-section">
+            <div class="gradient-accent"></div>
+            <h3 class="section-title">Recent Comments</h3>
             {#if posts.length === 0}
-              <p>No comments yet.</p>
+              <p class="empty-state">No comments yet.</p>
             {:else}
-              <ul class="list">
+              <div class="content-list">
                 {#each posts as p}
-                  <li class="item">
-                    <a href={`/discussions/${p.discussion_id}`}>{toTextSnippet(p.content)}</a>
-                    <span class="meta">· {new Date(p.created_at).toLocaleString()}</span>
-                  </li>
+                  <div class="content-item">
+                    <a href={`/discussions/${p.discussion_id}`} class="content-link">{toTextSnippet(p.content)}</a>
+                    <span class="content-meta">{new Date(p.created_at).toLocaleDateString()}</span>
+                  </div>
                 {/each}
-              </ul>
+              </div>
             {/if}
-          </section>
+          </div>
         </div>
       {/if}
     {/if}
@@ -627,64 +658,606 @@
 </div>
 
 <style>
-  .profile-container {
-	justify-self: center;
-    padding: 1.5rem;
+  /* Immersive background */
+  .page-background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-alt)),
+      color-mix(in srgb, var(--color-accent) 6%, var(--color-surface-alt)),
+      var(--color-surface-alt)
+    );
   }
+
+  .floating-gradient {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(100px);
+    opacity: 0.3;
+    animation: float 20s ease-in-out infinite;
+  }
+
+  .gradient-1 {
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, var(--color-primary), transparent);
+    top: 10%;
+    right: 10%;
+    animation-delay: -5s;
+  }
+
+  .gradient-2 {
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, var(--color-accent), transparent);
+    bottom: 20%;
+    left: 15%;
+    animation-delay: -10s;
+  }
+
+  .gradient-3 {
+    width: 250px;
+    height: 250px;
+    background: radial-gradient(circle, color-mix(in srgb, var(--color-primary) 70%, var(--color-accent)), transparent);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    animation-delay: -15s;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0px) rotate(0deg); }
+    33% { transform: translateY(-30px) rotate(120deg); }
+    66% { transform: translateY(15px) rotate(240deg); }
+  }
+
+  /* Glass morphism effects */
+  .glass-card {
+    background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+    backdrop-filter: blur(20px);
+    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+    border-radius: 24px;
+    box-shadow:
+      0 8px 32px color-mix(in srgb, var(--color-primary) 8%, transparent),
+      0 2px 8px color-mix(in srgb, var(--color-text-primary) 4%, transparent);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .glass-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-border) 50%, transparent), transparent);
+  }
+
+  .glass-card:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 12px 40px color-mix(in srgb, var(--color-primary) 12%, transparent),
+      0 4px 12px color-mix(in srgb, var(--color-text-primary) 6%, transparent);
+  }
+
+  .gradient-accent {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    border-radius: 24px 24px 0 0;
+  }
+
+  /* Layout */
+  .profile-container {
+    min-height: 100vh;
+    padding: clamp(1rem, 4vw, 2rem);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+    position: relative;
+  }
+
   .profile-container.editing {
-	max-width: 700px;
-	width: 100%;
+    max-width: 800px;
+    width: 100%;
   }
 
   .profile-view {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 2rem;
+    width: 100%;
+    max-width: 1000px;
   }
+
+  /* Profile header */
+  .profile-header {
+    padding: 2rem;
+  }
+
   .view-header {
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
+    align-items: flex-start;
+    gap: 2rem;
+    margin-bottom: 1.5rem;
   }
-  .view-header h2 {
-    margin: 0;
+
+  .profile-info h1.profile-title {
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+    color: var(--color-text-primary);
+    text-shadow: 0 2px 4px color-mix(in srgb, var(--color-text-primary) 10%, transparent);
   }
+
   .handle {
-    margin: 0.25rem 0 0;
+    font-size: 1.1rem;
     color: var(--color-text-secondary);
-  }
-  .profile-view .bio {
     margin: 0;
-    color: var(--color-text-secondary);
+    font-weight: 500;
   }
+
+  .bio {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--color-text-secondary);
+    margin: 0;
+    max-width: 600px;
+  }
+
   .links {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 1rem;
+    margin-top: 1rem;
   }
+
   .links .link {
     color: var(--color-primary);
     text-decoration: none;
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.5rem;
+    font-weight: 500;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
+
   .links .link:hover {
-    text-decoration: none;
+    color: var(--color-accent);
+    transform: translateY(-1px);
   }
+
   .links .link.icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    border-radius: 20px;
     justify-content: center;
-    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+  }
+
+  .links .link.icon:hover {
+    background: color-mix(in srgb, var(--color-primary) 25%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 20%, transparent);
+  }
+  /* Sections */
+  .section-title {
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin: 0 0 1.5rem 0;
+    color: var(--color-text-primary);
+  }
+
+  .account-section,
+  .stats-section,
+  .content-section {
+    padding: 2rem;
+  }
+
+  /* Account details */
+  .account-details {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+  }
+
+  .detail-row:last-child {
+    border-bottom: none;
+  }
+
+  .detail-label {
+    font-weight: 600;
+    color: var(--color-text-secondary);
+  }
+
+  .detail-value {
+    color: var(--color-text-primary);
+    text-align: right;
+  }
+
+  .profile-link {
+    color: var(--color-primary);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .profile-link:hover {
+    color: var(--color-accent);
+    text-decoration: underline;
+  }
+
+  .section-hint {
+    color: var(--color-text-secondary);
+    font-size: 0.9rem;
+    margin: 0;
+    opacity: 0.8;
+  }
+
+  /* Statistics */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .stat-card {
+    background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+    border-radius: 20px;
+    padding: 1.5rem;
+    text-align: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .stat-card:hover {
+    transform: translateY(-2px);
+    background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--color-primary) 10%, transparent);
+  }
+
+  .stat-number {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    margin-bottom: 0.5rem;
+    text-shadow: 0 2px 4px color-mix(in srgb, var(--color-primary) 20%, transparent);
+  }
+
+  .stat-label {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .activity-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+  }
+
+  .activity-stat {
+    text-align: center;
+  }
+
+  .activity-count {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--color-accent);
+    margin-bottom: 0.25rem;
+  }
+
+  .activity-label {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+  }
+
+  /* Content sections */
+  .content-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .content-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+    border-radius: 16px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .content-item:hover {
+    background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 5%, transparent);
+  }
+
+  .content-link {
+    color: var(--color-text-primary);
+    text-decoration: none;
+    font-weight: 500;
+    flex: 1;
+    line-height: 1.5;
+  }
+
+  .content-link:hover {
     color: var(--color-primary);
   }
-  .links .link.icon:hover {
-    background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+
+  .content-meta {
+    color: var(--color-text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
   }
+
+  .empty-state {
+    text-align: center;
+    color: var(--color-text-secondary);
+    font-style: italic;
+    padding: 2rem;
+    margin: 0;
+  }
+  /* Form styling */
+  .edit-form-container {
+    padding: 2rem;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .profile-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .profile-form fieldset {
+    border: none;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .field span {
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  .field input,
+  .field textarea {
+    padding: 1rem;
+    border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+    backdrop-filter: blur(10px);
+    color: var(--color-text-primary);
+    font-size: 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .field input:focus,
+  .field textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+    transform: translateY(-1px);
+  }
+
+  .field textarea {
+    resize: vertical;
+    min-height: 120px;
+  }
+
+  .field.read-only input {
+    background: color-mix(in srgb, var(--color-surface) 30%, transparent);
+    color: var(--color-text-secondary);
+    cursor: not-allowed;
+  }
+
+  .hint {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    margin: 0;
+  }
+
+  .social-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+
+  .social-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .social-field label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  .social-field label .icon {
+    width: 18px;
+    height: 18px;
+    color: var(--color-text-secondary);
+  }
+  /* Buttons */
+  .btn-primary {
+    background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+    color: #ffffff;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 16px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--color-primary) 20%, transparent);
+    position: relative;
+    overflow: hidden;
+  }
+
+  :global([data-theme="dark"]) .btn-primary {
+    color: #000000;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.1);
+  }
+
+  .btn-primary::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+  }
+
+  .btn-primary:hover::before {
+    left: 100%;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .btn-secondary {
+    background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+    backdrop-filter: blur(10px);
+    color: var(--color-text-primary);
+    border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+    padding: 1rem 2rem;
+    border-radius: 16px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .btn-secondary:hover {
+    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+    transform: translateY(-1px);
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .form-actions {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+  }
+
+  /* Status messages */
+  .sign-in-prompt {
+    padding: 3rem;
+    text-align: center;
+  }
+
+  .sign-in-prompt p {
+    font-size: 1.1rem;
+    color: var(--color-text-secondary);
+    margin: 0;
+  }
+
+  .success-banner {
+    background: linear-gradient(135deg,
+      color-mix(in srgb, var(--color-accent) 20%, transparent),
+      color-mix(in srgb, var(--color-accent) 10%, transparent)
+    );
+    border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+    color: var(--color-accent);
+    padding: 1rem 1.5rem;
+    border-radius: 16px;
+    font-weight: 500;
+    text-align: center;
+    backdrop-filter: blur(10px);
+  }
+
+  .loading-card,
+  .error-card {
+    padding: 3rem;
+    text-align: center;
+  }
+
+  .loading-card p {
+    font-size: 1.1rem;
+    color: var(--color-text-secondary);
+    margin: 0;
+  }
+
+  .error {
+    color: #ef4444;
+    font-weight: 500;
+    margin: 0;
+  }
+
+  .loading-text {
+    color: var(--color-text-secondary);
+    opacity: 0.7;
+  }
+
   .sr-only {
     position: absolute;
     width: 1px;
@@ -696,294 +1269,84 @@
     white-space: nowrap;
     border: 0;
   }
-  .account-card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--border-radius-md);
-    padding: 1.25rem;
-  }
-  .account-card h2 {
-    margin: 0 0 0.75rem 0;
-    font-size: 1.05rem;
-  }
-  .account-list {
-    margin: 0;
-    display: grid;
-    grid-template-columns: minmax(140px, auto) 1fr;
-    column-gap: 1rem;
-    row-gap: 0.5rem;
-    align-items: center;
-  }
-  .account-list dt {
-    font-weight: 600;
-    color: var(--color-text-secondary);
-    margin: 0;
-    padding: 0.55rem 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
-  }
-  .account-list dd {
-    margin: 0;
-    padding: 0.55rem 0;
-    color: var(--color-text-primary);
-    word-break: break-word;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
-  }
-  .account-list dd:last-of-type {
-    border-bottom: none;
-  }
-  .account-list dt:last-of-type {
-    border-bottom: none;
-  }
-  .stats-section {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--border-radius-md);
-    padding: 1.5rem;
-  }
-  .stats-section h2 {
-    margin: 0 0 1rem 0;
-    font-size: 1.05rem;
-  }
-  .stats-container {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
-  }
-  .stat-item {
-    padding: 0.75rem;
-    border-radius: var(--border-radius-sm);
-    background-color: var(--color-surface-alt);
-    border: 1px solid var(--color-border);
-    text-align: center;
-    flex: 1;
-    min-width: 0;
-    transition: background-color 150ms ease-in-out;
-  }
-  .stat-item:hover {
-    background-color: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface-alt));
-  }
-  .stat-title {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--color-text-secondary);
-    margin: 0 0 0.25rem;
-    line-height: 1.2;
-  }
-    /* Nuclear approach - override ALL link colors in dark mode */
-  :global([data-theme="dark"] a),
-  :global([data-theme="dark"] a:link) {
+
+  /* Dark mode link overrides */
+  :global([data-theme="dark"]) .profile-link,
+  :global([data-theme="dark"]) .content-link:hover {
     color: #a9c8ff;
   }
-  .stat-value {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--color-text-primary);
-    margin: 0;
-    line-height: 1.2;
-  }
-  .loading-text {
-    color: var(--color-text-secondary);
-    font-weight: 400;
-  }
-  .activity-summary {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-around;
-    gap: 1rem;
-    border-top: 1px solid var(--color-border);
-    padding-top: 1.5rem;
-  }
-  .activity-item {
-    text-align: center;
-    margin: 0;
-  }
-  .activity-count {
-    display: block;
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--color-primary);
-    margin-bottom: 0.25rem;
-  }
-  .activity-label {
-    font-size: 0.8rem;
-    color: var(--color-text-secondary);
-    font-weight: 500;
-  }
-  .list {
-    list-style: none;
-    margin: 0.5rem 0 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-  .item a {
-    color: var(--color-text-primary);
-    text-decoration: none;
-  }
-  .item a:hover {
-    text-decoration: underline;
-  }
-  .meta {
-    color: var(--color-text-secondary);
-    font-size: 0.85rem;
-    margin-left: 0.35rem;
-  }
-  .profile-form {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    max-width: 100%;
-  }
-  .profile-form fieldset {
-    border: none;
-    padding: 0;
-    margin: 0;
-    min-width: 0;
-  }
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-  input[type='text'],
-  input[type='url'],
-  input[type='email'],
-  textarea {
-    width: 100%;
-    max-width: 100%;
-    box-sizing: border-box;
-    padding: 0.5rem 0.5rem;
-    margin-bottom: 0.5rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--border-radius-sm);
-    background: var(--color-input-bg);
-    color: var(--color-text-primary);
-  }
-  textarea {
-    resize: vertical;
-  }
-  input:focus,
-  textarea:focus {
-    outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
-  }
-  .social-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 0.75rem;
-    width: 100%;
-  }
-  .social-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-  .social-field label {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .social-field label .icon {
-    display: inline-flex;
-    width: 16px;
-    height: 16px;
-    color: var(--color-text-secondary);
-  }
-  .social-field label .icon svg {
-    width: 16px;
-    height: 16px;
-    display: block;
-  }
-  .field.read-only input[readonly] {
-    background: color-mix(in srgb, var(--color-input-bg) 70%, transparent);
-    color: var(--color-text-secondary);
-    cursor: not-allowed;
-  }
-  .field.read-only .hint {
-    color: var(--color-text-secondary);
-  }
-  .btn-primary {
-    align-self: flex-start;
-    background: var(--color-primary);
-    color: var(--color-surface);
-    padding: 0.55rem 1rem;
-    border-radius: var(--border-radius-md);
-    border: none;
-    cursor: pointer;
-    font-weight: 600;
-  }
-  .btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  .btn-secondary {
-    align-self: flex-start;
-    background: transparent;
-    color: var(--color-text-secondary);
-    padding: 0.55rem 1rem;
-    border-radius: var(--border-radius-md);
-    border: 1px solid var(--color-border);
-    cursor: pointer;
-    font-weight: 500;
-  }
-  .btn-secondary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  .form-actions {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    margin-top: 0.5rem;
-  }
-  .error {
-    color: #ef4444;
-    font-size: 0.9rem;
-  }
-  .success {
-    color: #059669;
-    font-size: 0.9rem;
-  }
-  .hint {
-    color: var(--color-text-secondary);
-    font-size: 0.85rem;
-    margin-top: -0.5rem;
-    margin-bottom: 0.5rem;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-  .account-card .hint {
-    margin-top: 0.75rem;
-    margin-bottom: 0;
-  }
+
+  /* Mobile responsiveness */
   @media (max-width: 768px) {
-    .stats-container {
-      flex-direction: row;
-      gap: 0.5rem;
-    }
-    .activity-summary {
-      flex-direction: row;
-      gap: 0.75rem;
-    }
     .view-header {
       flex-direction: column;
+      gap: 1rem;
+    }
+
+    .profile-info h1.profile-title {
+      font-size: 2rem;
+    }
+
+    .stats-grid {
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+
+    .activity-grid {
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+    }
+
+    .content-item {
+      flex-direction: column;
       align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .content-meta {
+      white-space: normal;
+    }
+
+    .form-actions {
+      flex-direction: column;
+    }
+
+    .btn-primary,
+    .btn-secondary {
+      width: 100%;
+      text-align: center;
     }
   }
-  @media (max-width: 560px) {
+
+  @media (max-width: 480px) {
     .profile-container {
       padding: 1rem;
     }
-    .stats-section {
-      padding: 1.25rem;
+
+    .glass-card {
+      border-radius: 20px;
     }
-    .account-list {
+
+    .profile-header,
+    .account-section,
+    .stats-section,
+    .content-section,
+    .edit-form-container {
+      padding: 1.5rem;
+    }
+
+    .social-grid {
       grid-template-columns: 1fr;
-      row-gap: 0;
+    }
+
+    .detail-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .detail-value {
+      text-align: left;
     }
   }
 </style>

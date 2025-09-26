@@ -12,6 +12,7 @@
     analysis?: string | null;
     tags?: string[] | null;
     source_url?: string | null;
+    date_published?: string | null;
     created_at: string;
   };
 
@@ -31,6 +32,16 @@
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#39;');
     return escaped.replace(/(?:\r\n|\r|\n)/g, '<br />');
+  };
+
+  const getStructuredAnalysisSummary = (analysisJson?: string | null): string | null => {
+    if (!analysisJson) return null;
+    try {
+      const parsed = JSON.parse(analysisJson);
+      return parsed?.summary || null;
+    } catch {
+      return null;
+    }
   };
 
   const updateScrollState = () => {
@@ -79,25 +90,15 @@
             <div class="meta-tags">
               {#if item.media_type}<span>{item.media_type}</span>{/if}
               {#if item.creator}<span>{item.creator}</span>{/if}
-              <span>{new Date(item.created_at).toLocaleDateString()}</span>
+              <span>{item.date_published ? new Date(item.date_published + 'T12:00:00').toLocaleDateString() : new Date(item.created_at).toLocaleDateString()}</span>
             </div>
             <h3>{item.title}</h3>
             {#if item.subtitle}
               <p class="subtitle">{@html sanitizeMultiline(item.subtitle)}</p>
             {/if}
           </header>
-          {#if item.summary}
-            <p class="summary">{@html sanitizeMultiline(item.summary)}</p>
-          {/if}
-          <!-- {#if item.analysis}
-            <p class="analysis">{@html sanitizeMultiline(item.analysis)}</p>
-          {/if} -->
-          {#if item.tags && item.tags.length > 0}
-            <ul class="tag-list">
-              {#each item.tags as tag}
-                <li>{tag}</li>
-              {/each}
-            </ul>
+          {#if getStructuredAnalysisSummary(item.analysis)}
+            <p class="analysis-summary">{@html sanitizeMultiline(getStructuredAnalysisSummary(item.analysis))}</p>
           {/if}
           <footer class="card-footer">
             <span class="card-cta">Read analysis</span>
@@ -258,35 +259,25 @@
     overflow: hidden;
   }
 
-  .tag-list {
-    display: flex;
-    max-height: 8rem;
-    overflow: auto;
-    flex-wrap: wrap;
-    gap: 0.25rem;
+  .analysis-summary {
     margin: 0;
-    padding: 0;
-    list-style: none;
+    text-align: left;
+    font-size: 0.9rem;
+    min-height: 8rem;
+    overflow: scroll;
+    color: var(--color-text-secondary);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    font-style: italic;
+    background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+    padding: 0.75rem;
+    border-radius: 12px;
+    border-left: 3px solid color-mix(in srgb, var(--color-primary) 50%, transparent);
+    backdrop-filter: blur(5px);
   }
 
-
-  .tag-list li {
-    padding: 0.5rem 0.75rem;
-    border-radius: 20px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: none;
-    letter-spacing: 0.025em;
-    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
-    color: var(--color-primary);
-    transition: all 0.2s ease;
-  }
-
-  .tag-list li:hover {
-    background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-    border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
-  }
 
   .meta-tags {
     order: -1;
