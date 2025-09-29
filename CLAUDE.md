@@ -33,7 +33,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 1. **Authentication & User Management:**
    - `src/lib/nhostClient.ts` - Nhost client configuration with custom auth domain (auth.reasonsmith.com)
-   - User roles: 'user' (default), 'me' (authenticated)
+   - Hasura roles: 'anonymous' (unauthenticated), 'me' (authenticated)
+   - Application roles: 'user' (default), 'slartibartfast' (site manager - featured content, disputes, operations), 'admin' (root admin with complete system control)
    - Auto-creates contributor records on sign-in
 
 2. **Data Layer:**

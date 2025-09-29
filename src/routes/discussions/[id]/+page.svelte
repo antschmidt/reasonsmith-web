@@ -3,16 +3,55 @@
   // Avoid importing gql to prevent type resolution issues; use plain string
   import { nhost } from '$lib/nhostClient';
   import { onMount } from 'svelte';
-  import { CREATE_POST_DRAFT, UPDATE_DISCUSSION_GOOD_FAITH, UPDATE_POST_GOOD_FAITH, GET_DISCUSSION_DETAILS as IMPORTED_GET_DISCUSSION_DETAILS, ANONYMIZE_POST, ANONYMIZE_DISCUSSION, UNANONYMIZE_POST, UNANONYMIZE_DISCUSSION } from '$lib/graphql/queries';
+  import { CREATE_POST_DRAFT, UPDATE_DISCUSSION_VERSION_GOOD_FAITH, UPDATE_POST_GOOD_FAITH, GET_DISCUSSION_DETAILS as IMPORTED_GET_DISCUSSION_DETAILS, ANONYMIZE_POST, ANONYMIZE_DISCUSSION, UNANONYMIZE_POST, UNANONYMIZE_DISCUSSION } from '$lib/graphql/queries';
   import { createDraftAutosaver, type DraftAutosaver } from '$lib';
   import { getStyleConfig, WRITING_STYLES, validateStyleRequirements, formatChicagoCitation, processCitationReferences, type WritingStyle, type StyleMetadata, type Citation } from '$lib/types/writingStyle';
   import CitationForm from '$lib/components/CitationForm.svelte';
+  import CitationNetwork from '$lib/components/CitationNetwork.svelte';
   import { checkPostDeletable, deletePost, checkDiscussionDeletable, deleteDiscussion, confirmDeletion } from '$lib/utils/deletePost';
 
   let discussion = $state<any>(null);
   let loading = $state(true);
   let error = $state<Error | null>(null);
   let authReady = $state(false);
+
+  // Helper functions to handle versioned discussion data
+  function getDiscussionTitle(): string {
+    if (!discussion) return 'Untitled Discussion';
+    const version = discussion.current_version?.[0] || discussion.draft_version?.[0];
+    return version?.title || 'Untitled Discussion';
+  }
+
+  function getDiscussionDescription(): string {
+    if (!discussion) return '';
+    const version = discussion.current_version?.[0] || discussion.draft_version?.[0];
+    return version?.description || '';
+  }
+
+  function getDiscussionGoodFaithScore(): number | null {
+    if (!discussion) return null;
+    const version = discussion.current_version?.[0] || discussion.draft_version?.[0];
+    return version?.good_faith_score || null;
+  }
+
+  function getDiscussionGoodFaithLabel(): string | null {
+    if (!discussion) return null;
+    const version = discussion.current_version?.[0] || discussion.draft_version?.[0];
+    return version?.good_faith_label || null;
+  }
+
+  function getDiscussionGoodFaithLastEvaluated(): string | null {
+    if (!discussion) return null;
+    const version = discussion.current_version?.[0] || discussion.draft_version?.[0];
+    return version?.good_faith_last_evaluated || null;
+  }
+
+  function getDiscussionGoodFaithAnalysis(): any | null {
+    if (!discussion) return null;
+    // For analysis, we check the versioned data first, then fall back to local state
+    const version = discussion.current_version?.[0] || discussion.draft_version?.[0];
+    return version?.good_faith_analysis || discussion.good_faith_analysis || null;
+  }
 
   // New comment form state
   let newComment = $state('');
@@ -53,18 +92,19 @@
   `;
 
   const CREATE_DISCUSSION_VERSION = `
-    mutation CreateDiscussionVersion($discussionId: uuid!, $title: String!, $description: String!, $versionNumber: Int!) {
+    mutation CreateDiscussionVersion($discussionId: uuid!, $title: String!, $description: String!, $versionNumber: Int!, $versionType: String = "published") {
       insert_discussion_version_one(object: {
         discussion_id: $discussionId,
         title: $title,
         description: $description,
-        version_number: $versionNumber
-      }) { id version_number title description created_at }
+        version_number: $versionNumber,
+        version_type: $versionType
+      }) { id version_number title description created_at version_type }
     }
   `;
   const UPDATE_DISCUSSION_CURRENT_VERSION = `
-    mutation UpdateDiscussionCurrentVersion($discussionId: uuid!, $versionId: uuid!, $title: String!, $description: String!) {
-      update_discussion(where: {id: {_eq: $discussionId}}, _set: {current_version_id: $versionId, title: $title, description: $description}) { returning { id current_version_id title description } }
+    mutation UpdateDiscussionCurrentVersion($discussionId: uuid!, $versionId: uuid!) {
+      update_discussion(where: {id: {_eq: $discussionId}}, _set: {current_version_id: $versionId, status: "published"}) { returning { id current_version_id status } }
     }
   `;
 
@@ -130,15 +170,21 @@
   let editStyleMetadata = $state<StyleMetadata>({
     citations: []
   });
-  let editStyleValidation = $state<{ isValid: boolean; issues: string[] }>({ isValid: true, issues: [] });
   let showEditCitationForm = $state(false);
+
+  // Heuristic pre-screening state
+  let editHeuristicScore = $state<number>(0);
+  let editHeuristicPassed = $state<boolean>(false);
 
   // Comment writing style state (automatically inferred)
   let commentStyleMetadata = $state<StyleMetadata>({
     citations: []
   });
-  let commentStyleValidation = $state<{ isValid: boolean; issues: string[] }>({ isValid: true, issues: [] });
   let commentWordCount = $state(0);
+
+  // Heuristic pre-screening state for comments
+  let commentHeuristicScore = $state<number>(0);
+  let commentHeuristicPassed = $state<boolean>(false);
   let showCommentCitationReminder = $state(false);
   let showCommentCitationForm = $state(false);
   
@@ -155,6 +201,56 @@
     if (commentWordCount <= 100) return 'quick_point';
     if (commentWordCount <= 500) return 'journalistic';
     return 'academic';
+  }
+
+  // Heuristic pre-screening function
+  function assessContentQuality(content: string, title?: string): { score: number; passed: boolean; issues: string[] } {
+    const issues: string[] = [];
+    let score = 0;
+
+    // Word count assessment (0-25 points)
+    const wordCount = content.trim().split(/\s+/).length;
+    if (wordCount >= 50) score += 25;
+    else if (wordCount >= 25) score += 15;
+    else if (wordCount >= 10) score += 10;
+    else issues.push(`Content too short (${wordCount} words, minimum 25 recommended)`);
+
+    // Structure assessment (0-25 points)
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    if (sentences.length >= 3) score += 25;
+    else if (sentences.length >= 2) score += 15;
+    else issues.push('Content needs more detailed explanation (at least 2-3 sentences)');
+
+    // Title assessment for discussions (0-15 points)
+    if (title) {
+      const titleWords = title.trim().split(/\s+/).length;
+      if (titleWords >= 3 && titleWords <= 15) score += 15;
+      else if (titleWords >= 2) score += 10;
+      else issues.push('Title should be 3-15 words for clarity');
+    }
+
+    // Basic grammar/formatting (0-20 points)
+    const hasCapitalization = /[A-Z]/.test(content);
+    const hasPunctuation = /[.!?]/.test(content);
+    const notAllCaps = content !== content.toUpperCase();
+
+    if (hasCapitalization && hasPunctuation && notAllCaps) score += 20;
+    else if (hasCapitalization && hasPunctuation) score += 15;
+    else if (hasCapitalization || hasPunctuation) score += 10;
+    else issues.push('Content needs proper capitalization and punctuation');
+
+    // Substance assessment (0-15 points)
+    const hasQuestionWords = /\b(what|why|how|when|where|who)\b/i.test(content);
+    const hasReasoningWords = /\b(because|since|therefore|however|although|while)\b/i.test(content);
+    const hasEvidence = /\b(study|research|data|evidence|example|according to)\b/i.test(content);
+
+    if (hasEvidence) score += 15;
+    else if (hasReasoningWords) score += 10;
+    else if (hasQuestionWords) score += 5;
+    else issues.push('Content could benefit from more reasoning, evidence, or specific examples');
+
+    const passed = score >= 50; // 50% threshold
+    return { score, passed, issues };
   }
   
   let commentSelectedStyle = $derived(getInferredCommentStyle());
@@ -313,7 +409,7 @@
               citations: [],
               sources: []
             };
-                validateCommentStyle();
+                validateCommentContent();
               } catch (e) {
                 // Ignore invalid JSON
               }
@@ -354,7 +450,7 @@
               citations: [],
               sources: []
             };
-            validateCommentStyle();
+            validateCommentContent();
           } catch (e) {
             // Ignore invalid JSON
           }
@@ -619,10 +715,10 @@
     
     if (!hasDraft) {
       // No draft found, initialize with published content
-      editTitle = discussion.title;
+      editTitle = getDiscussionTitle();
       
       // Extract citation data from discussion description if it exists
-      const extraction = extractCitationData(discussion.description);
+      const extraction = extractCitationData(getDiscussionDescription());
       editDescription = extraction.cleanContent;
       
       if (extraction.citationData) {
@@ -639,7 +735,7 @@
     
     editError = null;
     editLastSavedAt = null;
-    validateEditStyle();
+    validateEditContent();
 
     // Auto-resize textarea after content is loaded
     setTimeout(() => {
@@ -691,8 +787,8 @@
       
       if (draftData) {
         const draft = JSON.parse(draftData);
-        editTitle = draft.title || discussion.title;
-        editDescription = draft.description || discussion.description;
+        editTitle = draft.title || getDiscussionTitle();
+        editDescription = draft.description || getDiscussionDescription();
         editSelectedStyle = draft.selectedStyle || 'journalistic';
         editStyleMetadata = ensureIdsForCitationData(draft.styleMetadata || { citations: [] });
         draftLastSavedAt = draft.lastSaved;
@@ -730,7 +826,7 @@
       if (!editDescription.trim()) { editError = 'Description required'; return; }
       
       // If no meaningful change, skip
-      if (editTitle.trim() === discussion.title && editDescription.trim() === discussion.description) { 
+      if (editTitle.trim() === getDiscussionTitle() && editDescription.trim() === getDiscussionDescription()) { 
         editing = false; 
         clearDraftFromLocalStorage();
         return; 
@@ -747,38 +843,54 @@
         descriptionWithCitations += `\n<!-- CITATION_DATA:${JSON.stringify(citationData)} -->`;
       }
       
-      // Get discussion ID and next version
       const discussionId = discussion.id;
-      
-      // Fetch latest version number
-      const latest = await nhost.graphql.request(GET_LATEST_VERSION_NUMBER, { discussionId });
-      if ((latest as any).error) throw (latest as any).error;
-      const latestNum = (latest as any).data?.discussion_version?.[0]?.version_number || 0;
-      const nextVersion = latestNum + 1;
-      
-      // Create version
-      const created = await nhost.graphql.request(CREATE_DISCUSSION_VERSION, { 
-        discussionId, 
-        title: editTitle.trim(), 
-        description: descriptionWithCitations, 
-        versionNumber: nextVersion 
+
+      // Get the current draft version to update
+      const draftVersion = discussion.draft_version?.[0];
+      if (!draftVersion) {
+        throw new Error('No draft version found to publish');
+      }
+
+      // First update the draft version with the new content
+      const updated = await nhost.graphql.request(`
+        mutation UpdateDraftVersion($versionId: uuid!, $title: String!, $description: String!) {
+          update_discussion_version_by_pk(
+            pk_columns: { id: $versionId }
+            _set: {
+              title: $title,
+              description: $description,
+              version_type: "published"
+            }
+          ) {
+            id
+            version_number
+            title
+            description
+            version_type
+          }
+        }
+      `, {
+        versionId: draftVersion.id,
+        title: editTitle.trim(),
+        description: descriptionWithCitations
       });
-      if ((created as any).error) throw (created as any).error;
-      const versionId = (created as any).data?.insert_discussion_version_one?.id;
-      if (!versionId) throw new Error('Failed to create version');
-      
-      // Set current version & update root discussion record
-      const upd = await nhost.graphql.request(UPDATE_DISCUSSION_CURRENT_VERSION, { 
-        discussionId, 
-        versionId, 
-        title: editTitle.trim(), 
-        description: descriptionWithCitations 
+
+      if ((updated as any).error) throw (updated as any).error;
+      const versionId = draftVersion.id;
+
+      // Update the discussion status and current version
+      const upd = await nhost.graphql.request(UPDATE_DISCUSSION_CURRENT_VERSION, {
+        discussionId,
+        versionId
       });
       if ((upd as any).error) throw (upd as any).error;
       
-      // Update UI
-      discussion.title = editTitle.trim();
-      discussion.description = descriptionWithCitations;
+      // Update UI - update the current version data
+      const versionToUpdate = discussion.current_version?.[0] || discussion.draft_version?.[0];
+      if (versionToUpdate) {
+        versionToUpdate.title = editTitle.trim();
+        versionToUpdate.description = descriptionWithCitations;
+      }
       discussion.current_version_id = versionId;
       
       // Clear draft and exit editing mode
@@ -803,16 +915,18 @@
 
   function onEditTitleInput(e: Event) {
     editTitle = (e.target as HTMLInputElement).value;
+    validateEditContent();
     scheduleEditAutoSave();
   }
 
   function onEditDescriptionInput(e: Event) {
     const textarea = e.target as HTMLTextAreaElement;
     editDescription = textarea.value;
-    
+
     // Auto-resize textarea
     autoResizeTextarea(textarea);
-    
+
+    validateEditContent();
     scheduleEditAutoSave();
   }
 
@@ -841,14 +955,14 @@
   function addEditCitation(item: Citation) {
     editStyleMetadata.citations = [...(editStyleMetadata.citations || []), item];
     showEditCitationForm = false;
-    validateEditStyle();
+    validateEditContent();
     // Trigger autosave when citation is added
     scheduleEditAutoSave();
   }
 
   function removeEditCitation(id: string) {
     editStyleMetadata.citations = editStyleMetadata.citations?.filter(c => c.id !== id) || [];
-    validateEditStyle();
+    validateEditContent();
     // Trigger autosave when citation is removed
     scheduleEditAutoSave();
   }
@@ -872,7 +986,7 @@
     
     showEditCitationForm = false;
     editingEditCitation = null;
-    validateEditStyle();
+    validateEditContent();
     scheduleEditAutoSave();
   }
 
@@ -881,8 +995,11 @@
     editingEditCitation = null;
   }
 
-  function validateEditStyle() {
-    editStyleValidation = validateStyleRequirements(editSelectedStyle, editDescription, editStyleMetadata);
+  function validateEditContent() {
+    const assessment = assessContentQuality(editDescription, editTitle);
+    editHeuristicScore = assessment.score;
+    editHeuristicPassed = assessment.passed;
+    return assessment;
   }
 
   // Citation reference insertion for editing
@@ -931,7 +1048,7 @@
     const hasSubstantialContent = commentWordCount >= 50;
     showCommentCitationReminder = hasSubstantialContent && commentStyleMetadata.citations.length === 0;
     
-    validateCommentStyle();
+    validateCommentContent();
     
     // Ensure draft exists and save citation metadata
     await ensureDraftCreated();
@@ -952,7 +1069,7 @@
     const hasSubstantialContent = commentWordCount >= 50;
     showCommentCitationReminder = hasSubstantialContent && commentStyleMetadata.citations.length === 0;
     
-    validateCommentStyle();
+    validateCommentContent();
     
     // Update stored citation data
     if (typeof localStorage !== 'undefined' && draftPostId) {
@@ -982,7 +1099,7 @@
     
     showCommentCitationEditForm = false;
     editingCommentCitation = null;
-    validateCommentStyle();
+    validateCommentContent();
     
     // Update stored citation data
     if (typeof localStorage !== 'undefined' && draftPostId) {
@@ -999,8 +1116,11 @@
     editingCommentCitation = null;
   }
 
-  function validateCommentStyle() {
-    commentStyleValidation = validateStyleRequirements(commentSelectedStyle, newComment, commentStyleMetadata);
+  function validateCommentContent() {
+    const assessment = assessContentQuality(newComment);
+    commentHeuristicScore = assessment.score;
+    commentHeuristicPassed = assessment.passed;
+    return assessment;
   }
 
   // Citation reference insertion for comments
@@ -1084,7 +1204,7 @@
   async function handleDeleteDiscussion() {
     if (!user || !discussion) return;
     
-    if (!confirmDeletion('discussion', discussion.title)) return;
+    if (!confirmDeletion('discussion', getDiscussionTitle())) return;
 
     try {
       const deletionCheck = await checkDiscussionDeletable(
@@ -1392,27 +1512,36 @@
       };
 
       console.log(`📊 Saving ${provider} analysis to database for discussion ${discussion.id}`);
-      
-      // Update the discussion's good faith analysis
-      const { error } = await nhost.graphql.request(UPDATE_DISCUSSION_GOOD_FAITH, {
-        discussionId: discussion.id,
-        score: result.good_faith_score,
-        label: result.good_faith_label,
-        analysis: analysisData
-      });
 
-      if (error) {
-        console.warn(`❌ Database save failed (GraphQL schema may not be refreshed):`, error);
-        console.log(`💡 The database has the columns, but GraphQL schema needs refresh`);
+      // Update the current discussion version's good faith analysis
+      // Use published version if it exists, otherwise use draft version
+      const currentVersionId = discussion.current_version?.[0]?.id || discussion.draft_version?.[0]?.id;
+      if (currentVersionId) {
+        const { error } = await nhost.graphql.request(UPDATE_DISCUSSION_VERSION_GOOD_FAITH, {
+          versionId: currentVersionId,
+          score: result.good_faith_score,
+          label: result.good_faith_label,
+          analysis: analysisData
+        });
+
+        if (error) {
+          console.error('Failed to save good faith analysis to database:', error);
+          throw error;
+        }
       } else {
-        console.log(`✅ Successfully saved ${provider} analysis to database!`);
+        console.warn('No current version found, cannot save good faith analysis to database');
       }
 
       // Always update the local discussion object (works regardless of DB save success)
       if (discussion) {
-        discussion.good_faith_score = result.good_faith_score;
-        discussion.good_faith_label = result.good_faith_label;
-        discussion.good_faith_last_evaluated = new Date().toISOString();
+        // Update the current version data (published version takes priority, fall back to draft)
+        const versionToUpdate = discussion.current_version?.[0] || discussion.draft_version?.[0];
+        if (versionToUpdate) {
+          versionToUpdate.good_faith_score = result.good_faith_score;
+          versionToUpdate.good_faith_label = result.good_faith_label;
+          versionToUpdate.good_faith_last_evaluated = new Date().toISOString();
+        }
+        // Also keep local analysis data for display purposes
         discussion.good_faith_analysis = analysisData;
       }
 
@@ -1422,9 +1551,14 @@
       
       // Still update local state so UI works
       if (discussion) {
-        discussion.good_faith_score = result.good_faith_score;
-        discussion.good_faith_label = result.good_faith_label;
-        discussion.good_faith_last_evaluated = new Date().toISOString();
+        // Update the current version data (published version takes priority, fall back to draft)
+        const versionToUpdate = discussion.current_version?.[0] || discussion.draft_version?.[0];
+        if (versionToUpdate) {
+          versionToUpdate.good_faith_score = result.good_faith_score;
+          versionToUpdate.good_faith_label = result.good_faith_label;
+          versionToUpdate.good_faith_last_evaluated = new Date().toISOString();
+        }
+        // Also keep local analysis data for display purposes
         discussion.good_faith_analysis = {
           provider,
           score: result.good_faith_score,
@@ -1450,8 +1584,14 @@
       
       try {
         console.log('🧪 Testing if GraphQL schema supports good faith fields...');
-        const { error } = await nhost.graphql.request(UPDATE_DISCUSSION_GOOD_FAITH, {
-          discussionId: discussion.id,
+        const currentVersionId = discussion.current_version?.[0]?.id || discussion.draft_version?.[0]?.id;
+        if (!currentVersionId) {
+          console.log('❌ No current or draft version found to test');
+          return;
+        }
+
+        const { error } = await nhost.graphql.request(UPDATE_DISCUSSION_VERSION_GOOD_FAITH, {
+          versionId: currentVersionId,
           score: 0.5,
           label: 'test',
           analysis: { test: true }
@@ -1606,7 +1746,7 @@
     <p class="error-message">Error: {error.message}</p>
   {:else if discussion}
     <header class="discussion-header">
-      <h1 class="discussion-title">{discussion.title}</h1>
+      <h1 class="discussion-title">{getDiscussionTitle()}</h1>
       <p class="discussion-meta">
         Started by {#if discussion.is_anonymous}
           <span class="anonymous-author">Anonymous</span>
@@ -1639,14 +1779,14 @@
           
           <!-- Good Faith Testing and Citation Buttons -->
           <div style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.5rem 0;">
-            <button type="button" class="good-faith-test-btn openai" onclick={testGoodFaith} disabled={goodFaithTesting || !editDescription.trim()}>
+            <button type="button" class="good-faith-test-btn openai" onclick={testGoodFaith} disabled={goodFaithTesting || !editDescription.trim() || !editHeuristicPassed}>
               {#if goodFaithTesting}
                 🤔 OpenAI...
               {:else}
                 🤔 OpenAI Test
               {/if}
             </button>
-            <button type="button" class="good-faith-test-btn claude" onclick={testGoodFaithClaude} disabled={claudeGoodFaithTesting || !editDescription.trim()}>
+            <button type="button" class="good-faith-test-btn claude" onclick={testGoodFaithClaude} disabled={claudeGoodFaithTesting || !editDescription.trim() || !editHeuristicPassed}>
               {#if claudeGoodFaithTesting}
                 🧠 Claude...
               {:else}
@@ -1805,22 +1945,6 @@
             </div>
           {/if}
 
-          <!-- Writing Style Selection -->
-          <div class="writing-style-selector">
-            <span class="style-label">Writing Style</span>
-            <div class="style-options" role="radiogroup" aria-labelledby="edit-style-label">
-              {#each Object.entries(WRITING_STYLES) as [key, config]}
-                <label class="style-option" class:selected={editSelectedStyle === key}>
-                  <input type="radio" bind:group={editSelectedStyle} value={key} onchange={validateEditStyle} name="edit-writing-style" />
-                  <div class="style-content">
-                    <strong>{config.label}</strong>
-                    <span>{config.description}</span>
-                    <small>{config.minWords}-{config.maxWords} words</small>
-                  </div>
-                </label>
-              {/each}
-            </div>
-          </div>
 
           <!-- Citation/Source Management -->
           <div class="citation-section">
@@ -1913,15 +2037,29 @@
               </div>
             {/if}
 
-            <!-- Style Validation -->
-            {#if !editStyleValidation.isValid}
-              <div class="style-validation-errors">
-                <h5>Style Requirements:</h5>
-                <ul>
-                  {#each editStyleValidation.issues as issue}
-                    <li>{issue}</li>
-                  {/each}
-                </ul>
+            <!-- Heuristic Quality Assessment -->
+            {#if editHeuristicScore < 50}
+              {@const assessment = assessContentQuality(editDescription, editTitle)}
+              <div class="heuristic-quality-indicator">
+                <h5>Content Quality: {editHeuristicScore}% (50% required)</h5>
+                <div class="quality-progress">
+                  <div class="quality-bar" style="width: {editHeuristicScore}%"></div>
+                </div>
+                {#if assessment.issues.length > 0}
+                  <ul class="quality-issues">
+                    {#each assessment.issues as issue}
+                      <li>{issue}</li>
+                    {/each}
+                  </ul>
+                {/if}
+                <p class="quality-note">Good faith analysis and publishing are disabled until 50% quality threshold is met.</p>
+              </div>
+            {:else}
+              <div class="heuristic-quality-indicator passed">
+                <h5>✅ Content Quality: {editHeuristicScore}% - Ready for analysis and publishing</h5>
+                <div class="quality-progress">
+                  <div class="quality-bar passed" style="width: {editHeuristicScore}%"></div>
+                </div>
               </div>
             {/if}
           
@@ -1933,7 +2071,7 @@
           
           {#if editError}<p class="error-message">{editError}</p>{/if}
           <div style="display:flex; gap:0.5rem;">
-            <button class="btn-primary" type="submit" disabled={publishLoading || !hasUnsavedChanges}>{publishLoading ? 'Publishing…' : 'Publish Changes'}</button>
+            <button class="btn-primary" type="submit" disabled={publishLoading || !hasUnsavedChanges || !editHeuristicPassed}>{publishLoading ? 'Publishing…' : 'Publish Changes'}</button>
             <button type="button" class="btn-secondary" onclick={cancelEdit}>Cancel</button>
             {#if draftLastSavedAt}
               <small class="draft-status">Draft saved {new Date(draftLastSavedAt).toLocaleTimeString()}</small>
@@ -1941,8 +2079,8 @@
           </div>
         </form>
       {/if}
-      {#if discussion.description}
-        {@const extraction = extractCitationData(discussion.description)}
+      {#if getDiscussionDescription()}
+        {@const extraction = extractCitationData(getDiscussionDescription())}
         {@const allCitations = extraction.citationData?.style_metadata?.citations || []}
         {@const processedContent = processCitationReferences(extraction.cleanContent, allCitations)}
         <div class="discussion-description">{@html processedContent.replace(/\n/g, '<br>')}</div>
@@ -1977,7 +2115,7 @@
         {/if}
         
         <!-- Good Faith Analysis Display for Discussion Description -->
-        {#if discussion?.good_faith_score != null && typeof discussion.good_faith_score === 'number' && discussion.good_faith_label && !editing}
+        {#if getDiscussionGoodFaithScore() != null && typeof getDiscussionGoodFaithScore() === 'number' && getDiscussionGoodFaithLabel() && !editing}
           <div class="good-faith-analysis-section">
             <button 
               type="button" 
@@ -1988,8 +2126,8 @@
               <span class="toggle-icon">{showDiscussionGoodFaithAnalysis ? '▼' : '▶'}</span>
               Good Faith Analysis
               <span class="good-faith-score-inline">
-                <span class="score-value">{(discussion.good_faith_score * 100).toFixed(0)}%</span>
-                <span class="score-label {discussion.good_faith_label}">{discussion.good_faith_label}</span>
+                <span class="score-value">{(getDiscussionGoodFaithScore() * 100).toFixed(0)}%</span>
+                <span class="score-label {getDiscussionGoodFaithLabel()}">{getDiscussionGoodFaithLabel()}</span>
               </span>
             </button>
             
@@ -1998,19 +2136,19 @@
                 <div class="score-breakdown">
                   <div class="score-row">
                     <span class="score-label-text">Score:</span>
-                    <span class="score-value-large">{(discussion.good_faith_score * 100).toFixed(0)}%</span>
-                    <span class="score-label-badge {discussion.good_faith_label}">{discussion.good_faith_label}</span>
+                    <span class="score-value-large">{(getDiscussionGoodFaithScore() * 100).toFixed(0)}%</span>
+                    <span class="score-label-badge {getDiscussionGoodFaithLabel()}">{getDiscussionGoodFaithLabel()}</span>
                   </div>
-                  {#if discussion.good_faith_last_evaluated}
+                  {#if getDiscussionGoodFaithLastEvaluated()}
                     <div class="evaluation-date">
-                      Evaluated: {new Date(discussion.good_faith_last_evaluated).toLocaleString()}
+                      Evaluated: {new Date(getDiscussionGoodFaithLastEvaluated()).toLocaleString()}
                     </div>
                   {/if}
                 </div>
 
                 <!-- Full Analysis Breakdown -->
-                {#if discussion.good_faith_analysis}
-                  {@const analysis = discussion.good_faith_analysis}
+                {#if getDiscussionGoodFaithAnalysis()}
+                  {@const analysis = getDiscussionGoodFaithAnalysis()}
                   
                   {#if analysis.claims && analysis.claims.length > 0}
                     <div class="analysis-section">
@@ -2328,7 +2466,7 @@
 
           <textarea 
             bind:value={newComment} 
-            oninput={(e) => { onCommentInput(e); validateCommentStyle(); }} 
+            oninput={(e) => { onCommentInput(e); validateCommentContent(); }} 
             onfocus={loadExistingDraft} 
             rows="5" 
             placeholder="Add your comment... (Style will be automatically determined by length)"
@@ -2425,16 +2563,32 @@
               </div>
             {/if}
 
-            <!-- Style Validation for Comments -->
-            {#if !commentStyleValidation.isValid}
-              <div class="style-validation-errors">
-                <h5>Style Requirements:</h5>
-                <ul>
-                  {#each commentStyleValidation.issues as issue}
-                    <li>{issue}</li>
-                  {/each}
-                </ul>
-              </div>
+            <!-- Heuristic Quality Assessment for Comments -->
+            {#if newComment.trim().length > 0 || draftPostId}
+              {#if commentHeuristicScore < 50}
+                {@const assessment = assessContentQuality(newComment)}
+                <div class="heuristic-quality-indicator">
+                  <h5>Comment Quality: {commentHeuristicScore}% (50% required)</h5>
+                  <div class="quality-progress">
+                    <div class="quality-bar" style="width: {commentHeuristicScore}%"></div>
+                  </div>
+                  {#if assessment.issues.length > 0}
+                    <ul class="quality-issues">
+                      {#each assessment.issues as issue}
+                        <li>{issue}</li>
+                      {/each}
+                    </ul>
+                  {/if}
+                  <p class="quality-note">Good faith analysis and publishing are disabled until 50% quality threshold is met.</p>
+                </div>
+              {:else if commentHeuristicScore > 0}
+                <div class="heuristic-quality-indicator passed">
+                  <h5>✅ Comment Quality: {commentHeuristicScore}% - Ready for analysis and publishing</h5>
+                  <div class="quality-progress">
+                    <div class="quality-bar passed" style="width: {commentHeuristicScore}%"></div>
+                  </div>
+                </div>
+              {/if}
             {/if}
 
             <!-- Existing Draft Good-Faith Analysis -->
@@ -2588,7 +2742,7 @@
                 <button type="button" class="btn-link" onclick={clearReplying}>Cancel</button>
               </div>
             {/if}
-            <button type="submit" class="btn-primary" disabled={submitting || !newComment.trim() || !commentStyleValidation.isValid}>
+            <button type="submit" class="btn-primary" disabled={submitting || !newComment.trim() || !commentHeuristicPassed}>
               {#if submitting}
                 Publishing…
               {:else}
@@ -2629,7 +2783,7 @@
   }
   .discussion-description {
     font-size: 1.125rem;
-    color: var(--color-text-secondary);
+    color: var(--color-text-primary);
     line-height: 1.6;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -3273,28 +3427,51 @@
   .post-version-link { font-size:0.65rem; color:var(--color-primary); margin-left:0.5rem; }
   .post-version-link:hover { text-decoration:underline; }
   /* Modern Discussion Edit Button */
-  .edit-btn { 
-    margin-left: 1rem; 
-    font-size: 0.85rem; 
-    background: var(--color-surface-alt);
-    border: 1px solid color-mix(in srgb, #059669 30%, transparent);
-    color: #059669;
+  .edit-btn {
+    margin-left: 1rem;
+    font-size: 0.8rem;
+    background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+    backdrop-filter: blur(15px) saturate(1.1);
+    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+    color: var(--color-text-primary);
     cursor: pointer;
-    padding: 0.4rem 0.8rem;
-    border-radius: var(--border-radius-md);
+    padding: 0.5rem 1rem;
+    border-radius: 12px;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.4rem;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 8%, transparent);
+    position: relative;
+    overflow: hidden;
   }
-  .edit-btn:hover, .edit-btn:focus { 
-    background: color-mix(in srgb, #059669 8%, var(--color-surface-alt));
-    border-color: #059669;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px color-mix(in srgb, #059669 20%, transparent);
+
+  .edit-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    border-radius: 12px 12px 0 0;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .edit-btn:hover, .edit-btn:focus {
+    transform: translateY(-2px);
+    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
+    box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 15%, transparent);
+    color: var(--color-primary);
     outline: none;
     text-decoration: none;
+  }
+
+  .edit-btn:hover::before {
+    opacity: 1;
   }
   .edit-form { margin-top:1rem; display:flex; flex-direction:column; gap:0.75rem; background:var(--color-surface-alt); padding:1rem; border-radius:var(--border-radius-md); border:1px solid var(--color-border); }
   .edit-form label { font-size:0.85rem; font-weight:600; color:var(--color-text-secondary); margin-bottom:0.25rem; }
@@ -3614,30 +3791,65 @@
     box-shadow: 0 2px 4px color-mix(in srgb, #ef4444 25%, transparent);
   }
 
-  /* Style Validation */
-  .style-validation-errors {
+  /* Heuristic Quality Indicator */
+  .heuristic-quality-indicator {
     margin-top: 1rem;
     padding: 0.75rem;
-    background: color-mix(in srgb, #ef4444 10%, transparent);
-    border: 1px solid #ef4444;
+    background: color-mix(in srgb, #f59e0b 10%, transparent);
+    border: 1px solid #f59e0b;
     border-radius: var(--border-radius-sm);
   }
 
-  .style-validation-errors h5 {
+  .heuristic-quality-indicator.passed {
+    background: color-mix(in srgb, #10b981 10%, transparent);
+    border-color: #10b981;
+  }
+
+  .heuristic-quality-indicator h5 {
     margin: 0 0 0.5rem 0;
     font-size: 0.875rem;
-    color: #ef4444;
+    color: #d97706;
   }
 
-  .style-validation-errors ul {
-    margin: 0;
+  .heuristic-quality-indicator.passed h5 {
+    color: #059669;
+  }
+
+  .quality-progress {
+    width: 100%;
+    height: 8px;
+    background: color-mix(in srgb, #6b7280 20%, transparent);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0.5rem 0;
+  }
+
+  .quality-bar {
+    height: 100%;
+    background: #f59e0b;
+    transition: width 0.3s ease;
+  }
+
+  .quality-bar.passed {
+    background: #10b981;
+  }
+
+  .quality-issues {
+    margin: 0.5rem 0;
     padding-left: 1.25rem;
-    color: #dc2626;
+    color: #b45309;
   }
 
-  .style-validation-errors li {
+  .quality-issues li {
     font-size: 0.8rem;
     margin-bottom: 0.25rem;
+  }
+
+  .quality-note {
+    margin: 0.5rem 0 0 0;
+    font-size: 0.8rem;
+    color: #b45309;
+    font-style: italic;
   }
 
   /* Additional source-specific styles */
@@ -3739,52 +3951,62 @@
 
   /* Delete Discussion Button - Match the modern style */
   .delete-discussion-btn {
-    background: var(--color-surface-alt);
-    border: 1px solid color-mix(in srgb, #dc2626 30%, transparent);
-    color: #dc2626;
+    background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+    color: var(--color-text-secondary);
     cursor: pointer;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 500;
-    padding: 0.4rem 0.8rem;
-    border-radius: var(--border-radius-md);
-    transition: all 0.2s ease;
+    padding: 0.4rem 0.75rem;
+    border-radius: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
     text-decoration: none;
     margin-left: 0.5rem;
+    opacity: 0.6;
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 4%, transparent);
   }
 
   .delete-discussion-btn:hover {
-    background: color-mix(in srgb, #dc2626 8%, var(--color-surface-alt));
-    border-color: #dc2626;
+    background: color-mix(in srgb, #dc2626 8%, var(--color-surface));
+    border-color: color-mix(in srgb, #dc2626 30%, transparent);
+    color: #dc2626;
+    opacity: 1;
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px color-mix(in srgb, #dc2626 20%, transparent);
+    box-shadow: 0 4px 12px color-mix(in srgb, #dc2626 15%, transparent);
   }
 
   /* Reveal Identity Button */
   .reveal-identity-btn {
-    background: var(--color-surface-alt);
-    border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
-    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+    color: var(--color-text-secondary);
     cursor: pointer;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 500;
-    padding: 0.4rem 0.8rem;
-    border-radius: var(--border-radius-md);
-    transition: all 0.2s ease;
+    padding: 0.4rem 0.75rem;
+    border-radius: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
     text-decoration: none;
     margin-left: 0.5rem;
+    opacity: 0.6;
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 4%, transparent);
   }
 
   .reveal-identity-btn:hover {
-    background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-alt));
-    border-color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+    border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+    color: var(--color-accent);
+    opacity: 1;
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent) 20%, transparent);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-accent) 15%, transparent);
   }
 
   /* Good faith analysis toggle styles */

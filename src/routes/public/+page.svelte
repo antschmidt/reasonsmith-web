@@ -95,13 +95,47 @@
       await nhost.auth.isAuthenticatedAsync();
     } catch {}
     user = nhost.auth.getUser();
+
+    if (!user) {
+      hasAccess = false;
+      checkingAuth = false;
+      error = 'You must be logged in to view this page.';
+      return;
+    }
+
+    // First check if user has authenticated 'me' role
     const roles = collectRoles(user);
-    hasAccess = roles.includes('me');
-    checkingAuth = false;
-    if (!hasAccess) {
-      error = 'You do not have permission to view this page.';
-    } else {
-      await loadItems();
+    if (!roles.includes('me')) {
+      hasAccess = false;
+      checkingAuth = false;
+      error = 'You must be authenticated to view this page.';
+      return;
+    }
+
+    // Get current user's role from contributor table for admin permissions
+    try {
+      const result = await nhost.graphql.request(`
+        query GetCurrentUserRole($userId: uuid!) {
+          contributor_by_pk(id: $userId) {
+            role
+          }
+        }
+      `, { userId: user.id });
+
+      const currentUserRole = result.data?.contributor_by_pk?.role || 'user';
+      hasAccess = ['admin', 'slartibartfast'].includes(currentUserRole);
+
+      checkingAuth = false;
+      if (!hasAccess) {
+        error = 'You do not have permission to view this page.';
+      } else {
+        await loadItems();
+      }
+    } catch (err) {
+      console.error('Failed to get user role:', err);
+      hasAccess = false;
+      checkingAuth = false;
+      error = 'Failed to verify permissions.';
     }
   }
 

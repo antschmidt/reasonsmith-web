@@ -22,11 +22,18 @@
 
   type DashboardDiscussion = {
     id: string;
-    title: string;
-    description?: string | null;
     created_at: string;
     is_anonymous?: boolean | null;
+    status: string;
     contributor?: { id: string; handle?: string | null; display_name?: string | null } | null;
+    current_version?: Array<{
+      title: string;
+      description?: string | null;
+    }>;
+    draft_version?: Array<{
+      title: string;
+      description?: string | null;
+    }>;
   };
 
   // Live data
@@ -77,12 +84,12 @@
         repliedDiscussions = dashboardResult.data.repliedDiscussions ?? [];
         
         // Get database drafts (comment drafts)
-        const dbDrafts = (dashboardResult.data.myDrafts ?? []).map((draft: any) => ({
+        const dbDrafts = (dashboardResult.data.myPostDrafts ?? []).map((draft: any) => ({
           id: draft.id,
           draft_content: draft.draft_content,
           discussion_id: draft.discussion_id,
           updated_at: draft.updated_at,
-          discussion_title: draft.discussion?.title ?? null,
+          discussion_title: draft.discussion?.discussion_versions?.[0]?.title ?? null,
           status: draft.status,
           type: 'comment',
           good_faith_score: draft.good_faith_score,
@@ -90,12 +97,27 @@
           good_faith_last_evaluated: draft.good_faith_last_evaluated,
           good_faith_analysis: draft.good_faith_analysis
         }));
-        
-        // Get discussion description drafts from localStorage
-        const discussionDrafts = getDiscussionDraftsFromLocalStorage();
-        
-        // Combine both types of drafts
-        drafts = [...dbDrafts, ...discussionDrafts].sort((a, b) => {
+
+        // Get discussion drafts from database
+        const dbDiscussionDrafts = (dashboardResult.data.myDiscussionDrafts ?? []).map((draft: any) => ({
+          id: `discussion_version_${draft.id}`,
+          draft_content: `${draft.title}\n\n${draft.description || ''}`,
+          discussion_id: draft.discussion_id,
+          updated_at: draft.created_at,
+          discussion_title: draft.title,
+          status: 'draft',
+          type: 'discussion',
+          good_faith_score: draft.good_faith_score,
+          good_faith_label: draft.good_faith_label,
+          good_faith_last_evaluated: draft.good_faith_last_evaluated,
+          original_discussion_id: draft.discussion_id
+        }));
+
+        // Get discussion description drafts from localStorage (legacy)
+        const localStorageDrafts = getDiscussionDraftsFromLocalStorage();
+
+        // Combine all types of drafts
+        drafts = [...dbDrafts, ...dbDiscussionDrafts, ...localStorageDrafts].sort((a, b) => {
           const dateA = new Date(a.updated_at || 0).getTime();
           const dateB = new Date(b.updated_at || 0).getTime();
           return dateB - dateA; // Most recent first
@@ -128,7 +150,7 @@
     myDiscussions.forEach(discussion => {
       const draftKey = `discussion_draft:${discussion.id}`;
       const draftData = localStorage.getItem(draftKey);
-      
+
       if (draftData) {
         try {
           const draft = JSON.parse(draftData);
@@ -224,6 +246,19 @@
       return `by ${displayName(discussion.contributor.display_name)}`;
     }
     return isOwner ? 'by You' : '';
+  }
+
+  // Helper functions to get title and description from versioned structure
+  function getDiscussionTitle(discussion: DashboardDiscussion): string {
+    // Try current published version first, then draft version
+    const version = discussion.current_version?.[0] || discussion.draft_version?.[0];
+    return version?.title || 'Untitled Discussion';
+  }
+
+  function getDiscussionDescription(discussion: DashboardDiscussion): string | null {
+    // Try current published version first, then draft version
+    const version = discussion.current_version?.[0] || discussion.draft_version?.[0];
+    return version?.description || null;
   }
 </script>
 
@@ -369,10 +404,12 @@
             <h3 class="subsection-title">Discussions</h3>
             {#each myDiscussions as discussion}
               {@const label = authorLabel(discussion, true)}
+              {@const title = getDiscussionTitle(discussion)}
+              {@const description = getDiscussionDescription(discussion)}
               <div class="discussion-card" role="button" tabindex="0" on:click={() => goto(`/discussions/${discussion.id}`)} on:keydown={(e) => (e.key === 'Enter' ? goto(`/discussions/${discussion.id}`) : null)}>
-                <h3 class="discussion-title">{discussion.title}</h3>
-                {#if discussion.description}
-                  <p class="discussion-snippet">{discussion.description}</p>
+                <h3 class="discussion-title">{title}</h3>
+                {#if description}
+                  <p class="discussion-snippet">{description}</p>
                 {/if}
                 <p class="discussion-meta">
                   {#if label}
@@ -395,10 +432,12 @@
           <div class="discussions-list">
             {#each repliedDiscussions as discussion}
               {@const label = authorLabel(discussion, false)}
+              {@const title = getDiscussionTitle(discussion)}
+              {@const description = getDiscussionDescription(discussion)}
               <div class="discussion-card" role="button" tabindex="0" on:click={() => goto(`/discussions/${discussion.id}`)} on:keydown={(e) => (e.key === 'Enter' ? goto(`/discussions/${discussion.id}`) : null)}>
-                <h3 class="discussion-title">{discussion.title}</h3>
-                {#if discussion.description}
-                  <p class="discussion-snippet">{discussion.description}</p>
+                <h3 class="discussion-title">{title}</h3>
+                {#if description}
+                  <p class="discussion-snippet">{description}</p>
                 {/if}
                 <p class="discussion-meta">
                   {#if label}
@@ -671,7 +710,7 @@
     line-height: 1.3;
   }
   .discussion-snippet {
-    color: var(--color-text-secondary);
+    color: var(--color-text-primary);
     font-size: 1rem;
     margin: 0 0 1rem 0;
     overflow: hidden;
