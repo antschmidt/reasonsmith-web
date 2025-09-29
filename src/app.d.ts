@@ -9,7 +9,6 @@ declare global {
 	}
 }
 
-
 // Can give me a prompt which will perform these analyses for good faith, logical fallacies, and cultish language and return a json object like the following:
 // {
 //   "good_faith": [

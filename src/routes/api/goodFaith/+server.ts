@@ -5,147 +5,149 @@ import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
 
 // Import the same function from the Vercel function
 // We'll copy the logic here for local development
-import OpenAI from "openai";
+import OpenAI from 'openai';
 
 interface Claim {
-  claim: string;
-  arguments: Array<{
-    text: string;
-    score: number; // 1-10
-    fallacies: string[];
-    manipulativeLanguage: string[];
-    suggestions: string[];
-  }>;
+	claim: string;
+	arguments: Array<{
+		text: string;
+		score: number; // 1-10
+		fallacies: string[];
+		manipulativeLanguage: string[];
+		suggestions: string[];
+	}>;
 }
 
 interface ScoreResponse {
-  claims: Claim[];
-  fallacyOverload: boolean;
-  goodFaithScore: number; // 0-100
-  cultishPhrases: string[];
-  summary: string;
-  
-  // Legacy fields for backward compatibility
-  good_faith_score?: number;
-  good_faith_label?: string;
-  rationale?: string;
+	claims: Claim[];
+	fallacyOverload: boolean;
+	goodFaithScore: number; // 0-100
+	cultishPhrases: string[];
+	summary: string;
+
+	// Legacy fields for backward compatibility
+	good_faith_score?: number;
+	good_faith_label?: string;
+	rationale?: string;
 }
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+	apiKey: process.env.OPENAI_API_KEY
 });
 
 // Define the JSON schema for structured output
 const goodFaithSchema = {
-  type: "object",
-  properties: {
-    claims: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          claim: {
-            type: "string",
-            description: "The main claim or assertion being made"
-          },
-          arguments: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                text: {
-                  type: "string",
-                  description: "The supporting argument text or quote"
-                },
-                score: {
-                  type: "number",
-                  minimum: 1,
-                  maximum: 10,
-                  description: "Quality score of the argument (1-10)"
-                },
-                fallacies: {
-                  type: "array",
-                  items: {
-                    type: "string"
-                  },
-                  description: "List of logical fallacies found in this argument"
-                },
-                manipulativeLanguage: {
-                  type: "array",
-                  items: {
-                    type: "string"
-                  },
-                  description: "Specific manipulative phrases or language patterns found"
-                },
-                suggestions: {
-                  type: "array",
-                  items: {
-                    type: "string"
-                  },
-                  description: "Suggestions for improving this argument"
-                }
-              },
-              required: ["text", "score", "fallacies", "manipulativeLanguage", "suggestions"],
-              additionalProperties: false
-            }
-          }
-        },
-        required: ["claim", "arguments"],
-        additionalProperties: false
-      }
-    },
-    fallacyOverload: {
-      type: "boolean",
-      description: "True if most arguments are fallacy-laden"
-    },
-    goodFaithScore: {
-      type: "number",
-      minimum: 0,
-      maximum: 100,
-      description: "Overall good faith score (0-100) based on percentage of claims made in good faith"
-    },
-    cultishPhrases: {
-      type: "array",
-      items: {
-        type: "string"
-      },
-      description: "List of cultish or manipulative phrases found throughout the text"
-    },
-    summary: {
-      type: "string",
-      description: "Comprehensive textual summary of the analysis including patterns found and recommendations"
-    }
-  },
-  required: ["claims", "fallacyOverload", "goodFaithScore", "cultishPhrases", "summary"],
-  additionalProperties: false
+	type: 'object',
+	properties: {
+		claims: {
+			type: 'array',
+			items: {
+				type: 'object',
+				properties: {
+					claim: {
+						type: 'string',
+						description: 'The main claim or assertion being made'
+					},
+					arguments: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								text: {
+									type: 'string',
+									description: 'The supporting argument text or quote'
+								},
+								score: {
+									type: 'number',
+									minimum: 1,
+									maximum: 10,
+									description: 'Quality score of the argument (1-10)'
+								},
+								fallacies: {
+									type: 'array',
+									items: {
+										type: 'string'
+									},
+									description: 'List of logical fallacies found in this argument'
+								},
+								manipulativeLanguage: {
+									type: 'array',
+									items: {
+										type: 'string'
+									},
+									description: 'Specific manipulative phrases or language patterns found'
+								},
+								suggestions: {
+									type: 'array',
+									items: {
+										type: 'string'
+									},
+									description: 'Suggestions for improving this argument'
+								}
+							},
+							required: ['text', 'score', 'fallacies', 'manipulativeLanguage', 'suggestions'],
+							additionalProperties: false
+						}
+					}
+				},
+				required: ['claim', 'arguments'],
+				additionalProperties: false
+			}
+		},
+		fallacyOverload: {
+			type: 'boolean',
+			description: 'True if most arguments are fallacy-laden'
+		},
+		goodFaithScore: {
+			type: 'number',
+			minimum: 0,
+			maximum: 100,
+			description:
+				'Overall good faith score (0-100) based on percentage of claims made in good faith'
+		},
+		cultishPhrases: {
+			type: 'array',
+			items: {
+				type: 'string'
+			},
+			description: 'List of cultish or manipulative phrases found throughout the text'
+		},
+		summary: {
+			type: 'string',
+			description:
+				'Comprehensive textual summary of the analysis including patterns found and recommendations'
+		}
+	},
+	required: ['claims', 'fallacyOverload', 'goodFaithScore', 'cultishPhrases', 'summary'],
+	additionalProperties: false
 };
 
 async function scoreWithOpenAI(content: string): Promise<ScoreResponse> {
-  try {
-    // Check if using custom prompt or fallback to chat completion
-    if (process.env.OPENAI_PROMPT_ID) {
-      const response = await openai.responses.create({
-        prompt: {
-          "id": process.env.OPENAI_PROMPT_ID,
-          "version": "1"
-        },
-        variables: {
-          content: content
-        }
-      });
-      
-      // Parse the response based on your prompt structure
-      const result = response.content;
-      // You'll need to adjust this parsing based on your prompt's expected output format
-      return parseOpenAIResponse(result);
-    } else {
-      // Use structured outputs with chat completion API
-      const response = await openai.chat.completions.create({
-        model: "gpt-5",
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert in logic, rhetoric, and argumentation. Analyze the given text with rigorous academic precision.
+	try {
+		// Check if using custom prompt or fallback to chat completion
+		if (process.env.OPENAI_PROMPT_ID) {
+			const response = await openai.responses.create({
+				prompt: {
+					id: process.env.OPENAI_PROMPT_ID,
+					version: '1'
+				},
+				variables: {
+					content: content
+				}
+			});
+
+			// Parse the response based on your prompt structure
+			const result = response.content;
+			// You'll need to adjust this parsing based on your prompt's expected output format
+			return parseOpenAIResponse(result);
+		} else {
+			// Use structured outputs with chat completion API
+			const response = await openai.chat.completions.create({
+				model: 'gpt-5',
+				messages: [
+					{
+						role: 'system',
+						content: `You are an expert in logic, rhetoric, and argumentation. Analyze the given text with rigorous academic precision.
 
 **CRITICAL REQUIREMENTS:**
 1. **Extract specific claims** - Each distinct assertion or position stated in the text
@@ -200,127 +202,139 @@ Text: "The liberal media is destroying our country with their constant lies and 
 }
 
 **Critical: Always provide this level of detail for EVERY argument in the text. Extract specific quotes and name precise fallacies.**`
-          },
-          {
-            role: "user",
-            content: content
-          }
-        ],
-        temperature: 1,
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "good_faith_analysis",
-            schema: goodFaithSchema,
-            strict: true
-          }
-        }
-      });
+					},
+					{
+						role: 'user',
+						content: content
+					}
+				],
+				temperature: 1,
+				response_format: {
+					type: 'json_schema',
+					json_schema: {
+						name: 'good_faith_analysis',
+						schema: goodFaithSchema,
+						strict: true
+					}
+				}
+			});
 
-      const responseText = response.choices[0]?.message?.content;
-      if (!responseText) {
-        throw new Error('No response from OpenAI');
-      }
+			const responseText = response.choices[0]?.message?.content;
+			if (!responseText) {
+				throw new Error('No response from OpenAI');
+			}
 
-      // With structured outputs, we can safely parse the JSON
-      const result = JSON.parse(responseText);
-      
-      // Add backward compatibility fields
-      result.good_faith_score = result.goodFaithScore / 100; // Convert 0-100 to 0-1
-      result.good_faith_label = getLabel(result.good_faith_score); // Use 0-1 scale
-      result.rationale = result.summary;
-      
-      return result;
-    }
-  } catch (error: any) {
-    console.error('OpenAI API error:', error);
-    // Fallback to heuristic scoring if OpenAI fails
-    return heuristicScore(content);
-  }
+			// With structured outputs, we can safely parse the JSON
+			const result = JSON.parse(responseText);
+
+			// Add backward compatibility fields
+			result.good_faith_score = result.goodFaithScore / 100; // Convert 0-100 to 0-1
+			result.good_faith_label = getLabel(result.good_faith_score); // Use 0-1 scale
+			result.rationale = result.summary;
+
+			return result;
+		}
+	} catch (error: any) {
+		console.error('OpenAI API error:', error);
+		// Fallback to heuristic scoring if OpenAI fails
+		return heuristicScore(content);
+	}
 }
 
 function parseOpenAIResponse(content: string): ScoreResponse {
-  // This function needs to be implemented based on your custom prompt's output format
-  // For now, try to parse as JSON or fallback to heuristic
-  try {
-    return JSON.parse(content);
-  } catch {
-    return heuristicScore(content);
-  }
+	// This function needs to be implemented based on your custom prompt's output format
+	// For now, try to parse as JSON or fallback to heuristic
+	try {
+		return JSON.parse(content);
+	} catch {
+		return heuristicScore(content);
+	}
 }
 
 function getLabel(score: number): string {
-  if (score >= 0.8) return 'exemplary';
-  if (score >= 0.6) return 'constructive';
-  if (score >= 0.4) return 'neutral';
-  if (score >= 0.2) return 'questionable';
-  return 'hostile';
+	if (score >= 0.8) return 'exemplary';
+	if (score >= 0.6) return 'constructive';
+	if (score >= 0.4) return 'neutral';
+	if (score >= 0.2) return 'questionable';
+	return 'hostile';
 }
 
 function heuristicScore(content: string): ScoreResponse {
-  const lower = content.toLowerCase();
-  let score = 50; // 0-100 scale
-  
-  // Basic heuristic analysis
-  if (/(thank|appreciate)/.test(lower)) score += 10;
-  if (/(evidence|source|reference)/.test(lower)) score += 15;
-  if (/(idiot|stupid|hate|moron|trash)/.test(lower)) score -= 30;
-  if (/(I understand|I see your point|you might be right)/.test(lower)) score += 10;
-  if (/(always|never|all|none|everyone|no one)/.test(lower)) score -= 5; // Absolute statements
-  
-  score = Math.max(0, Math.min(100, score));
-  
-  // Create basic structured response
-  const claims: Claim[] = [{
-    claim: content.length > 100 ? content.substring(0, 100) + '...' : content,
-    arguments: [{
-      text: 'Heuristic analysis of overall content',
-      score: Math.round(score / 10), // Convert to 1-10 scale
-      fallacies: score < 40 ? ['Potential logical issues detected'] : [],
-      manipulativeLanguage: [],
-      suggestions: score < 60 ? ['Consider providing more evidence', 'Use more respectful language'] : ['Content appears reasonable']
-    }]
-  }];
+	const lower = content.toLowerCase();
+	let score = 50; // 0-100 scale
 
-  return {
-    claims,
-    fallacyOverload: score < 30,
-    goodFaithScore: score,
-    cultishPhrases: [],
-    summary: 'Heuristic fallback analysis. OpenAI analysis unavailable.',
-    good_faith_score: score / 100,
-    good_faith_label: getLabel(score / 100),
-    rationale: 'Heuristic fallback score.'
-  };
+	// Basic heuristic analysis
+	if (/(thank|appreciate)/.test(lower)) score += 10;
+	if (/(evidence|source|reference)/.test(lower)) score += 15;
+	if (/(idiot|stupid|hate|moron|trash)/.test(lower)) score -= 30;
+	if (/(I understand|I see your point|you might be right)/.test(lower)) score += 10;
+	if (/(always|never|all|none|everyone|no one)/.test(lower)) score -= 5; // Absolute statements
+
+	score = Math.max(0, Math.min(100, score));
+
+	// Create basic structured response
+	const claims: Claim[] = [
+		{
+			claim: content.length > 100 ? content.substring(0, 100) + '...' : content,
+			arguments: [
+				{
+					text: 'Heuristic analysis of overall content',
+					score: Math.round(score / 10), // Convert to 1-10 scale
+					fallacies: score < 40 ? ['Potential logical issues detected'] : [],
+					manipulativeLanguage: [],
+					suggestions:
+						score < 60
+							? ['Consider providing more evidence', 'Use more respectful language']
+							: ['Content appears reasonable']
+				}
+			]
+		}
+	];
+
+	return {
+		claims,
+		fallacyOverload: score < 30,
+		goodFaithScore: score,
+		cultishPhrases: [],
+		summary: 'Heuristic fallback analysis. OpenAI analysis unavailable.',
+		good_faith_score: score / 100,
+		good_faith_label: getLabel(score / 100),
+		rationale: 'Heuristic fallback score.'
+	};
 }
 
 export const POST: RequestHandler = async ({ request, cookies }) => {
-  try {
-    const body = await request.json();
-    const { postId, content, contributorId } = body as { postId?: string; content?: string; contributorId?: string };
+	try {
+		const body = await request.json();
+		const { postId, content, contributorId } = body as {
+			postId?: string;
+			content?: string;
+			contributorId?: string;
+		};
 
-    if (typeof content !== 'string' || !content.trim()) {
-      return json({ error: 'content required' }, { status: 400 });
-    }
+		if (typeof content !== 'string' || !content.trim()) {
+			return json({ error: 'content required' }, { status: 400 });
+		}
 
-    // Check if user provided contributorId for analysis tracking
-    if (contributorId) {
-      // Get contributor's analysis permissions
-      const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
-      const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+		// Check if user provided contributorId for analysis tracking
+		if (contributorId) {
+			// Get contributor's analysis permissions
+			const HASURA_GRAPHQL_ENDPOINT =
+				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
+			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
 
-      if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
-        try {
-          // Check contributor permissions
-          const checkResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-              'x-hasura-role': 'admin'
-            },
-            body: JSON.stringify({
-              query: `
+			if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
+				try {
+					// Check contributor permissions
+					const checkResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+							'x-hasura-role': 'admin'
+						},
+						body: JSON.stringify({
+							query: `
                 query CheckAnalysisPermissions($contributorId: uuid!) {
                   contributor_by_pk(id: $contributorId) {
                     id
@@ -331,60 +345,65 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
                   }
                 }
               `,
-              variables: { contributorId }
-            })
-          });
+							variables: { contributorId }
+						})
+					});
 
-          const checkResult = await checkResponse.json();
-          const contributor = checkResult.data?.contributor_by_pk;
+					const checkResult = await checkResponse.json();
+					const contributor = checkResult.data?.contributor_by_pk;
 
-          if (!contributor) {
-            return json({ error: 'Contributor not found' }, { status: 404 });
-          }
+					if (!contributor) {
+						return json({ error: 'Contributor not found' }, { status: 404 });
+					}
 
-          // Check if analysis is enabled
-          if (!contributor.analysis_enabled) {
-            return json({ error: 'Analysis access is disabled for this account' }, { status: 403 });
-          }
+					// Check if analysis is enabled
+					if (!contributor.analysis_enabled) {
+						return json({ error: 'Analysis access is disabled for this account' }, { status: 403 });
+					}
 
-          // Check if user has reached their limit (unless they're admin/slartibartfast role)
-          if (!['admin', 'slartibartfast'].includes(contributor.role) && contributor.analysis_limit !== null) {
-            if (contributor.analysis_count_used >= contributor.analysis_limit) {
-              return json({
-                error: 'Analysis limit reached',
-                limit: contributor.analysis_limit,
-                used: contributor.analysis_count_used
-              }, { status: 429 });
-            }
-          }
+					// Check if user has reached their limit (unless they're admin/slartibartfast role)
+					if (
+						!['admin', 'slartibartfast'].includes(contributor.role) &&
+						contributor.analysis_limit !== null
+					) {
+						if (contributor.analysis_count_used >= contributor.analysis_limit) {
+							return json(
+								{
+									error: 'Analysis limit reached',
+									limit: contributor.analysis_limit,
+									used: contributor.analysis_count_used
+								},
+								{ status: 429 }
+							);
+						}
+					}
 
-          // Increment usage count for non-admin users
-          if (!['admin', 'slartibartfast'].includes(contributor.role)) {
-            await fetch(HASURA_GRAPHQL_ENDPOINT, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-                'x-hasura-role': 'admin'
-              },
-              body: JSON.stringify({
-                query: print(INCREMENT_ANALYSIS_USAGE),
-                variables: { contributorId }
-              })
-            });
-          }
-        } catch (dbError) {
-          console.error('Database check failed:', dbError);
-          // Continue with analysis but log the error
-        }
-      }
-    }
+					// Increment usage count for non-admin users
+					if (!['admin', 'slartibartfast'].includes(contributor.role)) {
+						await fetch(HASURA_GRAPHQL_ENDPOINT, {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+								'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+								'x-hasura-role': 'admin'
+							},
+							body: JSON.stringify({
+								query: print(INCREMENT_ANALYSIS_USAGE),
+								variables: { contributorId }
+							})
+						});
+					}
+				} catch (dbError) {
+					console.error('Database check failed:', dbError);
+					// Continue with analysis but log the error
+				}
+			}
+		}
 
-    // Use OpenAI scoring instead of heuristic
-    const scored = await scoreWithOpenAI(content);
-    return json({ ...scored, postId: postId || null });
-
-  } catch (e: any) {
-    return json({ error: e?.message || 'Internal error' }, { status: 500 });
-  }
+		// Use OpenAI scoring instead of heuristic
+		const scored = await scoreWithOpenAI(content);
+		return json({ ...scored, postId: postId || null });
+	} catch (e: any) {
+		return json({ error: e?.message || 'Internal error' }, { status: 500 });
+	}
 };

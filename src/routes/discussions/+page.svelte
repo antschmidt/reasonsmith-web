@@ -1,627 +1,674 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { nhost } from '$lib/nhostClient';
-  import { goto } from '$app/navigation';
-  import FeaturedAnalysesCarousel from '$lib/components/FeaturedAnalysesCarousel.svelte';
-  import { LIST_PUBLISHED_DISCUSSIONS, SEARCH_PUBLISHED_DISCUSSIONS } from '$lib/graphql/queries';
-  import type { PageData } from './$types';
+	import { onMount } from 'svelte';
+	import { nhost } from '$lib/nhostClient';
+	import { goto } from '$app/navigation';
+	import FeaturedAnalysesCarousel from '$lib/components/FeaturedAnalysesCarousel.svelte';
+	import { LIST_PUBLISHED_DISCUSSIONS, SEARCH_PUBLISHED_DISCUSSIONS } from '$lib/graphql/queries';
+	import type { PageData } from './$types';
 
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-  let q = $state('');
-  type DiscussionSummary = {
-    id: string;
-    created_at: string;
-    is_anonymous?: boolean | null;
-    status: string;
-    contributor?: { id: string; handle?: string | null; display_name?: string | null } | null;
-    current_version?: {
-      id: string;
-      title: string;
-      description?: string | null;
-      good_faith_score?: number | null;
-      good_faith_label?: string | null;
-    }[];
-  };
+	let loading = $state(true);
+	let error = $state<string | null>(null);
+	let q = $state('');
+	type DiscussionSummary = {
+		id: string;
+		created_at: string;
+		is_anonymous?: boolean | null;
+		status: string;
+		contributor?: { id: string; handle?: string | null; display_name?: string | null } | null;
+		current_version?: {
+			id: string;
+			title: string;
+			description?: string | null;
+			good_faith_score?: number | null;
+			good_faith_label?: string | null;
+		}[];
+	};
 
-  let results = $state<DiscussionSummary[] | null>(null);
-  let discussions = $state<DiscussionSummary[] | null>(null);
-  let filtered = $state<DiscussionSummary[] | null>(null);
-  const PAGE_SIZE = 20;
-  let page = $state(0);
-  let waitingForAuth = $state(false);
-  let unsubAuth: (() => void) | null = null;
-  let hasMoreDiscussions = $state(true);
+	let results = $state<DiscussionSummary[] | null>(null);
+	let discussions = $state<DiscussionSummary[] | null>(null);
+	let filtered = $state<DiscussionSummary[] | null>(null);
+	const PAGE_SIZE = 20;
+	let page = $state(0);
+	let waitingForAuth = $state(false);
+	let unsubAuth: (() => void) | null = null;
+	let hasMoreDiscussions = $state(true);
 
-  type PublicShowcaseItem = {
-    id: string;
-    title: string;
-    subtitle?: string | null;
-    media_type?: string | null;
-    creator?: string | null;
-    source_url?: string | null;
-    summary?: string | null;
-    analysis?: string | null;
-    created_at: string;
-  };
+	type PublicShowcaseItem = {
+		id: string;
+		title: string;
+		subtitle?: string | null;
+		media_type?: string | null;
+		creator?: string | null;
+		source_url?: string | null;
+		summary?: string | null;
+		analysis?: string | null;
+		created_at: string;
+	};
 
-  const props = $props<{ data: PageData }>();
-  let showcaseLoading = $state(false);
-  let showcaseError = $state<string | null>(props.data?.showcaseError ?? null);
-  let showcaseItems = $state<PublicShowcaseItem[]>(props.data?.showcaseItems ?? []);
+	const props = $props<{ data: PageData }>();
+	let showcaseLoading = $state(false);
+	let showcaseError = $state<string | null>(props.data?.showcaseError ?? null);
+	let showcaseItems = $state<PublicShowcaseItem[]>(props.data?.showcaseItems ?? []);
 
-  $effect(() => {
-    showcaseItems = props.data?.showcaseItems ?? [];
-    showcaseError = props.data?.showcaseError ?? null;
-  });
+	$effect(() => {
+		showcaseItems = props.data?.showcaseItems ?? [];
+		showcaseError = props.data?.showcaseError ?? null;
+	});
 
-  // Using imported GraphQL queries for the new versioning system
+	// Using imported GraphQL queries for the new versioning system
 
-  async function search() {
-    loading = true;
-    error = null;
-    try {
-      const term = q.trim();
-      if (!term) { results = null; loading = false; return; }
-      const { data, error: gqlError } = await nhost.graphql.request(SEARCH_PUBLISHED_DISCUSSIONS, { searchTerm: `%${term}%` });
-      if (gqlError) throw (Array.isArray(gqlError) ? new Error(gqlError.map((e:any)=>e.message).join('; ')) : gqlError);
-      results = (data as any)?.discussion ?? [];
-    } catch (e:any) {
-      error = e.message ?? 'Search failed';
-    } finally {
-      loading = false;
-    }
-  }
+	async function search() {
+		loading = true;
+		error = null;
+		try {
+			const term = q.trim();
+			if (!term) {
+				results = null;
+				loading = false;
+				return;
+			}
+			const { data, error: gqlError } = await nhost.graphql.request(SEARCH_PUBLISHED_DISCUSSIONS, {
+				searchTerm: `%${term}%`
+			});
+			if (gqlError)
+				throw Array.isArray(gqlError)
+					? new Error(gqlError.map((e: any) => e.message).join('; '))
+					: gqlError;
+			results = (data as any)?.discussion ?? [];
+		} catch (e: any) {
+			error = e.message ?? 'Search failed';
+		} finally {
+			loading = false;
+		}
+	}
 
-  let searchTimer: any = null;
-  function onSearchInput(e: Event) {
-    q = (e.target as HTMLInputElement).value;
-    if (searchTimer) clearTimeout(searchTimer);
-    const term = q.trim();
-    if (!term) { results = null; return; }
-    searchTimer = setTimeout(() => { search(); }, 300);
-  }
+	let searchTimer: any = null;
+	function onSearchInput(e: Event) {
+		q = (e.target as HTMLInputElement).value;
+		if (searchTimer) clearTimeout(searchTimer);
+		const term = q.trim();
+		if (!term) {
+			results = null;
+			return;
+		}
+		searchTimer = setTimeout(() => {
+			search();
+		}, 300);
+	}
 
-  async function fetchAll(reset = false, retry = true) {
-    if (reset) { page = 0; discussions = []; hasMoreDiscussions = true; }
-    loading = true;
-    error = null;
-    try {
-      const { data, error: gqlError } = await nhost.graphql.request(LIST_PUBLISHED_DISCUSSIONS, { limit: PAGE_SIZE, offset: page * PAGE_SIZE });
-      if (gqlError) throw (Array.isArray(gqlError) ? new Error(gqlError.map((e:any)=>e.message).join('; ')) : gqlError);
-      const rows = (data as any)?.discussion ?? [];
-      discussions = [...(discussions ?? []), ...rows];
-      page += 1;
-      
-      // If we received fewer discussions than the page size, we've reached the end
-      hasMoreDiscussions = rows.length === PAGE_SIZE;
-    } catch (e:any) {
-      const msg = e?.message ?? String(e);
-      // If schema for anonymous doesn't expose 'discussion', wait for auth and retry once
-      if (retry && /field\s+'?discussion'?\s+not\s+found\s+in\s+type/i.test(msg)) {
-        waitingForAuth = true;
-        await ensureAuthReadyAndHeaders();
-        const user = nhost.auth.getUser();
-        if (user) {
-          waitingForAuth = false;
-          return fetchAll(reset, false);
-        }
-        if (!unsubAuth) {
-          const off = nhost.auth.onAuthStateChanged(async (event) => {
-            if (event === 'SIGNED_IN') {
-              waitingForAuth = false;
-              await fetchAll(true, false);
-            }
-          });
-          unsubAuth = () => { try { (off as any)?.(); } catch {} };
-        }
-        // Important: still set loading = false even when waiting for auth
-        loading = false;
-        return;
-      }
-      error = msg || 'Failed to load discussions';
-    } finally {
-      loading = false;
-    }
-  }
+	async function fetchAll(reset = false, retry = true) {
+		if (reset) {
+			page = 0;
+			discussions = [];
+			hasMoreDiscussions = true;
+		}
+		loading = true;
+		error = null;
+		try {
+			const { data, error: gqlError } = await nhost.graphql.request(LIST_PUBLISHED_DISCUSSIONS, {
+				limit: PAGE_SIZE,
+				offset: page * PAGE_SIZE
+			});
+			if (gqlError)
+				throw Array.isArray(gqlError)
+					? new Error(gqlError.map((e: any) => e.message).join('; '))
+					: gqlError;
+			const rows = (data as any)?.discussion ?? [];
+			discussions = [...(discussions ?? []), ...rows];
+			page += 1;
 
-  async function ensureAuthReadyAndHeaders() {
-    try {
-      await nhost.auth.isAuthenticatedAsync();
-    } catch {}
-  // headers are managed globally by nhostClient
-  }
+			// If we received fewer discussions than the page size, we've reached the end
+			hasMoreDiscussions = rows.length === PAGE_SIZE;
+		} catch (e: any) {
+			const msg = e?.message ?? String(e);
+			// If schema for anonymous doesn't expose 'discussion', wait for auth and retry once
+			if (retry && /field\s+'?discussion'?\s+not\s+found\s+in\s+type/i.test(msg)) {
+				waitingForAuth = true;
+				await ensureAuthReadyAndHeaders();
+				const user = nhost.auth.getUser();
+				if (user) {
+					waitingForAuth = false;
+					return fetchAll(reset, false);
+				}
+				if (!unsubAuth) {
+					const off = nhost.auth.onAuthStateChanged(async (event) => {
+						if (event === 'SIGNED_IN') {
+							waitingForAuth = false;
+							await fetchAll(true, false);
+						}
+					});
+					unsubAuth = () => {
+						try {
+							(off as any)?.();
+						} catch {}
+					};
+				}
+				// Important: still set loading = false even when waiting for auth
+				loading = false;
+				return;
+			}
+			error = msg || 'Failed to load discussions';
+		} finally {
+			loading = false;
+		}
+	}
 
+	async function ensureAuthReadyAndHeaders() {
+		try {
+			await nhost.auth.isAuthenticatedAsync();
+		} catch {}
+		// headers are managed globally by nhostClient
+	}
 
-  onMount(async () => {
-    await ensureAuthReadyAndHeaders();
-    await fetchAll(true);
-  });
+	onMount(async () => {
+		await ensureAuthReadyAndHeaders();
+		await fetchAll(true);
+	});
 
-  import { onDestroy } from 'svelte';
-  onDestroy(() => { if (unsubAuth) { unsubAuth(); unsubAuth = null; } });
+	import { onDestroy } from 'svelte';
+	onDestroy(() => {
+		if (unsubAuth) {
+			unsubAuth();
+			unsubAuth = null;
+		}
+	});
 
-  function clientFilter(list: any[], term: string) {
-    const t = term.toLowerCase();
-    const parts = t.split(/\s+/).filter(Boolean);
-    return list.filter((d) =>
-      parts.length === 0 || parts.some((p) => {
-        const version = d.current_version?.[0];
-        return (
-          (version?.title && version.title.toLowerCase().includes(p)) ||
-          (version?.description && version.description.toLowerCase().includes(p)) ||
-          (d.is_anonymous && 'anonymous'.includes(p)) ||
-          (d.contributor?.display_name && d.contributor.display_name.toLowerCase().includes(p)) ||
-          (Array.isArray((d as any).tags) && (d as any).tags.some((tag: any) =>
-            (typeof tag === 'string' && tag.toLowerCase().includes(p)) ||
-            (tag?.name && typeof tag.name === 'string' && tag.name.toLowerCase().includes(p))
-          ))
-        );
-      })
-    );
-  }
+	function clientFilter(list: any[], term: string) {
+		const t = term.toLowerCase();
+		const parts = t.split(/\s+/).filter(Boolean);
+		return list.filter(
+			(d) =>
+				parts.length === 0 ||
+				parts.some((p) => {
+					const version = d.current_version?.[0];
+					return (
+						(version?.title && version.title.toLowerCase().includes(p)) ||
+						(version?.description && version.description.toLowerCase().includes(p)) ||
+						(d.is_anonymous && 'anonymous'.includes(p)) ||
+						(d.contributor?.display_name && d.contributor.display_name.toLowerCase().includes(p)) ||
+						(Array.isArray((d as any).tags) &&
+							(d as any).tags.some(
+								(tag: any) =>
+									(typeof tag === 'string' && tag.toLowerCase().includes(p)) ||
+									(tag?.name && typeof tag.name === 'string' && tag.name.toLowerCase().includes(p))
+							))
+					);
+				})
+		);
+	}
 
-  $effect(() => {
-    const term = q.trim();
-    if (!term) {
-      filtered = discussions ?? [];
-    } else if (results !== null) {
-      filtered = results;
-    } else {
-      filtered = discussions ? clientFilter(discussions, term) : [];
-    }
-  });
+	$effect(() => {
+		const term = q.trim();
+		if (!term) {
+			filtered = discussions ?? [];
+		} else if (results !== null) {
+			filtered = results;
+		} else {
+			filtered = discussions ? clientFilter(discussions, term) : [];
+		}
+	});
 
-  function escapeHtml(s: string) {
-    return s
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#39;');
-  }
-  function escapeRegExp(s: string) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-  function highlight(text?: string | null, query?: string) {
-    if (!text) return '';
-    const safe = escapeHtml(text);
-    const q = (query ?? '').trim().toLowerCase();
-    if (!q) return safe;
-    const terms = Array.from(new Set(q.split(/\s+/).filter(Boolean)));
-    if (terms.length === 0) return safe;
-    const pattern = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi');
-    return safe.replace(pattern, '<mark>$1</mark>');
-  }
+	function escapeHtml(s: string) {
+		return s
+			.replaceAll('&', '&amp;')
+			.replaceAll('<', '&lt;')
+			.replaceAll('>', '&gt;')
+			.replaceAll('"', '&quot;')
+			.replaceAll("'", '&#39;');
+	}
+	function escapeRegExp(s: string) {
+		return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	}
+	function highlight(text?: string | null, query?: string) {
+		if (!text) return '';
+		const safe = escapeHtml(text);
+		const q = (query ?? '').trim().toLowerCase();
+		if (!q) return safe;
+		const terms = Array.from(new Set(q.split(/\s+/).filter(Boolean)));
+		if (terms.length === 0) return safe;
+		const pattern = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi');
+		return safe.replace(pattern, '<mark>$1</mark>');
+	}
 
-  // Prefer a human-friendly display over raw email-like strings
-  function displayName(name?: string | null): string {
-    if (!name) return '';
-    const n = String(name).trim();
-    const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n);
-    if (isEmail) return n.split('@')[0];
-    return n;
-  }
+	function createSummary(text?: string | null, maxLength: number = 200): string {
+		if (!text) return '';
+		// Remove any HTML tags and extra whitespace
+		const cleanText = text
+			.replace(/<[^>]*>/g, '')
+			.replace(/\s+/g, ' ')
+			.trim();
+		if (cleanText.length <= maxLength) return cleanText;
 
+		// Find the last complete sentence or word within the limit
+		const truncated = cleanText.substring(0, maxLength);
+		const lastSentence = truncated.lastIndexOf('. ');
+		const lastWord = truncated.lastIndexOf(' ');
+
+		// Prefer ending at a sentence, otherwise at a word boundary
+		if (lastSentence > maxLength * 0.6) {
+			return truncated.substring(0, lastSentence + 1);
+		} else if (lastWord > maxLength * 0.8) {
+			return truncated.substring(0, lastWord) + '...';
+		} else {
+			return truncated + '...';
+		}
+	}
+
+	// Prefer a human-friendly display over raw email-like strings
+	function displayName(name?: string | null): string {
+		if (!name) return '';
+		const n = String(name).trim();
+		const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n);
+		if (isEmail) return n.split('@')[0];
+		return n;
+	}
 </script>
 
-<div class="container">
-  <header class="header">
-    <div class="search-row">
-      <input id="search" type="search" placeholder="Search topics..." bind:value={q} oninput={onSearchInput} onkeydown={(e)=> e.key==='Enter' && search()} />
-      <button class="btn-primary" onclick={search}>Search</button>
-    </div>
-  </header>
+<div class="page-container">
+	<header class="page-hero">
+		<div class="hero-body">
+			<span class="editorial-masthead">Journal Debates</span>
+			<h1>Discussions</h1>
+			<p class="editorial-lede">
+				Browse active arguments, track evolving drafts, and join conversations that value citations
+				as much as persuasion.
+			</p>
+		</div>
+		<section class="search-card" aria-labelledby="discussion-search">
+			<h2 id="discussion-search">Search the archive</h2>
+			<p>Filter by title, author, or keywords to surface the discourse you need.</p>
+			<div class="search-controls">
+				<input
+					id="search"
+					type="search"
+					placeholder="Search discussions..."
+					bind:value={q}
+					oninput={onSearchInput}
+					onkeydown={(e) => e.key === 'Enter' && search()}
+				/>
+				<button class="search-button" onclick={search}>Search</button>
+			</div>
+		</section>
+	</header>
 
-  {#if !q.trim()}
-    <section class="showcase-block" aria-labelledby="showcase-block-title">
-      <div class="showcase-block-heading">
-        <h2 id="showcase-block-title">Curated Analyses</h2>
-        <p>Explore highlighted evaluations of noteworthy public rhetoric.</p>
-      </div>
-      {#if showcaseLoading}
-        <p class="showcase-block-status">Loading curated analyses…</p>
-      {:else if showcaseError}
-        <p class="showcase-block-status error">{showcaseError}</p>
-      {:else if showcaseItems.length === 0}
-        <p class="showcase-block-status">Curated analyses will appear here as they are published.</p>
-      {:else}
-        <FeaturedAnalysesCarousel items={showcaseItems} />
-      {/if}
-    </section>
-  {/if}
+	{#if !q.trim()}
+		<section class="analysis-section">
+			<header class="analysis-header">
+				<span class="editorial-kicker">Curated Analyses</span>
+				<h2>Editors' briefing room</h2>
+				<p>
+					Explore highlighted evaluations of noteworthy rhetoric selected for teaching clear
+					sourcing and constructive tone.
+				</p>
+			</header>
+			{#if showcaseLoading}
+				<p class="status-message">Loading curated analyses…</p>
+			{:else if showcaseError}
+				<p class="status-message error">{showcaseError}</p>
+			{:else if showcaseItems.length === 0}
+				<p class="status-message">Curated analyses will appear here as they are published.</p>
+			{:else}
+				<FeaturedAnalysesCarousel items={showcaseItems} />
+			{/if}
+		</section>
+	{/if}
 
-  {#if error}
-    <p class="error">{error}</p>
-  {/if}
+	<main class="discussions-main">
+		{#if error}
+			<div class="error-message">{error}</div>
+		{/if}
 
-  <section class="results">
-    {#if loading && (!discussions || discussions.length === 0)}
-      <p class="hint">Loading discussions...</p>
-    {:else if filtered && filtered.length > 0}
-      {#each filtered as d}
-        <div class="discussion-card" role="button" tabindex="0"
-          onclick={() => goto(`/discussions/${d.id}`)}
-          onkeydown={(e)=> e.key==='Enter' && goto(`/discussions/${d.id}`)}
-        >
-          {#if d.current_version?.[0]}
-            <h3 class="discussion-title">{@html highlight(d.current_version[0].title, q)}</h3>
-            {#if d.current_version[0].description}
-              <p class="discussion-snippet">{@html highlight(d.current_version[0].description, q)}</p>
-            {/if}
-          {:else}
-            <h3 class="discussion-title">Discussion</h3>
-          {/if}
-          <p class="discussion-meta">
-            {#if d.is_anonymous}
-              <span class="anonymous-author">by Anonymous</span>
-              {' · '}{new Date(d.created_at).toLocaleString()}
-            {:else if d.contributor?.display_name}
-              by <a href={`/u/${d.contributor.handle || d.contributor.id}`}>@{@html highlight(displayName(d.contributor.display_name), q)}</a> · {new Date(d.created_at).toLocaleString()}
-            {:else}
-              {new Date(d.created_at).toLocaleString()}
-            {/if}
-          </p>
-        </div>
-      {/each}
-      {#if !q.trim() && hasMoreDiscussions}
-        <div class="load-more-row">
-          <button class="btn-secondary" onclick={() => fetchAll(false)} disabled={loading}>Load more</button>
-        </div>
-      {/if}
-    {:else if q.trim().length > 0 && !loading}
-      <p class="hint">No discussions match your search.</p>
-    {:else if !loading}
-      <p class="hint">No discussions yet.</p>
-    {/if}
-  </section>
+		{#if loading && (!discussions || discussions.length === 0)}
+			<p class="loading-message">Loading discussions...</p>
+		{:else if filtered && filtered.length > 0}
+			<div class="article-list">
+				{#each filtered as d}
+					<div
+						class="discussion-card"
+						role="button"
+						tabindex="0"
+						onclick={() => goto(`/discussions/${d.id}`)}
+						onkeydown={(e) => e.key === 'Enter' && goto(`/discussions/${d.id}`)}
+					>
+						<header class="discussion-header">
+							{#if d.current_version?.[0]}
+								<h2>{@html highlight(d.current_version[0].title, q)}</h2>
+							{:else}
+								<h2>Discussion</h2>
+							{/if}
+							{#if d.current_version?.[0]?.description}
+								<p class="deck">
+									{@html highlight(createSummary(d.current_version[0].description, 180), q)}
+								</p>
+							{/if}
+						</header>
+						<footer class="card-byline">
+							{#if d.is_anonymous}
+								<span>Anonymous contributor</span>
+							{:else if d.contributor?.display_name}
+								<span
+									>By
+									<a href={`/u/${d.contributor.handle || d.contributor.id}`}
+										>{@html highlight(displayName(d.contributor.display_name), q)}</a
+									></span
+								>
+							{:else}
+								<span>Unknown author</span>
+							{/if}
+							<time
+								>{new Date(d.created_at).toLocaleDateString('en-US', {
+									year: 'numeric',
+									month: 'long',
+									day: 'numeric'
+								})}</time
+							>
+						</footer>
+					</div>
+				{/each}
+			</div>
+			{#if !q.trim() && hasMoreDiscussions}
+				<div class="load-more">
+					<button class="load-more-button" onclick={() => fetchAll(false)} disabled={loading}
+						>Load More Discussions</button
+					>
+				</div>
+			{/if}
+		{:else if q.trim().length > 0 && !loading}
+			<p class="empty-state">No discussions match your search.</p>
+		{:else if !loading}
+			<p class="empty-state">No discussions yet.</p>
+		{/if}
+	</main>
 </div>
 
 <style>
-  .container {
-    margin: 0 auto;
-    padding: 2rem 1rem;
-    max-width: 1200px;
-    background: linear-gradient(135deg,
-      var(--color-surface) 0%,
-      color-mix(in srgb, var(--color-primary) 3%, var(--color-surface)) 50%,
-      color-mix(in srgb, var(--color-accent) 2%, var(--color-surface)) 100%
-    );
-    min-height: 100vh;
-    position: relative;
-  }
+	.page-container {
+		background: var(--color-surface-alt);
+		min-height: 100vh;
+		padding-bottom: 4rem;
+	}
 
-  .container::before {
-    content: '';
-    position: absolute;
-    top: -50%;
-    left: -50%;
-    width: 200%;
-    height: 200%;
-    background: radial-gradient(
-      circle at 30% 20%,
-      color-mix(in srgb, var(--color-primary) 6%, transparent) 0%,
-      transparent 50%
-    ),
-    radial-gradient(
-      circle at 70% 80%,
-      color-mix(in srgb, var(--color-accent) 4%, transparent) 0%,
-      transparent 50%
-    );
-    z-index: -1;
-    animation: float 20s ease-in-out infinite;
-  }
+	.page-hero {
+		display: grid;
+		gap: clamp(2rem, 4vw, 3rem);
+		padding: clamp(3rem, 6vw, 4.5rem) clamp(1.5rem, 5vw, 4.5rem) clamp(2rem, 4vw, 3rem);
+		border-bottom: 1px solid var(--color-border);
+		background: var(--color-surface);
+	}
 
-  @keyframes float {
-    0%, 100% { transform: translate(0, 0) rotate(0deg); }
-    33% { transform: translate(-1%, -0.5%) rotate(0.5deg); }
-    66% { transform: translate(0.5%, -1%) rotate(-0.5deg); }
-  }
+	@media (min-width: 960px) {
+		.page-hero {
+			grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr);
+			align-items: center;
+		}
+	}
 
-  .header h1 {
-    font-size: clamp(2rem, 5vw, 3rem);
-    font-weight: 900;
-    margin: 0 0 2rem;
-    font-family: var(--font-family-display);
-    color: var(--color-text-primary);
-    text-align: center;
-    letter-spacing: -0.02em;
-    position: relative;
-  }
+	.hero-body h1 {
+		margin: 0 0 1rem;
+		font-family: var(--font-family-display);
+		font-size: clamp(2.25rem, 5vw, 3rem);
+		letter-spacing: -0.015em;
+	}
 
-  .header h1::after {
-    content: '';
-    position: absolute;
-    bottom: -10px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 60px;
-    height: 4px;
-    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-    border-radius: 2px;
-  }
+	.search-card {
+		background: color-mix(in srgb, var(--color-surface-alt) 75%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+		border-radius: 24px;
+		padding: clamp(1.75rem, 4vw, 2.5rem);
+		box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+	}
 
-  .search-row {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 2rem;
-    background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
-    backdrop-filter: blur(20px);
-    padding: 1.5rem;
-    border-radius: 20px;
-    border: 1px solid color-mix(in srgb, var(--color-border) 25%, transparent);
-    box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 8%, transparent);
-  }
+	.search-card h2 {
+		margin: 0 0 0.5rem;
+		font-family: var(--font-family-display);
+		font-size: 1.35rem;
+	}
 
-  .search-row input {
-    flex: 1;
-    padding: 1rem 1.25rem;
-    margin-bottom: 0;
-    border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-    border-radius: 16px;
-    background: color-mix(in srgb, var(--color-input-bg) 70%, transparent);
-    backdrop-filter: blur(10px);
-    font-size: 1rem;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+	.search-card p {
+		margin: 0 0 1.5rem;
+		color: var(--color-text-secondary);
+		line-height: var(--line-height-normal);
+	}
 
-  .search-row input:focus {
-    border-color: var(--color-primary);
-    background: color-mix(in srgb, var(--color-input-bg) 90%, transparent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
-    transform: translateY(-1px);
-  }
+	.search-controls {
+		display: flex;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
 
-  .showcase-block {
-    margin: 2rem 0 3rem;
-    border: 1px solid color-mix(in srgb, var(--color-border) 25%, transparent);
-    border-radius: 24px;
-    padding: 2rem;
-    background: color-mix(in srgb, var(--color-surface-alt) 70%, transparent);
-    backdrop-filter: blur(20px) saturate(1.2);
-    box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 8%, transparent);
-    position: relative;
-    overflow: hidden;
-  }
+	.search-controls input {
+		flex: 1 1 220px;
+		padding: 0.9rem 1.2rem;
+		border-radius: 999px;
+		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+		background: var(--color-surface);
+		color: var(--color-text-primary);
+		font-size: 1rem;
+		transition: all 0.25s ease;
+		margin: 0;
+	}
 
-  .showcase-block::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-    border-radius: 24px 24px 0 0;
-  }
+	.search-controls input:focus {
+		outline: none;
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+	}
 
-  .showcase-block-heading {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
-  }
-  .showcase-block-heading h2 {
-    margin: 0;
-    font-size: clamp(1.5rem, 3vw, 2rem);
-    font-weight: 800;
-    font-family: var(--font-family-display);
-    color: var(--color-text-primary);
-    letter-spacing: -0.01em;
-  }
-  .showcase-block-heading p {
-    margin: 0;
-    color: var(--color-text-secondary);
-    font-size: 1.1rem;
-    line-height: 1.6;
-  }
+	.search-button {
+		padding: 0.85rem 1.8rem;
+		border-radius: 999px;
+		border: none;
+		background: var(--color-primary);
+		color: var(--color-surface);
+		font-weight: 600;
+		font-size: 0.95rem;
+		cursor: pointer;
+		transition: all 0.25s ease;
+	}
 
-  .showcase-block-status {
-    color: var(--color-text-secondary);
-    font-size: 1rem;
-  }
-  .showcase-block-status.error {
-    color: #f87171;
-  }
+	.search-button:hover,
+	.search-button:focus {
+		background: var(--color-accent);
+	}
 
-  .results {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    margin-top: 2rem;
-  }
+	.analysis-section {
+		padding: clamp(3rem, 6vw, 4.5rem) clamp(1.5rem, 5vw, 4.5rem);
+		border-bottom: 1px solid var(--color-border);
+		background: var(--color-surface-alt);
+	}
 
-  .load-more-row {
-    display: flex;
-    justify-content: center;
-    margin-top: 2rem;
-  }
+	.analysis-header {
+		max-width: 720px;
+		margin: 0 auto clamp(2rem, 5vw, 3rem);
+		text-align: center;
+	}
 
-  .discussion-card {
-    background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
-    backdrop-filter: blur(15px) saturate(1.1);
-    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-    border-radius: 20px;
-    padding: 2rem;
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 6px 20px color-mix(in srgb, var(--color-primary) 6%, transparent);
-    position: relative;
-    overflow: hidden;
-  }
+	.analysis-header h2 {
+		margin: 0 0 0.75rem;
+		font-family: var(--font-family-display);
+		font-size: clamp(1.75rem, 4vw, 2.25rem);
+	}
 
-  .discussion-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-    border-radius: 20px 20px 0 0;
-  }
+	.analysis-header p {
+		color: var(--color-text-secondary);
+		line-height: var(--line-height-normal);
+		margin: 0;
+	}
 
-  .discussion-card:hover {
-    transform: translateY(-6px);
-    box-shadow: 0 15px 40px color-mix(in srgb, var(--color-primary) 15%, transparent);
-    background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
-    border-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
-  }
+	.status-message {
+		color: var(--color-text-secondary);
+		text-align: center;
+		font-size: 0.95rem;
+	}
 
+	.status-message.error {
+		color: #ef4444;
+	}
 
-  .discussion-title {
-    color: var(--color-text-primary);
-    font-weight: 700;
-    font-size: 1.375rem;
-    font-family: var(--font-family-display);
-    margin-bottom: 0.75rem;
-    line-height: 1.3;
-  }
+	.discussions-main {
+		padding: clamp(3rem, 6vw, 4.5rem) clamp(1.5rem, 5vw, 4.5rem);
+	}
 
-  .discussion-snippet {
-    color: var(--color-text-primary);
-    font-size: 1rem;
-    margin: 0 0 1rem 0;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    line-clamp: 2;
-    line-height: 1.6;
-  }
+	.article-list {
+		display: grid;
+		gap: clamp(1.75rem, 4vw, 2.5rem);
+	}
 
-  .discussion-meta {
-    font-size: 0.85rem;
-    color: var(--color-text-secondary);
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
-  }
+	@media (min-width: 960px) {
+		.article-list {
+			grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+		}
+	}
 
-  .anonymous-author {
-    font-weight: 600;
-    color: var(--color-text-primary);
-  }
+	.discussion-card {
+		background: var(--color-surface);
+		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+		border-radius: 24px;
+		padding: clamp(1.75rem, 4vw, 2.5rem);
+		box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+		cursor: pointer;
+		transition:
+			transform 0.25s ease,
+			box-shadow 0.25s ease;
+		position: relative;
+		overflow: hidden;
+	}
 
-  :global(mark) {
-    background: color-mix(in srgb, var(--color-primary) 25%, transparent);
-    padding: 0 0.2em;
-    border-radius: 4px;
-    font-weight: 600;
-  }
+	.discussion-card::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 6px;
+		height: 100%;
+		background: linear-gradient(
+			180deg,
+			var(--color-primary),
+			color-mix(in srgb, var(--color-accent) 75%, var(--color-primary))
+		);
+		opacity: 0.8;
+	}
 
-  .hint {
-    color: var(--color-text-secondary);
-    margin-top: 2rem;
-    text-align: center;
-    font-size: 1rem;
-  }
+	.discussion-card:hover {
+		transform: translateY(-3px);
+		box-shadow: 0 16px 38px rgba(15, 23, 42, 0.12);
+	}
 
-  .error {
-    color: #ef4444;
-    text-align: center;
-  }
+	.discussion-card:hover::before {
+		opacity: 1;
+	}
 
-  .btn-primary {
-    background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-    color: var(--color-surface);
-    border: none;
-    border-radius: 50px;
-    padding: 1rem 2rem;
-    cursor: pointer;
-    font-weight: 700;
-    font-family: var(--font-family-display);
-    font-size: 1rem;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 25%, transparent);
-    position: relative;
-    overflow: hidden;
-  }
+	.discussion-header h2 {
+		margin: 0 0 0.75rem;
+		font-family: var(--font-family-display);
+		font-size: clamp(1.35rem, 3vw, 1.75rem);
+		letter-spacing: -0.01em;
+	}
 
-  .btn-primary::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-    transition: left 0.5s;
-  }
+	.deck {
+		margin: 0;
+		color: var(--color-text-secondary);
+		line-height: var(--line-height-normal);
+		max-width: 62ch;
+		font-size: 1rem;
+		font-weight: 400;
+	}
 
-  .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 15px 40px color-mix(in srgb, var(--color-primary) 35%, transparent);
-    filter: brightness(1.05);
-  }
+	.card-byline {
+		margin-top: clamp(1.25rem, 3vw, 1.75rem);
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--color-border);
+		color: var(--color-text-secondary);
+		font-size: 0.9rem;
+	}
 
-  .btn-primary:hover::before {
-    left: 100%;
-  }
+	.card-byline a {
+		color: var(--color-link);
+		font-weight: 600;
+		text-decoration: none;
+	}
 
-  .btn-secondary {
-    background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-    backdrop-filter: blur(10px);
-    color: var(--color-text-primary);
-    border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-    border-radius: 50px;
-    padding: 1rem 2rem;
-    cursor: pointer;
-    font-weight: 600;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 8%, transparent);
-  }
+	.card-byline a:hover,
+	.card-byline a:focus {
+		text-decoration: underline;
+	}
 
-  .btn-secondary:hover {
-    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
-    border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 15%, transparent);
-    color: var(--color-primary);
-  }
+	.card-byline time {
+		margin-left: auto;
+		font-variant-numeric: tabular-nums;
+	}
 
-  /* Dark mode button text contrast fix */
-  :global([data-theme="dark"]) .btn-primary {
-    color: #000000;
-    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.1);
-  }
+	@media (max-width: 640px) {
+		.card-byline {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+		.card-byline time {
+			margin-left: 0;
+		}
+	}
 
-  /* Responsive Design */
-  @media (max-width: 768px) {
-    .container {
-      padding: 1rem 0.5rem;
-    }
+	:global(mark) {
+		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+		padding: 0 0.25em;
+		border-radius: 2px;
+		font-weight: 600;
+	}
 
-    .search-row {
-      padding: 1.25rem;
-      gap: 0.75rem;
-    }
+	.loading-message,
+	.empty-state {
+		color: var(--color-text-secondary);
+		text-align: center;
+		font-size: 1rem;
+		padding: 3rem 0;
+	}
 
-    .showcase-block {
-      padding: 1.5rem;
-      margin: 1.5rem 0 2rem;
-    }
+	.error-message {
+		color: #ef4444;
+		text-align: center;
+		padding: 1rem;
+		background: color-mix(in srgb, #ef4444 12%, transparent);
+		border: 1px solid color-mix(in srgb, #ef4444 25%, transparent);
+		border-radius: var(--border-radius-sm);
+		margin-bottom: 2rem;
+	}
 
-    .discussion-card {
-      padding: 1.5rem;
-    }
+	.load-more {
+		text-align: center;
+		margin-top: clamp(2.5rem, 5vw, 3.5rem);
+	}
 
-    .discussion-title {
-      font-size: 1.25rem;
-    }
+	.load-more-button {
+		background: var(--color-surface);
+		color: var(--color-text-primary);
+		border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+		border-radius: 999px;
+		padding: 0.9rem 2.25rem;
+		font-size: 0.95rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.25s ease;
+	}
 
-    .results {
-      gap: 1.25rem;
-    }
-  }
+	.load-more-button:hover,
+	.load-more-button:focus {
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+		box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1);
+	}
 
-  /* Nuclear approach - override ALL link colors in dark mode */
-  :global([data-theme="dark"] a),
-  :global([data-theme="dark"] a:link),
-  :global([data-theme="dark"] a:visited),
-  :global([data-theme="dark"] a:hover),
-  :global([data-theme="dark"] a:active) {
-    color: #a9c8ff;
-  }
+	.load-more-button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+		box-shadow: none;
+	}
+
+	@media (max-width: 960px) {
+		.page-hero {
+			grid-template-columns: 1fr;
+		}
+	}
 </style>

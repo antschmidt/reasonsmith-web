@@ -5,17 +5,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 **Development:**
+
 - `pnpm dev` - Start development server at localhost:5173
 - `pnpm build` - Build for production
 - `pnpm preview` - Preview production build
 
 **Quality Assurance:**
+
 - `pnpm lint` - Run Prettier linting
 - `pnpm format` - Format code with Prettier
 - `pnpm check` - Run SvelteKit type checking
 - `pnpm check:watch` - Run type checking in watch mode
 
 **Testing:**
+
 - `pnpm test:unit` - Run unit tests with Vitest
 - `pnpm test:e2e` - Run end-to-end tests with Playwright
 - `pnpm test` - Run all tests (unit + e2e)
@@ -23,6 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Architecture
 
 **Tech Stack:**
+
 - Frontend: SvelteKit 2 with TypeScript, deployed on Vercel
 - Backend: Nhost (Hasura GraphQL + PostgreSQL)
 - Authentication: Nhost Auth with GitHub OAuth
@@ -53,17 +57,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - Posts start as drafts, get scored, then published to pending status
 
 **Database Structure:**
+
 - `discussion` - Main discussion threads
 - `post` - Individual posts/comments with draft_content and published content
 - `contributor` - User profiles linked to auth.users
 - Good-faith scoring fields: `good_faith_score`, `good_faith_label`, `good_faith_last_evaluated`
 
 **Environment Configuration:**
+
 - Uses `PUBLIC_NHOST_SUBDOMAIN` and `PUBLIC_NHOST_REGION` for Nhost connection
 - Custom domain endpoints: auth.reasonsmith.com, graphql.reasonsmith.com, storage.reasonsmith.com
 - OAuth configured with GitHub (client credentials in nhost.toml)
 
 **Key Patterns:**
+
 - SvelteKit file-based routing in `src/routes/`
 - Real-time auth state management with Nhost callbacks
 - GraphQL fragments for consistent data fetching

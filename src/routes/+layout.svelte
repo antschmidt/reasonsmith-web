@@ -16,8 +16,10 @@
 		if (Array.isArray(u?.roles)) u.roles.forEach((r) => typeof r === 'string' && roles.add(r));
 		const defaultRole = u?.defaultRole ?? u?.default_role;
 		if (typeof defaultRole === 'string') roles.add(defaultRole);
-		if (Array.isArray(u?.metadata?.roles)) u.metadata.roles.forEach((r) => typeof r === 'string' && roles.add(r));
-		if (Array.isArray(u?.app_metadata?.roles)) u.app_metadata.roles.forEach((r) => typeof r === 'string' && roles.add(r));
+		if (Array.isArray(u?.metadata?.roles))
+			u.metadata.roles.forEach((r) => typeof r === 'string' && roles.add(r));
+		if (Array.isArray(u?.app_metadata?.roles))
+			u.app_metadata.roles.forEach((r) => typeof r === 'string' && roles.add(r));
 		if (typeof u?.role === 'string') roles.add(u.role);
 		return Array.from(roles);
 	}
@@ -29,13 +31,16 @@
 		}
 
 		try {
-			const result = await nhost.graphql.request(`
+			const result = await nhost.graphql.request(
+				`
 				query GetCurrentUserRole($userId: uuid!) {
 					contributor_by_pk(id: $userId) {
 						role
 					}
 				}
-			`, { userId: user.id });
+			`,
+				{ userId: user.id }
+			);
 
 			const currentUserRole = result.data?.contributor_by_pk?.role || 'user';
 			hasAdminAccess = ['admin', 'slartibartfast'].includes(currentUserRole);
@@ -85,7 +90,9 @@
 			{#if hasAdminAccess}
 				<a href="/admin" class="nav-icon" aria-label="User management">
 					<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<path d="M16 4c0-1.11.89-2 2-2s2 .89 2 2-.89 2-2 2-2-.89-2-2zM4 18v-1c0-2.66 5.33-4 8-4s8 1.34 8 4v1H4zM12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z"/>
+						<path
+							d="M16 4c0-1.11.89-2 2-2s2 .89 2 2-.89 2-2 2-2-.89-2-2zM4 18v-1c0-2.66 5.33-4 8-4s8 1.34 8 4v1H4zM12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z"
+						/>
 					</svg>
 				</a>
 				<a href="/public" class="nav-icon" aria-label="Manage public showcase">
@@ -103,10 +110,11 @@
 			</a>
 			<a href="/profile" class="nav-icon" aria-label="Profile">
 				<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-					<path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z" />
+					<path
+						d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"
+					/>
 				</svg>
 			</a>
-
 		</div>
 	</nav>
 {/if}
@@ -122,26 +130,22 @@
 		z-index: 50;
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
-		padding: 0.6rem 1rem;
-		background: linear-gradient(
-			90deg,
-			var(--color-surface) 0%,
-			color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)) 55%,
-			color-mix(in srgb, var(--color-accent) 7%, var(--color-surface)) 100%
-		);
-		border-bottom: 1px solid var(--color-border);
-		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-		backdrop-filter: saturate(1.2) blur(6px);
+		gap: 1rem;
+		padding: 1rem 2rem;
+		background: var(--color-surface);
+		border-bottom: 2px solid var(--color-border);
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	}
+
+	@media (max-width: 768px) {
+		.top-nav {
+			padding: 0.75rem 1rem;
+		}
 	}
 	:global([data-theme='dark']) .top-nav {
-		background: linear-gradient(
-			90deg,
-			var(--color-surface) 0%,
-			color-mix(in srgb, var(--color-primary) 18%, var(--color-surface)) 55%,
-			color-mix(in srgb, var(--color-accent) 20%, var(--color-surface)) 100%
-		);
-		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+		background: var(--color-surface);
+		border-bottom-color: var(--color-border);
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 	}
 	.brand {
 		display: inline-flex;
@@ -153,23 +157,17 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 48px;
-		height: 48px;
-		padding: 0.5rem;
-		border-radius: 14px;
-		background: #ffffff; /* Light mode: solid white for clarity */
-		box-shadow:
-			0 2px 4px rgba(0, 0, 0, 0.1),
-			0 0 0 1px color-mix(in srgb, var(--color-primary) 35%, transparent);
-		transition:
-			transform 140ms ease,
-			box-shadow 180ms ease;
+		width: 44px;
+		height: 44px;
+		padding: 0.25rem;
+		border-radius: var(--border-radius-sm);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		transition: all var(--transition-speed) ease;
 	}
 	:global([data-theme='dark']) .brand-icon {
-		background: white;
-		box-shadow:
-			0 2px 4px rgba(0, 0, 0, 0.35),
-			0 0 0 1px color-mix(in srgb, var(--color-primary) 35%, transparent);
+		background: var(--color-surface);
+		border-color: var(--color-border);
 	}
 
 	.brand-icon img {
@@ -182,10 +180,8 @@
 	}
 	.brand:focus .brand-icon,
 	.brand:hover .brand-icon {
-		transform: translateY(-2px);
-		box-shadow:
-			0 4px 10px -2px rgba(0, 0, 0, 0.25),
-			0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent);
+		border-color: var(--color-primary);
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 	}
 	@media (max-width: 560px) {
 		.brand-icon {
@@ -203,28 +199,18 @@
 		gap: 0.65rem;
 	}
 	.nav-icon {
-		--_size: 44px;
+		--_size: 42px;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		width: var(--_size);
 		height: var(--_size);
-		border-radius: 12px;
-		background: linear-gradient(
-			135deg,
-			color-mix(in srgb, var(--color-primary) 55%, transparent),
-			color-mix(in srgb, var(--color-accent) 45%, transparent)
-		);
-		box-shadow:
-			0 1px 3px rgba(0, 0, 0, 0.18),
-			0 0 0 1px color-mix(in srgb, var(--color-primary) 35%, transparent);
+		border-radius: var(--border-radius-sm);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
 		text-decoration: none;
-		position: relative;
-		transition:
-			transform 120ms ease,
-			box-shadow 160ms ease,
-			background 220ms ease;
-		color: var(--color-surface);
+		transition: all var(--transition-speed) ease;
+		color: var(--color-text-secondary);
 	}
 	.nav-icon svg {
 		width: 24px;
@@ -234,15 +220,10 @@
 	}
 	.nav-icon:hover,
 	.nav-icon:focus {
-		transform: translateY(-2px);
-		box-shadow:
-			0 4px 10px -2px rgba(0, 0, 0, 0.28),
-			0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, transparent);
+		color: var(--color-primary);
+		border-color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
 		outline: none;
-	}
-	.nav-icon:active {
-		transform: translateY(0);
-		box-shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.35);
 	}
 	@media (max-width: 560px) {
 		.nav-icon {

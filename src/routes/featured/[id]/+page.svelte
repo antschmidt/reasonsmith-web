@@ -115,7 +115,11 @@
 			<div class="meta">
 				{#if item.media_type}<span>{item.media_type}</span>{/if}
 				{#if item.creator}<span>{item.creator}</span>{/if}
-				<span>{item.date_published ? new Date(item.date_published + 'T12:00:00').toLocaleDateString() : new Date(item.created_at).toLocaleDateString()}</span>
+				<span
+					>{item.date_published
+						? new Date(item.date_published + 'T12:00:00').toLocaleDateString()
+						: new Date(item.created_at).toLocaleDateString()}</span
+				>
 			</div>
 
 			{#if item.tags && item.tags.length > 0}
@@ -265,7 +269,8 @@
 		margin: 0 auto;
 		padding: 2rem 1rem 4rem;
 		color: var(--color-text-primary);
-		background: linear-gradient(135deg,
+		background: linear-gradient(
+			135deg,
 			var(--color-surface) 0%,
 			color-mix(in srgb, var(--color-primary) 3%, var(--color-surface)) 50%,
 			color-mix(in srgb, var(--color-accent) 2%, var(--color-surface)) 100%
@@ -361,8 +366,8 @@
 
 	.tag-list {
 		list-style: none;
-    max-height: 10rem;
-    overflow: auto;
+		max-height: 10rem;
+		overflow: auto;
 		display: flex;
 		gap: 0.5rem;
 		flex-wrap: wrap;

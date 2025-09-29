@@ -6,11 +6,11 @@ import { print } from 'graphql';
 import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY
+	apiKey: process.env.ANTHROPIC_API_KEY
 });
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+	apiKey: process.env.OPENAI_API_KEY
 });
 
 const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-20250514';
@@ -19,129 +19,129 @@ const OPENAI_MODEL = process.env.OPENAI_FEATURED_MODEL ?? 'gpt-5';
 type Verdict = 'True' | 'False' | 'Misleading' | 'Unverified';
 
 interface GoodFaithFinding {
-  name: string;
-  description: string;
-  example?: string;
-  examples?: string[];
-  why: string;
+	name: string;
+	description: string;
+	example?: string;
+	examples?: string[];
+	why: string;
 }
 
 interface LogicalFallacyFinding {
-  name: string;
-  description: string;
-  example?: string;
-  examples?: string[];
-  why: string;
+	name: string;
+	description: string;
+	example?: string;
+	examples?: string[];
+	why: string;
 }
 
 interface CultishLanguageFinding {
-  name: string;
-  description: string;
-  example?: string;
-  examples?: string[];
-  why: string;
+	name: string;
+	description: string;
+	example?: string;
+	examples?: string[];
+	why: string;
 }
 
 interface FactCheckSource {
-  name: string;
-  url: string;
+	name: string;
+	url: string;
 }
 
 interface FactCheckFinding {
-  claim: string;
-  verdict: Verdict;
-  source: FactCheckSource | null;
-  relevance: string;
+	claim: string;
+	verdict: Verdict;
+	source: FactCheckSource | null;
+	relevance: string;
 }
 
 interface FeaturedClaudeResponse {
-  good_faith: GoodFaithFinding[];
-  logical_fallacies: LogicalFallacyFinding[];
-  cultish_language: CultishLanguageFinding[];
-  fact_checking: FactCheckFinding[];
-  summary: string;
+	good_faith: GoodFaithFinding[];
+	logical_fallacies: LogicalFallacyFinding[];
+	cultish_language: CultishLanguageFinding[];
+	fact_checking: FactCheckFinding[];
+	summary: string;
 }
 
 const featuredAnalysisSchema = {
-  type: 'object',
-  properties: {
-    good_faith: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          description: { type: 'string' },
-          examples: {
-            type: 'array',
-            items: { type: 'string' }
-          },
-          why: { type: 'string' }
-        },
-        required: ['name', 'description', 'examples', 'why'],
-        additionalProperties: false
-      }
-    },
-    logical_fallacies: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          description: { type: 'string' },
-          examples: {
-            type: 'array',
-            items: { type: 'string' }
-          },
-          why: { type: 'string' }
-        },
-        required: ['name', 'description', 'examples', 'why'],
-        additionalProperties: false
-      }
-    },
-    cultish_language: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          description: { type: 'string' },
-          examples: {
-            type: 'array',
-            items: { type: 'string' }
-          },
-          why: { type: 'string' }
-        },
-        required: ['name', 'description', 'examples', 'why'],
-        additionalProperties: false
-      }
-    },
-    fact_checking: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          claim: { type: 'string' },
-          verdict: { type: 'string', enum: ['True', 'False', 'Misleading', 'Unverified'] },
-          relevance: { type: 'string' },
-          source: {
-            type: ['object', 'null'],
-            properties: {
-              name: { type: 'string' },
-              url: { type: 'string' }
-            },
-            required: ['name', 'url'],
-            additionalProperties: false
-          }
-        },
-        required: ['claim', 'verdict', 'relevance', 'source'],
-        additionalProperties: false
-      }
-    },
-    summary: { type: 'string' }
-  },
-  required: ['good_faith', 'logical_fallacies', 'cultish_language', 'fact_checking', 'summary'],
-  additionalProperties: false
+	type: 'object',
+	properties: {
+		good_faith: {
+			type: 'array',
+			items: {
+				type: 'object',
+				properties: {
+					name: { type: 'string' },
+					description: { type: 'string' },
+					examples: {
+						type: 'array',
+						items: { type: 'string' }
+					},
+					why: { type: 'string' }
+				},
+				required: ['name', 'description', 'examples', 'why'],
+				additionalProperties: false
+			}
+		},
+		logical_fallacies: {
+			type: 'array',
+			items: {
+				type: 'object',
+				properties: {
+					name: { type: 'string' },
+					description: { type: 'string' },
+					examples: {
+						type: 'array',
+						items: { type: 'string' }
+					},
+					why: { type: 'string' }
+				},
+				required: ['name', 'description', 'examples', 'why'],
+				additionalProperties: false
+			}
+		},
+		cultish_language: {
+			type: 'array',
+			items: {
+				type: 'object',
+				properties: {
+					name: { type: 'string' },
+					description: { type: 'string' },
+					examples: {
+						type: 'array',
+						items: { type: 'string' }
+					},
+					why: { type: 'string' }
+				},
+				required: ['name', 'description', 'examples', 'why'],
+				additionalProperties: false
+			}
+		},
+		fact_checking: {
+			type: 'array',
+			items: {
+				type: 'object',
+				properties: {
+					claim: { type: 'string' },
+					verdict: { type: 'string', enum: ['True', 'False', 'Misleading', 'Unverified'] },
+					relevance: { type: 'string' },
+					source: {
+						type: ['object', 'null'],
+						properties: {
+							name: { type: 'string' },
+							url: { type: 'string' }
+						},
+						required: ['name', 'url'],
+						additionalProperties: false
+					}
+				},
+				required: ['claim', 'verdict', 'relevance', 'source'],
+				additionalProperties: false
+			}
+		},
+		summary: { type: 'string' }
+	},
+	required: ['good_faith', 'logical_fallacies', 'cultish_language', 'fact_checking', 'summary'],
+	additionalProperties: false
 } as const;
 
 const SYSTEM_PROMPT = `You are an expert in rhetoric, logic, and argumentation analysis. 
@@ -210,23 +210,23 @@ Analyze the following text, thoroughly, according to four categories:
 }`;
 
 async function analyzeWithClaude(content: string): Promise<FeaturedClaudeResponse> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY not set');
-  }
+	if (!process.env.ANTHROPIC_API_KEY) {
+		throw new Error('ANTHROPIC_API_KEY not set');
+	}
 
-  const message = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
-    // Keep max tokens below Anthropic's non-streaming threshold to avoid streaming requirement errors
-    max_tokens: 6000,
-    temperature: 0.2,
-    system: SYSTEM_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: `Analyze the following text.
+	const message = await anthropic.messages.create({
+		model: CLAUDE_MODEL,
+		// Keep max tokens below Anthropic's non-streaming threshold to avoid streaming requirement errors
+		max_tokens: 6000,
+		temperature: 0.2,
+		system: SYSTEM_PROMPT,
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `Analyze the following text.
 
 Instructions:
 - Follow the system prompt exactly.
@@ -235,103 +235,108 @@ Instructions:
 
 Text to analyze:
 ${content}`
-          }
-        ]
-      }
-    ]
-  });
+					}
+				]
+			}
+		]
+	});
 
-  const responseBlocks = message.content ?? [];
-  const textResponse = responseBlocks
-    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
-    .map((block) => block.text)
-    .join('')
-    .trim();
+	const responseBlocks = message.content ?? [];
+	const textResponse = responseBlocks
+		.filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+		.map((block) => block.text)
+		.join('')
+		.trim();
 
-  const responseText = textResponse;
+	const responseText = textResponse;
 
-  if (!responseText) {
-    throw new Error('No response from Claude');
-  }
+	if (!responseText) {
+		throw new Error('No response from Claude');
+	}
 
-  let cleaned = responseText.trim();
-  if (cleaned.startsWith('```json')) {
-    cleaned = cleaned.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-  } else if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
-  }
+	let cleaned = responseText.trim();
+	if (cleaned.startsWith('```json')) {
+		cleaned = cleaned.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+	} else if (cleaned.startsWith('```')) {
+		cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
+	}
 
-  if (!cleaned.trim().startsWith('{')) {
-    const start = cleaned.indexOf('{');
-    const end = cleaned.lastIndexOf('}');
-    if (start !== -1 && end !== -1 && end > start) {
-      cleaned = cleaned.slice(start, end + 1);
-    }
-  }
+	if (!cleaned.trim().startsWith('{')) {
+		const start = cleaned.indexOf('{');
+		const end = cleaned.lastIndexOf('}');
+		if (start !== -1 && end !== -1 && end > start) {
+			cleaned = cleaned.slice(start, end + 1);
+		}
+	}
 
-  return JSON.parse(cleaned) as FeaturedClaudeResponse;
+	return JSON.parse(cleaned) as FeaturedClaudeResponse;
 }
 
 async function analyzeWithOpenAI(content: string): Promise<FeaturedClaudeResponse> {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY not set');
-  }
+	if (!process.env.OPENAI_API_KEY) {
+		throw new Error('OPENAI_API_KEY not set');
+	}
 
-  const completion = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
-    temperature: 1,
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'featured_analysis',
-        schema: featuredAnalysisSchema,
-        strict: true
-      }
-    },
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: `Analyze the following text and return only JSON.\n\n${content}`
-      }
-    ]
-  });
+	const completion = await openai.chat.completions.create({
+		model: OPENAI_MODEL,
+		temperature: 1,
+		response_format: {
+			type: 'json_schema',
+			json_schema: {
+				name: 'featured_analysis',
+				schema: featuredAnalysisSchema,
+				strict: true
+			}
+		},
+		messages: [
+			{ role: 'system', content: SYSTEM_PROMPT },
+			{
+				role: 'user',
+				content: `Analyze the following text and return only JSON.\n\n${content}`
+			}
+		]
+	});
 
-  const responseText = completion.choices[0]?.message?.content?.trim();
+	const responseText = completion.choices[0]?.message?.content?.trim();
 
-  if (!responseText) {
-    throw new Error('No response from OpenAI');
-  }
+	if (!responseText) {
+		throw new Error('No response from OpenAI');
+	}
 
-  return JSON.parse(responseText) as FeaturedClaudeResponse;
+	return JSON.parse(responseText) as FeaturedClaudeResponse;
 }
 
 export const POST: RequestHandler = async ({ request }) => {
-  try {
-    const body = await request.json();
-    const { content, provider, contributorId } = body as { content?: string; provider?: string; contributorId?: string };
+	try {
+		const body = await request.json();
+		const { content, provider, contributorId } = body as {
+			content?: string;
+			provider?: string;
+			contributorId?: string;
+		};
 
-    if (typeof content !== 'string' || !content.trim()) {
-      return json({ error: 'content required' }, { status: 400 });
-    }
+		if (typeof content !== 'string' || !content.trim()) {
+			return json({ error: 'content required' }, { status: 400 });
+		}
 
-    // Check if user provided contributorId for analysis tracking
-    if (contributorId) {
-      const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
-      const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+		// Check if user provided contributorId for analysis tracking
+		if (contributorId) {
+			const HASURA_GRAPHQL_ENDPOINT =
+				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
+			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
 
-      if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
-        try {
-          // Check contributor permissions
-          const checkResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-              'x-hasura-role': 'admin'
-            },
-            body: JSON.stringify({
-              query: `
+			if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
+				try {
+					// Check contributor permissions
+					const checkResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+							'x-hasura-role': 'admin'
+						},
+						body: JSON.stringify({
+							query: `
                 query CheckAnalysisPermissions($contributorId: uuid!) {
                   contributor_by_pk(id: $contributorId) {
                     id
@@ -342,68 +347,75 @@ export const POST: RequestHandler = async ({ request }) => {
                   }
                 }
               `,
-              variables: { contributorId }
-            })
-          });
+							variables: { contributorId }
+						})
+					});
 
-          const checkResult = await checkResponse.json();
-          const contributor = checkResult.data?.contributor_by_pk;
+					const checkResult = await checkResponse.json();
+					const contributor = checkResult.data?.contributor_by_pk;
 
-          if (!contributor) {
-            return json({ error: 'Contributor not found' }, { status: 404 });
-          }
+					if (!contributor) {
+						return json({ error: 'Contributor not found' }, { status: 404 });
+					}
 
-          // Check if analysis is enabled
-          if (!contributor.analysis_enabled) {
-            return json({ error: 'Analysis access is disabled for this account' }, { status: 403 });
-          }
+					// Check if analysis is enabled
+					if (!contributor.analysis_enabled) {
+						return json({ error: 'Analysis access is disabled for this account' }, { status: 403 });
+					}
 
-          // Check if user has reached their limit (unless they're admin/slartibartfast role)
-          if (!['admin', 'slartibartfast'].includes(contributor.role) && contributor.analysis_limit !== null) {
-            if (contributor.analysis_count_used >= contributor.analysis_limit) {
-              return json({
-                error: 'Analysis limit reached',
-                limit: contributor.analysis_limit,
-                used: contributor.analysis_count_used
-              }, { status: 429 });
-            }
-          }
+					// Check if user has reached their limit (unless they're admin/slartibartfast role)
+					if (
+						!['admin', 'slartibartfast'].includes(contributor.role) &&
+						contributor.analysis_limit !== null
+					) {
+						if (contributor.analysis_count_used >= contributor.analysis_limit) {
+							return json(
+								{
+									error: 'Analysis limit reached',
+									limit: contributor.analysis_limit,
+									used: contributor.analysis_count_used
+								},
+								{ status: 429 }
+							);
+						}
+					}
 
-          // Increment usage count for non-admin users
-          if (!['admin', 'slartibartfast'].includes(contributor.role)) {
-            await fetch(HASURA_GRAPHQL_ENDPOINT, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-                'x-hasura-role': 'admin'
-              },
-              body: JSON.stringify({
-                query: print(INCREMENT_ANALYSIS_USAGE),
-                variables: { contributorId }
-              })
-            });
-          }
-        } catch (dbError) {
-          console.error('Database check failed:', dbError);
-          // Continue with analysis but log the error
-        }
-      }
-    }
+					// Increment usage count for non-admin users
+					if (!['admin', 'slartibartfast'].includes(contributor.role)) {
+						await fetch(HASURA_GRAPHQL_ENDPOINT, {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+								'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+								'x-hasura-role': 'admin'
+							},
+							body: JSON.stringify({
+								query: print(INCREMENT_ANALYSIS_USAGE),
+								variables: { contributorId }
+							})
+						});
+					}
+				} catch (dbError) {
+					console.error('Database check failed:', dbError);
+					// Continue with analysis but log the error
+				}
+			}
+		}
 
-    try {
-      const selectedProvider = provider === 'openai' ? 'openai' : 'claude';
-      const analysis = selectedProvider === 'openai'
-        ? await analyzeWithOpenAI(content)
-        : await analyzeWithClaude(content);
-      return json(analysis);
-    } catch (error) {
-      console.error('Featured analysis generation failed.', error);
-      const message = error instanceof Error ? error.message : 'Analysis request failed';
-      return json({ error: message }, { status: 502 });
-    }
-  } catch (error: any) {
-    console.error('Featured analysis endpoint error:', error);
-    return json({ error: error?.message || 'Internal error' }, { status: 500 });
-  }
+		try {
+			const selectedProvider = provider === 'openai' ? 'openai' : 'claude';
+			const analysis =
+				selectedProvider === 'openai'
+					? await analyzeWithOpenAI(content)
+					: await analyzeWithClaude(content);
+			return json(analysis);
+		} catch (error) {
+			console.error('Featured analysis generation failed.', error);
+			const message = error instanceof Error ? error.message : 'Analysis request failed';
+			return json({ error: message }, { status: 502 });
+		}
+	} catch (error: any) {
+		console.error('Featured analysis endpoint error:', error);
+		return json({ error: error?.message || 'Internal error' }, { status: 500 });
+	}
 };
