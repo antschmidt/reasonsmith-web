@@ -2,6 +2,8 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
+import { print } from 'graphql';
+import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
@@ -307,10 +309,86 @@ async function analyzeWithOpenAI(content: string): Promise<FeaturedClaudeRespons
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const body = await request.json();
-    const { content, provider } = body as { content?: string; provider?: string };
+    const { content, provider, contributorId } = body as { content?: string; provider?: string; contributorId?: string };
 
     if (typeof content !== 'string' || !content.trim()) {
       return json({ error: 'content required' }, { status: 400 });
+    }
+
+    // Check if user provided contributorId for analysis tracking
+    if (contributorId) {
+      const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
+      const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+
+      if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
+        try {
+          // Check contributor permissions
+          const checkResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+              'x-hasura-role': 'admin'
+            },
+            body: JSON.stringify({
+              query: `
+                query CheckAnalysisPermissions($contributorId: uuid!) {
+                  contributor_by_pk(id: $contributorId) {
+                    id
+                    role
+                    analysis_enabled
+                    analysis_limit
+                    analysis_count_used
+                  }
+                }
+              `,
+              variables: { contributorId }
+            })
+          });
+
+          const checkResult = await checkResponse.json();
+          const contributor = checkResult.data?.contributor_by_pk;
+
+          if (!contributor) {
+            return json({ error: 'Contributor not found' }, { status: 404 });
+          }
+
+          // Check if analysis is enabled
+          if (!contributor.analysis_enabled) {
+            return json({ error: 'Analysis access is disabled for this account' }, { status: 403 });
+          }
+
+          // Check if user has reached their limit (unless they're admin/slartibartfast role)
+          if (!['admin', 'slartibartfast'].includes(contributor.role) && contributor.analysis_limit !== null) {
+            if (contributor.analysis_count_used >= contributor.analysis_limit) {
+              return json({
+                error: 'Analysis limit reached',
+                limit: contributor.analysis_limit,
+                used: contributor.analysis_count_used
+              }, { status: 429 });
+            }
+          }
+
+          // Increment usage count for non-admin users
+          if (!['admin', 'slartibartfast'].includes(contributor.role)) {
+            await fetch(HASURA_GRAPHQL_ENDPOINT, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+                'x-hasura-role': 'admin'
+              },
+              body: JSON.stringify({
+                query: print(INCREMENT_ANALYSIS_USAGE),
+                variables: { contributorId }
+              })
+            });
+          }
+        } catch (dbError) {
+          console.error('Database check failed:', dbError);
+          // Continue with analysis but log the error
+        }
+      }
     }
 
     try {

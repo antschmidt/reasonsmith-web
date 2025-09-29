@@ -3,6 +3,15 @@
   import { onMount } from 'svelte';
   import { GET_USER_STATS } from '$lib/graphql/queries';
   import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
+  import { env as publicEnv } from '$env/dynamic/public';
+
+  const SITE_URL = publicEnv.PUBLIC_SITE_URL;
+
+  function getRedirect() {
+    if (SITE_URL) return SITE_URL.replace(/\/$/, '') + '/auth/callback';
+    if (typeof window !== 'undefined') return window.location.origin + '/auth/callback';
+    return undefined;
+  }
 
   let user = nhost.auth.getUser();
   let authEmail = user?.email || '';
@@ -11,6 +20,15 @@
   let statsLoading = false;
   let success: string | null = null;
   let error: string | null = null;
+
+  // Auth UI state
+  let showAuthOverlay = false;
+  let activeAuthView: 'initial' | 'emailPassword' | 'magicLink' | 'securityKey' = 'initial';
+  let isLoginView = true;
+  let email = '';
+  let password = '';
+  let authError: string | null = null;
+  let magicLinkSent = false;
 
   let editing = false;
 
@@ -52,6 +70,11 @@
         bio
         website
         social_links
+        role
+        analysis_enabled
+        analysis_limit
+        analysis_count_used
+        analysis_count_reset_at
       }
       discussion(where: { created_by: { _eq: $id } }, order_by: { created_at: desc }) {
         id
@@ -80,6 +103,79 @@
   `;
 
   let profilePath = user ? `/u/${user.id}` : '';
+
+  function toggleAuthModeView(toLogin?: boolean) {
+    if (typeof toLogin === 'boolean') isLoginView = toLogin;
+    else isLoginView = !isLoginView;
+    activeAuthView = 'initial';
+    authError = null;
+    magicLinkSent = false;
+  }
+
+  async function signInWithGitHub() {
+    try {
+      await nhost.auth.signIn({ provider: 'github', options: { redirectTo: getRedirect() } });
+    } catch (e: any) {
+      authError = e.message;
+    }
+  }
+
+  async function signInWithGoogle() {
+    try {
+      await nhost.auth.signIn({ provider: 'google', options: { redirectTo: getRedirect() } });
+    } catch (e: any) {
+      authError = e.message;
+    }
+  }
+
+  async function login() {
+    authError = null;
+    try {
+      await nhost.auth.signIn({ email, password });
+    } catch (e: any) {
+      authError = e.message;
+    }
+  }
+
+  async function signup() {
+    authError = null;
+    try {
+      await nhost.auth.signUp({ email, password });
+    } catch (e: any) {
+      authError = e.message;
+    }
+  }
+
+  async function sendMagicLink() {
+    authError = null;
+    magicLinkSent = false;
+    if (!email) {
+      authError = 'Please enter an email first.';
+      return;
+    }
+    try {
+      const redirectTo = getRedirect();
+      await nhost.auth.signIn({
+        email,
+        ...(redirectTo ? { options: { redirectTo } } : {})
+      });
+      magicLinkSent = true;
+    } catch (e: any) {
+      console.error('Magic link request failed', e);
+      const errorPayload = e?.error ?? e;
+      if (errorPayload?.message) authError = errorPayload.message;
+      else if (errorPayload?.error) authError = `${errorPayload.error}`;
+      else authError = 'Failed to request magic link. Please try again shortly.';
+    }
+  }
+
+  async function signInWithSecurityKey() {
+    alert('Security key sign-in not yet implemented.');
+  }
+
+  async function signUpWithSecurityKey() {
+    alert('Security key sign-up not yet implemented.');
+  }
 
   onMount(async () => {
     user = nhost.auth.getUser();
@@ -368,7 +464,20 @@
 <div class="profile-container {editing ? 'editing' : ''}">
   {#if !user}
     <div class="glass-card sign-in-prompt">
+      <a href="/" class="logo-link">
+        <img src="/logo-only.png" alt="ReasonSmith" class="logo" />
+      </a>
       <p>Please sign in to view your profile.</p>
+      <button
+        class="btn-primary sign-in-btn"
+        type="button"
+        on:click={() => {
+          showAuthOverlay = true;
+          toggleAuthModeView(true);
+        }}
+      >
+        Get Started
+      </button>
     </div>
   {:else}
     {#if !editing && success}
@@ -567,6 +676,72 @@
             <p class="section-hint">Contact support to update your login email.</p>
           </div>
 
+          {#if contributor?.role === 'admin'}
+            <div class="glass-card analysis-credits-section">
+              <div class="gradient-accent"></div>
+              <h3 class="section-title">Analysis Access</h3>
+              <div class="credits-info">
+                <div class="credit-status unlimited">
+                  <div class="status-icon">🌟</div>
+                  <div class="status-text">
+                    <div class="status-label">Root Administrator</div>
+                    <div class="status-description">You have unlimited analysis access with root administrative privileges and complete role management.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {:else if contributor?.role === 'slartibartfast'}
+            <div class="glass-card analysis-credits-section">
+              <div class="gradient-accent"></div>
+              <h3 class="section-title">Analysis Access</h3>
+              <div class="credits-info">
+                <div class="credit-status unlimited">
+                  <div class="status-icon">👑</div>
+                  <div class="status-text">
+                    <div class="status-label">Site Manager</div>
+                    <div class="status-description">You have unlimited analysis access and manage featured content, disputes, and site operations.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {:else}
+            <div class="glass-card analysis-credits-section">
+              <div class="gradient-accent"></div>
+              <h3 class="section-title">Analysis Credits</h3>
+              <div class="credits-info">
+                {#if !contributor?.analysis_enabled}
+                  <div class="credit-status disabled">
+                    <div class="status-icon">🚫</div>
+                    <div class="status-text">
+                      <div class="status-label">Analysis Disabled</div>
+                      <div class="status-description">Contact an administrator to enable analysis access.</div>
+                    </div>
+                  </div>
+                {:else if contributor?.analysis_limit === null}
+                  <div class="credit-status unlimited">
+                    <div class="status-icon">∞</div>
+                    <div class="status-text">
+                      <div class="status-label">Unlimited Access</div>
+                      <div class="status-description">You have unlimited analysis credits.</div>
+                    </div>
+                  </div>
+                {:else}
+                  <div class="credit-status limited">
+                    <div class="status-icon">🔢</div>
+                    <div class="status-text">
+                      <div class="status-label">
+                        {(contributor?.analysis_limit || 0) - (contributor?.analysis_count_used || 0)} of {contributor?.analysis_limit || 0} remaining
+                      </div>
+                      <div class="status-description">
+                        Resets: {contributor?.analysis_count_reset_at ? new Date(contributor.analysis_count_reset_at).toLocaleDateString() : 'Unknown'}
+                      </div>
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {/if}
+
           <div class="glass-card stats-section">
             <div class="gradient-accent"></div>
             <h3 class="section-title">Your Statistics</h3>
@@ -656,6 +831,121 @@
     {/if}
   {/if}
 </div>
+
+{#if showAuthOverlay}
+  <div
+    class="login-page-wrapper"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="auth-dialog-title"
+  >
+    <div class="login-container">
+      <button
+        class="close-auth-overlay"
+        type="button"
+        on:click={() => (showAuthOverlay = false)}
+        aria-label="Close authentication panel">&times;</button
+      >
+      <h2 id="auth-dialog-title">{isLoginView ? 'Login' : 'Sign Up'}</h2>
+
+      {#if activeAuthView === 'initial'}
+        <div class="auth-method-buttons">
+          <button
+            aria-label="Continue with Email/Password"
+            type="button"
+            class="oauth-button"
+            on:click={() => (activeAuthView = 'emailPassword')}
+            >Continue with Email/Password</button
+          >
+          <button
+            type="button"
+            class="oauth-button"
+            on:click={() => (activeAuthView = 'magicLink')}
+            >{isLoginView ? 'Use Magic Link to Sign In' : 'Use Magic Link to Sign Up'}</button
+          >
+          <button
+            type="button"
+            class="oauth-button"
+            on:click={() => (activeAuthView = 'securityKey')}
+            >{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key</button
+          >
+        </div>
+
+        <div class="oauth-buttons">
+          <button
+            type="button"
+            class="oauth-button"
+            on:click={signInWithGoogle}
+            aria-label="Sign in with Google"><span>Sign in with Google</span></button
+          >
+          <button
+            type="button"
+            class="oauth-button"
+            on:click={signInWithGitHub}
+            aria-label="Sign in with GitHub"><span>Sign in with GitHub</span></button
+          >
+        </div>
+        <button
+          type="button"
+          class="toggle-auth-mode"
+          on:click={() => toggleAuthModeView(!isLoginView)}
+          >{isLoginView
+            ? "Don't have an account? Sign up"
+            : 'Already have an account? Log in'}</button
+        >
+      {:else if activeAuthView === 'emailPassword'}
+        <input type="email" placeholder="Email" bind:value={email} />
+        <input type="password" placeholder="Password" bind:value={password} />
+        <button type="button" class="auth-primary-action" on:click={isLoginView ? login : signup}
+          >{isLoginView ? 'Login' : 'Sign Up'}</button
+        >
+        <button
+          type="button"
+          class="toggle-auth-mode"
+          on:click={() => (activeAuthView = 'initial')}>Back to options</button
+        >
+      {:else if activeAuthView === 'magicLink'}
+        <input type="email" placeholder="Email" bind:value={email} />
+        <button
+          type="button"
+          class="oauth-button"
+          on:click={sendMagicLink}
+          disabled={magicLinkSent}>{magicLinkSent ? 'Magic Link Sent' : 'Send Magic Link'}</button
+        >
+        <button
+          type="button"
+          class="toggle-auth-mode"
+          on:click={() => (activeAuthView = 'initial')}>Back to options</button
+        >
+      {:else if activeAuthView === 'securityKey'}
+        <input type="email" placeholder="Email (required for Security Key)" bind:value={email} />
+        <button
+          type="button"
+          class="oauth-button"
+          on:click={isLoginView ? signInWithSecurityKey : signUpWithSecurityKey}
+          >{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key</button
+        >
+        <button
+          type="button"
+          class="toggle-auth-mode"
+          on:click={() => (activeAuthView = 'initial')}>Back to options</button
+        >
+      {/if}
+
+      {#if authError}
+        <p class="auth-error" aria-live="polite">{authError}</p>
+      {/if}
+      {#if magicLinkSent}
+        <p class="auth-success" aria-live="polite">Magic link sent. Check your email.</p>
+      {/if}
+
+      <div class="legal-links">
+        <a href="/terms">Terms of Service</a>
+        <a href="/privacy">Privacy Policy</a>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   /* Immersive background */
@@ -1213,12 +1503,41 @@
   .sign-in-prompt {
     padding: 3rem;
     text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
   }
 
   .sign-in-prompt p {
     font-size: 1.1rem;
     color: var(--color-text-secondary);
     margin: 0;
+  }
+
+  .logo-link {
+    display: inline-block;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .logo-link:hover {
+    transform: translateY(-2px);
+  }
+
+  .logo {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--color-primary) 15%, transparent));
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .logo:hover {
+    filter: drop-shadow(0 6px 16px color-mix(in srgb, var(--color-primary) 25%, transparent));
+  }
+
+  .sign-in-btn {
+    margin-top: 0.5rem;
   }
 
   .success-banner {
@@ -1348,5 +1667,391 @@
     .detail-value {
       text-align: left;
     }
+  }
+
+  /* Analysis Credits Section */
+  .analysis-credits-section {
+    padding: 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .credits-info {
+    padding: 0.5rem 0;
+  }
+
+  .credit-status {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+    transition: all 0.3s ease;
+  }
+
+  .credit-status:hover {
+    background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 10%, transparent);
+  }
+
+  .status-icon {
+    font-size: 2rem;
+    filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--color-primary) 15%, transparent));
+  }
+
+  .status-text {
+    flex: 1;
+  }
+
+  .status-label {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin-bottom: 0.25rem;
+    font-family: var(--font-family-display);
+  }
+
+  .status-description {
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+  }
+
+  .credit-status.disabled {
+    border-color: color-mix(in srgb, #ef4444 40%, transparent);
+    background: color-mix(in srgb, #ef4444 8%, transparent);
+  }
+
+  .credit-status.disabled:hover {
+    background: color-mix(in srgb, #ef4444 12%, transparent);
+    box-shadow: 0 8px 25px color-mix(in srgb, #ef4444 15%, transparent);
+  }
+
+  .credit-status.unlimited {
+    border-color: color-mix(in srgb, #10b981 40%, transparent);
+    background: color-mix(in srgb, #10b981 8%, transparent);
+  }
+
+  .credit-status.unlimited:hover {
+    background: color-mix(in srgb, #10b981 12%, transparent);
+    box-shadow: 0 8px 25px color-mix(in srgb, #10b981 15%, transparent);
+  }
+
+  .credit-status.limited {
+    border-color: color-mix(in srgb, #f59e0b 40%, transparent);
+    background: color-mix(in srgb, #f59e0b 8%, transparent);
+  }
+
+  .credit-status.limited:hover {
+    background: color-mix(in srgb, #f59e0b 12%, transparent);
+    box-shadow: 0 8px 25px color-mix(in srgb, #f59e0b 15%, transparent);
+  }
+
+  @media (max-width: 768px) {
+    .credit-status {
+      padding: 1rem;
+      gap: 0.75rem;
+    }
+
+    .status-icon {
+      font-size: 1.5rem;
+    }
+
+    .status-label {
+      font-size: 1rem;
+    }
+
+    .status-description {
+      font-size: 0.85rem;
+    }
+  }
+
+  /* Authentication overlay styles */
+  .login-page-wrapper {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg,
+      color-mix(in srgb, var(--color-surface) 40%, transparent) 0%,
+      color-mix(in srgb, var(--color-primary) 8%, transparent) 50%,
+      color-mix(in srgb, var(--color-accent) 6%, transparent) 100%
+    );
+    backdrop-filter: blur(20px) saturate(1.2);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    padding: 1rem;
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .login-container {
+    position: relative;
+    margin: 0;
+    max-width: 480px;
+    width: 100%;
+    background: color-mix(in srgb, var(--color-surface-alt) 70%, transparent);
+    backdrop-filter: blur(30px) saturate(1.3);
+    border: 1px solid color-mix(in srgb, var(--color-border) 25%, transparent);
+    padding: 3rem;
+    border-radius: 30px;
+    box-shadow:
+      0 20px 60px color-mix(in srgb, var(--color-primary) 15%, transparent),
+      0 8px 32px color-mix(in srgb, var(--color-surface) 20%, transparent);
+    color: var(--color-text-primary);
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  @keyframes slideUp {
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  #auth-dialog-title {
+    text-align: center;
+    font-size: clamp(1.75rem, 4vw, 2.25rem);
+    font-weight: 900;
+    color: var(--color-text-primary);
+    margin-bottom: 2rem;
+    font-family: var(--font-family-display);
+    letter-spacing: -0.02em;
+    position: relative;
+  }
+
+  #auth-dialog-title::after {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 3px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    border-radius: 2px;
+  }
+
+  .auth-method-buttons,
+  .oauth-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+  }
+
+  .oauth-buttons {
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .auth-method-buttons button,
+  .auth-method-buttons .oauth-button,
+  .oauth-buttons .oauth-button {
+    margin-bottom: 0;
+  }
+
+  .toggle-auth-mode {
+    background: none;
+    border: none;
+    color: var(--color-primary);
+    cursor: pointer;
+    padding: 1rem 0;
+    margin-top: 1.5rem;
+    text-decoration: none;
+    text-align: center;
+    width: 100%;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    border-radius: 12px;
+  }
+
+  .toggle-auth-mode:hover {
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+  }
+
+  .auth-primary-action {
+    width: 100%;
+    padding: 1rem 2rem;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+    color: var(--color-surface);
+    border: none;
+    border-radius: 16px;
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: var(--font-family-display);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 8px 20px color-mix(in srgb, var(--color-primary) 25%, transparent);
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 1rem;
+  }
+
+  .auth-primary-action::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+  }
+
+  .auth-primary-action:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 30px color-mix(in srgb, var(--color-primary) 35%, transparent);
+    filter: brightness(1.05);
+  }
+
+  .auth-primary-action:hover::before {
+    left: 100%;
+  }
+
+  .auth-primary-action:active {
+    transform: translateY(0);
+  }
+
+  .close-auth-overlay {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 40px;
+    height: 40px;
+    background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+    border-radius: 12px;
+    font-size: 1.5rem;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+
+  .close-auth-overlay:hover {
+    color: var(--color-text-primary);
+    background: color-mix(in srgb, var(--color-surface-alt) 70%, transparent);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 10%, transparent);
+  }
+
+  .oauth-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-radius: 16px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+    background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+    backdrop-filter: blur(10px);
+    color: var(--color-text-primary);
+    font-weight: 500;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .oauth-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transition: left 0.5s;
+  }
+
+  .oauth-button:hover {
+    background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 12%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  }
+
+  .oauth-button:hover::before {
+    left: 100%;
+  }
+
+  .oauth-button[disabled] {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .legal-links {
+    margin-top: 1.5rem;
+    text-align: center;
+    font-size: 0.875rem;
+  }
+
+  .legal-links a {
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    margin: 0 0.5rem;
+  }
+
+  .legal-links a:hover {
+    text-decoration: underline;
+    color: var(--color-primary);
+  }
+
+  .auth-error {
+    color: #ef4444;
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+  }
+
+  .auth-success {
+    color: #16a34a;
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+  }
+
+  .login-container input {
+    padding: 1rem;
+    border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+    backdrop-filter: blur(10px);
+    color: var(--color-text-primary);
+    font-size: 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-bottom: 1rem;
+  }
+
+  .login-container input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+    transform: translateY(-1px);
+  }
+
+  .login-container input::placeholder {
+    color: var(--color-text-secondary);
   }
 </style>

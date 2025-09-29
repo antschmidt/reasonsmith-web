@@ -8,6 +8,10 @@ const CONTRIBUTOR_FIELDS = gql`
     display_name
     email
     role
+    analysis_enabled
+    analysis_limit
+    analysis_count_used
+    analysis_count_reset_at
   }
 `;
 
@@ -39,12 +43,27 @@ export const GET_DASHBOARD_DATA = gql`
     # Discussions created by the user
     myDiscussions: discussion(where: { created_by: { _eq: $userId } }, order_by: { created_at: desc }, limit: 10) {
       id
-      title
-      description
       created_at
       is_anonymous
+      status
       contributor {
         ...ContributorFields
+      }
+      current_version: discussion_versions(
+        where: { version_type: { _eq: "published" } }
+        order_by: { version_number: desc }
+        limit: 1
+      ) {
+        title
+        description
+      }
+      draft_version: discussion_versions(
+        where: { version_type: { _eq: "draft" } }
+        order_by: { version_number: desc }
+        limit: 1
+      ) {
+        title
+        description
       }
     }
 
@@ -55,17 +74,46 @@ export const GET_DASHBOARD_DATA = gql`
       limit: 10
     ) {
       id
-      title
-      description
       created_at
       is_anonymous
+      status
       contributor {
         ...ContributorFields
       }
+      current_version: discussion_versions(
+        where: { version_type: { _eq: "published" } }
+        order_by: { version_number: desc }
+        limit: 1
+      ) {
+        title
+        description
+      }
     }
 
-    # Get the current user's drafts; include related discussion title for reply drafts
-    myDrafts: post(
+    # Get discussion drafts (versions) instead of post drafts
+    myDiscussionDrafts: discussion_version(
+      where: {
+        created_by: { _eq: $userId },
+        version_type: { _eq: "draft" }
+      }
+      order_by: { created_at: desc }
+    ) {
+      id
+      title
+      description
+      discussion_id
+      created_at
+      good_faith_score
+      good_faith_label
+      good_faith_last_evaluated
+      discussion {
+        id
+        status
+      }
+    }
+
+    # Get the current user's post drafts
+    myPostDrafts: post(
       where: { author_id: { _eq: $userId }, status: { _in: ["draft", "pending"] } }
       order_by: { updated_at: desc }
     ) {
@@ -78,27 +126,58 @@ export const GET_DASHBOARD_DATA = gql`
       good_faith_label
       good_faith_last_evaluated
       good_faith_analysis
-      discussion { id title }
+      discussion {
+        id
+        discussion_versions(
+          where: { version_type: { _eq: "published" } }
+          order_by: { version_number: desc }
+          limit: 1
+        ) {
+          title
+        }
+      }
     }
   }
   ${CONTRIBUTOR_FIELDS}
 `;
 
 // Query to get the details of a single discussion and its approved posts
+// This is now replaced by GET_DISCUSSION_WITH_CURRENT_VERSION but kept for backward compatibility
 export const GET_DISCUSSION_DETAILS = gql`
   query GetDiscussionDetails($discussionId: uuid!) {
     discussion(where: { id: { _eq: $discussionId } }) {
       id
-      title
-      description
       created_at
       is_anonymous
-      good_faith_score
-      good_faith_label
-      good_faith_last_evaluated
-      good_faith_analysis
+      status
       contributor {
         ...ContributorFields
+      }
+      current_version: discussion_versions(
+        where: { version_type: { _eq: "published" } }
+        order_by: { version_number: desc }
+        limit: 1
+      ) {
+        id
+        title
+        description
+        good_faith_score
+        good_faith_label
+        good_faith_last_evaluated
+        good_faith_analysis
+      }
+      draft_version: discussion_versions(
+        where: { version_type: { _eq: "draft" } }
+        order_by: { version_number: desc }
+        limit: 1
+      ) {
+        id
+        title
+        description
+        good_faith_score
+        good_faith_label
+        good_faith_last_evaluated
+        good_faith_analysis
       }
       posts(where: { status: { _eq: "approved" } }, order_by: { created_at: asc }) {
         ...PostFields
@@ -109,7 +188,253 @@ export const GET_DISCUSSION_DETAILS = gql`
   ${POST_FIELDS}
 `;
 
-// Mutation to create a new discussion (created_by should be set by client or preset)
+// Discussion version fragments for the new versioning system
+const DISCUSSION_VERSION_FIELDS = gql`
+  fragment DiscussionVersionFields on discussion_version {
+    id
+    discussion_id
+    title
+    description
+    claims
+    citations
+    version_number
+    version_type
+    good_faith_score
+    good_faith_label
+    good_faith_last_evaluated
+    good_faith_analysis
+    created_at
+    created_by
+  }
+`;
+
+// Create a new discussion with its initial version (as draft)
+export const CREATE_DISCUSSION_WITH_VERSION = gql`
+  mutation CreateDiscussionWithVersion($title: String!, $description: String, $claims: jsonb = [], $citations: jsonb = [], $createdBy: uuid!) {
+    insert_discussion_one(
+      object: {
+        created_by: $createdBy,
+        status: "draft",
+        discussion_versions: {
+          data: {
+            title: $title,
+            description: $description,
+            claims: $claims,
+            citations: $citations,
+            version_number: 1,
+            version_type: "draft",
+            created_by: $createdBy
+          }
+        }
+      }
+    ) {
+      id
+      status
+      discussion_versions {
+        ...DiscussionVersionFields
+      }
+    }
+  }
+  ${DISCUSSION_VERSION_FIELDS}
+`;
+
+// Create a new version of an existing discussion (for edits)
+export const CREATE_DISCUSSION_VERSION = gql`
+  mutation CreateDiscussionVersion($discussionId: uuid!, $title: String!, $description: String, $claims: jsonb = [], $citations: jsonb = [], $createdBy: uuid!) {
+    insert_discussion_version_one(
+      object: {
+        discussion_id: $discussionId,
+        title: $title,
+        description: $description,
+        claims: $claims,
+        citations: $citations,
+        version_type: "draft",
+        created_by: $createdBy,
+        version_number: 1  # This will be calculated properly in the database trigger
+      }
+    ) {
+      ...DiscussionVersionFields
+    }
+  }
+  ${DISCUSSION_VERSION_FIELDS}
+`;
+
+// Publish a discussion version (mark as published and update discussion status)
+export const PUBLISH_DISCUSSION_VERSION = gql`
+  mutation PublishDiscussionVersion($versionId: uuid!, $discussionId: uuid!) {
+    # Update the version to published
+    update_discussion_version_by_pk(
+      pk_columns: { id: $versionId }
+      _set: { version_type: "published" }
+    ) {
+      ...DiscussionVersionFields
+    }
+
+    # Update the discussion status
+    update_discussion_by_pk(
+      pk_columns: { id: $discussionId }
+      _set: { status: "published", current_version_id: $versionId }
+    ) {
+      id
+      status
+      current_version_id
+    }
+  }
+  ${DISCUSSION_VERSION_FIELDS}
+`;
+
+// Update a draft version
+export const UPDATE_DISCUSSION_VERSION = gql`
+  mutation UpdateDiscussionVersion($versionId: uuid!, $title: String, $description: String, $claims: jsonb, $citations: jsonb) {
+    update_discussion_version_by_pk(
+      pk_columns: { id: $versionId }
+      _set: {
+        title: $title,
+        description: $description,
+        claims: $claims,
+        citations: $citations
+      }
+    ) {
+      ...DiscussionVersionFields
+    }
+  }
+  ${DISCUSSION_VERSION_FIELDS}
+`;
+
+// Get discussion with its current published version
+export const GET_DISCUSSION_WITH_CURRENT_VERSION = gql`
+  query GetDiscussionWithCurrentVersion($discussionId: uuid!) {
+    discussion_by_pk(id: $discussionId) {
+      id
+      status
+      created_by
+      created_at
+      is_anonymous
+      contributor {
+        ...ContributorFields
+      }
+      current_version: discussion_versions(
+        where: { version_type: { _eq: "published" } }
+        order_by: { version_number: desc }
+        limit: 1
+      ) {
+        ...DiscussionVersionFields
+      }
+      posts(where: { status: { _eq: "approved" } }, order_by: { created_at: asc }) {
+        ...PostFields
+      }
+    }
+  }
+  ${CONTRIBUTOR_FIELDS}
+  ${POST_FIELDS}
+  ${DISCUSSION_VERSION_FIELDS}
+`;
+
+// Get discussion draft version for editing
+export const GET_DISCUSSION_DRAFT_VERSION = gql`
+  query GetDiscussionDraftVersion($discussionId: uuid!) {
+    discussion_by_pk(id: $discussionId) {
+      id
+      status
+      created_by
+      draft_version: discussion_versions(
+        where: { version_type: { _eq: "draft" } }
+        order_by: { version_number: desc }
+        limit: 1
+      ) {
+        ...DiscussionVersionFields
+      }
+    }
+  }
+  ${DISCUSSION_VERSION_FIELDS}
+`;
+
+// List published discussions with their current versions
+export const LIST_PUBLISHED_DISCUSSIONS = gql`
+  query ListPublishedDiscussions($limit: Int = 20, $offset: Int = 0) {
+    discussion(
+      where: { status: { _eq: "published" } }
+      order_by: { created_at: desc }
+      limit: $limit
+      offset: $offset
+    ) {
+      id
+      status
+      created_at
+      is_anonymous
+      contributor {
+        ...ContributorFields
+      }
+      current_version: discussion_versions(
+        where: { version_type: { _eq: "published" } }
+        order_by: { version_number: desc }
+        limit: 1
+      ) {
+        ...DiscussionVersionFields
+      }
+    }
+  }
+  ${CONTRIBUTOR_FIELDS}
+  ${DISCUSSION_VERSION_FIELDS}
+`;
+
+// Search published discussions
+export const SEARCH_PUBLISHED_DISCUSSIONS = gql`
+  query SearchPublishedDiscussions($searchTerm: String!, $limit: Int = 20) {
+    discussion(
+      where: {
+        status: { _eq: "published" },
+        discussion_versions: {
+          version_type: { _eq: "published" },
+          _or: [
+            { title: { _ilike: $searchTerm } },
+            { description: { _ilike: $searchTerm } }
+          ]
+        }
+      }
+      order_by: { created_at: desc }
+      limit: $limit
+    ) {
+      id
+      status
+      created_at
+      is_anonymous
+      contributor {
+        ...ContributorFields
+      }
+      current_version: discussion_versions(
+        where: { version_type: { _eq: "published" } }
+        order_by: { version_number: desc }
+        limit: 1
+      ) {
+        ...DiscussionVersionFields
+      }
+    }
+  }
+  ${CONTRIBUTOR_FIELDS}
+  ${DISCUSSION_VERSION_FIELDS}
+`;
+
+// Update good faith analysis for a discussion version
+export const UPDATE_DISCUSSION_VERSION_GOOD_FAITH = gql`
+  mutation UpdateDiscussionVersionGoodFaith($versionId: uuid!, $score: numeric!, $label: String!, $analysis: jsonb) {
+    update_discussion_version_by_pk(
+      pk_columns: { id: $versionId }
+      _set: {
+        good_faith_score: $score
+        good_faith_label: $label
+        good_faith_last_evaluated: "now()"
+        good_faith_analysis: $analysis
+      }
+    ) {
+      ...DiscussionVersionFields
+    }
+  }
+  ${DISCUSSION_VERSION_FIELDS}
+`;
+
+// Legacy mutation to create a new discussion (created_by should be set by client or preset)
+// This will be phased out in favor of CREATE_DISCUSSION_WITH_VERSION
 export const CREATE_DISCUSSION = gql`
   mutation CreateDiscussion($title: String!, $description: String, $createdBy: uuid!) {
     insert_discussion_one(
@@ -431,19 +756,19 @@ export const DELETE_DISCUSSION = gql`
   }
 `;
 
-// Mutation to update good faith analysis for a discussion
+// Legacy mutation - deprecated in favor of UPDATE_DISCUSSION_VERSION_GOOD_FAITH
+// Only kept for backward compatibility, should not be used with versioned discussions
 export const UPDATE_DISCUSSION_GOOD_FAITH = gql`
-  mutation UpdateDiscussionGoodFaith($discussionId: uuid!, $score: numeric!, $label: String!, $analysis: jsonb) {
+  mutation UpdateDiscussionGoodFaith($discussionId: uuid!) {
     update_discussion_by_pk(
       pk_columns: { id: $discussionId }
       _set: {
-        good_faith_score: $score
-        good_faith_label: $label
-        good_faith_last_evaluated: "now()"
-        good_faith_analysis: $analysis
+        # This mutation is deprecated - good faith fields moved to discussion_version table
+        status: "published"
       }
     ) {
       id
+      status
     }
   }
 `;
@@ -515,6 +840,64 @@ export const UNANONYMIZE_DISCUSSION = gql`
       is_anonymous
     }
   }
+`;
+
+// Mutation to update contributor analysis settings
+export const UPDATE_CONTRIBUTOR_ANALYSIS_SETTINGS = gql`
+  mutation UpdateContributorAnalysisSettings($contributorId: uuid!, $analysisEnabled: Boolean!, $analysisLimit: Int) {
+    update_contributor_by_pk(
+      pk_columns: { id: $contributorId }
+      _set: {
+        analysis_enabled: $analysisEnabled,
+        analysis_limit: $analysisLimit
+      }
+    ) {
+      ...ContributorFields
+    }
+  }
+  ${CONTRIBUTOR_FIELDS}
+`;
+
+// Mutation to increment analysis usage count
+export const INCREMENT_ANALYSIS_USAGE = gql`
+  mutation IncrementAnalysisUsage($contributorId: uuid!) {
+    update_contributor_by_pk(
+      pk_columns: { id: $contributorId }
+      _inc: { analysis_count_used: 1 }
+    ) {
+      ...ContributorFields
+    }
+  }
+  ${CONTRIBUTOR_FIELDS}
+`;
+
+// Mutation to reset analysis usage count
+export const RESET_ANALYSIS_USAGE = gql`
+  mutation ResetAnalysisUsage($contributorId: uuid!) {
+    update_contributor_by_pk(
+      pk_columns: { id: $contributorId }
+      _set: {
+        analysis_count_used: 0,
+        analysis_count_reset_at: "now()"
+      }
+    ) {
+      ...ContributorFields
+    }
+  }
+  ${CONTRIBUTOR_FIELDS}
+`;
+
+// Mutation to update contributor role
+export const UPDATE_CONTRIBUTOR_ROLE = gql`
+  mutation UpdateContributorRole($contributorId: uuid!, $role: String!) {
+    update_contributor_by_pk(
+      pk_columns: { id: $contributorId }
+      _set: { role: $role }
+    ) {
+      ...ContributorFields
+    }
+  }
+  ${CONTRIBUTOR_FIELDS}
 `;
 
 // Public showcase content surfaced on landing/discussions pages

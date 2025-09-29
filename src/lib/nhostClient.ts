@@ -116,13 +116,103 @@ if (isBrowser) {
 
 export const nhost = new NhostClient(nhostConfig);
 
-// Apply GraphQL role header dynamically (anonymous before auth; me after sign-in)
-function applyGraphqlRoleHeader() {
+// Apply initial GraphQL role header (authenticated users start as 'me')
+function applyInitialGraphqlRoleHeader() {
   const user = nhost.auth.getUser();
-  if (user) nhost.graphql.setHeaders({ 'x-hasura-role': 'me' });
-  else nhost.graphql.setHeaders({ 'x-hasura-role': 'anonymous' }); // let Hasura use its unauthorized role
+  if (user) {
+    nhost.graphql.setHeaders({
+      'x-hasura-role': 'me',
+      'X-Hasura-User-Id': user.id
+    });
+  } else {
+    nhost.graphql.setHeaders({ 'x-hasura-role': 'anonymous' });
+  }
 }
-applyGraphqlRoleHeader();
+
+// Upgrade role headers based on database role (call after initial auth)
+async function upgradeRoleHeaders() {
+  const user = nhost.auth.getUser();
+  if (!user) {
+    console.log('[Role Debug] No user found, skipping upgrade');
+    return;
+  }
+
+  try {
+    console.log('[Role Debug] Attempting to get role for user:', user.id);
+
+    // Get user's role from database (using 'me' role initially)
+    const result = await nhost.graphql.request(`
+      query GetUserRole($userId: uuid!) {
+        contributor_by_pk(id: $userId) {
+          role
+        }
+      }
+    `, { userId: user.id });
+
+    console.log('[Role Debug] Database query result:', result);
+
+    const userRole = result.data?.contributor_by_pk?.role || 'user';
+    console.log('[Role Debug] User role from database:', userRole);
+
+    // Map database roles to Hasura roles
+    // NOTE: Until Nhost Auth is configured with admin/slartibartfast roles,
+    // we use 'me' for everyone but store the actual role for app logic
+    let hasuraRole;
+    switch (userRole) {
+      case 'admin':
+        hasuraRole = 'me'; // Use 'me' until Nhost Auth allows 'admin'
+        break;
+      case 'slartibartfast':
+        hasuraRole = 'me'; // Use 'me' until Nhost Auth allows 'slartibartfast'
+        break;
+      default:
+        hasuraRole = 'me';
+    }
+
+    // Store the actual role for frontend logic
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('userActualRole', userRole);
+    }
+
+    console.log('[Role Debug] Mapped to Hasura role:', hasuraRole);
+
+    // Update headers with correct role
+    nhost.graphql.setHeaders({
+      'x-hasura-role': hasuraRole,
+      'X-Hasura-User-Id': user.id
+    });
+
+    console.log('[Role Debug] Headers updated successfully');
+  } catch (err) {
+    console.error('[Role Debug] Failed to upgrade user role, staying as me:', err);
+    // Keep existing 'me' role if upgrade fails
+  }
+}
+applyInitialGraphqlRoleHeader();
+
+// Function to refresh user role headers (call after role changes)
+export async function refreshUserRole() {
+  await upgradeRoleHeaders();
+}
+
+// Debug function to check current auth status
+export function debugAuthStatus() {
+  const user = nhost.auth.getUser();
+  const headers = nhost.graphql.getHeaders();
+  console.log('[Auth Debug] Current user:', user);
+  console.log('[Auth Debug] Current headers:', headers);
+  console.log('[Auth Debug] User ID:', user?.id);
+  return { user, headers };
+}
+
+// Debug function for admin operations
+export function debugAdminRequest(operation: string) {
+  const user = nhost.auth.getUser();
+  const headers = nhost.graphql.getHeaders();
+  console.log(`[Admin Debug] ${operation} - User:`, user?.id);
+  console.log(`[Admin Debug] ${operation} - Headers:`, headers);
+  console.log(`[Admin Debug] ${operation} - Role:`, headers['x-hasura-role']);
+}
 
 // Correct constraint name (user_pkey) per contributor_constraint enum
 // Important: do NOT overwrite an existing display_name on conflict.
@@ -155,16 +245,21 @@ export async function ensureContributor() {
 // Run on initial load (if already authenticated) and on sign-in events
 if (isBrowser) {
   if (nhost.auth.getUser()) {
-    applyGraphqlRoleHeader();
-    ensureContributor();
+    applyInitialGraphqlRoleHeader();
+    ensureContributor().then(() => {
+      // After ensuring contributor exists, upgrade to proper role
+      upgradeRoleHeaders();
+    });
   }
-  nhost.auth.onAuthStateChanged((event) => {
+  nhost.auth.onAuthStateChanged(async (event) => {
     if (event === 'SIGNED_IN') {
-      applyGraphqlRoleHeader();
-      ensureContributor();
+      applyInitialGraphqlRoleHeader();
+      await ensureContributor();
+      // After ensuring contributor exists, upgrade to proper role
+      await upgradeRoleHeaders();
     }
     if (event === 'SIGNED_OUT') {
-      applyGraphqlRoleHeader();
+      applyInitialGraphqlRoleHeader();
     }
   });
 }

@@ -11,6 +11,13 @@
 		type Citation
 	} from '$lib/types/writingStyle';
 	import CitationForm from '$lib/components/CitationForm.svelte';
+	import {
+		CREATE_DISCUSSION_WITH_VERSION,
+		UPDATE_DISCUSSION_VERSION,
+		PUBLISH_DISCUSSION_VERSION,
+		GET_DISCUSSION_DRAFT_VERSION,
+		UPDATE_DISCUSSION_VERSION_GOOD_FAITH
+	} from '$lib/graphql/queries';
 
 	// --- State (Runes) ---
 	let user = $state(nhost.auth.getUser());
@@ -21,10 +28,17 @@
 	let title = $state('');
 	let content = $state('');
 	let discussionId = $state<string | null>(null);
+	let currentVersionId = $state<string | null>(null);
 	let publishing = $state(false);
 	let publishError = $state<string | null>(null);
 	let lastSavedAt = $state<number | null>(null);
 	let autoSaveTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
+
+	// Good faith validation state
+	let goodFaithTesting = $state(false);
+	let goodFaithResult = $state<any>(null);
+	let goodFaithError = $state<string | null>(null);
+	const GOOD_FAITH_THRESHOLD = 0.7;
 
 	// Writing style state (automatically inferred)
 	let styleMetadata = $state<StyleMetadata>({});
@@ -48,30 +62,86 @@
 	let showCitationForm = $state(false);
 	const hasCitations = $derived(Array.isArray(styleMetadata.citations) && styleMetadata.citations.length > 0);
 
-	// GraphQL mutation documents (without writing style fields until migration is applied)
-	const CREATE_DISCUSSION = `mutation CreateDiscussion($title: String!, $description: String, $authorId: uuid!) { insert_discussion_one(object:{ title:$title, description:$description, created_by:$authorId }) { id } }`;
-	const UPDATE_DISCUSSION = `mutation UpdateDiscussion($id: uuid!, $title: String!, $description: String!) { update_discussion_by_pk(pk_columns: {id: $id}, _set: {title: $title, description: $description}) { id title description } }`;
+	// Helper functions for the new versioning system
+
+	// Load existing discussion draft if ID provided in URL
+	async function loadExistingDiscussion(id: string) {
+		try {
+			const { data, error } = await nhost.graphql.request(GET_DISCUSSION_DRAFT_VERSION, { discussionId: id });
+			if (error) {
+				console.error('Failed to load discussion:', error);
+				return;
+			}
+
+			const discussion = data?.discussion_by_pk;
+			if (discussion && discussion.draft_version?.length > 0) {
+				discussionId = discussion.id;
+				const draftVersion = discussion.draft_version[0];
+				currentVersionId = draftVersion.id;
+				title = draftVersion.title || '';
+				content = draftVersion.description || '';
+
+				// Load existing citations and claims if available
+				if (draftVersion.citations) {
+					styleMetadata.citations = draftVersion.citations;
+				}
+
+				// Load existing good faith analysis if available
+				if (draftVersion.good_faith_score !== null) {
+					goodFaithResult = {
+						good_faith_score: draftVersion.good_faith_score,
+						good_faith_label: draftVersion.good_faith_label,
+						rationale: 'Previous analysis result',
+						claims: draftVersion.claims || [],
+						cultishPhrases: [],
+						fallacyOverload: false
+					};
+				}
+
+				lastSavedAt = Date.now();
+				console.log('Loaded existing discussion draft:', id, 'version:', currentVersionId);
+			}
+		} catch (e) {
+			console.error('Failed to load discussion:', e);
+		}
+	}
+
+	// Check for discussion ID in URL on page load
+	$effect(() => {
+		if (typeof window !== 'undefined') {
+			const urlParams = new URLSearchParams(window.location.search);
+			const idParam = urlParams.get('id');
+			if (idParam && !discussionId) {
+				loadExistingDiscussion(idParam);
+			}
+		}
+	});
 
 	async function createDraftDiscussion() {
 		if (!user || discussionId) return;
-		console.log('Creating draft discussion...');
+		console.log('Creating draft discussion with version...');
 		try {
 			const discTitle = title.trim() || 'Untitled Discussion';
-			const { data: discData, error: discError } = await nhost.graphql.request(CREATE_DISCUSSION, {
+			const { data: discData, error: discError } = await nhost.graphql.request(CREATE_DISCUSSION_WITH_VERSION, {
 				title: discTitle,
 				description: content || '',
-				authorId: user.id
+				claims: [],
+				citations: styleMetadata.citations || [],
+				createdBy: user.id
 			});
 			if (discError) {
 				console.error('Failed to create discussion:', discError);
 				return;
 			}
 
-			const newDiscussionId = (discData as any)?.insert_discussion_one?.id;
-			if (newDiscussionId) {
-				discussionId = newDiscussionId;
+			const newDiscussion = (discData as any)?.insert_discussion_one;
+			if (newDiscussion) {
+				discussionId = newDiscussion.id;
+				if (newDiscussion.discussion_versions?.length > 0) {
+					currentVersionId = newDiscussion.discussion_versions[0].id;
+				}
 				lastSavedAt = Date.now();
-				console.log('Draft discussion created:', newDiscussionId);
+				console.log('Draft discussion created:', discussionId, 'version:', currentVersionId);
 			}
 		} catch (e) {
 			console.error('Failed to create draft discussion:', e);
@@ -79,18 +149,20 @@
 	}
 
 	async function autoSaveDiscussion() {
-		if (!discussionId || !user) return;
+		if (!currentVersionId || !user) return;
 
 		try {
-			const { error } = await nhost.graphql.request(UPDATE_DISCUSSION, {
-				id: discussionId,
+			const { error } = await nhost.graphql.request(UPDATE_DISCUSSION_VERSION, {
+				versionId: currentVersionId,
 				title: title.trim() || 'Untitled Discussion',
-				description: content || ''
+				description: content || '',
+				claims: [],
+				citations: styleMetadata.citations || []
 			});
 
 			if (!error) {
 				lastSavedAt = Date.now();
-				console.log('Discussion auto-saved');
+				console.log('Discussion version auto-saved');
 			}
 		} catch (e) {
 			console.error('Auto-save failed:', e);
@@ -102,7 +174,7 @@
 			clearTimeout(autoSaveTimeout);
 		}
 		autoSaveTimeout = setTimeout(() => {
-			if (discussionId) {
+			if (currentVersionId) {
 				autoSaveDiscussion();
 			} else if (user && (title.trim() || content.trim())) {
 				createDraftDiscussion();
@@ -165,6 +237,9 @@
 
 	async function publishNewDiscussion() {
 		publishError = null;
+		goodFaithError = null;
+		goodFaithResult = null;
+
 		if (!user) {
 			publishError = 'Sign in required.';
 			return;
@@ -177,15 +252,63 @@
 			publishError = 'Content required.';
 			return;
 		}
-		// Temporarily disable style validation until migration is applied
-		// if (!styleValidation.isValid) {
-		//   publishError = `Style requirements not met: ${styleValidation.issues.join(', ')}`;
-		//   return;
-		// }
 
 		publishing = true;
 		try {
-			// If we don't have a discussion yet, create one
+			// Good faith analysis gate - analyze BEFORE creating discussion
+			goodFaithTesting = true;
+			let goodFaithData;
+			try {
+				const response = await fetch('/api/goodFaithClaude', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						content: content,
+						title: title
+					})
+				});
+
+				if (!response.ok) {
+					throw new Error(`Analysis failed with status ${response.status}`);
+				}
+
+				const data = await response.json();
+				const score01 = typeof data.good_faith_score === 'number' ? data.good_faith_score : (typeof data.goodFaithScore === 'number' ? data.goodFaithScore / 100 : 0);
+
+				goodFaithData = {
+					provider: 'claude',
+					score: score01,
+					label: data.good_faith_label,
+					rationale: data.rationale,
+					claims: data.claims || [],
+					cultishPhrases: data.cultishPhrases || [],
+					fallacyOverload: data.fallacyOverload || false,
+					analyzedAt: new Date().toISOString()
+				};
+
+				if (score01 < GOOD_FAITH_THRESHOLD) {
+					// Show analysis and prevent publication
+					goodFaithResult = {
+						good_faith_score: score01,
+						good_faith_label: data.good_faith_label,
+						rationale: data.rationale,
+						claims: data.claims,
+						cultishPhrases: data.cultishPhrases,
+						fallacyOverload: data.fallacyOverload
+					};
+					publishError = `Cannot publish discussion. Good-faith score ${(score01 * 100).toFixed(0)}% is below the 70% threshold. Please improve your content and try again.`;
+					return; // Stop here, don't create discussion
+				}
+			} catch (e: any) {
+				console.warn('Good-faith analysis failed; cannot publish discussion:', e);
+				goodFaithError = e?.message || 'Failed to analyze discussion for good faith.';
+				publishError = 'Could not verify good-faith score. Cannot publish discussion.';
+				return; // Don't create discussion when analysis fails
+			} finally {
+				goodFaithTesting = false;
+			}
+
+			// Only create discussion if good faith check passes
 			if (!discussionId) {
 				await createDraftDiscussion();
 				if (!discussionId) {
@@ -193,10 +316,65 @@
 				}
 			}
 
-			// Final save with current content
+			// Save content to the discussion
 			await autoSaveDiscussion();
 
-			// Navigate to the discussion
+			// Save the good faith analysis to the discussion version
+			if (goodFaithData && currentVersionId) {
+				const { error: gfErr } = await nhost.graphql.request(UPDATE_DISCUSSION_VERSION_GOOD_FAITH, {
+					versionId: currentVersionId,
+					score: goodFaithData.score,
+					label: goodFaithData.label
+				});
+
+				if (gfErr) {
+					console.error('Failed to save discussion version good-faith analysis:', gfErr);
+					throw new Error('Failed to save good faith analysis');
+				}
+			}
+
+			// Sync citations to Neo4j graph database
+			try {
+				const citationSyncResponse = await fetch('/api/syncCitations', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						discussionId,
+						title,
+						authorId: user.id,
+						createdAt: new Date().toISOString(),
+						citations: styleMetadata.citations || [],
+						goodFaithScore: goodFaithData?.score
+					})
+				});
+
+				if (!citationSyncResponse.ok) {
+					console.warn('Failed to sync citations to Neo4j, but discussion published successfully');
+				} else {
+					const syncResult = await citationSyncResponse.json();
+					console.log('[Neo4j] Citations synced successfully:', syncResult);
+				}
+			} catch (syncError) {
+				console.warn('Citation sync error (non-blocking):', syncError);
+				// Don't block discussion publication if Neo4j sync fails
+			}
+
+			// Publish the discussion version (change version_type from "draft" to "published" and update discussion status)
+			if (!currentVersionId || !discussionId) {
+				throw new Error('Missing version or discussion ID');
+			}
+
+			const { error: publishErr } = await nhost.graphql.request(PUBLISH_DISCUSSION_VERSION, {
+				versionId: currentVersionId,
+				discussionId: discussionId
+			});
+
+			if (publishErr) {
+				console.error('Failed to publish discussion version:', publishErr);
+				throw new Error('Failed to publish discussion');
+			}
+
+			// Navigate to the discussion only if everything succeeds
 			goto(`/discussions/${discussionId}`);
 		} catch (e: any) {
 			publishError = e.message || 'Failed to publish.';
@@ -336,9 +514,9 @@
 		</div>
 
 		<div class="autosave-indicator" aria-live="polite">
-			{#if discussionId && lastSavedAt}
+			{#if currentVersionId && lastSavedAt}
 				Draft saved {new Date(lastSavedAt).toLocaleTimeString()}
-			{:else if discussionId}
+			{:else if currentVersionId}
 				Draft created
 			{/if}
 		</div>
@@ -346,6 +524,43 @@
 		{#if publishError}
 			<div class="error-message">
 				{publishError}
+			</div>
+		{/if}
+
+		{#if goodFaithError}
+			<div class="error-message">Good Faith Analysis Error: {goodFaithError}</div>
+		{/if}
+
+		{#if goodFaithTesting}
+			<div class="analysis-status">
+				<div class="analysis-loading">🔄 Analyzing content for good faith...</div>
+			</div>
+		{/if}
+
+		{#if goodFaithResult}
+			<div class="analysis-results">
+				<h3>Good Faith Analysis</h3>
+				<div class="score-display">
+					<div class="score-value {goodFaithResult.good_faith_label}">
+						{(goodFaithResult.good_faith_score * 100).toFixed(0)}%
+					</div>
+					<div class="score-label">{goodFaithResult.good_faith_label}</div>
+				</div>
+				{#if goodFaithResult.rationale}
+					<div class="analysis-feedback">
+						<strong>Feedback:</strong> {goodFaithResult.rationale}
+					</div>
+				{/if}
+				{#if goodFaithResult.claims && goodFaithResult.claims.length > 0}
+					<div class="claims-analysis">
+						<strong>Claims detected:</strong>
+						<ul>
+							{#each goodFaithResult.claims as claimObj}
+								<li>{claimObj.claim}</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
 			</div>
 		{/if}
 
@@ -690,6 +905,117 @@
 
 	.citation-reminder.active .reminder-text strong {
 		color: #92400e;
+	}
+
+	/* Good Faith Analysis Styles */
+	.analysis-status {
+		padding: 1rem 1.5rem;
+		border-radius: 16px;
+		background: linear-gradient(135deg,
+			color-mix(in srgb, var(--color-primary) 15%, transparent),
+			color-mix(in srgb, var(--color-accent) 10%, transparent)
+		);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+		margin-bottom: 1rem;
+	}
+
+	.analysis-loading {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		font-weight: 500;
+		color: var(--color-text-primary);
+		font-size: 0.95rem;
+	}
+
+	.analysis-results {
+		padding: 1.5rem;
+		border-radius: 16px;
+		background: linear-gradient(135deg,
+			color-mix(in srgb, var(--color-surface) 50%, transparent),
+			color-mix(in srgb, var(--color-surface-alt) 30%, transparent)
+		);
+		border: 1px solid var(--color-border);
+		margin-bottom: 1rem;
+		backdrop-filter: blur(10px);
+	}
+
+	.analysis-results h3 {
+		margin: 0 0 1rem 0;
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.score-display {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.score-value {
+		font-size: 1.5rem;
+		font-weight: 700;
+		padding: 0.5rem 1rem;
+		border-radius: 12px;
+		min-width: 80px;
+		text-align: center;
+	}
+
+	.score-value.constructive {
+		background: linear-gradient(135deg, #10b981, #059669);
+		color: white;
+	}
+
+	.score-value.neutral {
+		background: linear-gradient(135deg, #6b7280, #4b5563);
+		color: white;
+	}
+
+	.score-value.questionable {
+		background: linear-gradient(135deg, #f59e0b, #d97706);
+		color: white;
+	}
+
+	.score-value.hostile {
+		background: linear-gradient(135deg, #ef4444, #dc2626);
+		color: white;
+	}
+
+	.score-label {
+		font-weight: 600;
+		font-size: 1rem;
+		text-transform: capitalize;
+		color: var(--color-text-primary);
+	}
+
+	.analysis-feedback {
+		background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+		padding: 1rem;
+		border-radius: 12px;
+		border-left: 4px solid var(--color-primary);
+		margin-bottom: 1rem;
+		font-size: 0.95rem;
+		line-height: 1.5;
+	}
+
+	.claims-analysis {
+		background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+		padding: 1rem;
+		border-radius: 12px;
+		border-left: 4px solid var(--color-accent);
+	}
+
+	.claims-analysis ul {
+		margin: 0.5rem 0 0 0;
+		padding-left: 1.5rem;
+	}
+
+	.claims-analysis li {
+		margin-bottom: 0.25rem;
+		font-size: 0.9rem;
+		line-height: 1.4;
 	}
 
 	.citation-reminder.active .reminder-text span {

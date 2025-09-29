@@ -154,6 +154,9 @@
 	<Dashboard {user} />
 {:else}
 	<div class="landing-hero">
+		<div class="hero-logo">
+			<img src="/logo-only.png" alt="ReasonSmith Logo" class="logo-image" />
+		</div>
 		<h1>Welcome to ReasonSmith</h1>
 		<p>
 			ReasonSmith is an application which forges arguments by enforcing good faith argumentation.
@@ -408,6 +411,34 @@
 		0%, 100% { transform: translate(0, 0) rotate(0deg); }
 		33% { transform: translate(-2%, -1%) rotate(1deg); }
 		66% { transform: translate(1%, -2%) rotate(-1deg); }
+	}
+
+	.hero-logo {
+		margin-bottom: 0rem;
+		position: relative;
+		z-index: 1;
+		animation: logoFloat 6s ease-in-out infinite;
+	}
+
+	.logo-image {
+		width: clamp(120px, 20vw, 200px);
+		height: auto;
+		filter: drop-shadow(0 10px 30px color-mix(in srgb, var(--color-primary) 20%, transparent));
+		transition: all 0.3s ease;
+	}
+
+	.logo-image:hover {
+		transform: scale(1.05);
+		filter: drop-shadow(0 15px 40px color-mix(in srgb, var(--color-primary) 30%, transparent));
+	}
+
+	@keyframes logoFloat {
+		0%, 100% {
+			transform: translateY(0px);
+		}
+		50% {
+			transform: translateY(-10px);
+		}
 	}
 	.landing-featured {
 		max-width: 1200px;

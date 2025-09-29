@@ -8,6 +8,7 @@
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = nhost.auth.getUser();
 	let hasMeRole = false;
+	let hasAdminAccess = false;
 
 	function collectRoles(u) {
 		if (!u) return [];
@@ -21,9 +22,37 @@
 		return Array.from(roles);
 	}
 
+	async function checkAdminAccess() {
+		if (!user) {
+			hasAdminAccess = false;
+			return;
+		}
+
+		try {
+			const result = await nhost.graphql.request(`
+				query GetCurrentUserRole($userId: uuid!) {
+					contributor_by_pk(id: $userId) {
+						role
+					}
+				}
+			`, { userId: user.id });
+
+			const currentUserRole = result.data?.contributor_by_pk?.role || 'user';
+			hasAdminAccess = ['admin', 'slartibartfast'].includes(currentUserRole);
+		} catch (err) {
+			console.error('Failed to get user role:', err);
+			hasAdminAccess = false;
+		}
+	}
+
 	function refreshUser() {
 		user = nhost.auth.getUser();
 		hasMeRole = collectRoles(user).includes('me');
+		if (user) {
+			checkAdminAccess();
+		} else {
+			hasAdminAccess = false;
+		}
 	}
 
 	refreshUser();
@@ -53,7 +82,12 @@
 		</a>
 		<div class="nav-spacer"></div>
 		<div class="nav-actions" role="group" aria-label="Primary actions">
-			{#if hasMeRole}
+			{#if hasAdminAccess}
+				<a href="/admin" class="nav-icon" aria-label="User management">
+					<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+						<path d="M16 4c0-1.11.89-2 2-2s2 .89 2 2-.89 2-2 2-2-.89-2-2zM4 18v-1c0-2.66 5.33-4 8-4s8 1.34 8 4v1H4zM12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z"/>
+					</svg>
+				</a>
 				<a href="/public" class="nav-icon" aria-label="Manage public showcase">
 					<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
 						<path d="M6 2a2 2 0 0 0-2 2v16l8-4 8 4V4a2 2 0 0 0-2-2H6Zm0 2h12v13.17l-6-3-6 3V4Z" />

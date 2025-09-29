@@ -3,6 +3,7 @@
   import { nhost } from '$lib/nhostClient';
   import { goto } from '$app/navigation';
   import FeaturedAnalysesCarousel from '$lib/components/FeaturedAnalysesCarousel.svelte';
+  import { LIST_PUBLISHED_DISCUSSIONS, SEARCH_PUBLISHED_DISCUSSIONS } from '$lib/graphql/queries';
   import type { PageData } from './$types';
 
   let loading = $state(true);
@@ -10,11 +11,17 @@
   let q = $state('');
   type DiscussionSummary = {
     id: string;
-    title: string;
-    description?: string | null;
     created_at: string;
     is_anonymous?: boolean | null;
+    status: string;
     contributor?: { id: string; handle?: string | null; display_name?: string | null } | null;
+    current_version?: {
+      id: string;
+      title: string;
+      description?: string | null;
+      good_faith_score?: number | null;
+      good_faith_label?: string | null;
+    }[];
   };
 
   let results = $state<DiscussionSummary[] | null>(null);
@@ -48,41 +55,7 @@
     showcaseError = props.data?.showcaseError ?? null;
   });
 
-  const SEARCH_DISCUSSIONS = `
-    query SearchDiscussions($q: String!, $limit: Int = 20) {
-      discussion(
-        where: {
-          _or: [
-            { title: { _ilike: $q } },
-            { description: { _ilike: $q } },
-            { contributor: { display_name: { _ilike: $q } } }
-          ]
-        },
-        limit: $limit,
-        order_by: { created_at: desc }
-      ) {
-        id
-        title
-        description
-        created_at
-        is_anonymous
-        contributor { id handle display_name }
-      }
-    }
-  `;
-
-  const LIST_DISCUSSIONS = `
-    query ListDiscussions($limit: Int = 20, $offset: Int = 0, $order: order_by = desc) {
-      discussion(order_by: { created_at: $order }, limit: $limit, offset: $offset) {
-        id
-        title
-        description
-        created_at
-        is_anonymous
-        contributor { id handle display_name }
-      }
-    }
-  `;
+  // Using imported GraphQL queries for the new versioning system
 
   async function search() {
     loading = true;
@@ -90,7 +63,7 @@
     try {
       const term = q.trim();
       if (!term) { results = null; loading = false; return; }
-      const { data, error: gqlError } = await nhost.graphql.request(SEARCH_DISCUSSIONS, { q: `%${term}%` });
+      const { data, error: gqlError } = await nhost.graphql.request(SEARCH_PUBLISHED_DISCUSSIONS, { searchTerm: `%${term}%` });
       if (gqlError) throw (Array.isArray(gqlError) ? new Error(gqlError.map((e:any)=>e.message).join('; ')) : gqlError);
       results = (data as any)?.discussion ?? [];
     } catch (e:any) {
@@ -114,7 +87,7 @@
     loading = true;
     error = null;
     try {
-      const { data, error: gqlError } = await nhost.graphql.request(LIST_DISCUSSIONS, { limit: PAGE_SIZE, offset: page * PAGE_SIZE });
+      const { data, error: gqlError } = await nhost.graphql.request(LIST_PUBLISHED_DISCUSSIONS, { limit: PAGE_SIZE, offset: page * PAGE_SIZE });
       if (gqlError) throw (Array.isArray(gqlError) ? new Error(gqlError.map((e:any)=>e.message).join('; ')) : gqlError);
       const rows = (data as any)?.discussion ?? [];
       discussions = [...(discussions ?? []), ...rows];
@@ -159,6 +132,7 @@
   // headers are managed globally by nhostClient
   }
 
+
   onMount(async () => {
     await ensureAuthReadyAndHeaders();
     await fetchAll(true);
@@ -171,16 +145,19 @@
     const t = term.toLowerCase();
     const parts = t.split(/\s+/).filter(Boolean);
     return list.filter((d) =>
-      parts.length === 0 || parts.some((p) =>
-        (d.title && d.title.toLowerCase().includes(p)) ||
-        (d.description && d.description.toLowerCase().includes(p)) ||
-        (d.is_anonymous && 'anonymous'.includes(p)) ||
-        (d.contributor?.display_name && d.contributor.display_name.toLowerCase().includes(p)) ||
-        (Array.isArray((d as any).tags) && (d as any).tags.some((tag: any) =>
-          (typeof tag === 'string' && tag.toLowerCase().includes(p)) ||
-          (tag?.name && typeof tag.name === 'string' && tag.name.toLowerCase().includes(p))
-        ))
-      )
+      parts.length === 0 || parts.some((p) => {
+        const version = d.current_version?.[0];
+        return (
+          (version?.title && version.title.toLowerCase().includes(p)) ||
+          (version?.description && version.description.toLowerCase().includes(p)) ||
+          (d.is_anonymous && 'anonymous'.includes(p)) ||
+          (d.contributor?.display_name && d.contributor.display_name.toLowerCase().includes(p)) ||
+          (Array.isArray((d as any).tags) && (d as any).tags.some((tag: any) =>
+            (typeof tag === 'string' && tag.toLowerCase().includes(p)) ||
+            (tag?.name && typeof tag.name === 'string' && tag.name.toLowerCase().includes(p))
+          ))
+        );
+      })
     );
   }
 
@@ -267,9 +244,13 @@
           onclick={() => goto(`/discussions/${d.id}`)}
           onkeydown={(e)=> e.key==='Enter' && goto(`/discussions/${d.id}`)}
         >
-          <h3 class="discussion-title">{@html highlight(d.title, q)}</h3>
-          {#if d.description}
-            <p class="discussion-snippet">{@html highlight(d.description, q)}</p>
+          {#if d.current_version?.[0]}
+            <h3 class="discussion-title">{@html highlight(d.current_version[0].title, q)}</h3>
+            {#if d.current_version[0].description}
+              <p class="discussion-snippet">{@html highlight(d.current_version[0].description, q)}</p>
+            {/if}
+          {:else}
+            <h3 class="discussion-title">Discussion</h3>
           {/if}
           <p class="discussion-meta">
             {#if d.is_anonymous}
@@ -487,6 +468,7 @@
     border-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
   }
 
+
   .discussion-title {
     color: var(--color-text-primary);
     font-weight: 700;
@@ -497,7 +479,7 @@
   }
 
   .discussion-snippet {
-    color: var(--color-text-secondary);
+    color: var(--color-text-primary);
     font-size: 1rem;
     margin: 0 0 1rem 0;
     display: -webkit-box;
