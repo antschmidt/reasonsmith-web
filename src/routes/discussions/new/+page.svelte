@@ -60,14 +60,18 @@
 
 	// Citation management
 	let showCitationForm = $state(false);
-	const hasCitations = $derived(Array.isArray(styleMetadata.citations) && styleMetadata.citations.length > 0);
+	const hasCitations = $derived(
+		Array.isArray(styleMetadata.citations) && styleMetadata.citations.length > 0
+	);
 
 	// Helper functions for the new versioning system
 
 	// Load existing discussion draft if ID provided in URL
 	async function loadExistingDiscussion(id: string) {
 		try {
-			const { data, error } = await nhost.graphql.request(GET_DISCUSSION_DRAFT_VERSION, { discussionId: id });
+			const { data, error } = await nhost.graphql.request(GET_DISCUSSION_DRAFT_VERSION, {
+				discussionId: id
+			});
 			if (error) {
 				console.error('Failed to load discussion:', error);
 				return;
@@ -122,13 +126,16 @@
 		console.log('Creating draft discussion with version...');
 		try {
 			const discTitle = title.trim() || 'Untitled Discussion';
-			const { data: discData, error: discError } = await nhost.graphql.request(CREATE_DISCUSSION_WITH_VERSION, {
-				title: discTitle,
-				description: content || '',
-				claims: [],
-				citations: styleMetadata.citations || [],
-				createdBy: user.id
-			});
+			const { data: discData, error: discError } = await nhost.graphql.request(
+				CREATE_DISCUSSION_WITH_VERSION,
+				{
+					title: discTitle,
+					description: content || '',
+					claims: [],
+					citations: styleMetadata.citations || [],
+					createdBy: user.id
+				}
+			);
 			if (discError) {
 				console.error('Failed to create discussion:', discError);
 				return;
@@ -273,7 +280,12 @@
 				}
 
 				const data = await response.json();
-				const score01 = typeof data.good_faith_score === 'number' ? data.good_faith_score : (typeof data.goodFaithScore === 'number' ? data.goodFaithScore / 100 : 0);
+				const score01 =
+					typeof data.good_faith_score === 'number'
+						? data.good_faith_score
+						: typeof data.goodFaithScore === 'number'
+							? data.goodFaithScore / 100
+							: 0;
 
 				goodFaithData = {
 					provider: 'claude',
@@ -388,189 +400,185 @@
 	);
 </script>
 
-<!-- Immersive background -->
-<div class="page-background">
-  <div class="floating-gradient gradient-1"></div>
-  <div class="floating-gradient gradient-2"></div>
-  <div class="floating-gradient gradient-3"></div>
-</div>
+<div class="editorial-page">
+	<div class="container">
+		<div class="editorial-card main-card">
+			<h1 class="page-title">Create a New Discussion</h1>
+			<form
+				onsubmit={(e) => {
+					e.preventDefault();
+					publishNewDiscussion();
+				}}
+			>
+				<div class="form-group">
+					<label for="title">Title</label>
+					<input
+						id="title"
+						type="text"
+						bind:value={title}
+						placeholder="Enter a clear and concise title"
+						oninput={onTitleInput}
+						required
+					/>
+				</div>
 
-<div class="container">
-	<div class="glass-card main-card">
-		<h1 class="page-title">Create a New Discussion</h1>
-		<form
-			onsubmit={(e) => {
-				e.preventDefault();
-				publishNewDiscussion();
-			}}
-		>
-		<div class="form-group">
-			<label for="title">Title</label>
-			<input
-				id="title"
-				type="text"
-				bind:value={title}
-				placeholder="Enter a clear and concise title"
-				oninput={onTitleInput}
-				required
-			/>
-		</div>
-
-		<div class="form-group">
-			<label for="description">Description</label>
-			<textarea
-				id="description"
-				bind:value={content}
-				rows="8"
-				placeholder="Share your thoughts... (Style will be automatically determined by length)"
-				oninput={onContentInput}
-			></textarea>
-			<div class="word-count">
-				<span class="word-count-label">Words: {wordCount}</span>
-				<span class="style-indicator">({getStyleConfig(selectedStyle).label})</span>
-			</div>
-
-      		<!-- Word Count and Style Info -->
-		<div class="form-group">
-			<div class="writing-info">
-				<div class="citation-reminder" class:active={showCitationReminder}>
-					<div class="reminder-icon">📚</div>
-					<div class="reminder-text">
-						<strong>{showCitationReminder ? 'Add citations' : 'Cite your sources'}</strong>
-						<span
-							>{showCitationReminder
-								? 'Support your claims with references for better credibility.'
-								: 'Adding sources now makes it easier to reference them later.'}</span
-						>
+				<div class="form-group">
+					<label for="description">Description</label>
+					<textarea
+						id="description"
+						bind:value={content}
+						rows="8"
+						placeholder="Share your thoughts... (Style will be automatically determined by length)"
+						oninput={onContentInput}
+					></textarea>
+					<div class="word-count">
+						<span class="word-count-label">Words: {wordCount}</span>
+						<span class="style-indicator">({getStyleConfig(selectedStyle).label})</span>
 					</div>
-					<button
-						type="button"
-						class="btn-add-citation-inline"
-						onclick={() => showAddCitationForm()}
-					>
-						Add Citation
-					</button>
-				</div>
-			</div>
-		</div>
 
-		<!-- Citations Management -->
-		<div class="form-group">
-			<div class="citations-section">
-				<div class="citations-header">
-					<h3>Citations</h3>
-				</div>
-
-				<!-- Display existing citations -->
-				{#if styleMetadata.citations && styleMetadata.citations.length > 0}
-					<div class="citations-list">
-						{#each styleMetadata.citations as citation}
-							<div class="citation-item">
-								<div class="citation-content">
-									<div class="citation-title">{citation.title}</div>
-									<div class="citation-details">
-										{#if citation.author}<strong>{citation.author}</strong>{/if}
-										{#if citation.publishDate}({citation.publishDate}){/if}
-										{#if citation.publisher}. {citation.publisher}{/if}
-										{#if citation.pageNumber}, p. {citation.pageNumber}{/if}
-										{#if citation.accessed}. Accessed: {citation.accessed}{/if}
-									</div>
-									<div class="citation-point">
-										<strong>Supporting:</strong>
-										{citation.pointSupported}
-									</div>
-									<div class="citation-quote">
-										<strong>Quote:</strong> "{citation.relevantQuote}"
-									</div>
-									<div class="citation-url">
-										<a href={citation.url} target="_blank" rel="noopener">{citation.url}</a>
-									</div>
+					<!-- Word Count and Style Info -->
+					<div class="form-group">
+						<div class="writing-info">
+							<div class="citation-reminder" class:active={showCitationReminder}>
+								<div class="reminder-icon">📚</div>
+								<div class="reminder-text">
+									<strong>{showCitationReminder ? 'Add citations' : 'Cite your sources'}</strong>
+									<span
+										>{showCitationReminder
+											? 'Support your claims with references for better credibility.'
+											: 'Adding sources now makes it easier to reference them later.'}</span
+									>
 								</div>
 								<button
 									type="button"
-									class="remove-citation"
-									onclick={() => removeCitation(citation.id)}>×</button
+									class="btn-add-citation-inline"
+									onclick={() => showAddCitationForm()}
 								>
+									Add Citation
+								</button>
 							</div>
-						{/each}
+						</div>
 					</div>
-				{/if}
 
-				<!-- Citation Form -->
-				{#if showCitationForm}
-					<CitationForm onAdd={addCitation} onCancel={() => (showCitationForm = false)} />
-				{/if}
-			</div>
-		</div>
+					<!-- Citations Management -->
+					<div class="form-group">
+						<div class="citations-section">
+							<div class="citations-header">
+								<h3>Citations</h3>
+							</div>
 
-			<!-- Style Validation -->
-			{#if !styleValidation.isValid}
-				<div class="style-validation-errors">
-					{#each styleValidation.issues as issue}
-						<div class="validation-issue">{issue}</div>
-					{/each}
-				</div>
-			{/if}
-		</div>
+							<!-- Display existing citations -->
+							{#if styleMetadata.citations && styleMetadata.citations.length > 0}
+								<div class="citations-list">
+									{#each styleMetadata.citations as citation}
+										<div class="citation-item">
+											<div class="citation-content">
+												<div class="citation-title">{citation.title}</div>
+												<div class="citation-details">
+													{#if citation.author}<strong>{citation.author}</strong>{/if}
+													{#if citation.publishDate}({citation.publishDate}){/if}
+													{#if citation.publisher}. {citation.publisher}{/if}
+													{#if citation.pageNumber}, p. {citation.pageNumber}{/if}
+													{#if citation.accessed}. Accessed: {citation.accessed}{/if}
+												</div>
+												<div class="citation-point">
+													<strong>Supporting:</strong>
+													{citation.pointSupported}
+												</div>
+												<div class="citation-quote">
+													<strong>Quote:</strong> "{citation.relevantQuote}"
+												</div>
+												<div class="citation-url">
+													<a href={citation.url} target="_blank" rel="noopener">{citation.url}</a>
+												</div>
+											</div>
+											<button
+												type="button"
+												class="remove-citation"
+												onclick={() => removeCitation(citation.id)}>×</button
+											>
+										</div>
+									{/each}
+								</div>
+							{/if}
 
-		<div class="autosave-indicator" aria-live="polite">
-			{#if currentVersionId && lastSavedAt}
-				Draft saved {new Date(lastSavedAt).toLocaleTimeString()}
-			{:else if currentVersionId}
-				Draft created
-			{/if}
-		</div>
-
-		{#if publishError}
-			<div class="error-message">
-				{publishError}
-			</div>
-		{/if}
-
-		{#if goodFaithError}
-			<div class="error-message">Good Faith Analysis Error: {goodFaithError}</div>
-		{/if}
-
-		{#if goodFaithTesting}
-			<div class="analysis-status">
-				<div class="analysis-loading">🔄 Analyzing content for good faith...</div>
-			</div>
-		{/if}
-
-		{#if goodFaithResult}
-			<div class="analysis-results">
-				<h3>Good Faith Analysis</h3>
-				<div class="score-display">
-					<div class="score-value {goodFaithResult.good_faith_label}">
-						{(goodFaithResult.good_faith_score * 100).toFixed(0)}%
+							<!-- Citation Form -->
+							{#if showCitationForm}
+								<CitationForm onAdd={addCitation} onCancel={() => (showCitationForm = false)} />
+							{/if}
+						</div>
 					</div>
-					<div class="score-label">{goodFaithResult.good_faith_label}</div>
-				</div>
-				{#if goodFaithResult.rationale}
-					<div class="analysis-feedback">
-						<strong>Feedback:</strong> {goodFaithResult.rationale}
-					</div>
-				{/if}
-				{#if goodFaithResult.claims && goodFaithResult.claims.length > 0}
-					<div class="claims-analysis">
-						<strong>Claims detected:</strong>
-						<ul>
-							{#each goodFaithResult.claims as claimObj}
-								<li>{claimObj.claim}</li>
+
+					<!-- Style Validation -->
+					{#if !styleValidation.isValid}
+						<div class="style-validation-errors">
+							{#each styleValidation.issues as issue}
+								<div class="validation-issue">{issue}</div>
 							{/each}
-						</ul>
+						</div>
+					{/if}
+				</div>
+
+				<div class="autosave-indicator" aria-live="polite">
+					{#if currentVersionId && lastSavedAt}
+						Draft saved {new Date(lastSavedAt).toLocaleTimeString()}
+					{:else if currentVersionId}
+						Draft created
+					{/if}
+				</div>
+
+				{#if publishError}
+					<div class="error">
+						{publishError}
 					</div>
 				{/if}
-			</div>
-		{/if}
 
-		<div class="form-actions">
-			<button class="btn-primary" type="submit" disabled={!canPublish}>
-				{publishing ? 'Publishing…' : 'Publish Discussion'}
-			</button>
-			<button type="button" class="btn-secondary" onclick={() => goto('/')}>Cancel</button>
+				{#if goodFaithError}
+					<div class="error">Good Faith Analysis Error: {goodFaithError}</div>
+				{/if}
+
+				{#if goodFaithTesting}
+					<div class="analysis-status">
+						<div class="analysis-loading">🔄 Analyzing content for good faith...</div>
+					</div>
+				{/if}
+
+				{#if goodFaithResult}
+					<div class="analysis-results">
+						<h3>Good Faith Analysis</h3>
+						<div class="score-display">
+							<div class="score-value {goodFaithResult.good_faith_label}">
+								{(goodFaithResult.good_faith_score * 100).toFixed(0)}%
+							</div>
+							<div class="score-label">{goodFaithResult.good_faith_label}</div>
+						</div>
+						{#if goodFaithResult.rationale}
+							<div class="analysis-feedback">
+								<strong>Feedback:</strong>
+								{goodFaithResult.rationale}
+							</div>
+						{/if}
+						{#if goodFaithResult.claims && goodFaithResult.claims.length > 0}
+							<div class="claims-analysis">
+								<strong>Claims detected:</strong>
+								<ul>
+									{#each goodFaithResult.claims as claimObj}
+										<li>{claimObj.claim}</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				<div class="form-actions">
+					<button class="btn-primary" type="submit" disabled={!canPublish}>
+						{publishing ? 'Publishing…' : 'Publish Discussion'}
+					</button>
+					<button type="button" class="btn-secondary" onclick={() => goto('/')}>Cancel</button>
+				</div>
+			</form>
 		</div>
-	</form>
 	</div>
 </div>
 
@@ -620,7 +628,11 @@
 	.gradient-3 {
 		width: 250px;
 		height: 250px;
-		background: radial-gradient(circle, color-mix(in srgb, var(--color-primary) 70%, var(--color-accent)), transparent);
+		background: radial-gradient(
+			circle,
+			color-mix(in srgb, var(--color-primary) 70%, var(--color-accent)),
+			transparent
+		);
 		top: 50%;
 		left: 50%;
 		transform: translate(-50%, -50%);
@@ -628,9 +640,16 @@
 	}
 
 	@keyframes float {
-		0%, 100% { transform: translateY(0px) rotate(0deg); }
-		33% { transform: translateY(-30px) rotate(120deg); }
-		66% { transform: translateY(15px) rotate(240deg); }
+		0%,
+		100% {
+			transform: translateY(0px) rotate(0deg);
+		}
+		33% {
+			transform: translateY(-30px) rotate(120deg);
+		}
+		66% {
+			transform: translateY(15px) rotate(240deg);
+		}
 	}
 
 	/* Glass morphism effects */
@@ -654,7 +673,12 @@
 		left: 0;
 		right: 0;
 		height: 1px;
-		background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-border) 50%, transparent), transparent);
+		background: linear-gradient(
+			90deg,
+			transparent,
+			color-mix(in srgb, var(--color-border) 50%, transparent),
+			transparent
+		);
 	}
 
 	.glass-card:hover {
@@ -747,70 +771,11 @@
 		font-weight: 500;
 	}
 
-	/* Buttons */
-	.btn-primary {
-		background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-		color: #ffffff;
-		border: none;
-		padding: 1rem 2rem;
-		border-radius: 16px;
-		font-weight: 600;
-		font-size: 1rem;
-		cursor: pointer;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		box-shadow: 0 4px 16px color-mix(in srgb, var(--color-primary) 20%, transparent);
-		position: relative;
-		overflow: hidden;
-	}
-
-	:global([data-theme="dark"]) .btn-primary {
-		color: #000000;
-		text-shadow: 0 1px 2px rgba(255, 255, 255, 0.1);
-	}
-
-	.btn-primary::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: -100%;
-		width: 100%;
-		height: 100%;
-		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-		transition: left 0.5s;
-	}
-
-	.btn-primary:hover::before {
-		left: 100%;
-	}
-
-	.btn-primary:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 8px 24px color-mix(in srgb, var(--color-primary) 30%, transparent);
-	}
-
-	.btn-primary:disabled {
+	/* Custom disabled state */
+	.btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 		transform: none;
-	}
-
-	.btn-secondary {
-		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-		backdrop-filter: blur(10px);
-		color: var(--color-text-primary);
-		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		padding: 1rem 2rem;
-		border-radius: 16px;
-		font-weight: 600;
-		font-size: 1rem;
-		cursor: pointer;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-	}
-
-	.btn-secondary:hover {
-		background: color-mix(in srgb, var(--color-surface) 80%, transparent);
-		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
-		transform: translateY(-1px);
 	}
 
 	.form-actions {
@@ -818,16 +783,6 @@
 		gap: 1rem;
 		justify-content: flex-start;
 		margin-top: 1rem;
-	}
-
-	.error-message {
-		background: color-mix(in srgb, #ef4444 15%, transparent);
-		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
-		color: #ef4444;
-		padding: 1rem;
-		border-radius: 16px;
-		font-weight: 500;
-		backdrop-filter: blur(10px);
 	}
 
 	/* Writing Info and Citation Reminder */
@@ -875,7 +830,8 @@
 	}
 
 	.citation-reminder.active {
-		background: linear-gradient(135deg,
+		background: linear-gradient(
+			135deg,
 			color-mix(in srgb, #f59e0b 20%, transparent),
 			color-mix(in srgb, #f59e0b 10%, transparent)
 		);
@@ -885,7 +841,7 @@
 
 	.citation-reminder .reminder-icon {
 		font-size: 1.5rem;
-		filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+		filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
 	}
 
 	.citation-reminder .reminder-text {
@@ -911,7 +867,8 @@
 	.analysis-status {
 		padding: 1rem 1.5rem;
 		border-radius: 16px;
-		background: linear-gradient(135deg,
+		background: linear-gradient(
+			135deg,
 			color-mix(in srgb, var(--color-primary) 15%, transparent),
 			color-mix(in srgb, var(--color-accent) 10%, transparent)
 		);
@@ -931,7 +888,8 @@
 	.analysis-results {
 		padding: 1.5rem;
 		border-radius: 16px;
-		background: linear-gradient(135deg,
+		background: linear-gradient(
+			135deg,
 			color-mix(in srgb, var(--color-surface) 50%, transparent),
 			color-mix(in srgb, var(--color-surface-alt) 30%, transparent)
 		);
@@ -1024,26 +982,24 @@
 	}
 
 	.btn-add-citation-inline {
-		background: linear-gradient(135deg, #f59e0b, #d97706);
+		background: var(--color-primary);
 		color: white;
 		border: none;
 		padding: 0.75rem 1.5rem;
-		border-radius: 12px;
-		font-size: 0.9rem;
-		font-weight: 600;
+		border-radius: 6px;
+		font-size: 0.875rem;
+		font-weight: 500;
 		cursor: pointer;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		transition: all 0.2s ease;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		gap: 0.5rem;
-		box-shadow: 0 4px 12px color-mix(in srgb, #f59e0b 20%, transparent);
+		text-decoration: none;
 	}
 
 	.btn-add-citation-inline:hover {
-		background: linear-gradient(135deg, #d97706, #b45309);
-		transform: translateY(-1px);
-		box-shadow: 0 6px 16px color-mix(in srgb, #f59e0b 25%, transparent);
+		background: color-mix(in srgb, var(--color-primary) 90%, black);
 	}
 
 	@media (max-width: 640px) {
@@ -1081,12 +1037,11 @@
 
 	/* Citations Section */
 	.citations-section {
-		background: color-mix(in srgb, var(--color-surface) 50%, transparent);
-		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 20px;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
 		padding: 1.5rem;
-		backdrop-filter: blur(15px);
-		box-shadow: 0 4px 16px color-mix(in srgb, var(--color-text-primary) 3%, transparent);
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 	}
 
 	.citations-header {
@@ -1098,9 +1053,11 @@
 
 	.citations-header h3 {
 		margin: 0;
-		font-size: 1.2rem;
+		font-size: 1.1rem;
 		font-weight: 600;
 		color: var(--color-text-primary);
+		font-family: var(--font-family-display);
+		letter-spacing: -0.01em;
 	}
 
 	.citations-list {
@@ -1110,20 +1067,17 @@
 	}
 
 	.citation-item {
-		background: color-mix(in srgb, var(--color-surface) 70%, transparent);
-		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
-		border-radius: 16px;
-		padding: 1.5rem;
+		background: var(--color-surface-alt);
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		padding: 1.25rem;
 		position: relative;
-		backdrop-filter: blur(10px);
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		transition: box-shadow 0.2s ease;
+		border-left: 3px solid var(--color-primary);
 	}
 
 	.citation-item:hover {
-		background: color-mix(in srgb, var(--color-surface) 80%, transparent);
-		border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
-		transform: translateY(-1px);
-		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 5%, transparent);
+		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 	}
 
 	.citation-content {
@@ -1154,12 +1108,14 @@
 
 	.citation-quote {
 		font-style: italic;
-		padding: 0.75rem;
+		padding: 0.75rem 1rem;
 		margin: 0.5rem 0;
-		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
-		border-left: 4px solid var(--color-primary);
-		border-radius: 0 12px 12px 0;
-		backdrop-filter: blur(5px);
+		background: var(--color-surface);
+		border-left: 3px solid var(--color-primary);
+		border-radius: 0 4px 4px 0;
+		font-family: var(--font-family-serif);
+		color: var(--color-text-secondary);
+		line-height: 1.6;
 	}
 
 	.citation-url {
@@ -1183,26 +1139,25 @@
 		position: absolute;
 		top: 1rem;
 		right: 1rem;
-		background: linear-gradient(135deg, #ef4444, #dc2626);
-		color: white;
-		border: none;
-		border-radius: 50%;
+		background: var(--color-surface);
+		color: var(--color-text-secondary);
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
 		width: 32px;
 		height: 32px;
-		font-size: 1.1rem;
+		font-size: 1rem;
 		line-height: 1;
 		cursor: pointer;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		box-shadow: 0 2px 8px color-mix(in srgb, #ef4444 25%, transparent);
+		transition: all 0.2s ease;
 	}
 
 	.remove-citation:hover {
-		background: linear-gradient(135deg, #dc2626, #b91c1c);
-		transform: translateY(-1px);
-		box-shadow: 0 4px 12px color-mix(in srgb, #ef4444 30%, transparent);
+		background: var(--color-danger);
+		color: white;
+		border-color: var(--color-danger);
 	}
 
 	/* Mobile responsiveness */

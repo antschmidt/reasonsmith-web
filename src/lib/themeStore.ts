@@ -7,14 +7,14 @@ const storedTheme = isBrowser ? localStorage.getItem('theme') : 'dark';
 export const theme = writable(storedTheme);
 
 export const toggleTheme = () => {
-  theme.update(currentTheme => {
-    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-    if (isBrowser) {
-      localStorage.setItem('theme', newTheme);
-      document.documentElement.setAttribute('data-theme', newTheme);
-    }
-    return newTheme;
-  });
+	theme.update((currentTheme) => {
+		const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+		if (isBrowser) {
+			localStorage.setItem('theme', newTheme);
+			document.documentElement.setAttribute('data-theme', newTheme);
+		}
+		return newTheme;
+	});
 };
 
 // Theme initialization is now handled in +layout.svelte

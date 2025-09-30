@@ -5,21 +5,25 @@ This guide explains how to complete the Neo4j citation tracking integration for 
 ## ✅ What's Already Implemented
 
 ### 1. Neo4j Client & Data Models
+
 - **File**: `src/lib/neo4jClient.ts`
 - **Features**: Connection management, citation nodes, discussion nodes, relationship creation
 - **Services**: `CitationGraphService` with methods for upserting data and querying relationships
 
 ### 2. API Endpoint
+
 - **File**: `src/routes/api/syncCitations/+server.ts`
 - **POST**: Syncs discussion citations to Neo4j
 - **GET**: Retrieves citation networks and related discussions
 
 ### 3. Frontend Integration
+
 - **Citation Sync**: Automatically syncs citations when discussions are published
 - **Citation Network Component**: `src/lib/components/CitationNetwork.svelte`
 - **Import Added**: Component imported in discussion details page
 
 ### 4. Environment Configuration
+
 - Neo4j connection variables added to `.env`
 
 ## 🛠️ Setup Instructions
@@ -27,6 +31,7 @@ This guide explains how to complete the Neo4j citation tracking integration for 
 ### Step 1: Install Neo4j
 
 **Option A: Neo4j Desktop (Recommended for Development)**
+
 1. Download [Neo4j Desktop](https://neo4j.com/download/)
 2. Create a new project
 3. Add a local database
@@ -34,6 +39,7 @@ This guide explains how to complete the Neo4j citation tracking integration for 
 5. Default connection: `bolt://localhost:7687`
 
 **Option B: Neo4j Aura (Cloud)**
+
 1. Sign up at [Neo4j Aura](https://neo4j.com/cloud/aura/)
 2. Create a free tier database
 3. Note the connection URI (starts with `neo4j+s://`)
@@ -57,7 +63,7 @@ In `src/routes/discussions/[id]/+page.svelte`, add the component after the discu
 ```svelte
 <!-- Add this somewhere in the main discussion display area -->
 {#if discussion?.id}
-  <CitationNetwork discussionId={discussion.id} showRelated={true} />
+	<CitationNetwork discussionId={discussion.id} showRelated={true} />
 {/if}
 ```
 
@@ -77,18 +83,21 @@ CREATE INDEX post_id_index FOR (p:Post) ON (p.id);
 ## 🧪 Testing the Integration
 
 ### 1. Create a Discussion with Citations
+
 1. Start your development server: `pnpm dev`
 2. Create a new discussion with citations
 3. Publish the discussion (must pass good faith check)
 4. Check browser console for Neo4j sync logs
 
 ### 2. View Citation Network
+
 1. Navigate to a published discussion
 2. Look for the "Citation Network" section
 3. Should display citations with relationship info
 4. May show "Related Discussions" if other discussions cite similar sources
 
 ### 3. Debug Neo4j Connection
+
 ```bash
 # Check if Neo4j is running
 curl -I http://localhost:7474  # Neo4j Browser interface
@@ -100,17 +109,20 @@ curl "http://localhost:5173/api/syncCitations?discussionId=some-id"
 ## 📊 Graph Data Model
 
 ### Nodes
+
 - **Citation**: External sources (academic, news, web, internal)
 - **Discussion**: Main discussion threads
 - **Post**: Individual comments/replies
 
 ### Relationships
+
 - **CITES**: Discussion/Post → Citation
 - **REFERENCES**: Discussion/Post → Discussion/Post (internal references)
 
 ### Example Queries
 
 **Find discussions citing similar sources:**
+
 ```cypher
 MATCH (d1:Discussion)-[:CITES]->(c:Citation)<-[:CITES]-(d2:Discussion)
 WHERE d1.id <> d2.id
@@ -119,6 +131,7 @@ ORDER BY sharedCitations DESC
 ```
 
 **Citation network for a discussion:**
+
 ```cypher
 MATCH (d:Discussion {id: "discussion-id"})-[r:CITES]->(c:Citation)
 RETURN d, r, c
@@ -127,16 +140,19 @@ RETURN d, r, c
 ## 🔧 Advanced Features (Future)
 
 ### 1. Citation Quality Scoring
+
 - Add citation reliability scores based on source type
 - Track citation usage patterns
 - Implement citation recommendation system
 
 ### 2. Argument Structure Mapping
+
 - Model logical relationships between claims
 - Track supporting vs. contradicting evidence
 - Build argument graphs
 
 ### 3. User Expertise Networks
+
 - Track user citation patterns
 - Identify domain experts
 - Build knowledge networks
@@ -146,16 +162,19 @@ RETURN d, r, c
 ### Common Issues
 
 **1. "Failed to sync citations to Neo4j"**
+
 - Check Neo4j is running: `systemctl status neo4j` or Neo4j Desktop
 - Verify connection URI and credentials in `.env`
 - Check firewall settings (port 7687)
 
 **2. "CitationNetwork component not displaying"**
+
 - Ensure component is placed in the correct location in the template
 - Check browser console for JavaScript errors
 - Verify discussion has citations to display
 
 **3. "No related discussions found"**
+
 - This is normal for new/unique discussions
 - Related discussions only appear when multiple discussions cite the same sources
 

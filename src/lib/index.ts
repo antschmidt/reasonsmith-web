@@ -1,7 +1,10 @@
 // place files you want to import through the `$lib` alias in this folder.
 export * from './autosaveDraft';
 // Good Faith scoring client helper
-export async function scoreGoodFaithRemote(nhost: any, params: { content: string; postId?: string; persist?: boolean; approveIf?: number }) {
+export async function scoreGoodFaithRemote(
+	nhost: any,
+	params: { content: string; postId?: string; persist?: boolean; approveIf?: number }
+) {
 	const payload: Record<string, any> = { content: params.content };
 	if (params.postId) payload.post_id = params.postId;
 	if (params.persist) payload.persist = true;
@@ -12,6 +15,14 @@ export async function scoreGoodFaithRemote(nhost: any, params: { content: string
 }
 
 // Atomic publish helper: score + approve if threshold met
-export async function atomicScoreAndPublish(nhost: any, opts: { postId: string; content: string; threshold: number }) {
-	return scoreGoodFaithRemote(nhost, { content: opts.content, postId: opts.postId, persist: true, approveIf: opts.threshold });
+export async function atomicScoreAndPublish(
+	nhost: any,
+	opts: { postId: string; content: string; threshold: number }
+) {
+	return scoreGoodFaithRemote(nhost, {
+		content: opts.content,
+		postId: opts.postId,
+		persist: true,
+		approveIf: opts.threshold
+	});
 }

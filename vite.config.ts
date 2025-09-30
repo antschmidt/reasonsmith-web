@@ -28,11 +28,8 @@ export default defineConfig({
 				}
 			}
 		]
+	},
+	server: {
+		allowedHosts: ['slarti.tonyschmidt.io']
 	}
-	,
-  server: {
-    allowedHosts: [
-      'slarti.tonyschmidt.io'
-    ]
-  }
 });
