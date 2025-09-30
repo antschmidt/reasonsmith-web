@@ -153,8 +153,8 @@
 		}
 	};
 
-	let activeItem: string | null = null;
-	let activeKind: 'fallacy' | 'cultish' | null = null;
+	let activeItem = $state<string | null>(null);
+	let activeKind = $state<'fallacy' | 'cultish' | null>(null);
 
 	let currentItem = $derived(
 		activeItem && activeKind ? (activeKind === 'fallacy' ? fallacies : cultish)[activeItem] : null
@@ -265,8 +265,8 @@
 						<button
 							type="button"
 							class="fallacy-chip"
-							on:click={() => openItem('fallacy', f)}
-							on:keydown={(e) => onKey(e, 'fallacy', f)}
+							onclick={() => openItem('fallacy', f)}
+							onkeydown={(e) => onKey(e, 'fallacy', f)}
 							tabindex="0"
 							aria-haspopup="dialog">{f}</button
 						>
@@ -280,8 +280,8 @@
 						<button
 							type="button"
 							class="fallacy-chip cultish"
-							on:click={() => openItem('cultish', c)}
-							on:keydown={(e) => onKey(e, 'cultish', c)}
+							onclick={() => openItem('cultish', c)}
+							onkeydown={(e) => onKey(e, 'cultish', c)}
 							tabindex="0"
 							aria-haspopup="dialog">{c}</button
 						>
@@ -383,7 +383,7 @@ If you still deny this, you're willfully discarding multi-domain convergent evid
 				<div class="modal" role="document">
 					<header class="modal-header">
 						<h2 id="item-title" class="modal-title">{activeItem}</h2>
-						<button class="close-btn" type="button" aria-label="Close" on:click={closeModal}
+						<button class="close-btn" type="button" aria-label="Close" onclick={closeModal}
 							>×</button
 						>
 					</header>
@@ -402,7 +402,7 @@ If you still deny this, you're willfully discarding multi-domain convergent evid
 						{/if}
 					</div>
 					<footer class="modal-footer">
-						<button type="button" class="btn-primary" on:click={closeModal}>Got it</button>
+						<button type="button" class="btn-primary" onclick={closeModal}>Got it</button>
 					</footer>
 				</div>
 			</div>

@@ -12,6 +12,7 @@ const CONTRIBUTOR_FIELDS = gql`
 		analysis_limit
 		analysis_count_used
 		analysis_count_reset_at
+		avatar_url
 	}
 `;
 
@@ -450,10 +451,14 @@ export const UPDATE_DISCUSSION_VERSION_GOOD_FAITH = gql`
 	${DISCUSSION_VERSION_FIELDS}
 `;
 
-
 // Mutation to create a new post (as a draft) - fallback version for pre-migration compatibility
 export const CREATE_POST_DRAFT = gql`
-	mutation CreatePostDraft($discussionId: uuid!, $authorId: uuid!, $draftContent: String!, $contextVersionId: uuid) {
+	mutation CreatePostDraft(
+		$discussionId: uuid!
+		$authorId: uuid!
+		$draftContent: String!
+		$contextVersionId: uuid
+	) {
 		insert_post_one(
 			object: {
 				discussion_id: $discussionId
@@ -811,7 +816,6 @@ export const DELETE_DISCUSSION = gql`
 	}
 `;
 
-
 // Mutation to update good faith analysis for a post
 export const UPDATE_POST_GOOD_FAITH = gql`
 	mutation UpdatePostGoodFaith(
@@ -918,6 +922,16 @@ export const RESET_ANALYSIS_USAGE = gql`
 export const UPDATE_CONTRIBUTOR_ROLE = gql`
 	mutation UpdateContributorRole($contributorId: uuid!, $role: String!) {
 		update_contributor_by_pk(pk_columns: { id: $contributorId }, _set: { role: $role }) {
+			...ContributorFields
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
+`;
+
+// Mutation to update contributor avatar
+export const UPDATE_CONTRIBUTOR_AVATAR = gql`
+	mutation UpdateContributorAvatar($contributorId: uuid!, $avatarUrl: String) {
+		update_contributor_by_pk(pk_columns: { id: $contributorId }, _set: { avatar_url: $avatarUrl }) {
 			...ContributorFields
 		}
 	}

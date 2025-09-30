@@ -723,7 +723,6 @@
 				return;
 			}
 
-
 			const result = await nhost.graphql.request(
 				`
 				query GetDiscussionCitations($discussion_version_id: uuid!) {
@@ -1010,7 +1009,8 @@
 			}
 
 			// Check if there's already a draft for this discussion through the discussion relationship
-			const existingDraftCheck = await nhost.graphql.request(`
+			const existingDraftCheck = await nhost.graphql.request(
+				`
 				query CheckExistingDraft($discussionId: uuid!, $userId: uuid!) {
 					discussion(where: { id: { _eq: $discussionId } }) {
 						discussion_versions(
@@ -1025,16 +1025,19 @@
 						}
 					}
 				}
-			`, {
-				discussionId: discussion.id,
-				userId: user.id
-			});
+			`,
+				{
+					discussionId: discussion.id,
+					userId: user.id
+				}
+			);
 
 			const existingDraft = existingDraftCheck.data?.discussion?.[0]?.discussion_versions?.[0];
 
 			if (existingDraft) {
 				// Update existing draft instead of creating new one
-				const updateResult = await nhost.graphql.request(`
+				const updateResult = await nhost.graphql.request(
+					`
 					mutation UpdateExistingDraft($draftId: uuid!, $title: String!, $description: String!) {
 						update_discussion_version_by_pk(
 							pk_columns: { id: $draftId }
@@ -1054,11 +1057,13 @@
 							good_faith_last_evaluated
 						}
 					}
-				`, {
-					draftId: existingDraft.id,
-					title: editTitle,
-					description: editDescription
-				});
+				`,
+					{
+						draftId: existingDraft.id,
+						title: editTitle,
+						description: editDescription
+					}
+				);
 
 				if (updateResult.error) {
 					console.error('Failed to update existing draft:', updateResult.error);
@@ -1080,7 +1085,8 @@
 			}
 
 			// First, get the highest version number for this discussion
-			const versionQuery = await nhost.graphql.request(`
+			const versionQuery = await nhost.graphql.request(
+				`
 				query GetMaxVersionNumber($discussionId: uuid!) {
 					discussion(where: { id: { _eq: $discussionId } }) {
 						discussion_versions(
@@ -1091,15 +1097,19 @@
 						}
 					}
 				}
-			`, {
-				discussionId: discussion.id
-			});
+			`,
+				{
+					discussionId: discussion.id
+				}
+			);
 
-			const maxVersion = versionQuery.data?.discussion?.[0]?.discussion_versions?.[0]?.version_number || 0;
+			const maxVersion =
+				versionQuery.data?.discussion?.[0]?.discussion_versions?.[0]?.version_number || 0;
 			const nextVersionNumber = maxVersion + 1;
 
 			// Create a draft version in the database
-			const result = await nhost.graphql.request(`
+			const result = await nhost.graphql.request(
+				`
 				mutation CreateDiscussionDraft($discussionId: uuid!, $userId: uuid!, $title: String!, $description: String!, $versionNumber: Int!) {
 					insert_discussion_version_one(object: {
 						discussion_id: $discussionId
@@ -1120,13 +1130,15 @@
 						good_faith_last_evaluated
 					}
 				}
-			`, {
-				discussionId: discussion.id,
-				userId: user.id,
-				title: editTitle,
-				description: editDescription,
-				versionNumber: nextVersionNumber
-			});
+			`,
+				{
+					discussionId: discussion.id,
+					userId: user.id,
+					title: editTitle,
+					description: editDescription,
+					versionNumber: nextVersionNumber
+				}
+			);
 
 			if ((result as any).error) {
 				console.error('Failed to create database draft:', (result as any).error);
@@ -1146,7 +1158,6 @@
 				hasUnsavedChanges = true;
 				console.log('Created database draft:', newDraft.id);
 			}
-
 		} catch (error) {
 			console.error('Error creating database draft:', error);
 			editError = 'Failed to create draft';
@@ -1263,7 +1274,6 @@
 	async function publishDraftChanges() {
 		if (!editing || !discussion || !hasUnsavedChanges) return;
 
-
 		publishLoading = true;
 		editError = null;
 
@@ -1300,7 +1310,8 @@
 			}
 
 			// Check for comments on current published version and handle version management
-			const commentsCheck = await nhost.graphql.request(`
+			const commentsCheck = await nhost.graphql.request(
+				`
 				query CheckVersionComments($discussionId: uuid!) {
 					discussion(where: {id: {_eq: $discussionId}}) {
 						discussion_versions(where: {version_type: {_eq: "published"}}) {
@@ -1317,7 +1328,9 @@
 						}
 					}
 				}
-			`, { discussionId });
+			`,
+				{ discussionId }
+			);
 
 			const currentPublished = commentsCheck.data?.discussion?.[0]?.discussion_versions?.[0];
 			const commentsData = commentsCheck.data?.post_aggregate;
@@ -1333,7 +1346,8 @@
 			// If there's a published version, archive it (always archive to avoid permissions issues)
 			if (currentPublished) {
 				console.log('Found existing published version, archiving it...');
-				const archiveResult = await nhost.graphql.request(`
+				const archiveResult = await nhost.graphql.request(
+					`
 					mutation ArchiveVersion($versionId: uuid!) {
 						update_discussion_version_by_pk(
 							pk_columns: { id: $versionId }
@@ -1343,7 +1357,9 @@
 							version_type
 						}
 					}
-				`, { versionId: currentPublished.id });
+				`,
+					{ versionId: currentPublished.id }
+				);
 
 				console.log('Archive result:', archiveResult);
 				if (archiveResult.error) {
@@ -1351,7 +1367,9 @@
 				}
 				if (!archiveResult.data?.update_discussion_version_by_pk) {
 					console.error('Archive operation failed. Full result:', archiveResult);
-					throw new Error(`Failed to archive existing published version: ${JSON.stringify(archiveResult.error || 'No data returned')}`);
+					throw new Error(
+						`Failed to archive existing published version: ${JSON.stringify(archiveResult.error || 'No data returned')}`
+					);
 				}
 				console.log('Successfully archived published version');
 			}
@@ -1528,7 +1546,8 @@
 		if (!draftVersion) return;
 
 		try {
-			const result = await nhost.graphql.request(`
+			const result = await nhost.graphql.request(
+				`
 				mutation UpdateDraft($draftId: uuid!, $title: String!, $description: String!) {
 					update_discussion_version_by_pk(
 						pk_columns: { id: $draftId }
@@ -1542,11 +1561,13 @@
 						description
 					}
 				}
-			`, {
-				draftId: draftVersion.id,
-				title: editTitle.trim(),
-				description: editDescription.trim()
-			});
+			`,
+				{
+					draftId: draftVersion.id,
+					title: editTitle.trim(),
+					description: editDescription.trim()
+				}
+			);
 
 			if (result.error) {
 				throw new Error('Failed to save draft to database');
@@ -1557,7 +1578,6 @@
 			draftVersion.description = editDescription.trim();
 			draftLastSavedAt = Date.now();
 			hasUnsavedChanges = true;
-
 		} catch (error) {
 			console.error('Error saving draft to database:', error);
 			// Fall back to localStorage if database save fails
@@ -2472,57 +2492,86 @@
 		<header class="discussion-header">
 			<h1 class="discussion-title">{getDiscussionTitle()}</h1>
 			<p class="discussion-meta">
-        <span>
-				Started by {#if discussion.is_anonymous}
-					<span class="anonymous-author">Anonymous</span>
-				{:else}
-					<a href={`/u/${discussion.contributor.handle || discussion.contributor.id}`}
-						>{displayName(discussion.contributor.display_name)}</a
-					>
-				{/if} on {new Date(discussion.created_at).toLocaleDateString()}
-        </span>
-				{#if user && user.id === discussion.contributor.id}
-        <span class="discussion-actions">
-					<button class="edit-btn" onclick={startEdit} title="Edit discussion">
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-							<path d="m18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-						</svg>
-					</button>
-					{#if discussion.is_anonymous}
-						<button
-							class="reveal-identity-btn"
-							onclick={handleUnanonymizeDiscussion}
-							title="Reveal your identity"
-						>
-							Reveal Identity
-						</button>
+				<span>
+					Started by {#if discussion.is_anonymous}
+						<span class="anonymous-author">Anonymous</span>
 					{:else}
-						<button
-							class="delete-discussion-btn"
-							onclick={discussionCanDelete ? handleDeleteDiscussion : handleAnonymizeDiscussion}
-							title={discussionCanDelete
-								? 'Delete discussion'
-								: 'Make anonymous - others have replied'}
+						<a href={`/u/${discussion.contributor.handle || discussion.contributor.id}`}
+							>{displayName(discussion.contributor.display_name)}</a
 						>
-{#if discussionCanDelete}
-								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-									<polyline points="3,6 5,6 21,6"/>
-									<path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
-									<line x1="10" y1="11" x2="10" y2="17"/>
-									<line x1="14" y1="11" x2="14" y2="17"/>
-								</svg>
-							{:else}
-								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-									<path d="M2 3s3-1 10-1 10 1 10 1v18s-3-1-10-1-10 1-10 1V3z"/>
-									<path d="M8 12h4"/>
-									<path d="M8 16h4"/>
-									<path d="M12 8v8"/>
-								</svg>
-							{/if}
+					{/if} on {new Date(discussion.created_at).toLocaleDateString()}
+				</span>
+				{#if user && user.id === discussion.contributor.id}
+					<span class="discussion-actions">
+						<button class="edit-btn" onclick={startEdit} title="Edit discussion">
+							<svg
+								width="16"
+								height="16"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+								<path d="m18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+							</svg>
 						</button>
-					{/if}
-          </span>
+						{#if discussion.is_anonymous}
+							<button
+								class="reveal-identity-btn"
+								onclick={handleUnanonymizeDiscussion}
+								title="Reveal your identity"
+							>
+								Reveal Identity
+							</button>
+						{:else}
+							<button
+								class="delete-discussion-btn"
+								onclick={discussionCanDelete ? handleDeleteDiscussion : handleAnonymizeDiscussion}
+								title={discussionCanDelete
+									? 'Delete discussion'
+									: 'Make anonymous - others have replied'}
+							>
+								{#if discussionCanDelete}
+									<svg
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="#ef4444"
+										stroke-width="1.5"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									>
+										<polyline points="3,6 5,6 21,6" />
+										<path
+											d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"
+										/>
+										<line x1="10" y1="11" x2="10" y2="17" />
+										<line x1="14" y1="11" x2="14" y2="17" />
+									</svg>
+								{:else}
+									<svg
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="1.5"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									>
+										<path d="M2 3s3-1 10-1 10 1 10 1v18s-3-1-10-1-10 1-10 1V3z" />
+										<path d="M8 12h4" />
+										<path d="M8 16h4" />
+										<path d="M12 8v8" />
+									</svg>
+								{/if}
+							</button>
+						{/if}
+					</span>
 				{/if}
 			</p>
 			{#if editing}
@@ -2832,37 +2881,66 @@
 												type="button"
 												class="insert-ref-btn"
 												onclick={() => insertEditCitationReference(citation.id)}
-												title="Insert source reference at cursor">
-												<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-													<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-													<path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-												</svg>
-											</button
+												title="Insert source reference at cursor"
 											>
+												<svg
+													width="16"
+													height="16"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="1.5"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+												>
+													<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+													<path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+												</svg>
+											</button>
 											<button
 												type="button"
 												class="edit-btn"
 												onclick={() => startEditCitation(citation.id)}
-												title="Edit citation">
-												<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-													<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-													<path d="m18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-												</svg>
-											</button
+												title="Edit citation"
 											>
+												<svg
+													width="16"
+													height="16"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="1.5"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+												>
+													<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+													<path d="m18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+												</svg>
+											</button>
 											<button
 												type="button"
 												class="remove-btn"
 												onclick={() => removeEditCitation(citation.id)}
-												title="Remove citation">
-												<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-													<polyline points="3,6 5,6 21,6"/>
-													<path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
-													<line x1="10" y1="11" x2="10" y2="17"/>
-													<line x1="14" y1="11" x2="14" y2="17"/>
-												</svg>
-											</button
+												title="Remove citation"
 											>
+												<svg
+													width="16"
+													height="16"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="1.5"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+												>
+													<polyline points="3,6 5,6 21,6" />
+													<path
+														d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"
+													/>
+													<line x1="10" y1="11" x2="10" y2="17" />
+													<line x1="14" y1="11" x2="14" y2="17" />
+												</svg>
+											</button>
 										</div>
 									</div>
 								{/each}
@@ -2887,7 +2965,8 @@
 									<p>Click on a reference below to insert it at your cursor position:</p>
 									<div class="picker-references-list">
 										{#each allEditCitations as item, index}
-											<div
+											<button
+												type="button"
 												class="picker-reference-item"
 												onclick={() => {
 													insertEditCitationReference(item.id);
@@ -2898,7 +2977,7 @@
 												<div class="picker-citation-preview">
 													{@html formatChicagoCitation(item)}
 												</div>
-											</div>
+											</button>
 										{/each}
 									</div>
 								</div>
@@ -2975,10 +3054,10 @@
 									<div class="reference-item" id="citation-{index + 1}">
 										<details class="citation-details">
 											<summary>
-                        										<div class="chicago-citation">
-											<span class="citation-number">{index + 1}.</span>
-											{@html formatChicagoCitation(item)}
-										</div>
+												<div class="chicago-citation">
+													<span class="citation-number">{index + 1}.</span>
+													{@html formatChicagoCitation(item)}
+												</div>
 												<span class="summary-arrow">▶</span>
 												<span class="summary-text">Context</span>
 											</summary>
@@ -3586,7 +3665,8 @@
 									<p>Click on a reference below to insert it at your cursor position:</p>
 									<div class="picker-references-list">
 										{#each allCommentCitations as item, index}
-											<div
+											<button
+												type="button"
 												class="picker-reference-item"
 												onclick={() => {
 													insertCommentCitationReference(item.id);
@@ -3597,7 +3677,7 @@
 												<div class="picker-citation-preview">
 													{@html formatChicagoCitation(item)}
 												</div>
-											</div>
+											</button>
 										{/each}
 									</div>
 								</div>
@@ -3888,8 +3968,8 @@
 	}
 
 	.discussion-meta {
-    display: flex;
-    justify-content: space-between;
+		display: flex;
+		justify-content: space-between;
 		font-size: 0.875rem;
 		color: var(--color-text-secondary);
 		margin-bottom: 0;
@@ -3901,13 +3981,13 @@
 		font-weight: 600;
 	}
 
-  .discussion-actions {
-    display: flex;
-    flex-direction: row;
-    display: flex;
-    gap: 0.5rem;
-    width: fit-content;
-  }
+	.discussion-actions {
+		display: flex;
+		flex-direction: row;
+		display: flex;
+		gap: 0.5rem;
+		width: fit-content;
+	}
 
 	.anonymous-author {
 		color: var(--color-text-primary);
@@ -4346,6 +4426,11 @@
 		border-radius: var(--border-radius-sm);
 		cursor: pointer;
 		transition: background-color 0.2s;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		width: 100%;
 	}
 
 	.picker-reference-item:hover {
@@ -4973,13 +5058,9 @@
 		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 	}
 
-
 	.style-content {
 		flex: 1;
 	}
-
-
-
 
 	/* Citation Section */
 	.citation-section {
@@ -5537,7 +5618,6 @@
 		align-items: center;
 		margin-bottom: 0.5rem;
 	}
-
 
 	.good-faith-pill {
 		display: inline-flex;

@@ -624,7 +624,7 @@
 							rows="6"
 							bind:value={rawContent}
 							placeholder="Paste transcript excerpts, statements, or notes to analyze…"
-						/>
+						></textarea>
 						<div class="analysis-provider" role="group" aria-label="Choose analysis model">
 							<span class="provider-label">Model</span>
 							<label class={`provider-option ${analysisProvider === 'claude' ? 'is-active' : ''}`}>
@@ -683,7 +683,7 @@
 							rows="3"
 							bind:value={form.summary}
 							placeholder="Short context for the source material."
-						/>
+						></textarea>
 					</label>
 
 					<label>
@@ -692,7 +692,7 @@
 							rows="6"
 							bind:value={form.analysis}
 							placeholder="Key findings from the good-faith analysis."
-						/>
+						></textarea>
 					</label>
 
 					<label>

@@ -133,7 +133,6 @@ export function convertLegacyCitation(
 	legacy: LegacyCitation
 ): Omit<Citation, 'id' | 'created_at' | 'created_by'> {
 	return {
-		id: legacy.id,
 		title: legacy.title,
 		url: legacy.url,
 		author: legacy.author || null,

@@ -30,6 +30,7 @@
         bio
         website
         social_links
+        avatar_url
       }
       discussion(where: { created_by: { _eq: $id } }, order_by: { created_at: desc }) {
         id
@@ -65,6 +66,17 @@
 		const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n);
 		if (isEmail) return n.split('@')[0];
 		return n;
+	}
+
+	function getInitials(name: string): string {
+		if (!name) return '?';
+		return name
+			.trim()
+			.split(' ')
+			.map((n) => n[0])
+			.join('')
+			.slice(0, 2)
+			.toUpperCase();
 	}
 
 	function toTextSnippet(html: string, max = 160): string {
@@ -177,7 +189,7 @@
 			} catch {}
 			let resolved = userId;
 			if (byHandle) {
-				const RESOLVE = `query ($handle: String!) { contributor(where:{ handle:{ _eq: $handle } }, limit:1){ id display_name handle bio website social_links } }`;
+				const RESOLVE = `query ($handle: String!) { contributor(where:{ handle:{ _eq: $handle } }, limit:1){ id display_name handle bio website social_links avatar_url } }`;
 				const { data: d1, error: e1 } = await nhost.graphql.request(RESOLVE, { handle: userId });
 				if (e1) throw Array.isArray(e1) ? new Error(e1.map((e: any) => e.message).join('; ')) : e1;
 				const c = (d1 as any)?.contributor?.[0];
@@ -232,7 +244,18 @@
 		<p class="error">{error}</p>
 	{:else if contributor}
 		<header class="profile-header">
-			<h1>{displayName(contributor.display_name)}</h1>
+			<div class="profile-header-content">
+				<div class="profile-avatar">
+					{#if contributor.avatar_url}
+						<img src={contributor.avatar_url} alt="{displayName(contributor.display_name)} profile photo" />
+					{:else}
+						<div class="avatar-placeholder">
+							<span class="initials">{getInitials(displayName(contributor.display_name))}</span>
+						</div>
+					{/if}
+				</div>
+				<div class="profile-info">
+					<h1>{displayName(contributor.display_name)}</h1>
 			{#if contributor.bio}
 				<p class="bio">{contributor.bio}</p>
 			{/if}
@@ -262,6 +285,8 @@
 						{/if}
 					{/each}
 				{/if}
+			</div>
+				</div>
 			</div>
 		</header>
 
@@ -324,7 +349,11 @@
 				<ul class="list">
 					{#each discussions as d}
 						<li class="item discussion-title">
-							<a href={`/discussions/${d.id}`}>{d.current_version?.[0]?.title || d.draft_version?.[0]?.title || 'Untitled Discussion'}</a>
+							<a href={`/discussions/${d.id}`}
+								>{d.current_version?.[0]?.title ||
+									d.draft_version?.[0]?.title ||
+									'Untitled Discussion'}</a
+							>
 							<span class="meta">· {new Date(d.created_at).toLocaleString()}</span>
 						</li>
 						<hr />
@@ -358,6 +387,47 @@
 		margin: 2rem auto;
 		padding: 1rem;
 	}
+	.profile-header-content {
+		display: flex;
+		align-items: flex-start;
+		gap: 1.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.profile-avatar {
+		flex-shrink: 0;
+	}
+
+	.profile-avatar img {
+		width: 80px;
+		height: 80px;
+		border-radius: 50%;
+		object-fit: cover;
+		border: 3px solid var(--color-border);
+	}
+
+	.avatar-placeholder {
+		width: 80px;
+		height: 80px;
+		border-radius: 50%;
+		background: var(--color-surface-alt);
+		border: 3px solid var(--color-border);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.initials {
+		font-size: 1.5rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
+	}
+
+	.profile-info {
+		flex: 1;
+		min-width: 0;
+	}
+
 	.profile-header h1 {
 		margin: 0 0 0.25rem 0;
 	}
@@ -530,6 +600,23 @@
 	@media (max-width: 560px) {
 		.profile-public-container {
 			padding: 0.75rem;
+		}
+
+		.profile-header-content {
+			flex-direction: column;
+			align-items: center;
+			text-align: center;
+			gap: 1rem;
+		}
+
+		.profile-avatar img,
+		.avatar-placeholder {
+			width: 60px;
+			height: 60px;
+		}
+
+		.initials {
+			font-size: 1.25rem;
 		}
 		.stats-section {
 			padding: 1rem;

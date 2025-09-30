@@ -8,6 +8,7 @@
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = nhost.auth.getUser();
 	let hasAdminAccess = false;
+	let contributor = null;
 
 	function collectRoles(u) {
 		if (!u) return [];
@@ -23,9 +24,21 @@
 		return Array.from(roles);
 	}
 
+	function getNavInitials(name) {
+		if (!name) return '?';
+		return name
+			.trim()
+			.split(' ')
+			.map((n) => n[0])
+			.join('')
+			.slice(0, 2)
+			.toUpperCase();
+	}
+
 	async function checkAdminAccess() {
 		if (!user) {
 			hasAdminAccess = false;
+			contributor = null;
 			return;
 		}
 
@@ -35,17 +48,27 @@
 				query GetCurrentUserRole($userId: uuid!) {
 					contributor_by_pk(id: $userId) {
 						role
+						avatar_url
+						display_name
+						handle
 					}
 				}
 			`,
 				{ userId: user.id }
 			);
 
-			const currentUserRole = result.data?.contributor_by_pk?.role || 'user';
-			hasAdminAccess = ['admin', 'slartibartfast'].includes(currentUserRole);
+			const contributorData = result.data?.contributor_by_pk;
+			if (contributorData) {
+				contributor = contributorData;
+				hasAdminAccess = ['admin', 'slartibartfast'].includes(contributorData.role || 'user');
+			} else {
+				contributor = null;
+				hasAdminAccess = false;
+			}
 		} catch (err) {
 			console.error('Failed to get user role:', err);
 			hasAdminAccess = false;
+			contributor = null;
 		}
 	}
 
@@ -106,12 +129,20 @@
 					/></svg
 				>
 			</a>
-			<a href="/profile" class="nav-icon" aria-label="Profile">
-				<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-					<path
-						d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5z"
+			<a href="/profile" class="nav-profile" aria-label="Profile">
+				{#if contributor?.avatar_url}
+					<img
+						src={contributor.avatar_url}
+						alt="{contributor.display_name || 'Your'} profile photo"
+						class="nav-avatar"
 					/>
-				</svg>
+				{:else}
+					<div class="nav-avatar-placeholder">
+						<span class="nav-initials"
+							>{getNavInitials(contributor?.display_name || user?.email)}</span
+						>
+					</div>
+				{/if}
 			</a>
 		</div>
 	</nav>
@@ -241,5 +272,60 @@
 	}
 	.app-shell {
 		min-height: 100dvh;
+	}
+
+	/* Navigation Profile Avatar */
+	.nav-profile {
+		--_size: 42px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: var(--_size);
+		height: var(--_size);
+		border-radius: 50%;
+		background: var(--color-surface);
+		border: 2px solid var(--color-border);
+		text-decoration: none;
+		transition: all var(--transition-speed) ease;
+		overflow: hidden;
+	}
+
+	.nav-avatar,
+	.nav-avatar-placeholder {
+		width: 100%;
+		height: 100%;
+		border-radius: 50%;
+	}
+
+	.nav-avatar {
+		object-fit: cover;
+		display: block;
+	}
+
+	.nav-avatar-placeholder {
+		background: var(--color-surface-alt);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.nav-initials {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
+	}
+
+	.nav-profile:hover,
+	.nav-profile:focus {
+		border-color: var(--color-primary);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 20%, transparent);
+		outline: none;
+	}
+
+	@media (max-width: 560px) {
+		.nav-profile {
+			--_size: 40px;
+		}
 	}
 </style>

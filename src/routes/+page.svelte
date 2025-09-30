@@ -18,7 +18,6 @@
 		return undefined;
 	}
 
-
 	let user = $state(nhost.auth.getUser());
 	let themeValue = $state('light');
 	type PublicShowcaseItem = {
@@ -700,38 +699,6 @@
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 	}
 
-	.landing-footer {
-		padding: 3rem 0;
-		background: var(--color-surface);
-		border-top: 1px solid var(--color-border);
-		text-align: center;
-	}
-
-	.footer-title {
-		font-family: var(--font-family-display);
-		font-size: 1.125rem;
-		color: var(--color-text-primary);
-		margin-bottom: 1.5rem;
-	}
-
-	.footer-nav {
-		display: flex;
-		justify-content: center;
-		gap: 2rem;
-		flex-wrap: wrap;
-	}
-
-	.footer-nav a {
-		color: var(--color-text-secondary);
-		text-decoration: none;
-		font-size: 0.95rem;
-		transition: color var(--transition-speed) ease;
-	}
-
-	.footer-nav a:hover {
-		color: var(--color-link);
-	}
-
 	.login-page-wrapper {
 		position: fixed;
 		top: 0;
@@ -972,51 +939,6 @@
 		cursor: default;
 	}
 
-	.public-resources {
-		margin: 4rem auto 0;
-		max-width: 1200px;
-		width: 90%;
-		text-align: left;
-		padding: 3rem 2rem;
-		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
-		backdrop-filter: blur(20px);
-		border-radius: 30px;
-		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
-	}
-	.public-resources-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-		gap: 1rem;
-	}
-
-	.public-resources-list li {
-		background: color-mix(in srgb, var(--color-surface) 50%, transparent);
-		padding: 1.5rem;
-		border-radius: 16px;
-		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		transition: all 0.2s ease;
-	}
-
-	.public-resources-list li:hover {
-		background: color-mix(in srgb, var(--color-surface) 70%, transparent);
-		transform: translateY(-2px);
-		box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 15%, transparent);
-	}
-
-	.public-resources-list a {
-		color: var(--color-primary);
-		text-decoration: none;
-		font-size: 1rem;
-		font-weight: 500;
-		display: block;
-	}
-
-	.public-resources-list a:hover {
-		color: var(--color-accent);
-	}
 	/* Add bottom spacing to the hero */
 	.landing-hero {
 		margin-bottom: 4rem;
@@ -1028,18 +950,8 @@
 			min-height: 90vh;
 		}
 
-		.features-list {
-			grid-template-columns: 1fr;
-			gap: 1.5rem;
-		}
-
-		.features-list li {
-			padding: 1.5rem;
-		}
-
 		.landing-featured,
-		.showcase,
-		.public-resources {
+		.showcase {
 			margin: 2rem auto 0;
 			padding: 2rem 1rem;
 		}

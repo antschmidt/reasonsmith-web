@@ -105,7 +105,9 @@
 				created_at: p.created_at
 			}));
 			// Sort by combined rank and take top 10
-			slides = mapped.sort((a: typeof mapped[0], b: typeof mapped[0]) => rankScore(b) - rankScore(a)).slice(0, 10);
+			slides = mapped
+				.sort((a: (typeof mapped)[0], b: (typeof mapped)[0]) => rankScore(b) - rankScore(a))
+				.slice(0, 10);
 		} catch (e: any) {
 			const msg = e?.message || String(e);
 			if (/field\s+'?post'?\s+not\s+found\s+in\s+type/i.test(msg)) {
@@ -144,5 +146,3 @@
 
 	$: if (!loading && slides.length > 1) startTimer();
 </script>
-
-

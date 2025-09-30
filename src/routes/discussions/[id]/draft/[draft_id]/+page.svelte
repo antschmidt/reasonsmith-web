@@ -37,7 +37,8 @@
 
 			// Load both the discussion and the specific draft
 			const [discussionResult, draftResult] = await Promise.all([
-				nhost.graphql.request(`
+				nhost.graphql.request(
+					`
 					query GetDiscussion($discussionId: uuid!) {
 						discussion_by_pk(id: $discussionId) {
 							id
@@ -64,9 +65,12 @@
 							}
 						}
 					}
-				`, { discussionId }),
+				`,
+					{ discussionId }
+				),
 
-				nhost.graphql.request(`
+				nhost.graphql.request(
+					`
 					query GetDraft($draftId: uuid!) {
 						discussion_version_by_pk(id: $draftId) {
 							id
@@ -80,7 +84,9 @@
 							good_faith_last_evaluated
 						}
 					}
-				`, { draftId })
+				`,
+					{ draftId }
+				)
 			]);
 
 			if (discussionResult.error) {
@@ -116,7 +122,6 @@
 			// Initialize form
 			title = draft.title || '';
 			description = draft.description || '';
-
 		} catch (err: any) {
 			console.error('Error loading draft:', err);
 			error = err.message || 'Failed to load draft';
@@ -132,7 +137,8 @@
 			saving = true;
 			error = null;
 
-			const result = await nhost.graphql.request(`
+			const result = await nhost.graphql.request(
+				`
 				mutation UpdateDraft($draftId: uuid!, $title: String!, $description: String!) {
 					update_discussion_version_by_pk(
 						pk_columns: { id: $draftId }
@@ -146,11 +152,13 @@
 						description
 					}
 				}
-			`, {
-				draftId: draft.id,
-				title: title.trim(),
-				description: description.trim()
-			});
+			`,
+				{
+					draftId: draft.id,
+					title: title.trim(),
+					description: description.trim()
+				}
+			);
 
 			if (result.error) {
 				throw new Error('Failed to save draft');
@@ -159,7 +167,6 @@
 			// Update local state
 			draft.title = title.trim();
 			draft.description = description.trim();
-
 		} catch (err: any) {
 			console.error('Error saving draft:', err);
 			error = err.message || 'Failed to save draft';
@@ -179,7 +186,8 @@
 			await saveDraft();
 
 			// Step 1: Check if current published version has comments (posts)
-			const commentsCheck = await nhost.graphql.request(`
+			const commentsCheck = await nhost.graphql.request(
+				`
 				query CheckVersionComments($discussionId: uuid!) {
 					discussion_version(
 						where: {
@@ -204,9 +212,11 @@
 						}
 					}
 				}
-			`, {
-				discussionId: discussion.id
-			});
+			`,
+				{
+					discussionId: discussion.id
+				}
+			);
 
 			if (commentsCheck.error) {
 				console.error('Comments check GraphQL error:', commentsCheck.error);
@@ -224,7 +234,7 @@
 
 			// Check if current published version has comments on it specifically
 			const commentsOnCurrentVersion = allPosts.filter(
-				post => post.context_version_id === currentPublished?.id
+				(post) => post.context_version_id === currentPublished?.id
 			).length;
 
 			console.log('Publishing analysis:', {
@@ -232,7 +242,7 @@
 				commentsOnCurrentVersion,
 				hasComments: commentsOnCurrentVersion > 0,
 				action: commentsOnCurrentVersion > 0 ? 'archive' : 'archive',
-				commentsData: allPosts.map(p => ({ id: p.context_version_id }))
+				commentsData: allPosts.map((p) => ({ id: p.context_version_id }))
 			});
 
 			// Step 2: Handle existing published version
@@ -244,7 +254,8 @@
 					});
 
 					// Archive current published version if it has comments
-					const archiveResult = await nhost.graphql.request(`
+					const archiveResult = await nhost.graphql.request(
+						`
 						mutation ArchiveVersion($versionId: uuid!) {
 							update_discussion_version_by_pk(
 								pk_columns: { id: $versionId }
@@ -254,21 +265,27 @@
 								version_type
 							}
 						}
-					`, {
-						versionId: currentPublished.id
-					});
+					`,
+						{
+							versionId: currentPublished.id
+						}
+					);
 
 					console.log('Archive result for version with comments:', archiveResult);
 
 					if (archiveResult.error) {
 						console.error('Archive version GraphQL error:', archiveResult.error);
-						throw new Error(`Failed to archive existing version: ${JSON.stringify(archiveResult.error)}`);
+						throw new Error(
+							`Failed to archive existing version: ${JSON.stringify(archiveResult.error)}`
+						);
 					}
 
 					// Verify the archive actually worked
 					if (!archiveResult.data?.update_discussion_version_by_pk) {
 						console.error('Archive operation returned no data, likely permissions issue');
-						throw new Error('Archive operation failed - likely insufficient permissions to update published versions');
+						throw new Error(
+							'Archive operation failed - likely insufficient permissions to update published versions'
+						);
 					}
 
 					console.log('Successfully archived published version with comments:', {
@@ -277,7 +294,8 @@
 					});
 				} else {
 					// Archive current published version (can't delete published versions due to permissions)
-					const archiveResult = await nhost.graphql.request(`
+					const archiveResult = await nhost.graphql.request(
+						`
 						mutation ArchiveVersion($versionId: uuid!) {
 							update_discussion_version_by_pk(
 								pk_columns: { id: $versionId }
@@ -287,19 +305,25 @@
 								version_type
 							}
 						}
-					`, {
-						versionId: currentPublished.id
-					});
+					`,
+						{
+							versionId: currentPublished.id
+						}
+					);
 
 					if (archiveResult.error) {
 						console.error('Archive version GraphQL error:', archiveResult.error);
-						throw new Error(`Failed to archive existing version: ${JSON.stringify(archiveResult.error)}`);
+						throw new Error(
+							`Failed to archive existing version: ${JSON.stringify(archiveResult.error)}`
+						);
 					}
 
 					// Verify the archive actually worked
 					if (!archiveResult.data?.update_discussion_version_by_pk) {
 						console.error('Archive operation returned no data, likely permissions issue');
-						throw new Error('Archive operation failed - likely insufficient permissions to update published versions');
+						throw new Error(
+							'Archive operation failed - likely insufficient permissions to update published versions'
+						);
 					}
 
 					console.log('Archived published version without comments:', currentPublished.id);
@@ -307,7 +331,8 @@
 			}
 
 			// Step 3: Verify no published version exists before publishing
-			const verifyCheck = await nhost.graphql.request(`
+			const verifyCheck = await nhost.graphql.request(
+				`
 				query VerifyNoPublished($discussionId: uuid!) {
 					discussion_version(
 						where: {
@@ -320,15 +345,17 @@
 						version_type
 					}
 				}
-			`, {
-				discussionId: discussion.id
-			});
+			`,
+				{
+					discussionId: discussion.id
+				}
+			);
 
 			const remainingPublished = verifyCheck.data?.discussion_version || [];
 			console.log('Verification before publish:', {
 				remainingPublished,
 				shouldBeEmpty: remainingPublished.length === 0,
-				detailedVersions: remainingPublished.map(v => ({
+				detailedVersions: remainingPublished.map((v) => ({
 					id: v.id,
 					version_number: v.version_number,
 					version_type: v.version_type,
@@ -337,7 +364,8 @@
 			});
 
 			// Step 4: Publish the draft
-			const result = await nhost.graphql.request(`
+			const result = await nhost.graphql.request(
+				`
 				mutation PublishDraft($draftId: uuid!) {
 					update_discussion_version_by_pk(
 						pk_columns: { id: $draftId }
@@ -349,9 +377,11 @@
 						version_type
 					}
 				}
-			`, {
-				draftId: draft.id
-			});
+			`,
+				{
+					draftId: draft.id
+				}
+			);
 
 			if (result.error) {
 				console.error('Publish draft GraphQL error:', result.error);
@@ -360,7 +390,6 @@
 
 			// Redirect to the published discussion
 			await goto(`/discussions/${discussionId}`);
-
 		} catch (err: any) {
 			console.error('Error publishing draft:', err);
 			error = err.message || 'Failed to publish draft';
@@ -393,7 +422,11 @@
 		if (draft && !loading) {
 			// Set up auto-save
 			autoSaveInterval = setInterval(() => {
-				if (!saving && !publishing && (title !== draft.title || description !== draft.description)) {
+				if (
+					!saving &&
+					!publishing &&
+					(title !== draft.title || description !== draft.description)
+				) {
 					saveDraft();
 				}
 			}, 10000);
@@ -420,7 +453,11 @@
 		<div class="error">
 			<h2>Error</h2>
 			<p>{error}</p>
-			<button type="button" class="btn-secondary" onclick={() => goto(`/discussions/${discussionId}`)}>
+			<button
+				type="button"
+				class="btn-secondary"
+				onclick={() => goto(`/discussions/${discussionId}`)}
+			>
 				Back to Discussion
 			</button>
 		</div>
@@ -430,7 +467,9 @@
 				<div class="header-content">
 					<h1>Editing Draft</h1>
 					<p class="discussion-context">
-						for <a href="/discussions/{discussionId}">{discussion.current_version?.[0]?.title || 'Discussion'}</a>
+						for <a href="/discussions/{discussionId}"
+							>{discussion.current_version?.[0]?.title || 'Discussion'}</a
+						>
 					</p>
 				</div>
 				<div class="header-actions">
@@ -438,7 +477,12 @@
 					<button type="button" class="btn-primary" onclick={saveDraft} disabled={saving}>
 						{saving ? 'Saving...' : 'Save Draft'}
 					</button>
-					<button type="button" class="btn-accent" onclick={publishDraft} disabled={publishing || saving}>
+					<button
+						type="button"
+						class="btn-accent"
+						onclick={publishDraft}
+						disabled={publishing || saving}
+					>
 						{publishing ? 'Publishing...' : 'Publish'}
 					</button>
 				</div>
@@ -450,7 +494,13 @@
 				</div>
 			{/if}
 
-			<form class="editor-form" onsubmit={(e) => { e.preventDefault(); saveDraft(); }}>
+			<form
+				class="editor-form"
+				onsubmit={(e) => {
+					e.preventDefault();
+					saveDraft();
+				}}
+			>
 				<div class="form-group">
 					<label for="title">Title</label>
 					<input
@@ -493,7 +543,8 @@
 		background: var(--color-surface-alt);
 	}
 
-	.loading, .error {
+	.loading,
+	.error {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -583,7 +634,8 @@
 		color: var(--color-text-primary);
 	}
 
-	input, textarea {
+	input,
+	textarea {
 		width: 100%;
 		padding: 1rem;
 		border: 1px solid var(--color-border);
@@ -595,7 +647,8 @@
 		transition: border-color var(--transition-speed) ease;
 	}
 
-	input:focus, textarea:focus {
+	input:focus,
+	textarea:focus {
 		outline: none;
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
@@ -628,7 +681,9 @@
 	}
 
 	/* Button styles */
-	.btn-primary, .btn-secondary, .btn-accent {
+	.btn-primary,
+	.btn-secondary,
+	.btn-accent {
 		padding: 0.75rem 1.5rem;
 		border-radius: var(--border-radius-sm);
 		font-weight: 600;

@@ -20,7 +20,7 @@
 	const props = $props<{ items?: FeaturedShowcaseItem[] }>();
 	const items = $derived(props.items ?? []);
 
-	let viewport: HTMLDivElement | null = null;
+	let viewport = $state<HTMLDivElement | null>(null);
 	let atStart = $state(true);
 	let atEnd = $state(false);
 
@@ -72,53 +72,55 @@
 		<button
 			class="nav-button prev"
 			type="button"
-			on:click={() => scrollByPage('prev')}
+			onclick={() => scrollByPage('prev')}
 			disabled={atStart}
 			aria-label="Scroll to previous featured analysis"
 		>
 			‹
 		</button>
 
-		<div class="carousel-viewport" bind:this={viewport} role="list" on:scroll={updateScrollState}>
+		<div class="carousel-viewport" bind:this={viewport} role="list" onscroll={updateScrollState}>
 			{#each items as item (item.id)}
-				<a role="listitem" class="carousel-card" href={`/featured/${item.id}`}>
-					<header class="card-header">
-						<div class="meta-tags">
-							{#if item.media_type}<span>{item.media_type}</span>{/if}
-							{#if item.creator}<span>{item.creator}</span>{/if}
-							<span
-								>{item.date_published
-									? new Date(item.date_published + 'T12:00:00').toLocaleDateString()
-									: new Date(item.created_at).toLocaleDateString()}</span
-							>
-						</div>
-						<h3>{item.title}</h3>
-						{#if item.subtitle}
-							<p class="subtitle">{@html sanitizeMultiline(item.subtitle)}</p>
+				<div role="listitem" class="carousel-card">
+					<a href={`/featured/${item.id}`} class="card-link">
+						<header class="card-header">
+							<div class="meta-tags">
+								{#if item.media_type}<span>{item.media_type}</span>{/if}
+								{#if item.creator}<span>{item.creator}</span>{/if}
+								<span
+									>{item.date_published
+										? new Date(item.date_published + 'T12:00:00').toLocaleDateString()
+										: new Date(item.created_at).toLocaleDateString()}</span
+								>
+							</div>
+							<h3>{item.title}</h3>
+							{#if item.subtitle}
+								<p class="subtitle">{@html sanitizeMultiline(item.subtitle)}</p>
+							{/if}
+						</header>
+						{#if getStructuredAnalysisSummary(item.analysis)}
+							<p class="analysis-summary">
+								{@html sanitizeMultiline(getStructuredAnalysisSummary(item.analysis))}
+							</p>
 						{/if}
-					</header>
-					{#if getStructuredAnalysisSummary(item.analysis)}
-						<p class="analysis-summary">
-							{@html sanitizeMultiline(getStructuredAnalysisSummary(item.analysis))}
-						</p>
+						<footer class="card-footer">
+							<span class="card-cta">Read analysis</span>
+							<span class="card-arrow" aria-hidden="true">→</span>
+						</footer>
+					</a>
+					{#if item.source_url}
+						<a class="source-link" href={item.source_url} target="_blank" rel="noopener"
+							>Source ↗</a
+						>
 					{/if}
-					<footer class="card-footer">
-						<span class="card-cta">Read analysis</span>
-						<span class="card-arrow" aria-hidden="true">→</span>
-						{#if item.source_url}
-							<a class="source-link" href={item.source_url} target="_blank" rel="noopener"
-								>Source ↗</a
-							>
-						{/if}
-					</footer>
-				</a>
+				</div>
 			{/each}
 		</div>
 
 		<button
 			class="nav-button next"
 			type="button"
-			on:click={() => scrollByPage('next')}
+			onclick={() => scrollByPage('next')}
 			disabled={atEnd}
 			aria-label="Scroll to next featured analysis"
 		>
@@ -174,20 +176,23 @@
 	.carousel-card {
 		scroll-snap-align: start;
 		min-width: clamp(280px, 45vw, 350px);
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-		padding: 2rem;
+		position: relative;
 		border-radius: 24px;
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		backdrop-filter: blur(20px) saturate(1.2);
-		color: inherit;
-		text-decoration: none;
 		box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 8%, transparent);
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		position: relative;
 		overflow: hidden;
+	}
+
+	.card-link {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		padding: 2rem;
+		color: inherit;
+		text-decoration: none;
 	}
 
 	.carousel-card::before {
@@ -208,7 +213,7 @@
 		border-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
 	}
 
-	.carousel-card:focus-visible {
+	.card-link:focus-visible {
 		outline: 2px solid var(--color-primary);
 		outline-offset: 4px;
 	}
@@ -239,29 +244,6 @@
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 		font-weight: 500;
-	}
-
-	.summary {
-		margin: 0;
-		text-align: left;
-		font-size: 0.95rem;
-		line-height: 1.6;
-		color: var(--color-text-secondary);
-		display: -webkit-box;
-		-webkit-line-clamp: 3;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-	}
-
-	.analysis {
-		margin: 0;
-		font-size: 0.82rem;
-		line-height: 1.4;
-		color: color-mix(in srgb, var(--color-text-secondary) 80%, transparent);
-		display: -webkit-box;
-		-webkit-line-clamp: 4;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
 	}
 
 	.analysis-summary {
@@ -328,11 +310,17 @@
 	}
 
 	.source-link {
-		margin-left: auto;
+		position: absolute;
+		bottom: 1rem;
+		right: 1rem;
 		font-size: 0.78rem;
 		font-weight: 500;
 		color: color-mix(in srgb, var(--color-primary) 90%, transparent);
 		text-decoration: none;
+		background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+		padding: 0.25rem 0.5rem;
+		border-radius: 8px;
+		backdrop-filter: blur(10px);
 	}
 
 	.source-link:hover,

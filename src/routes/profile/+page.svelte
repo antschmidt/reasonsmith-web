@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { nhost, ensureContributor } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
-	import { GET_USER_STATS } from '$lib/graphql/queries';
+	import { GET_USER_STATS, UPDATE_CONTRIBUTOR_AVATAR } from '$lib/graphql/queries';
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
 	import { env as publicEnv } from '$env/dynamic/public';
+	import ProfilePhotoUpload from '$lib/components/ProfilePhotoUpload.svelte';
 
 	const SITE_URL = publicEnv.PUBLIC_SITE_URL;
 
@@ -75,6 +76,7 @@
         analysis_limit
         analysis_count_used
         analysis_count_reset_at
+        avatar_url
       }
       discussion(where: { created_by: { _eq: $id } }, order_by: { created_at: desc }) {
         id
@@ -226,6 +228,17 @@
 		return String(err);
 	}
 
+	function getInitials(name?: string): string {
+		if (!name) return '?';
+		return name
+			.trim()
+			.split(' ')
+			.map((n) => n[0])
+			.join('')
+			.slice(0, 2)
+			.toUpperCase();
+	}
+
 	function syncFormFields() {
 		if (contributor) {
 			authEmail = contributor.auth_email || user?.email || '';
@@ -246,6 +259,16 @@
 				social[key] = '';
 			}
 		}
+	}
+
+	function handleAvatarUpdate(newAvatarUrl: string | null) {
+		if (contributor) {
+			contributor.avatar_url = newAvatarUrl;
+		}
+		success = newAvatarUrl ? 'Profile photo updated!' : 'Profile photo removed!';
+		setTimeout(() => {
+			success = null;
+		}, 3000);
 	}
 
 	async function loadProfile() {
@@ -525,6 +548,15 @@
 							/>
 						</label>
 
+						<div class="field">
+							<span>Profile Photo</span>
+							<ProfilePhotoUpload
+								currentAvatarUrl={contributor?.avatar_url}
+								contributorId={contributor?.id}
+								onUpdate={handleAvatarUpdate}
+							/>
+						</div>
+
 						<label class="field">
 							<span>Handle</span>
 							<input
@@ -733,11 +765,24 @@
 			<div class="profile-view">
 				<div class="profile-card profile-header">
 					<div class="view-header">
-						<div class="profile-info">
-							<h1 class="profile-title">{displayNameText(displayName) || 'Your Profile'}</h1>
-							{#if handle}
-								<p class="handle">@{handle}</p>
+						<div class="profile-main">
+							{#if contributor?.avatar_url}
+								<img
+									src={contributor.avatar_url}
+									alt="{displayNameText(displayName)}'s profile photo"
+									class="profile-avatar"
+								/>
+							{:else}
+								<div class="profile-avatar-placeholder">
+									<span class="avatar-initials">{getInitials(displayNameText(displayName))}</span>
+								</div>
 							{/if}
+							<div class="profile-info">
+								<h1 class="profile-title">{displayNameText(displayName) || 'Your Profile'}</h1>
+								{#if handle}
+									<p class="handle">@{handle}</p>
+								{/if}
+							</div>
 						</div>
 						<button class="btn-primary" type="button" on:click={enterEdit}>Edit Profile</button>
 					</div>
@@ -1118,6 +1163,39 @@
 		align-items: flex-start;
 		gap: 2rem;
 		margin-bottom: 1.5rem;
+	}
+
+	.profile-main {
+		display: flex;
+		align-items: flex-start;
+		gap: 1.5rem;
+	}
+
+	.profile-avatar,
+	.profile-avatar-placeholder {
+		width: 120px;
+		height: 120px;
+		border-radius: 50%;
+		flex-shrink: 0;
+		border: 3px solid var(--color-border);
+	}
+
+	.profile-avatar {
+		object-fit: cover;
+		display: block;
+	}
+
+	.profile-avatar-placeholder {
+		background: var(--color-surface-alt);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.avatar-initials {
+		font-size: 2rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
 	}
 
 	.profile-info h1.profile-title {
@@ -1637,6 +1715,23 @@
 		.view-header {
 			flex-direction: column;
 			gap: 1rem;
+		}
+
+		.profile-main {
+			flex-direction: column;
+			align-items: center;
+			text-align: center;
+			gap: 1rem;
+		}
+
+		.profile-avatar,
+		.profile-avatar-placeholder {
+			width: 100px;
+			height: 100px;
+		}
+
+		.avatar-initials {
+			font-size: 1.5rem;
 		}
 
 		.profile-info h1.profile-title {

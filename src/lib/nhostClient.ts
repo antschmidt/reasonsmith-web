@@ -207,7 +207,6 @@ export async function refreshUserRole() {
 	await upgradeRoleHeaders();
 }
 
-
 // Correct constraint name (user_pkey) per contributor_constraint enum
 // Important: do NOT overwrite an existing display_name on conflict.
 // Only update the email; keep display_name as user-configured value.

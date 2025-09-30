@@ -528,13 +528,13 @@
 				</div>
 
 				{#if publishError}
-					<div class="error-message">
+					<div class="error">
 						{publishError}
 					</div>
 				{/if}
 
 				{#if goodFaithError}
-					<div class="error-message">Good Faith Analysis Error: {goodFaithError}</div>
+					<div class="error">Good Faith Analysis Error: {goodFaithError}</div>
 				{/if}
 
 				{#if goodFaithTesting}
@@ -771,70 +771,11 @@
 		font-weight: 500;
 	}
 
-	/* Buttons */
-	.btn-primary {
-		background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-		color: #ffffff;
-		border: none;
-		padding: 1rem 2rem;
-		border-radius: 16px;
-		font-weight: 600;
-		font-size: 1rem;
-		cursor: pointer;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		box-shadow: 0 4px 16px color-mix(in srgb, var(--color-primary) 20%, transparent);
-		position: relative;
-		overflow: hidden;
-	}
-
-	:global([data-theme='dark']) .btn-primary {
-		color: #000000;
-		text-shadow: 0 1px 2px rgba(255, 255, 255, 0.1);
-	}
-
-	.btn-primary::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: -100%;
-		width: 100%;
-		height: 100%;
-		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-		transition: left 0.5s;
-	}
-
-	.btn-primary:hover::before {
-		left: 100%;
-	}
-
-	.btn-primary:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 8px 24px color-mix(in srgb, var(--color-primary) 30%, transparent);
-	}
-
-	.btn-primary:disabled {
+	/* Custom disabled state */
+	.btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 		transform: none;
-	}
-
-	.btn-secondary {
-		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-		backdrop-filter: blur(10px);
-		color: var(--color-text-primary);
-		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		padding: 1rem 2rem;
-		border-radius: 16px;
-		font-weight: 600;
-		font-size: 1rem;
-		cursor: pointer;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-	}
-
-	.btn-secondary:hover {
-		background: color-mix(in srgb, var(--color-surface) 80%, transparent);
-		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
-		transform: translateY(-1px);
 	}
 
 	.form-actions {
@@ -842,16 +783,6 @@
 		gap: 1rem;
 		justify-content: flex-start;
 		margin-top: 1rem;
-	}
-
-	.error-message {
-		background: color-mix(in srgb, #ef4444 15%, transparent);
-		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
-		color: #ef4444;
-		padding: 1rem;
-		border-radius: 16px;
-		font-weight: 500;
-		backdrop-filter: blur(10px);
 	}
 
 	/* Writing Info and Citation Reminder */
