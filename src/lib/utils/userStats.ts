@@ -17,13 +17,21 @@ export interface RawUserStatsData {
 	}>;
 	userDiscussions: Array<{
 		id: string;
-		good_faith_score?: number | null;
-		good_faith_label?: string | null;
 		created_at: string;
+		current_version?: Array<{
+			title: string;
+			good_faith_score?: number | null;
+			good_faith_label?: string | null;
+		}>;
+		draft_version?: Array<{
+			title: string;
+			good_faith_score?: number | null;
+			good_faith_label?: string | null;
+		}>;
 	}>;
-	discussionCount: { aggregate: { count: number } };
-	postCount: { aggregate: { count: number } };
-	participatedDiscussions: { aggregate: { count: number } };
+	allUserDiscussions: Array<{ id: string }>;
+	allUserPosts: Array<{ id: string }>;
+	participatedDiscussionsList: Array<{ id: string }>;
 }
 
 export function calculateUserStats(data: RawUserStatsData): UserStats {
@@ -36,10 +44,14 @@ export function calculateUserStats(data: RawUserStatsData): UserStats {
 			good_faith_score: p.good_faith_score,
 			good_faith_label: p.good_faith_label
 		})),
-		...discussions.map((d) => ({
-			good_faith_score: d.good_faith_score,
-			good_faith_label: d.good_faith_label
-		}))
+		...discussions.map((d) => {
+			// Get good faith data from current version (published) or draft version
+			const version = d.current_version?.[0] || d.draft_version?.[0];
+			return {
+				good_faith_score: version?.good_faith_score,
+				good_faith_label: version?.good_faith_label
+			};
+		})
 	];
 
 	// Calculate Good Faith Rate
@@ -78,9 +90,9 @@ export function calculateUserStats(data: RawUserStatsData): UserStats {
 
 	// Calculate Reputation Score
 	// Base score calculation considering multiple factors
-	const totalDiscussions = data.discussionCount?.aggregate?.count || 0;
-	const totalPosts = data.postCount?.aggregate?.count || 0;
-	const participatedDiscussions = data.participatedDiscussions?.aggregate?.count || 0;
+	const totalDiscussions = data.allUserDiscussions?.length || 0;
+	const totalPosts = data.allUserPosts?.length || 0;
+	const participatedDiscussions = data.participatedDiscussionsList?.length || 0;
 
 	let reputationScore = 0;
 

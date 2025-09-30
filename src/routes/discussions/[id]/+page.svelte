@@ -16,8 +16,6 @@
 	import { createDraftAutosaver, type DraftAutosaver } from '$lib';
 	import {
 		getStyleConfig,
-		WRITING_STYLES,
-		validateStyleRequirements,
 		formatChicagoCitation,
 		processCitationReferences,
 		type WritingStyle,
@@ -25,7 +23,6 @@
 		type Citation
 	} from '$lib/types/writingStyle';
 	import CitationForm from '$lib/components/CitationForm.svelte';
-	import CitationNetwork from '$lib/components/CitationNetwork.svelte';
 	import {
 		checkPostDeletable,
 		deletePost,
@@ -112,17 +109,6 @@
     }
   `;
 
-	const CREATE_DISCUSSION_VERSION = `
-    mutation CreateDiscussionVersion($discussionId: uuid!, $title: String!, $description: String!, $versionNumber: Int!, $versionType: String = "published") {
-      insert_discussion_version_one(object: {
-        discussion_id: $discussionId,
-        title: $title,
-        description: $description,
-        version_number: $versionNumber,
-        version_type: $versionType
-      }) { id version_number title description created_at version_type }
-    }
-  `;
 	const UPDATE_DISCUSSION_CURRENT_VERSION = `
     mutation UpdateDiscussionCurrentVersion($discussionId: uuid!, $versionId: uuid!) {
       update_discussion(where: {id: {_eq: $discussionId}}, _set: {current_version_id: $versionId, status: "published"}) { returning { id current_version_id status } }
@@ -131,19 +117,13 @@
 
 	const GET_DISCUSSION_VERSION = `
     query GetDiscussionVersion($versionId: uuid!) {
-      discussion_version(where: {id: {_eq: $versionId}}) {
+      discussion_version_by_pk(id: $versionId) {
         id
         version_number
         title
         description
         created_at
       }
-    }
-  `;
-
-	const GET_LATEST_VERSION_NUMBER = `
-    query LatestVersion($discussionId: uuid!) {
-      discussion_version(where:{discussion_id:{_eq:$discussionId}}, order_by:{version_number: desc}, limit:1){ version_number }
     }
   `;
 
@@ -165,8 +145,7 @@
 							? error.map((e) => (e as any).message || 'Error').join(', ')
 							: (error as any).message || 'Error';
 					} else {
-						const versions = (data as any)?.discussion_version;
-						historicalVersion = versions?.[0];
+						historicalVersion = (data as any)?.discussion_version_by_pk;
 					}
 				})
 				.finally(() => {
@@ -529,11 +508,13 @@
 	async function ensureDraftCreated() {
 		if (!user || draftPostId) return;
 		const discussionId = $page.params.id as string;
+		const currentVersionId = discussion.current_version?.[0]?.id || null;
 		// create empty draft row immediately
 		const { data, error } = await nhost.graphql.request(CREATE_POST_DRAFT, {
 			discussionId,
 			authorId: user.id,
-			draftContent: newComment || ''
+			draftContent: newComment || '',
+			contextVersionId: currentVersionId
 		});
 		if (error) return; // silent fail; user can still post normally
 		draftPostId = (data as any)?.insert_post_one?.id || null;
@@ -679,17 +660,21 @@
 					'-->';
 			}
 
+			// Get the current published version ID to set as context
+			const currentVersionId = discussion.current_version?.[0]?.id || null;
+
 			// Publish the draft directly (without good faith scoring)
 			const { error } = await nhost.graphql.request(
 				`
-        mutation PublishDraft($postId: uuid!, $content: String!) {
-          update_post(where: {id: {_eq: $postId}}, _set: {status: "approved", content: $content, draft_content: ""}) {
-            returning { id status }
+        mutation PublishDraft($postId: uuid!, $content: String!, $contextVersionId: uuid) {
+          update_post(where: {id: {_eq: $postId}}, _set: {status: "approved", content: $content, draft_content: "", context_version_id: $contextVersionId}) {
+            returning { id status context_version_id }
           }
         }`,
 				{
 					postId: draftPostId,
-					content: contentWithCitations
+					content: contentWithCitations,
+					contextVersionId: currentVersionId
 				}
 			);
 
@@ -728,10 +713,211 @@
 		if (fresh) discussion.posts = fresh.posts; // only need posts
 	}
 
+	async function loadDiscussionCitations() {
+		if (!discussion) return;
+
+		try {
+			// Get the current published version ID
+			const currentVersion = discussion.current_version?.[0];
+			if (!currentVersion?.id) {
+				return;
+			}
+
+
+			const result = await nhost.graphql.request(
+				`
+				query GetDiscussionCitations($discussion_version_id: uuid!) {
+					discussion_version_citation(
+						where: { discussion_version_id: { _eq: $discussion_version_id } }
+						order_by: { citation_order: asc }
+					) {
+						id
+						citation_order
+						custom_point_supported
+						custom_relevant_quote
+						citation {
+							id
+							title
+							url
+							author
+							publisher
+							publish_date
+							accessed_date
+							page_number
+							point_supported
+							relevant_quote
+							created_at
+							created_by
+						}
+					}
+				}
+				`,
+				{ discussion_version_id: currentVersion.id }
+			);
+
+			if ((result as any).error) {
+				console.error('Failed to load citations:', (result as any).error);
+				return;
+			}
+
+			const citationLinks = (result as any).data?.discussion_version_citation || [];
+
+			// Convert to legacy format for compatibility with existing UI
+			if (citationLinks.length > 0) {
+				const legacyCitations = citationLinks.map((link: any) => ({
+					id: link.citation.id,
+					title: link.citation.title,
+					url: link.citation.url,
+					author: link.citation.author,
+					publisher: link.citation.publisher,
+					publishDate: link.citation.publish_date,
+					accessed: link.citation.accessed_date,
+					pageNumber: link.citation.page_number,
+					pointSupported: link.custom_point_supported || link.citation.point_supported,
+					relevantQuote: link.custom_relevant_quote || link.citation.relevant_quote
+				}));
+
+				// Store citations in the current version's metadata for display
+				if (currentVersion) {
+					currentVersion.citationsFromTable = legacyCitations;
+				}
+			}
+		} catch (error) {
+			console.error('Error loading citations:', error);
+		}
+	}
+
+	async function loadCitationsForDraftVersion(draftVersionId: string) {
+		if (!draftVersionId) return;
+
+		try {
+			const result = await nhost.graphql.request(
+				`
+				query GetDraftVersionCitations($discussion_version_id: uuid!) {
+					discussion_version_citation(
+						where: { discussion_version_id: { _eq: $discussion_version_id } }
+						order_by: { citation_order: asc }
+					) {
+						id
+						citation_order
+						custom_point_supported
+						custom_relevant_quote
+						citation {
+							id
+							title
+							url
+							author
+							publisher
+							publish_date
+							page_number
+							relevant_quote
+							point_supported
+						}
+					}
+				}`,
+				{ discussion_version_id: draftVersionId }
+			);
+
+			if ((result as any).error) {
+				console.error('Failed to load draft citations:', (result as any).error);
+				return;
+			}
+
+			const citationLinks = (result as any).data?.discussion_version_citation || [];
+
+			// Convert to legacy format for compatibility with existing UI
+			if (citationLinks.length > 0) {
+				const legacyCitations = citationLinks.map((link: any) => ({
+					id: link.citation.id,
+					title: link.citation.title,
+					url: link.citation.url,
+					author: link.citation.author,
+					publisher: link.citation.publisher,
+					publishDate: link.citation.publish_date,
+					pageNumber: link.citation.page_number,
+					pointSupported: link.custom_point_supported || link.citation.point_supported,
+					relevantQuote: link.custom_relevant_quote || link.citation.relevant_quote
+				}));
+
+				editStyleMetadata.citations = legacyCitations;
+			}
+		} catch (error) {
+			console.error('Error loading draft citations:', error);
+		}
+	}
+
 	async function loadDiscussion() {
 		try {
 			const discussionId = $page.params.id as string;
-			const result = await nhost.graphql.request(IMPORTED_GET_DISCUSSION_DETAILS, { discussionId });
+
+			// Create a modified query that includes user filtering for draft versions
+			const GET_DISCUSSION_WITH_USER_DRAFTS = `
+				query GetDiscussionDetails($discussionId: uuid!, $userId: uuid) {
+					discussion(where: { id: { _eq: $discussionId } }) {
+						id
+						created_at
+						created_by
+						is_anonymous
+						status
+						contributor {
+							id
+							handle
+							display_name
+						}
+						current_version: discussion_versions(
+							where: { version_type: { _eq: "published" } }
+							order_by: { version_number: desc }
+							limit: 1
+						) {
+							id
+							title
+							description
+							good_faith_score
+							good_faith_label
+							good_faith_last_evaluated
+							good_faith_analysis
+						}
+						draft_version: discussion_versions(
+							where: {
+								version_type: { _eq: "draft" }
+								created_by: { _eq: $userId }
+							}
+							order_by: { version_number: desc }
+							limit: 1
+						) {
+							id
+							title
+							description
+							good_faith_score
+							good_faith_label
+							good_faith_last_evaluated
+							good_faith_analysis
+						}
+						posts(where: { status: { _eq: "approved" } }, order_by: { created_at: asc }) {
+							id
+							content
+							created_at
+							is_anonymous
+							context_version_id
+							writing_style
+							good_faith_score
+							good_faith_label
+							good_faith_last_evaluated
+							good_faith_analysis
+							contributor {
+								id
+								handle
+								display_name
+							}
+						}
+					}
+				}
+			`;
+
+			const result = await nhost.graphql.request(GET_DISCUSSION_WITH_USER_DRAFTS, {
+				discussionId,
+				userId: user?.id || null
+			});
 
 			if ((result as any).error) {
 				console.error('GraphQL Error:', (result as any).error);
@@ -748,6 +934,10 @@
 			}
 
 			discussion = discussions[0];
+
+			// Load citations from the new citation tables
+			await loadDiscussionCitations();
+
 			await loadExistingDraft();
 		} catch (e: any) {
 			console.error('Load discussion error:', e);
@@ -799,14 +989,11 @@
 		}
 	});
 
-	function startEdit() {
-		editing = true;
+	async function createDatabaseDraft() {
+		if (!discussion || !user) return;
 
-		// Try to load existing draft first
-		const hasDraft = loadDraftFromLocalStorage();
-
-		if (!hasDraft) {
-			// No draft found, initialize with published content
+		try {
+			// Initialize form with published content
 			editTitle = getDiscussionTitle();
 
 			// Extract citation data from discussion description if it exists
@@ -822,7 +1009,174 @@
 				editStyleMetadata = { citations: [] };
 			}
 
-			hasUnsavedChanges = false;
+			// Check if there's already a draft for this discussion through the discussion relationship
+			const existingDraftCheck = await nhost.graphql.request(`
+				query CheckExistingDraft($discussionId: uuid!, $userId: uuid!) {
+					discussion(where: { id: { _eq: $discussionId } }) {
+						discussion_versions(
+							where: {
+								version_type: { _eq: "draft" }
+								created_by: { _eq: $userId }
+							}
+						) {
+							id
+							title
+							description
+						}
+					}
+				}
+			`, {
+				discussionId: discussion.id,
+				userId: user.id
+			});
+
+			const existingDraft = existingDraftCheck.data?.discussion?.[0]?.discussion_versions?.[0];
+
+			if (existingDraft) {
+				// Update existing draft instead of creating new one
+				const updateResult = await nhost.graphql.request(`
+					mutation UpdateExistingDraft($draftId: uuid!, $title: String!, $description: String!) {
+						update_discussion_version_by_pk(
+							pk_columns: { id: $draftId }
+							_set: {
+								title: $title
+								description: $description
+							}
+						) {
+							id
+							title
+							description
+							created_by
+							version_type
+							version_number
+							good_faith_score
+							good_faith_label
+							good_faith_last_evaluated
+						}
+					}
+				`, {
+					draftId: existingDraft.id,
+					title: editTitle,
+					description: editDescription
+				});
+
+				if (updateResult.error) {
+					console.error('Failed to update existing draft:', updateResult.error);
+					editError = `Failed to update draft: ${JSON.stringify(updateResult.error)}`;
+					return;
+				}
+
+				const updatedDraft = updateResult.data?.update_discussion_version_by_pk;
+				if (updatedDraft) {
+					// Add the updated draft to the discussion object
+					if (!discussion.draft_version) {
+						discussion.draft_version = [];
+					}
+					discussion.draft_version[0] = updatedDraft;
+					hasUnsavedChanges = true;
+					console.log('Updated existing database draft:', updatedDraft.id);
+				}
+				return;
+			}
+
+			// First, get the highest version number for this discussion
+			const versionQuery = await nhost.graphql.request(`
+				query GetMaxVersionNumber($discussionId: uuid!) {
+					discussion(where: { id: { _eq: $discussionId } }) {
+						discussion_versions(
+							order_by: { version_number: desc }
+							limit: 1
+						) {
+							version_number
+						}
+					}
+				}
+			`, {
+				discussionId: discussion.id
+			});
+
+			const maxVersion = versionQuery.data?.discussion?.[0]?.discussion_versions?.[0]?.version_number || 0;
+			const nextVersionNumber = maxVersion + 1;
+
+			// Create a draft version in the database
+			const result = await nhost.graphql.request(`
+				mutation CreateDiscussionDraft($discussionId: uuid!, $userId: uuid!, $title: String!, $description: String!, $versionNumber: Int!) {
+					insert_discussion_version_one(object: {
+						discussion_id: $discussionId
+						created_by: $userId
+						title: $title
+						description: $description
+						version_type: "draft"
+						version_number: $versionNumber
+					}) {
+						id
+						title
+						description
+						created_by
+						version_type
+						version_number
+						good_faith_score
+						good_faith_label
+						good_faith_last_evaluated
+					}
+				}
+			`, {
+				discussionId: discussion.id,
+				userId: user.id,
+				title: editTitle,
+				description: editDescription,
+				versionNumber: nextVersionNumber
+			});
+
+			if ((result as any).error) {
+				console.error('Failed to create database draft:', (result as any).error);
+				console.error('Full result:', result);
+				editError = `Failed to create draft: ${JSON.stringify((result as any).error)}`;
+				return;
+			}
+
+			const newDraft = (result as any).data?.insert_discussion_version_one;
+			if (newDraft) {
+				// Add the new draft to the discussion object
+				if (!discussion.draft_version) {
+					discussion.draft_version = [];
+				}
+				discussion.draft_version[0] = newDraft;
+
+				hasUnsavedChanges = true;
+				console.log('Created database draft:', newDraft.id);
+			}
+
+		} catch (error) {
+			console.error('Error creating database draft:', error);
+			editError = 'Failed to create draft';
+		}
+	}
+
+	function startEdit() {
+		editing = true;
+
+		// Try to load existing draft first
+		const hasDraft = loadDraftFromLocalStorage();
+
+		if (!hasDraft) {
+			// Check if there's a database draft version
+			const draftVersion = discussion?.draft_version?.[0];
+
+			if (draftVersion) {
+				// Initialize with database draft content
+				editTitle = draftVersion.title || '';
+				editDescription = draftVersion.description || '';
+				editSelectedStyle = 'journalistic'; // Default style for database drafts
+				editStyleMetadata = { citations: [] };
+
+				// Load citations for this draft version
+				loadCitationsForDraftVersion(draftVersion.id);
+				hasUnsavedChanges = true; // Important: mark as having changes so publish works
+			} else {
+				// No draft found, create a new database draft based on published content
+				createDatabaseDraft();
+			}
 		}
 
 		editError = null;
@@ -909,6 +1263,7 @@
 	async function publishDraftChanges() {
 		if (!editing || !discussion || !hasUnsavedChanges) return;
 
+
 		publishLoading = true;
 		editError = null;
 
@@ -933,16 +1288,8 @@
 				return;
 			}
 
-			// Embed citation data in the description if we have citations/sources
+			// Use clean description without embedded citations (using proper citation tables now)
 			let descriptionWithCitations = editDescription.trim();
-
-			if (editStyleMetadata.citations?.length) {
-				const citationData = {
-					writing_style: editSelectedStyle,
-					style_metadata: editStyleMetadata
-				};
-				descriptionWithCitations += `\n<!-- CITATION_DATA:${JSON.stringify(citationData)} -->`;
-			}
 
 			const discussionId = discussion.id;
 
@@ -952,7 +1299,64 @@
 				throw new Error('No draft version found to publish');
 			}
 
-			// First update the draft version with the new content
+			// Check for comments on current published version and handle version management
+			const commentsCheck = await nhost.graphql.request(`
+				query CheckVersionComments($discussionId: uuid!) {
+					discussion(where: {id: {_eq: $discussionId}}) {
+						discussion_versions(where: {version_type: {_eq: "published"}}) {
+							id
+							version_number
+						}
+					}
+					post_aggregate(where: {discussion_id: {_eq: $discussionId}, context_version_id: {_is_null: false}}) {
+						aggregate {
+							count
+						}
+						nodes {
+							context_version_id
+						}
+					}
+				}
+			`, { discussionId });
+
+			const currentPublished = commentsCheck.data?.discussion?.[0]?.discussion_versions?.[0];
+			const commentsData = commentsCheck.data?.post_aggregate;
+			const hasComments = commentsData?.aggregate?.count > 0;
+
+			console.log('Version management debug:', {
+				currentPublished,
+				hasComments,
+				commentsCount: commentsData?.aggregate?.count,
+				discussionId
+			});
+
+			// If there's a published version, archive it (always archive to avoid permissions issues)
+			if (currentPublished) {
+				console.log('Found existing published version, archiving it...');
+				const archiveResult = await nhost.graphql.request(`
+					mutation ArchiveVersion($versionId: uuid!) {
+						update_discussion_version_by_pk(
+							pk_columns: { id: $versionId }
+							_set: { version_type: "archived" }
+						) {
+							id
+							version_type
+						}
+					}
+				`, { versionId: currentPublished.id });
+
+				console.log('Archive result:', archiveResult);
+				if (archiveResult.error) {
+					console.error('Archive operation error:', archiveResult.error);
+				}
+				if (!archiveResult.data?.update_discussion_version_by_pk) {
+					console.error('Archive operation failed. Full result:', archiveResult);
+					throw new Error(`Failed to archive existing published version: ${JSON.stringify(archiveResult.error || 'No data returned')}`);
+				}
+				console.log('Successfully archived published version');
+			}
+
+			// Now update the draft version to published
 			const updated = await nhost.graphql.request(
 				`
         mutation UpdateDraftVersion($versionId: uuid!, $title: String!, $description: String!) {
@@ -989,6 +1393,116 @@
 			});
 			if ((upd as any).error) throw (upd as any).error;
 
+			// Handle citations - create and link them to the discussion version
+			if (editStyleMetadata.citations?.length) {
+				for (let i = 0; i < editStyleMetadata.citations.length; i++) {
+					const legacyCitation = editStyleMetadata.citations[i];
+
+					// Convert legacy citation format to new format
+					const convertedCitation = {
+						title: legacyCitation.title,
+						url: legacyCitation.url,
+						author: legacyCitation.author || null,
+						publisher: legacyCitation.publisher || null,
+						publish_date: legacyCitation.publishDate || null,
+						accessed_date: legacyCitation.accessed || null,
+						page_number: legacyCitation.pageNumber || null,
+						point_supported: legacyCitation.pointSupported,
+						relevant_quote: legacyCitation.relevantQuote
+					};
+
+					try {
+						// Create the citation in the database
+
+						const createResult = await nhost.graphql.request(
+							`
+							mutation CreateCitation(
+								$title: String!
+								$url: String!
+								$author: String
+								$publisher: String
+								$publish_date: date
+								$accessed_date: date
+								$page_number: String
+								$point_supported: String!
+								$relevant_quote: String!
+								$created_by: uuid!
+							) {
+								insert_citation_one(
+									object: {
+										title: $title
+										url: $url
+										author: $author
+										publisher: $publisher
+										publish_date: $publish_date
+										accessed_date: $accessed_date
+										page_number: $page_number
+										point_supported: $point_supported
+										relevant_quote: $relevant_quote
+										created_by: $created_by
+									}
+								) {
+									id
+								}
+							}
+							`,
+							{
+								...convertedCitation,
+								created_by: user?.id
+							}
+						);
+
+						console.log('Citation creation result:', createResult);
+
+						if ((createResult as any).error) {
+							console.error('Failed to create citation:', (createResult as any).error);
+							continue;
+						}
+
+						const citationId = (createResult as any).data?.insert_citation_one?.id;
+						if (!citationId) {
+							console.error('No citation ID returned from creation');
+							continue;
+						}
+
+						// Link the citation to the discussion version
+
+						const linkResult = await nhost.graphql.request(
+							`
+							mutation LinkCitationToDiscussion(
+								$discussion_version_id: uuid!
+								$citation_id: uuid!
+								$citation_order: Int!
+							) {
+								insert_discussion_version_citation_one(
+									object: {
+										discussion_version_id: $discussion_version_id
+										citation_id: $citation_id
+										citation_order: $citation_order
+									}
+								) {
+									id
+								}
+							}
+							`,
+							{
+								discussion_version_id: versionId,
+								citation_id: citationId,
+								citation_order: i + 1
+							}
+						);
+
+						console.log('Citation linking result:', linkResult);
+
+						if ((linkResult as any).error) {
+							console.error('Failed to link citation:', (linkResult as any).error);
+						}
+					} catch (error) {
+						console.error('Error processing citation:', error);
+					}
+				}
+			}
+
 			// Update UI - update the current version data
 			const versionToUpdate = discussion.current_version?.[0] || discussion.draft_version?.[0];
 			if (versionToUpdate) {
@@ -1007,12 +1521,63 @@
 		}
 	}
 
+	async function saveDraftToDatabase() {
+		if (!editing || !discussion || !user) return;
+
+		const draftVersion = discussion?.draft_version?.[0];
+		if (!draftVersion) return;
+
+		try {
+			const result = await nhost.graphql.request(`
+				mutation UpdateDraft($draftId: uuid!, $title: String!, $description: String!) {
+					update_discussion_version_by_pk(
+						pk_columns: { id: $draftId }
+						_set: {
+							title: $title
+							description: $description
+						}
+					) {
+						id
+						title
+						description
+					}
+				}
+			`, {
+				draftId: draftVersion.id,
+				title: editTitle.trim(),
+				description: editDescription.trim()
+			});
+
+			if (result.error) {
+				throw new Error('Failed to save draft to database');
+			}
+
+			// Update local state
+			draftVersion.title = editTitle.trim();
+			draftVersion.description = editDescription.trim();
+			draftLastSavedAt = Date.now();
+			hasUnsavedChanges = true;
+
+		} catch (error) {
+			console.error('Error saving draft to database:', error);
+			// Fall back to localStorage if database save fails
+			saveDraftToLocalStorage();
+		}
+	}
+
 	function scheduleEditAutoSave() {
 		if (editAutoSaveTimeout) {
 			clearTimeout(editAutoSaveTimeout);
 		}
 		editAutoSaveTimeout = setTimeout(() => {
-			saveDraftToLocalStorage();
+			const draftVersion = discussion?.draft_version?.[0];
+			if (draftVersion) {
+				// Use database draft if it exists
+				saveDraftToDatabase();
+			} else {
+				// Fall back to localStorage
+				saveDraftToLocalStorage();
+			}
 		}, 1500);
 	}
 
@@ -1873,7 +2438,7 @@
 				updated += `\n<!-- CITATION_DATA:${JSON.stringify(editingPostCitationData)} -->`;
 			}
 			const MUT = `mutation UpdatePostContent($postId: uuid!, $content: String!) { update_post_by_pk(pk_columns: {id: $postId}, _set: { content: $content }) { id content } }`;
-			const { data, error } = await nhost.graphql.request(MUT, {
+			const { error } = await nhost.graphql.request(MUT, {
 				postId: post.id,
 				content: updated
 			});
@@ -2394,24 +2959,26 @@
 			{/if}
 			{#if getDiscussionDescription()}
 				{@const extraction = extractCitationData(getDiscussionDescription())}
-				{@const allCitations = extraction.citationData?.style_metadata?.citations || []}
+				{@const jsonCitations = extraction.citationData?.style_metadata?.citations || []}
+				{@const tableCitations = discussion?.current_version?.[0]?.citationsFromTable || []}
+				{@const allCitations = [...tableCitations, ...jsonCitations]}
 				{@const processedContent = processCitationReferences(extraction.cleanContent, allCitations)}
 				<div class="discussion-description">{@html processedContent.replace(/\n/g, '<br>')}</div>
 
 				<!-- Display unified reference list if citations exist -->
-				{#if extraction.citationData && allCitations.length > 0}
+				{#if allCitations.length > 0}
 					<div class="discussion-metadata">
 						<div class="references-section">
 							<h5>References</h5>
 							<div class="references-list">
 								{#each allCitations as item, index}
 									<div class="reference-item" id="citation-{index + 1}">
-										<div class="chicago-citation">
+										<details class="citation-details">
+											<summary>
+                        										<div class="chicago-citation">
 											<span class="citation-number">{index + 1}.</span>
 											{@html formatChicagoCitation(item)}
 										</div>
-										<details class="citation-details">
-											<summary>
 												<span class="summary-arrow">▶</span>
 												<span class="summary-text">Context</span>
 											</summary>
@@ -2548,14 +3115,18 @@
 
 		{#if historicalVersion}
 			<div class="historical-version-banner">
-				<strong>Historical Version (v{historicalVersion.version_number})</strong>
-				<div class="historical-title">{historicalVersion.title}</div>
-				<div class="historical-description">
-					{@html historicalVersion.description.replace(/\n/g, '<br>')}
+				<div class="historical-header">
+					<strong>📚 Viewing Archived Version #{historicalVersion.version_number}</strong>
+					<a href={`/discussions/${discussion.id}`} class="return-current-btn"
+						>↩️ Return to Current Version</a
+					>
 				</div>
-				<a href={`/discussions/${discussion.id}`} class="return-current"
-					>Return to current version</a
-				>
+				<div class="historical-content">
+					<h3 class="historical-title">{historicalVersion.title}</h3>
+					<div class="historical-description">
+						{@html historicalVersion.description.replace(/\n/g, '<br>')}
+					</div>
+				</div>
 			</div>
 		{:else if versionLoading}
 			<div class="historical-version-banner">Loading historical version…</div>
@@ -2592,7 +3163,7 @@
 						</span>
 						{#if post.context_version_id}
 							<a class="post-version-link" href={`?versionRef=${post.context_version_id}`}
-								>context version</a
+								>📖 view original context</a
 							>
 						{/if}
 						<span class="spacer"></span>
@@ -3365,7 +3936,6 @@
 	}
 
 	.discussion-metadata {
-    display
 		background: var(--color-surface-alt);
 		border: 1px solid var(--color-border);
 		border-radius: var(--border-radius-md);
@@ -4156,25 +4726,75 @@
 		min-height: 1rem;
 	}
 	.historical-version-banner {
-		background: var(--color-surface-alt);
-		border: 1px solid var(--color-border);
+		background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-alt));
+		border: 2px solid var(--color-accent);
 		border-radius: var(--border-radius-md);
-		padding: 1rem;
-		margin-bottom: 1.5rem;
+		padding: 1.5rem;
+		margin-bottom: 2rem;
 		font-size: 0.95rem;
-		color: var(--color-text-secondary);
+		color: var(--color-text-primary);
 	}
-	.historical-version-banner strong {
+
+	.historical-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 1rem;
+		flex-wrap: wrap;
+		gap: 1rem;
+	}
+
+	.historical-header strong {
 		color: var(--color-accent);
-		font-size: 1.05rem;
+		font-size: 1.1rem;
 	}
-	.historical-title {
+
+	.return-current-btn {
+		background: var(--color-primary);
+		color: var(--color-surface);
+		padding: 0.5rem 1rem;
+		border-radius: var(--border-radius-sm);
+		text-decoration: none;
 		font-weight: 600;
-		margin-top: 0.5rem;
+		font-size: 0.9rem;
+		transition: background var(--transition-speed) ease;
 	}
+
+	.return-current-btn:hover {
+		background: var(--color-accent);
+	}
+
+	.historical-content {
+		border-top: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
+		padding-top: 1rem;
+	}
+
+	.historical-title {
+		font-weight: 700;
+		font-size: 1.2rem;
+		color: var(--color-text-primary);
+		margin: 0 0 0.75rem 0;
+	}
+
 	.historical-description {
-		margin-top: 0.25rem;
+		line-height: 1.6;
+		color: var(--color-text-primary);
 	}
+
+	.post-version-link {
+		color: var(--color-primary);
+		text-decoration: none;
+		font-size: 0.85rem;
+		opacity: 0.8;
+		transition: opacity var(--transition-speed) ease;
+	}
+
+	.post-version-link:hover {
+		opacity: 1;
+		text-decoration: underline;
+	}
+
+	/* Legacy styles for compatibility */
 	.return-current {
 		margin-top: 0.75rem;
 		display: inline-block;
@@ -4353,37 +4973,13 @@
 		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 	}
 
-	.style-option input[type='radio'] {
-		margin: 0.2rem 0 0 0;
-		width: 2rem;
-		height: 1rem;
-		flex-shrink: 0;
-	}
 
 	.style-content {
 		flex: 1;
 	}
 
-	.style-content strong {
-		display: block;
-		font-size: 0.875rem;
-		color: var(--color-text-primary);
-		margin-bottom: 0.25rem;
-	}
 
-	.style-content span {
-		display: block;
-		font-size: 0.8rem;
-		color: var(--color-text-secondary);
-		margin-bottom: 0.25rem;
-	}
 
-	.style-content small {
-		display: block;
-		font-size: 0.75rem;
-		color: var(--color-text-tertiary);
-		font-style: italic;
-	}
 
 	/* Citation Section */
 	.citation-section {
@@ -4942,11 +5538,6 @@
 		margin-bottom: 0.5rem;
 	}
 
-	.analysis-header h4 {
-		margin: 0;
-		font-size: 1rem;
-		color: var(--color-text-primary);
-	}
 
 	.good-faith-pill {
 		display: inline-flex;

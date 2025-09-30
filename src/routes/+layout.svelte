@@ -7,7 +7,6 @@
 
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = nhost.auth.getUser();
-	let hasMeRole = false;
 	let hasAdminAccess = false;
 
 	function collectRoles(u) {
@@ -52,7 +51,6 @@
 
 	function refreshUser() {
 		user = nhost.auth.getUser();
-		hasMeRole = collectRoles(user).includes('me');
 		if (user) {
 			checkAdminAccess();
 		} else {

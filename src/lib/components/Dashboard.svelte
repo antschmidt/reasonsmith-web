@@ -128,7 +128,8 @@
 
 			// Handle user stats
 			if (statsResult.error) {
-				console.warn('Failed to load user stats:', statsResult.error);
+				console.error('Failed to load user stats:', statsResult.error);
+				console.error('Full stats result:', statsResult);
 				// Keep default stats values
 			} else if (statsResult.data) {
 				stats = calculateUserStats(statsResult.data);
@@ -183,7 +184,18 @@
 		original_discussion_id?: string;
 	}) {
 		if (d.type === 'discussion' && d.original_discussion_id) {
-			return `/discussions/${d.original_discussion_id}`;
+			// Check if this is a database draft (starts with discussion_version_) or localStorage draft (starts with discussion_)
+			if (d.id.startsWith('discussion_version_')) {
+				// Database draft - use dedicated draft editing page
+				const draftVersionId = d.id.replace('discussion_version_', '');
+				return `/discussions/${d.original_discussion_id}/draft/${draftVersionId}`;
+			} else if (d.id.startsWith('discussion_')) {
+				// localStorage draft - just go to the discussion page, it will load from localStorage
+				return `/discussions/${d.original_discussion_id}`;
+			} else {
+				// Unknown draft type - fallback
+				return `/discussions/${d.original_discussion_id}`;
+			}
 		} else if (d.discussion_id) {
 			return `/discussions/${d.discussion_id}?replyDraftId=${d.id}`;
 		} else {

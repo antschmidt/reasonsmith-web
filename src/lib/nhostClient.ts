@@ -207,24 +207,6 @@ export async function refreshUserRole() {
 	await upgradeRoleHeaders();
 }
 
-// Debug function to check current auth status
-export function debugAuthStatus() {
-	const user = nhost.auth.getUser();
-	const headers = nhost.graphql.getHeaders();
-	console.log('[Auth Debug] Current user:', user);
-	console.log('[Auth Debug] Current headers:', headers);
-	console.log('[Auth Debug] User ID:', user?.id);
-	return { user, headers };
-}
-
-// Debug function for admin operations
-export function debugAdminRequest(operation: string) {
-	const user = nhost.auth.getUser();
-	const headers = nhost.graphql.getHeaders();
-	console.log(`[Admin Debug] ${operation} - User:`, user?.id);
-	console.log(`[Admin Debug] ${operation} - Headers:`, headers);
-	console.log(`[Admin Debug] ${operation} - Role:`, headers['x-hasura-role']);
-}
 
 // Correct constraint name (user_pkey) per contributor_constraint enum
 // Important: do NOT overwrite an existing display_name on conflict.

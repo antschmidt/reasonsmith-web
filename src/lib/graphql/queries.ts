@@ -450,28 +450,17 @@ export const UPDATE_DISCUSSION_VERSION_GOOD_FAITH = gql`
 	${DISCUSSION_VERSION_FIELDS}
 `;
 
-// Legacy mutation to create a new discussion (created_by should be set by client or preset)
-// This will be phased out in favor of CREATE_DISCUSSION_WITH_VERSION
-export const CREATE_DISCUSSION = gql`
-	mutation CreateDiscussion($title: String!, $description: String, $createdBy: uuid!) {
-		insert_discussion_one(
-			object: { title: $title, description: $description, created_by: $createdBy }
-		) {
-			id
-			title
-		}
-	}
-`;
 
 // Mutation to create a new post (as a draft) - fallback version for pre-migration compatibility
 export const CREATE_POST_DRAFT = gql`
-	mutation CreatePostDraft($discussionId: uuid!, $authorId: uuid!, $draftContent: String!) {
+	mutation CreatePostDraft($discussionId: uuid!, $authorId: uuid!, $draftContent: String!, $contextVersionId: uuid) {
 		insert_post_one(
 			object: {
 				discussion_id: $discussionId
 				author_id: $authorId
 				draft_content: $draftContent
 				status: "draft"
+				context_version_id: $contextVersionId
 			}
 		) {
 			id
@@ -646,8 +635,6 @@ export const GET_USER_STATS = gql`
 		# Get user's discussions with good faith scores
 		userDiscussions: discussion(where: { created_by: { _eq: $userId } }) {
 			id
-			good_faith_score
-			good_faith_label
 			created_at
 			current_version: discussion_versions(
 				where: { version_type: { _eq: "published" } }
@@ -655,6 +642,8 @@ export const GET_USER_STATS = gql`
 				limit: 1
 			) {
 				title
+				good_faith_score
+				good_faith_label
 			}
 			draft_version: discussion_versions(
 				where: { version_type: { _eq: "draft" } }
@@ -662,35 +651,31 @@ export const GET_USER_STATS = gql`
 				limit: 1
 			) {
 				title
+				good_faith_score
+				good_faith_label
 			}
 		}
 
-		# Count total discussions created
-		discussionCount: discussion_aggregate(where: { created_by: { _eq: $userId } }) {
-			aggregate {
-				count
-			}
+		# Count total discussions created (using array length)
+		allUserDiscussions: discussion(where: { created_by: { _eq: $userId } }) {
+			id
 		}
 
-		# Count total posts/replies made
-		postCount: post_aggregate(
+		# Count total posts/replies made (using array length)
+		allUserPosts: post(
 			where: { author_id: { _eq: $userId }, status: { _in: ["approved", "pending"] } }
 		) {
-			aggregate {
-				count
-			}
+			id
 		}
 
-		# Count discussions user has participated in (replied to)
-		participatedDiscussions: discussion_aggregate(
+		# Count discussions user has participated in (replied to) - using array length
+		participatedDiscussionsList: discussion(
 			where: {
 				created_by: { _neq: $userId }
 				posts: { author_id: { _eq: $userId }, status: { _in: ["approved", "pending"] } }
 			}
 		) {
-			aggregate {
-				count
-			}
+			id
 		}
 	}
 `;
@@ -826,22 +811,6 @@ export const DELETE_DISCUSSION = gql`
 	}
 `;
 
-// Legacy mutation - deprecated in favor of UPDATE_DISCUSSION_VERSION_GOOD_FAITH
-// Only kept for backward compatibility, should not be used with versioned discussions
-export const UPDATE_DISCUSSION_GOOD_FAITH = gql`
-	mutation UpdateDiscussionGoodFaith($discussionId: uuid!) {
-		update_discussion_by_pk(
-			pk_columns: { id: $discussionId }
-			_set: {
-				# This mutation is deprecated - good faith fields moved to discussion_version table
-				status: "published"
-			}
-		) {
-			id
-			status
-		}
-	}
-`;
 
 // Mutation to update good faith analysis for a post
 export const UPDATE_POST_GOOD_FAITH = gql`

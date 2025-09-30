@@ -2,7 +2,6 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { writable } from 'svelte/store';
 	import { nhost } from '$lib/nhostClient';
 	import Dashboard from '$lib/components/Dashboard.svelte';
 	import TopPostsCarousel from '$lib/components/TopPostsCarousel.svelte';
@@ -19,13 +18,6 @@
 		return undefined;
 	}
 
-	const isOpen = writable(false);
-	function toggle() {
-		isOpen.update((v: boolean) => !v);
-	}
-	function close() {
-		isOpen.set(false);
-	}
 
 	let user = $state(nhost.auth.getUser());
 	let themeValue = $state('light');
