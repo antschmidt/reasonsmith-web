@@ -207,6 +207,18 @@ export async function refreshUserRole() {
 	await upgradeRoleHeaders();
 }
 
+// Debug function for admin requests
+export function debugAdminRequest(operation: string) {
+	const user = nhost.auth.getUser();
+	const actualRole = typeof window !== 'undefined' ? window.sessionStorage.getItem('userActualRole') : null;
+	console.log(`[Admin Debug] ${operation}:`, {
+		userId: user?.id,
+		email: user?.email,
+		actualRole,
+		headers: nhost.graphql.requestHeaders
+	});
+}
+
 // Correct constraint name (user_pkey) per contributor_constraint enum
 // Important: do NOT overwrite an existing display_name on conflict.
 // Only update the email; keep display_name as user-configured value.
