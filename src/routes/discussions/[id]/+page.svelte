@@ -10,6 +10,8 @@
 		UPDATE_DISCUSSION_VERSION_GOOD_FAITH,
 		UPDATE_POST_GOOD_FAITH,
 		GET_DISCUSSION_DETAILS as IMPORTED_GET_DISCUSSION_DETAILS,
+		GET_CONTRIBUTOR,
+		INCREMENT_PURCHASED_CREDITS_USED,
 		ANONYMIZE_POST,
 		ANONYMIZE_DISCUSSION,
 		UNANONYMIZE_POST,
@@ -26,6 +28,13 @@
 		getPostTypeConfig
 	} from '$lib/types/writingStyle';
 	import CitationForm from '$lib/components/CitationForm.svelte';
+	import {
+		canUseAnalysis,
+		getMonthlyCreditsRemaining,
+		getPurchasedCreditsRemaining,
+		willUsePurchasedCredit,
+		checkAndResetMonthlyCredits
+	} from '$lib/creditUtils';
 	import AnimatedLogo from '$lib/components/AnimatedLogo.svelte';
 	import {
 		checkPostDeletable,
@@ -39,6 +48,7 @@
 	let loading = $state(true);
 	let error = $state<Error | null>(null);
 	let authReady = $state(false);
+	let contributor = $state<any>(null);
 
 	// Helper functions to handle versioned discussion data
 	function getDiscussionTitle(): string {
@@ -587,9 +597,18 @@
 			// Good-faith analysis gate
 			commentGoodFaithTesting = true;
 			try {
+				const user = nhost.auth.getUser();
+				const accessToken = nhost.auth.getAccessToken();
+				console.log('[DEBUG] User authenticated:', !!user, user?.id);
+				console.log('[DEBUG] Frontend access token:', !!accessToken, accessToken?.substring(0, 20) + '...');
+				const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+				if (accessToken) {
+					headers['Authorization'] = `Bearer ${accessToken}`;
+				}
+				console.log('[DEBUG] Headers being sent:', Object.keys(headers));
 				const response = await fetch('/api/goodFaithClaude', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers,
 					body: JSON.stringify({ postId: draftPostId, content: newComment })
 				});
 				if (!response.ok) {
@@ -962,6 +981,53 @@
 		}
 	}
 
+	async function loadContributor() {
+		if (!user?.id) {
+			contributor = null;
+			return;
+		}
+
+		try {
+			const result = await nhost.graphql.request(GET_CONTRIBUTOR, {
+				userId: user.id
+			});
+
+			if ((result as any).error) {
+				console.error('Error loading contributor:', (result as any).error);
+				return;
+			}
+
+			contributor = (result as any).data?.contributor_by_pk || null;
+
+			// Check and reset monthly credits if needed
+			if (contributor) {
+				const HASURA_GRAPHQL_ENDPOINT = 'https://graphql.reasonsmith.com/v1/graphql';
+				const accessToken = nhost.auth.getAccessToken();
+
+				if (accessToken) {
+					const wasReset = await checkAndResetMonthlyCredits(
+						contributor,
+						HASURA_GRAPHQL_ENDPOINT,
+						accessToken
+					);
+
+					// If credits were reset, reload contributor to get updated values
+					if (wasReset) {
+						const updatedResult = await nhost.graphql.request(GET_CONTRIBUTOR, {
+							userId: user.id
+						});
+						if (!(updatedResult as any).error) {
+							contributor = (updatedResult as any).data?.contributor_by_pk || null;
+						}
+					}
+				}
+			}
+		} catch (error) {
+			console.error('Error loading contributor:', error);
+			contributor = null;
+		}
+	}
+
 	onMount(() => {
 		// Give auth a moment to initialize, then mark as ready
 		setTimeout(() => {
@@ -1003,6 +1069,61 @@
 			checkAllDeletionStatus();
 		}
 	});
+
+	// Load contributor when user changes
+	$effect(() => {
+		if (user) {
+			loadContributor();
+		}
+	});
+
+	// Credit utility functions - using centralized logic
+	function getTotalCreditsRemaining(): number {
+		if (!contributor) return 0;
+		const monthly = getMonthlyCreditsRemaining(contributor);
+		const purchased = getPurchasedCreditsRemaining(contributor);
+
+		if (monthly === Infinity) return Infinity;
+		return monthly + purchased;
+	}
+
+	function getAnalysisLimitText(): string {
+		if (!contributor) return '';
+		if (!contributor.analysis_enabled) return 'Analysis disabled';
+		if (['admin', 'slartibartfast'].includes(contributor.role)) return 'Unlimited analysis';
+
+		const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
+		const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
+
+		if (monthlyRemaining === Infinity) return 'Unlimited analysis';
+
+		let text = `${monthlyRemaining}/${contributor.analysis_limit} monthly`;
+		if (purchasedRemaining > 0) {
+			text += ` • ${purchasedRemaining} purchased`;
+		}
+
+		return text;
+	}
+
+	async function consumeAnalysisCredit(): Promise<void> {
+		if (!contributor) return;
+
+		try {
+			// Check if we should use purchased credits instead of monthly
+			if (willUsePurchasedCredit(contributor)) {
+				// Use purchased credit
+				await nhost.graphql.request(INCREMENT_PURCHASED_CREDITS_USED, {
+					contributorId: contributor.id
+				});
+			}
+			// If using monthly credit, the existing INCREMENT_ANALYSIS_USAGE is called by the API endpoints
+
+			// Reload contributor data to reflect the updated counts
+			await loadContributor();
+		} catch (error) {
+			console.error('Error consuming analysis credit:', error);
+		}
+	}
 
 	async function createDatabaseDraft() {
 		if (!discussion || !user) return;
@@ -2114,6 +2235,12 @@
 			return;
 		}
 
+		// Check analysis limits
+		if (!contributor || !canUseAnalysis(contributor)) {
+			goodFaithError = getAnalysisLimitText() || 'Analysis not available';
+			return;
+		}
+
 		// Check cache first
 		const cachedResult = getCachedAnalysis(editDescription, 'openai');
 		if (cachedResult) {
@@ -2162,6 +2289,9 @@
 			// Cache the result
 			cacheAnalysis(editDescription, 'openai', goodFaithResult);
 
+			// Consume the appropriate credit (monthly or purchased)
+			await consumeAnalysisCredit();
+
 			// Save to database
 			await saveGoodFaithAnalysisToDatabase(goodFaithResult, 'openai');
 		} catch (error: any) {
@@ -2178,6 +2308,12 @@
 			return;
 		}
 
+		// Check analysis limits
+		if (!contributor || !canUseAnalysis(contributor)) {
+			claudeGoodFaithError = getAnalysisLimitText() || 'Analysis not available';
+			return;
+		}
+
 		// Check cache first
 		const cachedResult = getCachedAnalysis(editDescription, 'claude');
 		if (cachedResult) {
@@ -2190,11 +2326,14 @@
 		claudeGoodFaithResult = null;
 
 		try {
+			const accessToken = nhost.auth.getAccessToken();
+			const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+			if (accessToken) {
+				headers['Authorization'] = `Bearer ${accessToken}`;
+			}
 			const response = await fetch('/api/goodFaithClaude', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
+				headers,
 				body: JSON.stringify({
 					postId: 'test-claude',
 					content: editDescription
@@ -2221,6 +2360,9 @@
 
 			// Cache the result
 			cacheAnalysis(editDescription, 'claude', claudeGoodFaithResult);
+
+			// Consume the appropriate credit (monthly or purchased)
+			await consumeAnalysisCredit();
 
 			// Save to database
 			await saveGoodFaithAnalysisToDatabase(claudeGoodFaithResult, 'claude');
@@ -2609,6 +2751,13 @@
 							oninput={onEditDescriptionInput}
 						></textarea>
 					</label>
+
+					<!-- Analysis limit display -->
+					{#if contributor}
+						<div class="analysis-limit-info">
+							{getAnalysisLimitText()}
+						</div>
+					{/if}
 
 					<!-- Good Faith Testing and Citation Buttons -->
 					<div style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.5rem 0;">
@@ -4237,6 +4386,14 @@
 	.good-faith-test-btn:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
+	}
+
+	/* Analysis Limit Info */
+	.analysis-limit-info {
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+		margin-bottom: 0.5rem;
+		font-style: italic;
 	}
 
 	/* Analysis Panel - Sleek Design */

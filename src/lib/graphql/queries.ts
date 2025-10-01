@@ -12,6 +12,9 @@ const CONTRIBUTOR_FIELDS = gql`
 		analysis_limit
 		analysis_count_used
 		analysis_count_reset_at
+		purchased_credits_total
+		purchased_credits_used
+		subscription_tier
 		avatar_url
 	}
 `;
@@ -631,8 +634,8 @@ export const CREATE_POST_DRAFT_WITH_STYLE = gql`
 		$authorId: uuid!
 		$draftContent: String!
 		$postType: post_type_enum = response
-		$parentPostId: uuid
-		$writingStyle: writing_style_type_enum = quick_point
+		$parentPostId: uuid\n\t\t$contextVersionId: uuid
+		$writingStyle: writing_style_type = quick_point
 		$styleMetadata: jsonb = {}
 	) {
 		insert_post_one(
@@ -641,7 +644,7 @@ export const CREATE_POST_DRAFT_WITH_STYLE = gql`
 				author_id: $authorId
 				draft_content: $draftContent
 				post_type: $postType
-				parent_post_id: $parentPostId
+				parent_post_id: $parentPostId\n\t\t\t\tcontext_version_id: $contextVersionId
 				status: "draft"
 				writing_style: $writingStyle
 				style_metadata: $styleMetadata
@@ -1052,6 +1055,16 @@ export const UPDATE_CONTRIBUTOR_ANALYSIS_SETTINGS = gql`
 	${CONTRIBUTOR_FIELDS}
 `;
 
+// Get contributor by user ID
+export const GET_CONTRIBUTOR = gql`
+	query GetContributor($userId: uuid!) {
+		contributor_by_pk(id: $userId) {
+			...ContributorFields
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
+`;
+
 // Mutation to increment analysis usage count
 export const INCREMENT_ANALYSIS_USAGE = gql`
 	mutation IncrementAnalysisUsage($contributorId: uuid!) {
@@ -1089,6 +1102,61 @@ export const UPDATE_CONTRIBUTOR_ROLE = gql`
 export const UPDATE_CONTRIBUTOR_AVATAR = gql`
 	mutation UpdateContributorAvatar($contributorId: uuid!, $avatarUrl: String) {
 		update_contributor_by_pk(pk_columns: { id: $contributorId }, _set: { avatar_url: $avatarUrl }) {
+			...ContributorFields
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
+`;
+
+// Mutation to add purchased credits
+export const ADD_PURCHASED_CREDITS = gql`
+	mutation AddPurchasedCredits($contributorId: uuid!, $creditsToAdd: Int!) {
+		update_contributor_by_pk(
+			pk_columns: { id: $contributorId }
+			_inc: { purchased_credits_total: $creditsToAdd }
+		) {
+			...ContributorFields
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
+`;
+
+// Mutation to increment purchased credits used
+export const INCREMENT_PURCHASED_CREDITS_USED = gql`
+	mutation IncrementPurchasedCreditsUsed($contributorId: uuid!) {
+		update_contributor_by_pk(
+			pk_columns: { id: $contributorId }
+			_inc: { purchased_credits_used: 1 }
+		) {
+			...ContributorFields
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
+`;
+
+// Mutation to update subscription tier
+export const UPDATE_SUBSCRIPTION_TIER = gql`
+	mutation UpdateSubscriptionTier($contributorId: uuid!, $tier: subscription_tier_enum!, $analysisLimit: Int!) {
+		update_contributor_by_pk(
+			pk_columns: { id: $contributorId }
+			_set: {
+				subscription_tier: $tier,
+				analysis_limit: $analysisLimit
+			}
+		) {
+			...ContributorFields
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
+`;
+
+// Mutation to update analysis limit based on subscription tier
+export const UPDATE_ANALYSIS_LIMIT_BY_TIER = gql`
+	mutation UpdateAnalysisLimitByTier($contributorId: uuid!, $limit: Int) {
+		update_contributor_by_pk(
+			pk_columns: { id: $contributorId }
+			_set: { analysis_limit: $limit }
+		) {
 			...ContributorFields
 		}
 	}

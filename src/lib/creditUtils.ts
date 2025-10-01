@@ -1,0 +1,188 @@
+import { print } from 'graphql';
+import { RESET_ANALYSIS_USAGE } from '$lib/graphql/queries';
+
+/**
+ * Checks if a contributor's monthly credits need to be reset.
+ * Monthly credits reset at the beginning of each month.
+ */
+export function shouldResetMonthlyCredits(lastResetDate: string | null): boolean {
+	if (!lastResetDate) {
+		return true; // Never reset before
+	}
+
+	const lastReset = new Date(lastResetDate);
+	const now = new Date();
+
+	// Check if we're in a different month than the last reset
+	return (
+		now.getFullYear() !== lastReset.getFullYear() ||
+		now.getMonth() !== lastReset.getMonth()
+	);
+}
+
+/**
+ * Resets a contributor's monthly analysis usage count.
+ * This should be called when shouldResetMonthlyCredits returns true.
+ */
+export async function resetMonthlyCredits(
+	contributorId: string,
+	graphqlEndpoint: string,
+	accessToken?: string,
+	adminSecret?: string
+): Promise<boolean> {
+	try {
+		const headers: Record<string, string> = {
+			'Content-Type': 'application/json'
+		};
+
+		// Use admin secret if available, otherwise use user access token
+		if (adminSecret) {
+			headers['x-hasura-admin-secret'] = adminSecret;
+			headers['x-hasura-role'] = 'admin';
+		} else if (accessToken) {
+			headers['Authorization'] = `Bearer ${accessToken}`;
+		} else {
+			console.error('No authentication method provided for reset');
+			return false;
+		}
+
+		const response = await fetch(graphqlEndpoint, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				query: print(RESET_ANALYSIS_USAGE),
+				variables: { contributorId }
+			})
+		});
+
+		const result = await response.json();
+
+		if (result.errors) {
+			console.error('Failed to reset monthly credits:', result.errors);
+			return false;
+		}
+
+		console.log(`Monthly credits reset for contributor ${contributorId}`);
+		return true;
+	} catch (error) {
+		console.error('Error resetting monthly credits:', error);
+		return false;
+	}
+}
+
+/**
+ * Checks and resets monthly credits if needed for a contributor.
+ * This is the main function to call from other parts of the application.
+ */
+export async function checkAndResetMonthlyCredits(
+	contributor: {
+		id: string;
+		analysis_count_reset_at: string | null;
+	},
+	graphqlEndpoint: string,
+	accessToken?: string,
+	adminSecret?: string
+): Promise<boolean> {
+	if (shouldResetMonthlyCredits(contributor.analysis_count_reset_at)) {
+		return await resetMonthlyCredits(
+			contributor.id,
+			graphqlEndpoint,
+			accessToken,
+			adminSecret
+		);
+	}
+	return false; // No reset was needed
+}
+
+/**
+ * Gets the current monthly credits remaining for a contributor.
+ * Takes into account whether a reset is needed.
+ */
+export function getMonthlyCreditsRemaining(contributor: {
+	analysis_limit: number | null;
+	analysis_count_used: number;
+	analysis_count_reset_at: string | null;
+}): number {
+	if (contributor.analysis_limit === null) {
+		return Infinity; // Unlimited
+	}
+
+	// If a reset is needed, they have their full limit available
+	if (shouldResetMonthlyCredits(contributor.analysis_count_reset_at)) {
+		return contributor.analysis_limit;
+	}
+
+	// Otherwise, calculate remaining from current usage
+	return Math.max(0, contributor.analysis_limit - contributor.analysis_count_used);
+}
+
+/**
+ * Gets the purchased credits remaining for a contributor.
+ */
+export function getPurchasedCreditsRemaining(contributor: {
+	purchased_credits_total?: number;
+	purchased_credits_used?: number;
+}): number {
+	// Default to 0 if fields don't exist (before migration)\n\tconst total = contributor.purchased_credits_total ?? 0;\n\tconst used = contributor.purchased_credits_used ?? 0;\n\treturn Math.max(0, total - used);
+}
+
+/**
+ * Checks if a contributor can use analysis, considering both monthly and purchased credits.
+ * Also considers whether monthly credits need to be reset.
+ */
+export function canUseAnalysis(contributor: {
+	analysis_enabled: boolean;
+	role: string;
+	analysis_limit: number | null;
+	analysis_count_used: number;
+	analysis_count_reset_at: string | null;
+	purchased_credits_total?: number;
+	purchased_credits_used?: number;
+}): boolean {
+	if (!contributor.analysis_enabled) {
+		return false;
+	}
+
+	// Admin and slartibartfast roles have unlimited access
+	if (['admin', 'slartibartfast'].includes(contributor.role)) {
+		return true;
+	}
+
+	// Check monthly credits first
+	const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
+	if (monthlyRemaining > 0) {
+		return true;
+	}
+
+	// If no monthly credits, check purchased credits
+	const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
+	return purchasedRemaining > 0;
+}
+
+/**
+ * Determines whether the next analysis will use a purchased credit.
+ * Returns true if monthly credits are exhausted and purchased credits will be used.
+ */
+export function willUsePurchasedCredit(contributor: {
+	role: string;
+	analysis_limit: number | null;
+	analysis_count_used: number;
+	analysis_count_reset_at: string | null;
+	purchased_credits_total?: number;
+	purchased_credits_used?: number;
+}): boolean {
+	// Admin and slartibartfast roles don't use any credits
+	if (['admin', 'slartibartfast'].includes(contributor.role)) {
+		return false;
+	}
+
+	// Check if monthly credits are available
+	const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
+	if (monthlyRemaining > 0) {
+		return false; // Will use monthly credit
+	}
+
+	// Monthly credits exhausted, check if purchased credits are available
+	const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
+	return purchasedRemaining > 0;
+}

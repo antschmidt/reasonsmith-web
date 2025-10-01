@@ -76,6 +76,9 @@
         analysis_limit
         analysis_count_used
         analysis_count_reset_at
+        purchased_credits_total
+        purchased_credits_used
+        subscription_tier
         avatar_url
       }
       discussion(where: { created_by: { _eq: $id } }, order_by: { created_at: desc }) {
@@ -899,14 +902,26 @@
 								<div class="credit-status limited">
 									<div class="status-icon">🔢</div>
 									<div class="status-text">
-										<div class="status-label">
-											{(contributor?.analysis_limit || 0) - (contributor?.analysis_count_used || 0)}
-											of {contributor?.analysis_limit || 0} remaining
+										<!-- Monthly Credits -->
+										<div class="credit-tier">
+											<div class="status-label">
+												Monthly: {(contributor?.analysis_limit || 0) - (contributor?.analysis_count_used || 0)}
+												of {contributor?.analysis_limit || 0} remaining
+											</div>
+											<div class="status-description">
+												Resets at the end of the month
+											</div>
 										</div>
-										<div class="status-description">
-											Resets: {contributor?.analysis_count_reset_at
-												? new Date(contributor.analysis_count_reset_at).toLocaleDateString()
-												: 'Unknown'}
+
+										<!-- Purchased Credits -->
+										<div class="credit-tier">
+											<div class="status-label">
+												Purchased: {(contributor?.purchased_credits_total || 0) - (contributor?.purchased_credits_used || 0)}
+												of {contributor?.purchased_credits_total || 0} available
+											</div>
+											<div class="status-description">
+												Used only after monthly credits are exhausted
+											</div>
 										</div>
 									</div>
 								</div>
