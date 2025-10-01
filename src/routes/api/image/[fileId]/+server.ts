@@ -10,7 +10,7 @@ export async function GET({ params, request }) {
 		}
 
 		// Use admin secret for server-side authentication
-		const adminSecret = env.HASURA_ADMIN_SECRET || ':u5*t(oj)*\'47nsYsEUrjl!3_nL&#M0E';
+		const adminSecret = env.HASURA_ADMIN_SECRET || ":u5*t(oj)*'47nsYsEUrjl!3_nL&#M0E";
 
 		console.log('Fetching file:', fileId);
 
@@ -46,7 +46,6 @@ export async function GET({ params, request }) {
 				'Content-Length': imageBuffer.byteLength.toString()
 			}
 		});
-
 	} catch (err) {
 		console.error('Image proxy error:', err);
 		throw error(500, 'Failed to load image');

@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	// Avoid importing gql to prevent type resolution issues; use plain string
 	import { nhost } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
 	import {
 		CREATE_POST_DRAFT,
+		CREATE_POST_DRAFT_WITH_STYLE,
 		UPDATE_DISCUSSION_VERSION_GOOD_FAITH,
 		UPDATE_POST_GOOD_FAITH,
 		GET_DISCUSSION_DETAILS as IMPORTED_GET_DISCUSSION_DETAILS,
@@ -20,9 +22,11 @@
 		processCitationReferences,
 		type WritingStyle,
 		type StyleMetadata,
-		type Citation
+		type Citation,
+		getPostTypeConfig
 	} from '$lib/types/writingStyle';
 	import CitationForm from '$lib/components/CitationForm.svelte';
+	import AnimatedLogo from '$lib/components/AnimatedLogo.svelte';
 	import {
 		checkPostDeletable,
 		deletePost,
@@ -47,6 +51,12 @@
 		if (!discussion) return '';
 		const version = discussion.current_version?.[0] || discussion.draft_version?.[0];
 		return version?.description || '';
+	}
+
+	function getDiscussionTags(): string[] {
+		if (!discussion) return [];
+		const version = discussion.current_version?.[0] || discussion.draft_version?.[0];
+		return version?.tags || [];
 	}
 
 	function getDiscussionGoodFaithScore(): number | null {
@@ -76,6 +86,11 @@
 
 	// New comment form state
 	let newComment = $state('');
+	let commentPostType = $state<
+		'response' | 'counter_argument' | 'supporting_evidence' | 'question'
+	>('response');
+	let commentFormExpanded = $state(false);
+	let showAdvancedFeatures = $state(false);
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
 	let user = $state(nhost.auth.getUser());
@@ -510,10 +525,11 @@
 		const discussionId = $page.params.id as string;
 		const currentVersionId = discussion.current_version?.[0]?.id || null;
 		// create empty draft row immediately
-		const { data, error } = await nhost.graphql.request(CREATE_POST_DRAFT, {
+		const { data, error } = await nhost.graphql.request(CREATE_POST_DRAFT_WITH_STYLE, {
 			discussionId,
 			authorId: user.id,
 			draftContent: newComment || '',
+			postType: commentPostType,
 			contextVersionId: currentVersionId
 		});
 		if (error) return; // silent fail; user can still post normally
@@ -1080,8 +1096,9 @@
 					discussion.draft_version[0] = updatedDraft;
 					hasUnsavedChanges = true;
 					console.log('Updated existing database draft:', updatedDraft.id);
+					return updatedDraft.id;
 				}
-				return;
+				return null;
 			}
 
 			// First, get the highest version number for this discussion
@@ -1157,50 +1174,40 @@
 
 				hasUnsavedChanges = true;
 				console.log('Created database draft:', newDraft.id);
+				return newDraft.id;
 			}
 		} catch (error) {
 			console.error('Error creating database draft:', error);
 			editError = 'Failed to create draft';
+			return null;
 		}
 	}
 
-	function startEdit() {
-		editing = true;
-
-		// Try to load existing draft first
-		const hasDraft = loadDraftFromLocalStorage();
-
-		if (!hasDraft) {
-			// Check if there's a database draft version
+	async function startEdit() {
+		try {
+			// Check if there's already a draft for this discussion
 			const draftVersion = discussion?.draft_version?.[0];
 
 			if (draftVersion) {
-				// Initialize with database draft content
-				editTitle = draftVersion.title || '';
-				editDescription = draftVersion.description || '';
-				editSelectedStyle = 'journalistic'; // Default style for database drafts
-				editStyleMetadata = { citations: [] };
+				// Draft already exists, navigate to it
+				goto(`/discussions/${discussion.id}/draft/${draftVersion.id}`);
+				return;
+			}
 
-				// Load citations for this draft version
-				loadCitationsForDraftVersion(draftVersion.id);
-				hasUnsavedChanges = true; // Important: mark as having changes so publish works
+			// No draft found, create a new database draft based on published content
+			const draftId = await createDatabaseDraft();
+
+			if (draftId) {
+				// Redirect to the draft editing page
+				goto(`/discussions/${discussion.id}/draft/${draftId}`);
 			} else {
-				// No draft found, create a new database draft based on published content
-				createDatabaseDraft();
+				console.error('Failed to create draft');
+				editError = 'Failed to create draft for editing';
 			}
+		} catch (error) {
+			console.error('Error starting edit:', error);
+			editError = 'Failed to start editing';
 		}
-
-		editError = null;
-		editLastSavedAt = null;
-		validateEditContent();
-
-		// Auto-resize textarea after content is loaded
-		setTimeout(() => {
-			const textarea = document.getElementById('edit-description') as HTMLTextAreaElement;
-			if (textarea) {
-				autoResizeTextarea(textarea);
-			}
-		}, 0);
 	}
 
 	function cancelEdit() {
@@ -2491,6 +2498,13 @@
 	{:else if discussion}
 		<header class="discussion-header">
 			<h1 class="discussion-title">{getDiscussionTitle()}</h1>
+			{#if getDiscussionTags().length > 0}
+				<div class="discussion-tags">
+					{#each getDiscussionTags() as tag}
+						<span class="tag">{tag}</span>
+					{/each}
+				</div>
+			{/if}
 			<p class="discussion-meta">
 				<span>
 					Started by {#if discussion.is_anonymous}
@@ -2605,7 +2619,8 @@
 							disabled={goodFaithTesting || !editDescription.trim() || !editHeuristicPassed}
 						>
 							{#if goodFaithTesting}
-								🤔 OpenAI...
+								<AnimatedLogo size="16px" isAnimating={true} />
+								OpenAI...
 							{:else}
 								🤔 OpenAI Test
 							{/if}
@@ -2617,7 +2632,8 @@
 							disabled={claudeGoodFaithTesting || !editDescription.trim() || !editHeuristicPassed}
 						>
 							{#if claudeGoodFaithTesting}
-								🧠 Claude...
+								<AnimatedLogo size="16px" isAnimating={true} />
+								Claude...
 							{:else}
 								🧠 Claude Test
 							{/if}
@@ -2629,55 +2645,71 @@
 
 					<!-- Good Faith Test Results -->
 					{#if goodFaithResult}
-						<div class="good-faith-result openai-result">
-							<div class="good-faith-header">
-								<h4>
-									OpenAI Analysis
+						<div class="analysis-panel">
+							<div class="analysis-summary">
+								<div class="analysis-badge {goodFaithResult.good_faith_label}">
+									<span class="analysis-score"
+										>{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span
+									>
+									<span class="analysis-label">{goodFaithResult.good_faith_label}</span>
+								</div>
+								<div class="analysis-meta">
+									<span class="analysis-provider">OpenAI Analysis</span>
 									{#if goodFaithResult.fromCache}
 										<span class="cache-indicator" title="Loaded from cache">💾</span>
 									{/if}
-								</h4>
-								<div class="good-faith-score">
-									<span class="score-value"
-										>{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span
-									>
-									<span class="score-label {goodFaithResult.good_faith_label}"
-										>{goodFaithResult.good_faith_label}</span
-									>
 								</div>
 							</div>
 
 							{#if goodFaithResult.claims && goodFaithResult.claims.length > 0}
-								<div class="openai-claims">
-									<strong>Claims Analysis:</strong>
+								<div class="analysis-content">
 									{#each goodFaithResult.claims as claim}
-										<div class="claim-item">
-											<div class="claim-text"><strong>Claim:</strong> {claim.claim}</div>
+										<div class="claim-analysis">
+											<div class="claim-statement">{claim.claim}</div>
 											{#if claim.arguments}
 												{#each claim.arguments as arg}
-													<div class="argument-item">
-														<div class="argument-text">{arg.text}</div>
-														<div class="argument-details">
-															<span class="argument-score">Score: {arg.score}/10</span>
-															{#if arg.fallacies && arg.fallacies.length > 0}
-																<span class="fallacies">Fallacies: {arg.fallacies.join(', ')}</span>
-															{/if}
-															{#if arg.manipulativeLanguage && arg.manipulativeLanguage.length > 0}
-																<span class="manipulative-language"
-																	>Manipulative Language: {arg.manipulativeLanguage.join(
-																		', '
-																	)}</span
+													<div class="argument-card">
+														<div class="argument-content">
+															<div class="argument-text">{arg.text}</div>
+															<div class="argument-metrics">
+																<span
+																	class="argument-score"
+																	class:strong={arg.score >= 7}
+																	class:moderate={arg.score >= 4 && arg.score < 7}
+																	class:weak={arg.score < 4}
 																>
-															{/if}
+																	{arg.score}/10
+																</span>
+															</div>
 														</div>
+
 														{#if arg.suggestions && arg.suggestions.length > 0}
-															<div class="improvements">
-																<strong>Suggestions:</strong>
-																<ul>
+															<div class="improvements-section">
+																<div class="improvements-label">💡 Suggested improvements</div>
+																<ul class="improvements-list">
 																	{#each arg.suggestions as suggestion}
 																		<li>{suggestion}</li>
 																	{/each}
 																</ul>
+															</div>
+														{/if}
+
+														{#if (arg.fallacies && arg.fallacies.length > 0) || (arg.manipulativeLanguage && arg.manipulativeLanguage.length > 0)}
+															<div class="issues-section">
+																{#if arg.fallacies && arg.fallacies.length > 0}
+																	<div class="issue-item">
+																		<span class="issue-label">⚠️ Logical issues:</span>
+																		<span class="issue-text">{arg.fallacies.join(', ')}</span>
+																	</div>
+																{/if}
+																{#if arg.manipulativeLanguage && arg.manipulativeLanguage.length > 0}
+																	<div class="issue-item">
+																		<span class="issue-label">🚩 Language concerns:</span>
+																		<span class="issue-text"
+																			>{arg.manipulativeLanguage.join(', ')}</span
+																		>
+																	</div>
+																{/if}
 															</div>
 														{/if}
 													</div>
@@ -2688,33 +2720,20 @@
 								</div>
 							{/if}
 
-							{#if goodFaithResult.cultishPhrases && goodFaithResult.cultishPhrases.length > 0}
-								<div class="cultish-phrases">
-									<strong>Manipulative Phrases Found:</strong>
-									<ul>
-										{#each goodFaithResult.cultishPhrases as phrase}
-											<li>"{phrase}"</li>
-										{/each}
-									</ul>
+							{#if goodFaithResult.rationale}
+								<div class="analysis-summary-text">
+									{goodFaithResult.rationale}
 								</div>
 							{/if}
 
-							{#if goodFaithResult.fallacyOverload}
-								<div class="fallacy-warning">
-									<strong>⚠️ Fallacy Overload:</strong> This content contains a high proportion of fallacious
-									arguments.
-								</div>
-							{/if}
-
-							<div class="good-faith-rationale">
-								<strong>Summary:</strong>
-								{goodFaithResult.rationale}
-							</div>
 							<button
 								type="button"
-								class="close-result-btn"
-								onclick={() => (goodFaithResult = null)}>✕</button
+								class="analysis-close-btn"
+								onclick={() => (goodFaithResult = null)}
+								aria-label="Close analysis"
 							>
+								✕
+							</button>
 						</div>
 					{/if}
 
@@ -3100,15 +3119,6 @@
 						{#if showDiscussionGoodFaithAnalysis}
 							<div class="good-faith-details">
 								<div class="score-breakdown">
-									<div class="score-row">
-										<span class="score-label-text">Score:</span>
-										<span class="score-value-large"
-											>{(getDiscussionGoodFaithScore() * 100).toFixed(0)}%</span
-										>
-										<span class="score-label-badge {getDiscussionGoodFaithLabel()}"
-											>{getDiscussionGoodFaithLabel()}</span
-										>
-									</div>
 									{#if getDiscussionGoodFaithLastEvaluated()}
 										<div class="evaluation-date">
 											Evaluated: {new Date(getDiscussionGoodFaithLastEvaluated()).toLocaleString()}
@@ -3119,6 +3129,7 @@
 								<!-- Full Analysis Breakdown -->
 								{#if getDiscussionGoodFaithAnalysis()}
 									{@const analysis = getDiscussionGoodFaithAnalysis()}
+									<!-- Debug: {console.log('Analysis data:', analysis)} -->
 
 									{#if analysis.claims && analysis.claims.length > 0}
 										<div class="analysis-section">
@@ -3126,26 +3137,20 @@
 											{#each analysis.claims as claim}
 												<div class="claim-item">
 													<div class="claim-text"><strong>Claim:</strong> {claim.claim}</div>
-													{#if claim.arguments}
-														{#each claim.arguments as arg}
+													{#if claim.supportingArguments || claim.arguments}
+														{#each (claim.supportingArguments || claim.arguments) as arg}
 															<div class="argument-item">
+																{#if arg.argument}
+																	<div class="argument-text"><strong>Analysis:</strong> {arg.argument}</div>
+																{/if}
 																<span class="argument-score">Score: {arg.score}/10</span>
 																{#if arg.fallacies && arg.fallacies.length > 0}
 																	<span class="fallacies"
 																		>Fallacies: {arg.fallacies.join(', ')}</span
 																	>
 																{/if}
-															</div>
-														{/each}
-													{/if}
-													{#if claim.supportingArguments}
-														{#each claim.supportingArguments as arg}
-															<div class="argument-item">
-																<span class="argument-score">Score: {arg.score}/10</span>
-																{#if arg.fallacies && arg.fallacies.length > 0}
-																	<span class="fallacies"
-																		>Fallacies: {arg.fallacies.join(', ')}</span
-																	>
+																{#if arg.improvements}
+																	<div class="improvements"><strong>Improvements:</strong> {arg.improvements}</div>
 																{/if}
 															</div>
 														{/each}
@@ -3250,14 +3255,14 @@
 							type="button"
 							class="reply-post-btn"
 							onclick={() => startReply(post)}
-							title="Reply to this comment">Reply</button
+							title="Reply to this comment">↳</button
 						>
 						{#if user && post.contributor.id === user.id}
 							<button
 								type="button"
 								class="edit-post-btn"
 								onclick={() => startEditPost(post)}
-								title="Edit post">Edit</button
+								title="Edit post">✎</button
 							>
 							{#if post.is_anonymous}
 								<button
@@ -3504,9 +3509,17 @@
 		</div>
 
 		<section class="add-comment">
-			<h2 class="add-comment-title">Add a Comment</h2>
 			{#if !user}
 				<p class="signin-hint">Please sign in to participate.</p>
+			{:else if !commentFormExpanded}
+				<button
+					class="leave-comment-btn"
+					onclick={() => {
+						commentFormExpanded = true;
+					}}
+				>
+					💬 Leave a Comment
+				</button>
 			{:else}
 				<form
 					onsubmit={(e) => {
@@ -3515,34 +3528,36 @@
 					}}
 					class="comment-form"
 				>
-					<!-- Comment Word Count and Style Info -->
-					<div class="comment-writing-info">
-						<div class="word-count">
-							<span class="word-count-label">Words: {commentWordCount}</span>
-							<span class="style-indicator">({getStyleConfig(commentSelectedStyle).label})</span>
-						</div>
-
-						<div class="citation-reminder" class:active={showCommentCitationReminder}>
-							<div class="reminder-icon">📚</div>
-							<div class="reminder-text">
-								<strong
-									>{showCommentCitationReminder ? 'Add citations' : 'Cite your sources'}</strong
-								>
-								<span
-									>{showCommentCitationReminder
-										? 'Support your claims with references for better credibility.'
-										: 'Adding sources now makes it easier to reference them later.'}</span
-								>
+					{#if showAdvancedFeatures}
+						<!-- Comment Word Count and Style Info -->
+						<div class="comment-writing-info">
+							<div class="word-count">
+								<span class="word-count-label">Words: {commentWordCount}</span>
+								<span class="style-indicator">({getStyleConfig(commentSelectedStyle).label})</span>
 							</div>
-							<button
-								type="button"
-								class="btn-add-citation-inline"
-								onclick={() => (showCommentCitationForm = true)}
-							>
-								Add Citation
-							</button>
+
+							<div class="citation-reminder" class:active={showCommentCitationReminder}>
+								<div class="reminder-icon">📚</div>
+								<div class="reminder-text">
+									<strong
+										>{showCommentCitationReminder ? 'Add citations' : 'Cite your sources'}</strong
+									>
+									<span
+										>{showCommentCitationReminder
+											? 'Support your claims with references for better credibility.'
+											: 'Adding sources now makes it easier to reference them later.'}</span
+									>
+								</div>
+								<button
+									type="button"
+									class="btn-add-citation-inline"
+									onclick={() => (showCommentCitationForm = true)}
+								>
+									Add Citation
+								</button>
+							</div>
 						</div>
-					</div>
+					{/if}
 
 					<textarea
 						bind:value={newComment}
@@ -3556,133 +3571,176 @@
 						aria-label="New comment"
 					></textarea>
 
-					<!-- Insert Citation Reference Button -->
-					<button type="button" class="insert-citation-btn" onclick={openCommentCitationPicker}>
-						📎 Insert Citation Reference
-					</button>
-
-					<!-- Citation/Source Management for Comments -->
-					<div class="citation-section">
-						<div class="citation-header">
-							<h4>References</h4>
+					<!-- Post Type Selection -->
+					<div class="post-type-selection">
+						<div class="post-type-label">Post Type:</div>
+						<div class="post-type-buttons">
+							{#each ['response', 'counter_argument', 'supporting_evidence', 'question'] as type}
+								{@const config = getPostTypeConfig(type as any)}
+								<button
+									type="button"
+									class="post-type-btn"
+									class:selected={commentPostType === type}
+									onclick={() => {
+										commentPostType = type as typeof commentPostType;
+									}}
+								>
+									<span class="post-type-icon">{config.icon}</span>
+									<span class="post-type-text">
+										<span class="post-type-title">{config.label}</span>
+										<span class="post-type-desc">{config.description}</span>
+									</span>
+								</button>
+							{/each}
 						</div>
-
-						<!-- Add Comment Citation Form -->
-						{#if showCommentCitationForm && !editingCommentCitation}
-							<CitationForm
-								onAdd={addCommentCitation}
-								onCancel={() => (showCommentCitationForm = false)}
-							/>
-						{/if}
-
-						<!-- Edit Comment Citation Form -->
-						{#if showCommentCitationEditForm && editingCommentCitation}
-							<CitationForm
-								editingItem={editingCommentCitation}
-								onAdd={updateCommentCitation}
-								onCancel={cancelCommentCitationEdit}
-							/>
-						{/if}
-
-						<!-- Display existing citations -->
-						{#if commentStyleMetadata.citations?.length}
-							<div class="citations-list">
-								<h5>Citations:</h5>
-								{#each commentStyleMetadata.citations as Citation[] as citation}
-									<div class="citation-item">
-										<div class="citation-content">
-											<div class="citation-title">{citation.title}</div>
-											<div class="citation-url">
-												<a href={citation.url} target="_blank">{citation.url}</a>
-											</div>
-											{#if citation.author}<div class="citation-author">
-													Author: {citation.author}
-												</div>{/if}
-											{#if citation.publishDate}<div class="citation-date">
-													Published: {citation.publishDate}
-												</div>{/if}
-											{#if citation.publisher}<div class="citation-publisher">
-													Publisher: {citation.publisher}
-												</div>{/if}
-											{#if citation.pageNumber}<div class="citation-page">
-													Page: {citation.pageNumber}
-												</div>{/if}
-											<details class="citation-details">
-												<summary>
-													<span class="summary-arrow">▶</span>
-													<span class="summary-text">Context</span>
-												</summary>
-												<div class="citation-context">
-													<div class="citation-point">
-														<strong>Supports:</strong>
-														{citation.pointSupported}
-													</div>
-													<div class="citation-quote">
-														<strong>Quote:</strong> "{citation.relevantQuote}"
-													</div>
-												</div>
-											</details>
-										</div>
-										<div class="citation-actions">
-											<button
-												type="button"
-												class="insert-ref-btn"
-												onclick={() => insertCommentCitationReference(citation.id)}
-												title="Insert citation reference at cursor">Insert Ref</button
-											>
-											<button
-												type="button"
-												class="edit-btn"
-												onclick={() => startEditCommentCitation(citation.id)}
-												title="Edit citation">Edit</button
-											>
-											<button
-												type="button"
-												class="remove-btn"
-												onclick={() => removeCommentCitation(citation.id)}>Remove</button
-											>
-										</div>
-									</div>
-								{/each}
-							</div>
-						{/if}
 					</div>
 
-					<!-- Citation Picker Modal for Comments -->
-					{#if showCommentCitationPicker}
-						{@const allCommentCitations = commentStyleMetadata.citations || []}
-						<div class="citation-picker-overlay">
-							<div class="citation-picker-modal">
-								<div class="citation-picker-header">
-									<h4>Insert Citation Reference</h4>
-									<button
-										type="button"
-										class="close-btn"
-										onclick={() => (showCommentCitationPicker = false)}>✕</button
-									>
-								</div>
-								<div class="citation-picker-content">
-									<p>Click on a reference below to insert it at your cursor position:</p>
-									<div class="picker-references-list">
-										{#each allCommentCitations as item, index}
-											<button
-												type="button"
-												class="picker-reference-item"
-												onclick={() => {
-													insertCommentCitationReference(item.id);
-													showCommentCitationPicker = false;
-												}}
-											>
-												<div class="picker-citation-number">[{index + 1}]</div>
-												<div class="picker-citation-preview">
-													{@html formatChicagoCitation(item)}
+					<!-- Advanced Features Toggle -->
+					<div class="advanced-features-toggle">
+						<button
+							type="button"
+							class="toggle-advanced-btn"
+							onclick={() => {
+								showAdvancedFeatures = !showAdvancedFeatures;
+							}}
+						>
+							{#if showAdvancedFeatures}
+								▲ Hide Advanced Features
+							{:else}
+								▼ Show Citations & Analysis
+							{/if}
+						</button>
+					</div>
+
+					{#if showAdvancedFeatures}
+						<!-- Insert Citation Reference Button -->
+						<button type="button" class="insert-citation-btn" onclick={openCommentCitationPicker}>
+							📎 Insert Citation Reference
+						</button>
+
+						<!-- Citation/Source Management for Comments -->
+						<div class="citation-section">
+							<div class="citation-header">
+								<h4>References</h4>
+							</div>
+
+							<!-- Add Comment Citation Form -->
+							{#if showCommentCitationForm && !editingCommentCitation}
+								<CitationForm
+									onAdd={addCommentCitation}
+									onCancel={() => (showCommentCitationForm = false)}
+								/>
+							{/if}
+
+							<!-- Edit Comment Citation Form -->
+							{#if showCommentCitationEditForm && editingCommentCitation}
+								<CitationForm
+									editingItem={editingCommentCitation}
+									onAdd={updateCommentCitation}
+									onCancel={cancelCommentCitationEdit}
+								/>
+							{/if}
+
+							<!-- Display existing citations -->
+							{#if commentStyleMetadata.citations?.length}
+								<div class="citations-list">
+									<h5>Citations:</h5>
+									{#each commentStyleMetadata.citations as Citation[] as citation}
+										<div class="citation-item">
+											<div class="citation-content">
+												<div class="citation-title">{citation.title}</div>
+												<div class="citation-url">
+													<a href={citation.url} target="_blank">{citation.url}</a>
 												</div>
-											</button>
-										{/each}
+												{#if citation.author}<div class="citation-author">
+														Author: {citation.author}
+													</div>{/if}
+												{#if citation.publishDate}<div class="citation-date">
+														Published: {citation.publishDate}
+													</div>{/if}
+												{#if citation.publisher}<div class="citation-publisher">
+														Publisher: {citation.publisher}
+													</div>{/if}
+												{#if citation.pageNumber}<div class="citation-page">
+														Page: {citation.pageNumber}
+													</div>{/if}
+												<details class="citation-details">
+													<summary>
+														<span class="summary-arrow">▶</span>
+														<span class="summary-text">Context</span>
+													</summary>
+													<div class="citation-context">
+														<div class="citation-point">
+															<strong>Supports:</strong>
+															{citation.pointSupported}
+														</div>
+														<div class="citation-quote">
+															<strong>Quote:</strong> "{citation.relevantQuote}"
+														</div>
+													</div>
+												</details>
+											</div>
+											<div class="citation-actions">
+												<button
+													type="button"
+													class="insert-ref-btn"
+													onclick={() => insertCommentCitationReference(citation.id)}
+													title="Insert citation reference at cursor">Insert Ref</button
+												>
+												<button
+													type="button"
+													class="edit-btn"
+													onclick={() => startEditCommentCitation(citation.id)}
+													title="Edit citation">Edit</button
+												>
+												<button
+													type="button"
+													class="remove-btn"
+													onclick={() => removeCommentCitation(citation.id)}>Remove</button
+												>
+											</div>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
+
+						<!-- Citation Picker Modal for Comments -->
+						{#if showCommentCitationPicker}
+							{@const allCommentCitations = commentStyleMetadata.citations || []}
+							<div class="citation-picker-overlay">
+								<div class="citation-picker-modal">
+									<div class="citation-picker-header">
+										<h4>Insert Citation Reference</h4>
+										<button
+											type="button"
+											class="close-btn"
+											onclick={() => (showCommentCitationPicker = false)}>✕</button
+										>
+									</div>
+									<div class="citation-picker-content">
+										<p>Click on a reference below to insert it at your cursor position:</p>
+										<div class="picker-references-list">
+											{#each allCommentCitations as item, index}
+												<button
+													type="button"
+													class="picker-reference-item"
+													onclick={() => {
+														insertCommentCitationReference(item.id);
+														showCommentCitationPicker = false;
+													}}
+												>
+													<div class="picker-citation-number">[{index + 1}]</div>
+													<div class="picker-citation-preview">
+														{@html formatChicagoCitation(item)}
+													</div>
+												</button>
+											{/each}
+										</div>
 									</div>
 								</div>
 							</div>
-						</div>
+						{/if}
 					{/if}
 
 					<!-- Heuristic Quality Assessment for Comments -->
@@ -3963,8 +4021,39 @@
 		font-weight: 700;
 		line-height: var(--line-height-tight);
 		color: var(--color-text-primary);
-		margin-bottom: 1.5rem;
+		margin-bottom: 1rem;
 		letter-spacing: -0.01em;
+	}
+
+	.discussion-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.discussion-tags .tag {
+		display: inline-block;
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--color-primary) 15%, var(--color-surface)),
+			color-mix(in srgb, var(--color-accent) 10%, var(--color-surface))
+		);
+		color: var(--color-primary);
+		padding: 0.5rem 1rem;
+		border-radius: 20px;
+		font-size: 0.875rem;
+		font-weight: 500;
+		border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+		transition: all 0.2s ease;
+	}
+
+	.discussion-tags .tag:hover {
+		background: var(--color-primary);
+		color: white;
+		transform: translateY(-1px);
+		box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 25%, transparent);
+		cursor: pointer;
 	}
 
 	.discussion-meta {
@@ -4150,38 +4239,249 @@
 		cursor: not-allowed;
 	}
 
-	/* Good Faith Results */
-	.good-faith-result {
-		background: var(--color-surface-alt);
-		border: 1px solid var(--color-border);
-		border-radius: var(--border-radius-md);
-		padding: 1rem;
+	/* Analysis Panel - Sleek Design */
+	.analysis-panel {
+		background: transparent;
+		border: none;
+		border-radius: 0;
+		padding: 1rem 0;
 		margin: 1rem 0;
 		position: relative;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 	}
 
-	.good-faith-header {
+	.analysis-summary {
 		display: flex;
 		justify-content: space-between;
+		align-items: flex-start;
+		margin-bottom: 1.25rem;
+		padding-bottom: 1rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+	}
+
+	.analysis-badge {
+		display: flex;
+		flex-direction: column;
 		align-items: center;
+		padding: 0.5rem;
+		min-width: 70px;
+		color: var(--color-text-secondary);
+	}
+
+	.analysis-score {
+		font-size: 1.1rem;
+		font-weight: 500;
+		line-height: 1;
+	}
+
+	.analysis-label {
+		font-size: 0.75rem;
+		font-weight: 400;
+		color: var(--color-text-secondary);
+		text-transform: capitalize;
+		margin-top: 0.25rem;
+		opacity: 0.7;
+	}
+
+	.analysis-meta {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.25rem;
+	}
+
+	.analysis-provider {
+		font-size: 0.75rem;
+		color: var(--color-text-secondary);
+		font-weight: 500;
+	}
+
+	/* Analysis Content */
+	.analysis-content {
+		margin-top: 1rem;
+	}
+
+	.claim-analysis {
+		margin-bottom: 1.5rem;
+	}
+
+	.claim-statement {
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin-bottom: 1rem;
+		padding: 0.75rem 1rem;
+		background: color-mix(in srgb, var(--color-primary) 5%, var(--color-bg-primary));
+		border-left: 3px solid var(--color-primary);
+		border-radius: 0 var(--border-radius-sm) var(--border-radius-sm) 0;
+	}
+
+	.argument-card {
+		background: var(--color-bg-secondary);
+		border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+		border-radius: var(--border-radius-sm);
+		padding: 1rem;
+		margin: 0.75rem 0;
+	}
+
+	.argument-content {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
 		margin-bottom: 0.75rem;
 	}
 
-	.good-faith-header h4 {
-		margin: 0;
+	.argument-text {
+		font-size: 0.85rem;
+		line-height: 1.4;
 		color: var(--color-text-primary);
+		flex: 1;
+		margin-right: 1rem;
 	}
 
-	.good-faith-score {
+	.argument-metrics {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
+	}
+
+	.argument-score {
+		font-size: 0.75rem;
+		font-weight: 600;
+		padding: 0.25rem 0.5rem;
+		border-radius: var(--border-radius-sm);
+		background: var(--color-bg-primary);
+		border: 1px solid var(--color-border);
+	}
+
+	.argument-score.strong {
+		background: color-mix(in srgb, #10b981 15%, var(--color-bg-primary));
+		border-color: color-mix(in srgb, #10b981 30%, transparent);
+		color: #059669;
+	}
+
+	.argument-score.moderate {
+		background: color-mix(in srgb, #f59e0b 15%, var(--color-bg-primary));
+		border-color: color-mix(in srgb, #f59e0b 30%, transparent);
+		color: #d97706;
+	}
+
+	.argument-score.weak {
+		background: color-mix(in srgb, #ef4444 15%, var(--color-bg-primary));
+		border-color: color-mix(in srgb, #ef4444 30%, transparent);
+		color: #dc2626;
+	}
+
+	.improvements-section {
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+		padding-top: 0.75rem;
+		margin-top: 0.75rem;
+	}
+
+	.improvements-label {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin-bottom: 0.5rem;
+	}
+
+	.improvements-list {
+		margin: 0;
+		padding-left: 1.25rem;
+		list-style: none;
+	}
+
+	.improvements-list li {
+		font-size: 0.8rem;
+		line-height: 1.4;
+		color: var(--color-text-secondary);
+		margin-bottom: 0.25rem;
+		position: relative;
+	}
+
+	.improvements-list li::before {
+		content: '→';
+		position: absolute;
+		left: -1rem;
+		color: var(--color-primary);
+		font-weight: 600;
+	}
+
+	.issues-section {
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+		padding-top: 0.75rem;
+		margin-top: 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.issue-item {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+	}
+
+	.issue-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
+		white-space: nowrap;
+	}
+
+	.issue-text {
+		font-size: 0.75rem;
+		color: var(--color-text-secondary);
+		line-height: 1.3;
+	}
+
+	.analysis-summary-text {
+		font-size: 0.85rem;
+		line-height: 1.4;
+		color: var(--color-text-secondary);
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+	}
+
+	.analysis-close-btn {
+		position: absolute;
+		top: 1rem;
+		right: 1rem;
+		background: none;
+		border: none;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		font-size: 1.25rem;
+		padding: 0.25rem;
+		border-radius: var(--border-radius-sm);
+		transition: all 0.2s ease;
+	}
+
+	.analysis-close-btn:hover {
+		background: color-mix(in srgb, var(--color-text-secondary) 10%, transparent);
+		color: var(--color-text-primary);
 	}
 
 	.score-value {
 		font-weight: 600;
 		font-size: 1.1rem;
 		color: var(--color-text-primary);
+	}
+
+	.argument-text {
+		margin-bottom: 0.5rem;
+		color: var(--color-text-primary);
+		line-height: 1.5;
+	}
+
+	.improvements {
+		margin-top: 0.5rem;
+		padding: 0.75rem;
+		border-radius: var(--border-radius-sm);
+		border-left: 3px solid var(--color-primary);
+		color: var(--color-text-primary);
+		line-height: 1.5;
 	}
 
 	.score-label {
@@ -4195,7 +4495,7 @@
 	.score-label.hostile {
 		background: color-mix(in srgb, #ef4444 20%, transparent);
 		color: #ef4444;
-		border: 1px solid #ef4444;
+		border: 1px solid #ef444461;
 	}
 
 	.score-label.questionable {
@@ -4211,13 +4511,13 @@
 	}
 
 	.score-label.constructive {
-		background: color-mix(in srgb, #10b981 20%, transparent);
+		background: color-mix(in srgb, #10b98167 20%, transparent);
 		color: #10b981;
 		border: 1px solid #10b981;
 	}
 
 	.score-label.exemplary {
-		background: color-mix(in srgb, #059669 20%, transparent);
+		background: color-mix(in srgb, #05966863 20%, transparent);
 		color: #059669;
 		border: 1px solid #059669;
 	}
@@ -4270,7 +4570,7 @@
 		margin: 0.75rem 0;
 		padding: 0.5rem;
 		border-radius: var(--border-radius-sm);
-		background: color-mix(in srgb, var(--color-primary) 3%, var(--color-surface-alt));
+		/* background: color-mix(in srgb, var(--color-primary) 3%, var(--color-surface-alt)); */
 	}
 
 	.claim-text {
@@ -4481,54 +4781,34 @@
 	.reply-post-btn,
 	.edit-post-btn,
 	.delete-post-btn {
-		background: var(--color-surface-alt);
-		border: 1px solid var(--color-border);
+		background: transparent;
+		border: 1px solid transparent;
 		cursor: pointer;
 		font-size: 0.8rem;
-		font-weight: 500;
-		padding: 0.4rem 0.8rem;
-		border-radius: var(--border-radius-md);
-		transition: all 0.2s ease;
+		font-weight: 400;
+		padding: 0.3rem 0.6rem;
+		border-radius: var(--border-radius-sm);
+		transition: all 0.15s ease;
 		display: inline-flex;
 		align-items: center;
 		gap: 0.3rem;
 		text-decoration: none;
-	}
-
-	.reply-post-btn {
-		color: var(--color-primary);
-		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+		color: var(--color-text-secondary);
 	}
 
 	.reply-post-btn:hover {
-		background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-alt));
-		border-color: var(--color-primary);
-		transform: translateY(-1px);
-		box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 20%, transparent);
-	}
-
-	.edit-post-btn {
-		color: #059669;
-		border-color: color-mix(in srgb, #059669 30%, transparent);
+		color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 4%, var(--color-bg-primary));
 	}
 
 	.edit-post-btn:hover {
-		background: color-mix(in srgb, #059669 8%, var(--color-surface-alt));
-		border-color: #059669;
-		transform: translateY(-1px);
-		box-shadow: 0 2px 8px color-mix(in srgb, #059669 20%, transparent);
-	}
-
-	.delete-post-btn {
-		color: #dc2626;
-		border-color: color-mix(in srgb, #dc2626 30%, transparent);
+		color: #059669;
+		background: color-mix(in srgb, #059669 4%, var(--color-bg-primary));
 	}
 
 	.delete-post-btn:hover {
-		background: color-mix(in srgb, #dc2626 8%, var(--color-surface-alt));
-		border-color: #dc2626;
-		transform: translateY(-1px);
-		box-shadow: 0 2px 8px color-mix(in srgb, #dc2626 20%, transparent);
+		color: #dc2626;
+		background: color-mix(in srgb, #dc2626 4%, var(--color-bg-primary));
 	}
 	.post-content {
 		line-height: 1.6;
@@ -4570,10 +4850,44 @@
 	.signin-hint {
 		color: var(--color-text-secondary);
 	}
+	.leave-comment-btn {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1.25rem;
+		background: var(--color-primary);
+		color: white;
+		border: none;
+		border-radius: var(--border-radius-sm);
+		font-size: 1rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		margin: 0 auto;
+		min-width: 200px;
+		justify-content: center;
+	}
+	.leave-comment-btn:hover {
+		background: color-mix(in srgb, var(--color-primary) 90%, black);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 30%, transparent);
+	}
 	.comment-form {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+		animation: slideIn 0.3s ease-out;
+	}
+
+	@keyframes slideIn {
+		from {
+			opacity: 0;
+			transform: translateY(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 	.comment-form textarea {
 		width: 100%;
@@ -4593,6 +4907,113 @@
 		display: flex;
 		justify-content: flex-end;
 	}
+
+	/* Post Type Selection */
+	.post-type-selection {
+		margin: 0.5rem 0;
+	}
+	.post-type-label {
+		display: block;
+		font-weight: 600;
+		margin-bottom: 0.5rem;
+		color: var(--color-text-primary);
+		font-size: 0.9rem;
+	}
+	.post-type-buttons {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.5rem;
+	}
+	.post-type-btn {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem;
+		border: 2px solid var(--color-border);
+		border-radius: var(--border-radius-sm);
+		cursor: pointer;
+		transition: all 0.2s ease;
+		background: var(--color-bg-primary);
+		text-align: left;
+		font-family: inherit;
+	}
+	.post-type-btn:hover {
+		border-color: var(--color-primary);
+		background: var(--color-bg-secondary);
+		transform: translateY(-1px);
+		box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+	.post-type-btn.selected {
+		border-color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-primary));
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent);
+	}
+	.post-type-icon {
+		font-size: 1.2rem;
+		min-width: 1.5rem;
+		text-align: center;
+	}
+	.post-type-text {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		min-width: 0;
+	}
+	.post-type-title {
+		font-weight: 600;
+		color: var(--color-text-primary);
+		font-size: 0.85rem;
+	}
+	.post-type-desc {
+		font-size: 0.75rem;
+		color: var(--color-text-secondary);
+		line-height: 1.3;
+	}
+
+	/* Advanced Features Toggle */
+	.advanced-features-toggle {
+		margin: 0.75rem 0 0.5rem 0;
+		text-align: center;
+	}
+
+	/* Advanced Features Content */
+	.comment-writing-info,
+	.citation-section {
+		animation: expandIn 0.3s ease-out;
+		overflow: hidden;
+	}
+
+	@keyframes expandIn {
+		from {
+			opacity: 0;
+			max-height: 0;
+			margin-top: 0;
+			margin-bottom: 0;
+		}
+		to {
+			opacity: 1;
+			max-height: 500px;
+			margin-top: inherit;
+			margin-bottom: inherit;
+		}
+	}
+	.toggle-advanced-btn {
+		background: none;
+		border: 1px solid var(--color-border);
+		color: var(--color-text-secondary);
+		padding: 0.5rem 1rem;
+		border-radius: var(--border-radius-sm);
+		cursor: pointer;
+		transition: all 0.2s ease;
+		font-size: 0.85rem;
+		font-family: inherit;
+	}
+	.toggle-advanced-btn:hover {
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+		background: var(--color-bg-secondary);
+	}
+
 	.replying-indicator {
 		font-size: 0.85rem;
 		color: var(--color-text-secondary);

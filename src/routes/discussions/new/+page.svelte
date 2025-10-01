@@ -8,9 +8,13 @@
 		validateStyleRequirements,
 		type WritingStyle,
 		type StyleMetadata,
-		type Citation
+		type Citation,
+		COMMON_DISCUSSION_TAGS,
+		validateTags,
+		normalizeTag
 	} from '$lib/types/writingStyle';
 	import CitationForm from '$lib/components/CitationForm.svelte';
+	import AnimatedLogo from '$lib/components/AnimatedLogo.svelte';
 	import {
 		CREATE_DISCUSSION_WITH_VERSION,
 		UPDATE_DISCUSSION_VERSION,
@@ -48,6 +52,11 @@
 	});
 	let wordCount = $state(0);
 	let showCitationReminder = $state(false);
+
+	// Tag management
+	let discussionTags = $state<string[]>([]);
+	let newTag = $state('');
+	let showTagSuggestions = $state(false);
 
 	// Automatically infer writing style based on content length
 	function getInferredStyle(): WritingStyle {
@@ -88,6 +97,11 @@
 				// Load existing citations and claims if available
 				if (draftVersion.citations) {
 					styleMetadata.citations = draftVersion.citations;
+				}
+
+				// Load existing tags if available
+				if (draftVersion.tags) {
+					discussionTags = draftVersion.tags;
 				}
 
 				// Load existing good faith analysis if available
@@ -131,6 +145,8 @@
 				{
 					title: discTitle,
 					description: content || '',
+					tags: validateTags(discussionTags),
+					sections: [],
 					claims: [],
 					citations: styleMetadata.citations || [],
 					createdBy: user.id
@@ -163,6 +179,8 @@
 				versionId: currentVersionId,
 				title: title.trim() || 'Untitled Discussion',
 				description: content || '',
+				tags: validateTags(discussionTags),
+				sections: [],
 				claims: [],
 				citations: styleMetadata.citations || []
 			});
@@ -240,6 +258,33 @@
 
 	function showAddCitationForm() {
 		showCitationForm = true;
+	}
+
+	// Tag management functions
+	function addTag(tag: string) {
+		const normalized = normalizeTag(tag);
+		if (normalized && !discussionTags.includes(normalized) && discussionTags.length < 10) {
+			discussionTags = [...discussionTags, normalized];
+			newTag = '';
+			showTagSuggestions = false;
+		}
+	}
+
+	function removeTag(tagToRemove: string) {
+		discussionTags = discussionTags.filter((tag) => tag !== tagToRemove);
+	}
+
+	function addNewTag() {
+		if (newTag.trim()) {
+			addTag(newTag.trim());
+		}
+	}
+
+	function handleTagInput(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			addNewTag();
+		}
 	}
 
 	async function publishNewDiscussion() {
@@ -422,6 +467,53 @@
 					/>
 				</div>
 
+				<!-- Tags Section -->
+				<div class="form-group">
+					<label for="tags">Topic Tags</label>
+					<div class="tags-input-container">
+						<div class="current-tags">
+							{#each discussionTags as tag}
+								<span class="tag">
+									{tag}
+									<button
+										type="button"
+										class="remove-tag"
+										onclick={() => removeTag(tag)}
+										aria-label="Remove tag"
+									>
+										×
+									</button>
+								</span>
+							{/each}
+						</div>
+						<div class="tag-input-wrapper">
+							<input
+								id="tags"
+								type="text"
+								bind:value={newTag}
+								placeholder="Add tags to help others discover your discussion"
+								onkeydown={handleTagInput}
+								onfocus={() => (showTagSuggestions = true)}
+								onblur={() => setTimeout(() => (showTagSuggestions = false), 150)}
+							/>
+							<button type="button" class="add-tag-btn" onclick={addNewTag}>Add</button>
+						</div>
+						{#if showTagSuggestions}
+							<div class="tag-suggestions">
+								{#each COMMON_DISCUSSION_TAGS.filter((tag) => !discussionTags.includes(tag) && tag.includes(newTag.toLowerCase())) as suggestion}
+									<button type="button" class="tag-suggestion" onclick={() => addTag(suggestion)}>
+										{suggestion}
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+					<div class="form-hint">
+						Add up to 10 topic tags to help others discover your discussion. Press Enter or click
+						Add to add a tag.
+					</div>
+				</div>
+
 				<div class="form-group">
 					<label for="description">Description</label>
 					<textarea
@@ -539,7 +631,10 @@
 
 				{#if goodFaithTesting}
 					<div class="analysis-status">
-						<div class="analysis-loading">🔄 Analyzing content for good faith...</div>
+						<div class="analysis-loading">
+							<AnimatedLogo size="40px" isAnimating={true} />
+							<span>Analyzing content for good faith...</span>
+						</div>
 					</div>
 				{/if}
 
@@ -1199,5 +1294,131 @@
 		.citation-item {
 			padding: 1rem;
 		}
+	}
+
+	/* Tags styling */
+	.tags-input-container {
+		position: relative;
+	}
+
+	.current-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.tag {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		background: linear-gradient(
+			135deg,
+			var(--color-primary),
+			color-mix(in srgb, var(--color-primary) 90%, var(--color-accent))
+		);
+		color: white;
+		padding: 0.5rem 0.75rem;
+		border-radius: 20px;
+		font-size: 0.85rem;
+		font-weight: 500;
+		box-shadow: 0 2px 4px color-mix(in srgb, var(--color-primary) 20%, transparent);
+	}
+
+	.remove-tag {
+		background: none;
+		border: none;
+		color: white;
+		font-size: 1.1rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0;
+		margin: 0;
+		width: 16px;
+		height: 16px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 50%;
+		transition: background-color 0.2s ease;
+	}
+
+	.remove-tag:hover {
+		background: color-mix(in srgb, white 20%, transparent);
+	}
+
+	.tag-input-wrapper {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.tag-input-wrapper input {
+		flex: 1;
+	}
+
+	.add-tag-btn {
+		background: var(--color-accent);
+		color: white;
+		border: none;
+		padding: 0.75rem 1rem;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		white-space: nowrap;
+	}
+
+	.add-tag-btn:hover {
+		background: color-mix(in srgb, var(--color-accent) 90%, black);
+		transform: translateY(-1px);
+	}
+
+	.tag-suggestions {
+		position: absolute;
+		top: 100%;
+		left: 0;
+		right: 0;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+		z-index: 10;
+		max-height: 200px;
+		overflow-y: auto;
+		margin-top: 0.25rem;
+	}
+
+	.tag-suggestion {
+		display: block;
+		width: 100%;
+		padding: 0.75rem 1rem;
+		background: none;
+		border: none;
+		text-align: left;
+		font-size: 0.9rem;
+		color: var(--color-text-primary);
+		cursor: pointer;
+		transition: background-color 0.2s ease;
+	}
+
+	.tag-suggestion:hover {
+		background: var(--color-surface-alt);
+	}
+
+	.tag-suggestion:first-child {
+		border-radius: 8px 8px 0 0;
+	}
+
+	.tag-suggestion:last-child {
+		border-radius: 0 0 8px 8px;
+	}
+
+	.form-hint {
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+		margin-top: 0.5rem;
+		line-height: 1.4;
 	}
 </style>

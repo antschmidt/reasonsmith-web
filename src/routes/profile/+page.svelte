@@ -533,6 +533,13 @@
 			<div class="profile-card edit-form-container">
 				<form class="profile-form" on:submit|preventDefault={save}>
 					<fieldset disabled={loading || fetching}>
+						<div class="field">
+							<ProfilePhotoUpload
+								currentAvatarUrl={contributor?.avatar_url}
+								contributorId={contributor?.id}
+								onUpdate={handleAvatarUpdate}
+							/>
+						</div>
 						<label class="field read-only">
 							<span>Sign-in Email</span>
 							<input type="email" bind:value={authEmail} readonly />
@@ -547,15 +554,6 @@
 								maxlength="50"
 							/>
 						</label>
-
-						<div class="field">
-							<span>Profile Photo</span>
-							<ProfilePhotoUpload
-								currentAvatarUrl={contributor?.avatar_url}
-								contributorId={contributor?.id}
-								onUpdate={handleAvatarUpdate}
-							/>
-						</div>
 
 						<label class="field">
 							<span>Handle</span>
@@ -845,7 +843,7 @@
 
 				{#if contributor?.role === 'admin'}
 					<div class="profile-card analysis-credits-section">
-						<h3 class="section-title">Analysis Access</h3>
+						<h3 class="section-title" hidden>Analysis Access</h3>
 						<div class="credits-info">
 							<div class="credit-status unlimited">
 								<div class="status-icon">🌟</div>
@@ -861,7 +859,7 @@
 					</div>
 				{:else if contributor?.role === 'slartibartfast'}
 					<div class="profile-card analysis-credits-section">
-						<h3 class="section-title">Analysis Access</h3>
+						<h3 class="section-title" hidden>Analysis Access</h3>
 						<div class="credits-info">
 							<div class="credit-status unlimited">
 								<div class="status-icon">👑</div>
@@ -918,7 +916,7 @@
 				{/if}
 
 				<div class="profile-card stats-section">
-					<h3 class="section-title">Your Statistics</h3>
+					<h3 class="section-title" hidden>Your Statistics</h3>
 					<div class="stats-grid">
 						<div class="stat-card">
 							<div class="stat-number">
@@ -1110,6 +1108,9 @@
 <style>
 	/* Editorial profile page styling */
 	.editorial-profile-page {
+		display: flex;
+		justify-content: center;
+		margin-top: 2rem;
 		background: var(--color-surface-alt);
 		min-height: 100vh;
 	}
@@ -1323,8 +1324,8 @@
 
 	/* Statistics */
 	.stats-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		display: flex;
+		justify-content: center;
 		gap: 1.5rem;
 		margin-bottom: 2rem;
 	}
@@ -1334,7 +1335,8 @@
 		backdrop-filter: blur(10px);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 		border-radius: 20px;
-		padding: 1.5rem;
+		padding: 0.5rem;
+		max-width: 8rem;
 		text-align: center;
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
@@ -1347,7 +1349,7 @@
 	}
 
 	.stat-number {
-		font-size: 2.5rem;
+		font-size: 1.5rem;
 		font-weight: 700;
 		color: var(--color-primary);
 		margin-bottom: 0.5rem;
@@ -1355,7 +1357,7 @@
 	}
 
 	.stat-label {
-		font-size: 0.9rem;
+		font-size: 0.7rem;
 		font-weight: 500;
 		color: var(--color-text-secondary);
 		text-transform: uppercase;
@@ -1363,8 +1365,8 @@
 	}
 
 	.activity-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+		display: flex;
+		justify-content: center;
 		gap: 1rem;
 		padding-top: 1.5rem;
 		border-top: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
@@ -1443,6 +1445,7 @@
 	/* Form styling */
 	.edit-form-container {
 		padding: 2rem;
+		min-width: 90vw;
 		max-width: 800px;
 		margin: 0 auto;
 	}
@@ -1714,6 +1717,7 @@
 	@media (max-width: 768px) {
 		.view-header {
 			flex-direction: column;
+			align-items: center;
 			gap: 1rem;
 		}
 

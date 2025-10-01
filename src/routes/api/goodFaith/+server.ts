@@ -306,80 +306,126 @@ function heuristicScore(content: string): ScoreResponse {
 export const POST: RequestHandler = async ({ request, cookies }) => {
 	try {
 		const body = await request.json();
-		const { postId, content, contributorId } = body as {
+		const { postId, content } = body as {
 			postId?: string;
 			content?: string;
-			contributorId?: string;
 		};
 
 		if (typeof content !== 'string' || !content.trim()) {
 			return json({ error: 'content required' }, { status: 400 });
 		}
 
-		// Check if user provided contributorId for analysis tracking
-		if (contributorId) {
-			// Get contributor's analysis permissions
+		// Get user from session to track usage
+		const accessToken = cookies.get('nhost.accessToken');
+		let contributorId: string | null = null;
+		let contributor: any = null;
+
+		if (accessToken) {
 			const HASURA_GRAPHQL_ENDPOINT =
 				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
 			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
 
 			if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
 				try {
-					// Check contributor permissions
-					const checkResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+					// Get user info from access token
+					const userResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
-							'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-							'x-hasura-role': 'admin'
+							Authorization: `Bearer ${accessToken}`
 						},
 						body: JSON.stringify({
 							query: `
-                query CheckAnalysisPermissions($contributorId: uuid!) {
-                  contributor_by_pk(id: $contributorId) {
-                    id
-                    role
-                    analysis_enabled
-                    analysis_limit
-                    analysis_count_used
-                  }
-                }
-              `,
-							variables: { contributorId }
+								query GetCurrentUser {
+									auth {
+										user {
+											id
+										}
+									}
+								}
+							`
 						})
 					});
 
-					const checkResult = await checkResponse.json();
-					const contributor = checkResult.data?.contributor_by_pk;
+					const userResult = await userResponse.json();
+					const userId = userResult.data?.auth?.user?.id;
 
-					if (!contributor) {
-						return json({ error: 'Contributor not found' }, { status: 404 });
-					}
+					if (userId) {
+						// Get contributor info using admin access
+						const contributorResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+								'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+								'x-hasura-role': 'admin'
+							},
+							body: JSON.stringify({
+								query: `
+									query GetContributor($userId: uuid!) {
+										contributor_by_pk(id: $userId) {
+											id
+											role
+											analysis_enabled
+											analysis_limit
+											analysis_count_used
+										}
+									}
+								`,
+								variables: { userId }
+							})
+						});
 
-					// Check if analysis is enabled
-					if (!contributor.analysis_enabled) {
-						return json({ error: 'Analysis access is disabled for this account' }, { status: 403 });
-					}
+						const contributorResult = await contributorResponse.json();
+						contributor = contributorResult.data?.contributor_by_pk;
+						contributorId = contributor?.id;
 
-					// Check if user has reached their limit (unless they're admin/slartibartfast role)
-					if (
-						!['admin', 'slartibartfast'].includes(contributor.role) &&
-						contributor.analysis_limit !== null
-					) {
-						if (contributor.analysis_count_used >= contributor.analysis_limit) {
-							return json(
-								{
-									error: 'Analysis limit reached',
-									limit: contributor.analysis_limit,
-									used: contributor.analysis_count_used
-								},
-								{ status: 429 }
-							);
+						// Check permissions only if we found a contributor
+						if (contributor) {
+							// Check if analysis is enabled
+							if (!contributor.analysis_enabled) {
+								return json(
+									{ error: 'Analysis access is disabled for this account' },
+									{ status: 403 }
+								);
+							}
+
+							// Check if user has reached their limit (unless they're admin/slartibartfast role)
+							if (
+								!['admin', 'slartibartfast'].includes(contributor.role) &&
+								contributor.analysis_limit !== null
+							) {
+								if (contributor.analysis_count_used >= contributor.analysis_limit) {
+									return json(
+										{
+											error: 'Analysis limit reached',
+											limit: contributor.analysis_limit,
+											used: contributor.analysis_count_used
+										},
+										{ status: 429 }
+									);
+								}
+							}
 						}
 					}
+				} catch (dbError) {
+					console.error('Database check failed:', dbError);
+					// Continue with analysis but log the error
+				}
+			}
+		}
 
-					// Increment usage count for non-admin users
-					if (!['admin', 'slartibartfast'].includes(contributor.role)) {
+		try {
+			// Use OpenAI scoring instead of heuristic
+			const scored = await scoreWithOpenAI(content);
+
+			// Increment usage count after successful analysis
+			if (contributorId) {
+				try {
+					const HASURA_GRAPHQL_ENDPOINT =
+						process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
+					const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+
+					if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
 						await fetch(HASURA_GRAPHQL_ENDPOINT, {
 							method: 'POST',
 							headers: {
@@ -393,16 +439,18 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							})
 						});
 					}
-				} catch (dbError) {
-					console.error('Database check failed:', dbError);
-					// Continue with analysis but log the error
+				} catch (usageError) {
+					console.error('Failed to increment usage count:', usageError);
+					// Don't fail the request if usage tracking fails
 				}
 			}
-		}
 
-		// Use OpenAI scoring instead of heuristic
-		const scored = await scoreWithOpenAI(content);
-		return json({ ...scored, postId: postId || null });
+			return json({ ...scored, postId: postId || null });
+		} catch (error) {
+			console.error('Good faith analysis failed:', error);
+			const message = error instanceof Error ? error.message : 'Analysis request failed';
+			return json({ error: message }, { status: 502 });
+		}
 	} catch (e: any) {
 		return json({ error: e?.message || 'Internal error' }, { status: 500 });
 	}

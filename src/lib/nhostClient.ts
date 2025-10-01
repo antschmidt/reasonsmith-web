@@ -210,7 +210,8 @@ export async function refreshUserRole() {
 // Debug function for admin requests
 export function debugAdminRequest(operation: string) {
 	const user = nhost.auth.getUser();
-	const actualRole = typeof window !== 'undefined' ? window.sessionStorage.getItem('userActualRole') : null;
+	const actualRole =
+		typeof window !== 'undefined' ? window.sessionStorage.getItem('userActualRole') : null;
 	console.log(`[Admin Debug] ${operation}:`, {
 		userId: user?.id,
 		email: user?.email,

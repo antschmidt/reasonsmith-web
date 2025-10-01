@@ -10,6 +10,7 @@
 		UPDATE_PUBLIC_SHOWCASE_ITEM,
 		DELETE_PUBLIC_SHOWCASE_ITEM
 	} from '$lib/graphql/queries';
+	import AnimatedLogo from '$lib/components/AnimatedLogo.svelte';
 
 	type ShowcaseItem = {
 		id: string;
@@ -74,6 +75,7 @@
 	let analysisError = $state<string | null>(null);
 	let extractedExamples = $state('');
 	let analysisProvider = $state<'claude' | 'openai'>('claude');
+	let skipFactChecking = $state(false);
 
 	function collectRoles(u: any): string[] {
 		if (!u) return [];
@@ -367,7 +369,7 @@
 			const response = await fetch(`/api/goodFaithClaudeFeatured${force ? '?force=1' : ''}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ content: rawContent, provider: analysisProvider })
+				body: JSON.stringify({ content: rawContent, provider: analysisProvider, skipFactChecking })
 			});
 			if (!response.ok) {
 				const payload = await response.json().catch(() => ({}));
@@ -646,6 +648,12 @@
 								<span>OpenAI</span>
 							</label>
 						</div>
+						<div class="analysis-options">
+							<label class="fact-check-toggle">
+								<input type="checkbox" bind:checked={skipFactChecking} disabled={analyzing} />
+								<span>Skip fact checking (recommended for current events)</span>
+							</label>
+						</div>
 						<div class="analysis-actions">
 							<button
 								type="button"
@@ -653,7 +661,11 @@
 								onclick={() => generateFeaturedAnalysis()}
 								disabled={analyzing}
 							>
-								{analyzing ? 'Analyzing…' : 'Analyze with Claude'}
+								{#if analyzing}
+									<AnimatedLogo size="20px" isAnimating={true} /> Analyzing…
+								{:else}
+									Analyze with Claude
+								{/if}
 							</button>
 							<button
 								type="button"
@@ -661,7 +673,11 @@
 								onclick={() => generateFeaturedAnalysis({ force: true })}
 								disabled={analyzing}
 							>
-								{analyzing ? 'Analyzing…' : 'Force fresh Claude run'}
+								{#if analyzing}
+									<AnimatedLogo size="20px" isAnimating={true} /> Analyzing…
+								{:else}
+									Force fresh Claude run
+								{/if}
 							</button>
 							{#if analysisStatus}
 								<span class="analysis-status success">{analysisStatus}</span>
@@ -1009,6 +1025,23 @@
 	.provider-option input:disabled + span {
 		opacity: 0.6;
 	}
+	.analysis-options {
+		margin: 0.75rem 0;
+	}
+	.fact-check-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+	}
+	.fact-check-toggle input {
+		margin: 0;
+	}
+	.fact-check-toggle input:disabled + span {
+		opacity: 0.6;
+	}
 	.analysis-examples {
 		padding: 0.75rem;
 		border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
@@ -1081,6 +1114,9 @@
 		font-weight: 600;
 		font-size: 0.95rem;
 		transition: all 0.3s ease;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 	.btn-secondary:hover {
 		background: color-mix(in srgb, var(--color-surface-alt) 70%, transparent);

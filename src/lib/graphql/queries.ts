@@ -23,6 +23,8 @@ const POST_FIELDS = gql`
 		status
 		created_at
 		is_anonymous
+		post_type
+		parent_post_id
 		good_faith_score
 		good_faith_label
 		good_faith_last_evaluated
@@ -197,6 +199,8 @@ const DISCUSSION_VERSION_FIELDS = gql`
 		discussion_id
 		title
 		description
+		tags
+		sections
 		claims
 		citations
 		version_number
@@ -215,6 +219,8 @@ export const CREATE_DISCUSSION_WITH_VERSION = gql`
 	mutation CreateDiscussionWithVersion(
 		$title: String!
 		$description: String
+		$tags: [String!] = []
+		$sections: jsonb = []
 		$claims: jsonb = []
 		$citations: jsonb = []
 		$createdBy: uuid!
@@ -227,6 +233,8 @@ export const CREATE_DISCUSSION_WITH_VERSION = gql`
 					data: {
 						title: $title
 						description: $description
+						tags: $tags
+						sections: $sections
 						claims: $claims
 						citations: $citations
 						version_number: 1
@@ -252,6 +260,8 @@ export const CREATE_DISCUSSION_VERSION = gql`
 		$discussionId: uuid!
 		$title: String!
 		$description: String
+		$tags: [String!] = []
+		$sections: jsonb = []
 		$claims: jsonb = []
 		$citations: jsonb = []
 		$createdBy: uuid!
@@ -261,6 +271,8 @@ export const CREATE_DISCUSSION_VERSION = gql`
 				discussion_id: $discussionId
 				title: $title
 				description: $description
+				tags: $tags
+				sections: $sections
 				claims: $claims
 				citations: $citations
 				version_type: "draft"
@@ -304,12 +316,21 @@ export const UPDATE_DISCUSSION_VERSION = gql`
 		$versionId: uuid!
 		$title: String
 		$description: String
+		$tags: [String!]
+		$sections: jsonb
 		$claims: jsonb
 		$citations: jsonb
 	) {
 		update_discussion_version_by_pk(
 			pk_columns: { id: $versionId }
-			_set: { title: $title, description: $description, claims: $claims, citations: $citations }
+			_set: {
+				title: $title
+				description: $description
+				tags: $tags
+				sections: $sections
+				claims: $claims
+				citations: $citations
+			}
 		) {
 			...DiscussionVersionFields
 		}
@@ -428,6 +449,136 @@ export const SEARCH_PUBLISHED_DISCUSSIONS = gql`
 	${DISCUSSION_VERSION_FIELDS}
 `;
 
+// Search discussions by tags
+export const SEARCH_DISCUSSIONS_BY_TAGS = gql`
+	query SearchDiscussionsByTags($tags: [String!]!, $limit: Int = 20) {
+		discussion(
+			where: {
+				status: { _eq: "published" }
+				discussion_versions: { version_type: { _eq: "published" }, tags: { _overlap: $tags } }
+			}
+			order_by: { created_at: desc }
+			limit: $limit
+		) {
+			id
+			status
+			created_at
+			is_anonymous
+			contributor {
+				...ContributorFields
+			}
+			current_version: discussion_versions(
+				where: { version_type: { _eq: "published" } }
+				order_by: { version_number: desc }
+				limit: 1
+			) {
+				...DiscussionVersionFields
+			}
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
+	${DISCUSSION_VERSION_FIELDS}
+`;
+
+// Get all unique tags for discovery
+export const GET_DISCUSSION_TAGS = gql`
+	query GetDiscussionTags {
+		discussion_version(where: { version_type: { _eq: "published" } }, distinct_on: [tags]) {
+			tags
+		}
+	}
+`;
+
+// Advanced search with full-text search and tag filtering
+export const ADVANCED_SEARCH_DISCUSSIONS = gql`
+	query AdvancedSearchDiscussions(
+		$searchTerm: String
+		$tags: [String!]
+		$minGoodFaithScore: numeric
+		$limit: Int = 20
+		$offset: Int = 0
+	) {
+		discussion(
+			where: {
+				status: { _eq: "published" }
+				discussion_versions: {
+					version_type: { _eq: "published" }
+					_and: [
+						{ _or: [{ title: { _ilike: $searchTerm } }, { description: { _ilike: $searchTerm } }] }
+						{ tags: { _overlap: $tags } }
+						{ good_faith_score: { _gte: $minGoodFaithScore } }
+					]
+				}
+			}
+			order_by: [
+				{ discussion_versions_aggregate: { max: { good_faith_score: desc } } }
+				{ created_at: desc }
+			]
+			limit: $limit
+			offset: $offset
+		) {
+			id
+			status
+			created_at
+			is_anonymous
+			contributor {
+				...ContributorFields
+			}
+			current_version: discussion_versions(
+				where: { version_type: { _eq: "published" } }
+				order_by: { version_number: desc }
+				limit: 1
+			) {
+				...DiscussionVersionFields
+			}
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
+	${DISCUSSION_VERSION_FIELDS}
+`;
+
+// Get threaded posts for a discussion
+export const GET_DISCUSSION_POSTS_THREADED = gql`
+	query GetDiscussionPostsThreaded($discussionId: uuid!) {
+		# Get top-level posts (no parent)
+		posts(
+			where: {
+				discussion_id: { _eq: $discussionId }
+				status: { _eq: "approved" }
+				parent_post_id: { _is_null: true }
+			}
+			order_by: [{ post_type: asc }, { created_at: asc }]
+		) {
+			...PostFields
+			# Get replies to this post
+			replies: posts_by_parent_post_id(
+				where: { status: { _eq: "approved" } }
+				order_by: { created_at: asc }
+			) {
+				...PostFields
+			}
+		}
+	}
+	${POST_FIELDS}
+`;
+
+// Get posts by type for a discussion
+export const GET_DISCUSSION_POSTS_BY_TYPE = gql`
+	query GetDiscussionPostsByType($discussionId: uuid!, $postType: post_type_enum!) {
+		posts(
+			where: {
+				discussion_id: { _eq: $discussionId }
+				status: { _eq: "approved" }
+				post_type: { _eq: $postType }
+			}
+			order_by: { created_at: asc }
+		) {
+			...PostFields
+		}
+	}
+	${POST_FIELDS}
+`;
+
 // Update good faith analysis for a discussion version
 export const UPDATE_DISCUSSION_VERSION_GOOD_FAITH = gql`
 	mutation UpdateDiscussionVersionGoodFaith(
@@ -479,6 +630,8 @@ export const CREATE_POST_DRAFT_WITH_STYLE = gql`
 		$discussionId: uuid!
 		$authorId: uuid!
 		$draftContent: String!
+		$postType: post_type_enum = response
+		$parentPostId: uuid
 		$writingStyle: writing_style_type_enum = quick_point
 		$styleMetadata: jsonb = {}
 	) {
@@ -487,12 +640,16 @@ export const CREATE_POST_DRAFT_WITH_STYLE = gql`
 				discussion_id: $discussionId
 				author_id: $authorId
 				draft_content: $draftContent
+				post_type: $postType
+				parent_post_id: $parentPostId
 				status: "draft"
 				writing_style: $writingStyle
 				style_metadata: $styleMetadata
 			}
 		) {
 			id
+			post_type
+			parent_post_id
 			writing_style
 			style_metadata
 		}
