@@ -16,6 +16,18 @@
 
 	let user = nhost.auth.getUser();
 	let authEmail = user?.email || '';
+
+	// Listen for auth state changes
+	nhost.auth.onAuthStateChanged(async (_event, session) => {
+		user = session?.user || null;
+		authEmail = user?.email || '';
+
+		// Load profile data when auth state becomes available, but avoid duplicate loading
+		if (user && !fetching) {
+			profilePath = `/u/${user.id}`;
+			await loadProfile();
+		}
+	});
 	let loading = false;
 	let fetching = false;
 	let statsLoading = false;

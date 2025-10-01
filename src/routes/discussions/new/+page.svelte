@@ -495,6 +495,24 @@
 		() => !!user && title.trim().length > 0 && content.trim().length > 0 && !publishing && canUserUseAnalysis
 	);
 
+	function getAnalysisLimitText(): string {
+		if (!contributor) return '';
+		if (!contributor.analysis_enabled) return 'Analysis disabled';
+		if (['admin', 'slartibartfast'].includes(contributor.role)) return 'Unlimited analysis';
+
+		const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
+		const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
+
+		if (monthlyRemaining === Infinity) return 'Unlimited analysis';
+
+		let text = `${monthlyRemaining}/${contributor.analysis_limit} monthly`;
+		if (purchasedRemaining > 0) {
+			text += ` • ${purchasedRemaining} purchased`;
+		}
+
+		return text;
+	}
+
 	async function loadContributor() {
 		if (!user?.id) {
 			contributor = null;
@@ -708,10 +726,17 @@
 				</div>
 
 				<div class="autosave-indicator" aria-live="polite">
-					{#if currentVersionId && lastSavedAt}
-						Draft saved {new Date(lastSavedAt).toLocaleTimeString()}
-					{:else if currentVersionId}
-						Draft created
+					<div class="autosave-status">
+						{#if currentVersionId && lastSavedAt}
+							Draft saved {new Date(lastSavedAt).toLocaleTimeString()}
+						{:else if currentVersionId}
+							Draft created
+						{/if}
+					</div>
+					{#if contributor && currentVersionId}
+						<div class="credit-status-inline">
+							Credits: {getAnalysisLimitText()}
+						</div>
 					{/if}
 				</div>
 
@@ -967,10 +992,24 @@
 		font-size: 0.85rem;
 		color: var(--color-text-secondary);
 		display: flex;
-		align-items: center;
-		gap: 0.5rem;
+		flex-direction: column;
+		gap: 0.2rem;
 		min-height: 1.5rem;
 		font-weight: 500;
+	}
+
+	.autosave-status {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.credit-status-inline {
+		font-size: 0.7rem;
+		color: var(--color-text-tertiary);
+		opacity: 0.8;
+		font-style: italic;
+		font-weight: normal;
 	}
 
 	/* Custom disabled state */

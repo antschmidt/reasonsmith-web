@@ -100,9 +100,11 @@
 		'response' | 'counter_argument' | 'supporting_evidence' | 'question'
 	>('response');
 	let commentFormExpanded = $state(false);
+	let postTypeExpanded = $state(true);
 	let showAdvancedFeatures = $state(false);
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
+	let showOutOfCreditsModal = $state(false);
 	let user = $state(nhost.auth.getUser());
 	nhost.auth.onAuthStateChanged(() => {
 		user = nhost.auth.getUser();
@@ -3216,8 +3218,15 @@
 					{/if}
 
 					<div class="edit-autosave-indicator">
-						{#if editLastSavedAt}
-							Auto-saved {new Date(editLastSavedAt).toLocaleTimeString()}
+						<div class="autosave-status">
+							{#if editLastSavedAt}
+								Auto-saved {new Date(editLastSavedAt).toLocaleTimeString()}
+							{/if}
+						</div>
+						{#if contributor && editing}
+							<div class="credit-status-inline">
+								Credits: {getAnalysisLimitText()}
+							</div>
 						{/if}
 					</div>
 
@@ -3711,8 +3720,68 @@
 					}}
 					class="comment-form"
 				>
-					{#if showAdvancedFeatures}
-						<!-- Comment Word Count and Style Info -->
+
+					<!-- Post Type Selection -->
+					<div class="post-type-selection">
+						{#if postTypeExpanded}
+							<div class="post-type-label">Choose Post Type:</div>
+							<div class="post-type-buttons">
+								{#each ['response', 'counter_argument', 'supporting_evidence', 'question'] as type}
+									{@const config = getPostTypeConfig(type as any)}
+									<button
+										type="button"
+										class="post-type-btn"
+										class:selected={commentPostType === type}
+										onclick={() => {
+											commentPostType = type as typeof commentPostType;
+											postTypeExpanded = false;
+										}}
+									>
+										<span class="post-type-icon">{config.icon}</span>
+										<span class="post-type-text">
+											<span class="post-type-title">{config.label}</span>
+											<span class="post-type-desc">{config.description}</span>
+										</span>
+									</button>
+								{/each}
+							</div>
+						{:else}
+							{@const config = getPostTypeConfig(commentPostType as any)}
+							<div class="post-type-selected">
+								<span class="post-type-label">Post Type:</span>
+								<button
+									type="button"
+									class="post-type-btn selected compact"
+									onclick={() => {
+										postTypeExpanded = true;
+									}}
+								>
+									<span class="post-type-icon">{config.icon}</span>
+									<span class="post-type-text">
+										<span class="post-type-title">{config.label}</span>
+									</span>
+								</button>
+
+								<!-- Advanced Features Toggle - Next to Post Type button -->
+								<button
+									type="button"
+									class="toggle-advanced-btn compact"
+									onclick={() => {
+										showAdvancedFeatures = !showAdvancedFeatures;
+									}}
+								>
+									{#if showAdvancedFeatures}
+										▲ Hide Citations & Analysis
+									{:else}
+										▼ Show Citations & Analysis
+									{/if}
+								</button>
+							</div>
+						{/if}
+					</div>
+
+					<!-- Citations & Analysis Section - Appears above textarea when activated -->
+					{#if showAdvancedFeatures && !postTypeExpanded}
 						<div class="comment-writing-info">
 							<div class="word-count">
 								<span class="word-count-label">Words: {commentWordCount}</span>
@@ -3753,47 +3822,6 @@
 						placeholder="Add your comment... (Style will be automatically determined by length)"
 						aria-label="New comment"
 					></textarea>
-
-					<!-- Post Type Selection -->
-					<div class="post-type-selection">
-						<div class="post-type-label">Post Type:</div>
-						<div class="post-type-buttons">
-							{#each ['response', 'counter_argument', 'supporting_evidence', 'question'] as type}
-								{@const config = getPostTypeConfig(type as any)}
-								<button
-									type="button"
-									class="post-type-btn"
-									class:selected={commentPostType === type}
-									onclick={() => {
-										commentPostType = type as typeof commentPostType;
-									}}
-								>
-									<span class="post-type-icon">{config.icon}</span>
-									<span class="post-type-text">
-										<span class="post-type-title">{config.label}</span>
-										<span class="post-type-desc">{config.description}</span>
-									</span>
-								</button>
-							{/each}
-						</div>
-					</div>
-
-					<!-- Advanced Features Toggle -->
-					<div class="advanced-features-toggle">
-						<button
-							type="button"
-							class="toggle-advanced-btn"
-							onclick={() => {
-								showAdvancedFeatures = !showAdvancedFeatures;
-							}}
-						>
-							{#if showAdvancedFeatures}
-								▲ Hide Advanced Features
-							{:else}
-								▼ Show Citations & Analysis
-							{/if}
-						</button>
-					</div>
 
 					{#if showAdvancedFeatures}
 						<!-- Insert Citation Reference Button -->
@@ -4140,12 +4168,19 @@
 					>
 						<div class="autosave-indicator" aria-live="polite">
 							{#if draftPostId}
-								{#if hasPending}
-									<span class="pending-dot" aria-hidden="true"></span> Saving…
-								{:else if lastSavedAt}
-									Saved {new Date(lastSavedAt).toLocaleTimeString()}
-								{:else}
-									Draft created
+								<div class="autosave-status">
+									{#if hasPending}
+										<span class="pending-dot" aria-hidden="true"></span> Saving…
+									{:else if lastSavedAt}
+										Saved {new Date(lastSavedAt).toLocaleTimeString()}
+									{:else}
+										Draft created
+									{/if}
+								</div>
+								{#if contributor}
+									<div class="credit-status">
+										{getAnalysisLimitText()}
+									</div>
 								{/if}
 							{/if}
 						</div>
@@ -4168,9 +4203,20 @@
 							</div>
 						{/if}
 						<button
-							type="submit"
+							type="button"
 							class="btn-primary"
-							disabled={submitting || !newComment.trim() || !commentHeuristicPassed || !canUserUseAnalysis}
+							disabled={submitting || !newComment.trim()}
+							onclick={() => {
+								if (!commentHeuristicPassed) {
+									// Let normal validation messages show for content issues
+									return;
+								}
+								if (!canUserUseAnalysis) {
+									showOutOfCreditsModal = true;
+								} else {
+									publishDraft();
+								}
+							}}
 						>
 							{#if submitting}
 								Publishing…
@@ -4186,6 +4232,52 @@
 		<p>Discussion not found.</p>
 	{/if}
 </article>
+
+<!-- Out of Credits Modal -->
+{#if showOutOfCreditsModal}
+	<div class="modal-overlay" onclick={() => (showOutOfCreditsModal = false)}>
+		<div class="modal-content out-of-credits-modal" onclick={(e) => e.stopPropagation()}>
+			<div class="modal-header">
+				<h3>🚫 Out of Credits</h3>
+				<button
+					type="button"
+					class="modal-close-btn"
+					onclick={() => (showOutOfCreditsModal = false)}
+					aria-label="Close modal"
+				>
+					×
+				</button>
+			</div>
+			<div class="modal-body">
+				<p class="modal-main-message">
+					You don't have enough credits to publish this comment with analysis.
+				</p>
+				{#if analysisBlockedReason}
+					<div class="analysis-blocked-details">
+						<p class="error-message">{analysisBlockedReason}</p>
+						{#if analysisBlockedReason.includes('credits')}
+							<p class="help-text">Check your <a href="/profile">profile page</a> for credit information and options to purchase more credits.</p>
+						{:else if analysisBlockedReason.includes('disabled')}
+							<p class="help-text">Visit your <a href="/profile">profile page</a> to enable analysis features.</p>
+						{/if}
+					</div>
+				{/if}
+			</div>
+			<div class="modal-footer">
+				<button
+					type="button"
+					class="btn-secondary"
+					onclick={() => (showOutOfCreditsModal = false)}
+				>
+					Close
+				</button>
+				<a href="/profile" class="btn-primary">
+					View Profile
+				</a>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.discussion-article {
@@ -5149,6 +5241,43 @@
 		background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-primary));
 		box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent);
 	}
+
+	.post-type-btn.compact {
+		display: inline-flex;
+		width: auto;
+		font-size: 0.9rem;
+		padding: 0.5rem 0.75rem;
+	}
+
+	.post-type-selected {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-bottom: 1rem;
+	}
+
+	.post-type-selected .post-type-label {
+		font-weight: 500;
+		color: var(--color-text-primary);
+	}
+
+	.toggle-advanced-btn.compact {
+		font-size: 0.85rem;
+		padding: 0.5rem 0.75rem;
+		border: 2px solid var(--color-border);
+		border-radius: 8px;
+		background: var(--color-bg-primary);
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		transition: all 0.2s ease;
+		white-space: nowrap;
+	}
+
+	.toggle-advanced-btn.compact:hover {
+		border-color: var(--color-primary);
+		background: var(--color-bg-secondary);
+		color: var(--color-text-primary);
+	}
 	.post-type-icon {
 		font-size: 1.2rem;
 		min-width: 1.5rem;
@@ -5372,8 +5501,30 @@
 		color: var(--color-text-secondary);
 		min-height: 0.9rem;
 		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.2rem;
+	}
+
+	.autosave-status {
+		display: flex;
 		align-items: center;
 		gap: 0.35rem;
+	}
+
+	.credit-status {
+		font-size: 0.6rem;
+		color: var(--color-text-tertiary);
+		opacity: 0.8;
+		font-style: italic;
+	}
+
+	.credit-status-inline {
+		font-size: 0.6rem;
+		color: var(--color-text-tertiary);
+		opacity: 0.8;
+		font-style: italic;
+		margin-top: 0.2rem;
 	}
 	.pending-dot {
 		width: 6px;
@@ -5459,6 +5610,18 @@
 		color: var(--color-text-secondary);
 		margin: 0.5rem 0;
 		min-height: 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.edit-autosave-indicator .autosave-status {
+		display: flex;
+		align-items: center;
+	}
+
+	.edit-autosave-indicator .credit-status-inline {
+		font-size: 0.65rem;
 	}
 	.historical-version-banner {
 		background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-alt));
@@ -6405,6 +6568,186 @@
 		to {
 			opacity: 1;
 			transform: translateY(0);
+		}
+	}
+
+	/* Out of Credits Modal Styles */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		background: rgba(0, 0, 0, 0.6);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+		backdrop-filter: blur(2px);
+	}
+
+	.modal-content {
+		background: var(--color-bg-primary);
+		border-radius: 12px;
+		box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+		max-width: 500px;
+		width: 90%;
+		max-height: 80vh;
+		overflow-y: auto;
+		animation: modal-appear 0.2s ease-out;
+	}
+
+	@keyframes modal-appear {
+		from {
+			opacity: 0;
+			transform: scale(0.9) translateY(-20px);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1) translateY(0);
+		}
+	}
+
+	.modal-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 1.5rem 1.5rem 1rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.modal-header h3 {
+		margin: 0;
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.modal-close-btn {
+		background: none;
+		border: none;
+		font-size: 1.5rem;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		padding: 0.25rem;
+		border-radius: 4px;
+		line-height: 1;
+		transition: all 0.2s ease;
+	}
+
+	.modal-close-btn:hover {
+		background: var(--color-bg-secondary);
+		color: var(--color-text-primary);
+	}
+
+	.modal-body {
+		padding: 1.5rem;
+	}
+
+	.modal-main-message {
+		font-size: 1.1rem;
+		color: var(--color-text-primary);
+		margin: 0 0 1rem 0;
+		line-height: 1.5;
+	}
+
+	.analysis-blocked-details {
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		padding: 1rem;
+		margin-top: 1rem;
+	}
+
+	.analysis-blocked-details .error-message {
+		color: var(--color-error);
+		font-weight: 500;
+		margin: 0 0 0.5rem 0;
+	}
+
+	.analysis-blocked-details .help-text {
+		color: var(--color-text-secondary);
+		margin: 0;
+		font-size: 0.9rem;
+	}
+
+	.analysis-blocked-details .help-text a {
+		color: var(--color-primary);
+		text-decoration: none;
+		font-weight: 500;
+	}
+
+	.analysis-blocked-details .help-text a:hover {
+		text-decoration: underline;
+	}
+
+	.modal-footer {
+		padding: 1rem 1.5rem 1.5rem;
+		border-top: 1px solid var(--color-border);
+		display: flex;
+		gap: 0.75rem;
+		justify-content: flex-end;
+	}
+
+	.modal-footer .btn-secondary {
+		background: var(--color-bg-secondary);
+		color: var(--color-text-primary);
+		border: 1px solid var(--color-border);
+		padding: 0.625rem 1.25rem;
+		border-radius: 8px;
+		font-size: 0.9rem;
+		font-weight: 500;
+		cursor: pointer;
+		text-decoration: none;
+		transition: all 0.2s ease;
+	}
+
+	.modal-footer .btn-secondary:hover {
+		background: var(--color-bg-tertiary);
+		border-color: var(--color-text-secondary);
+	}
+
+	.modal-footer .btn-primary {
+		background: var(--color-primary);
+		color: white;
+		border: none;
+		padding: 0.625rem 1.25rem;
+		border-radius: 8px;
+		font-size: 0.9rem;
+		font-weight: 500;
+		cursor: pointer;
+		text-decoration: none;
+		transition: all 0.2s ease;
+	}
+
+	.modal-footer .btn-primary:hover {
+		background: var(--color-primary-dark);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 25%, transparent);
+	}
+
+	@media (max-width: 640px) {
+		.modal-content {
+			width: 95%;
+			margin: 1rem;
+		}
+
+		.modal-header,
+		.modal-body,
+		.modal-footer {
+			padding-left: 1rem;
+			padding-right: 1rem;
+		}
+
+		.modal-footer {
+			flex-direction: column;
+		}
+
+		.modal-footer .btn-secondary,
+		.modal-footer .btn-primary {
+			width: 100%;
+			justify-content: center;
+			display: flex;
 		}
 	}
 </style>
