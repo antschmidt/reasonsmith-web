@@ -111,11 +111,14 @@
           title
         }
       }
-      post(where: { author_id: { _eq: $id }, status: { _eq: "approved" } }, order_by: { created_at: desc }) {
+      post(where: { author_id: { _eq: $id }, status: { _in: ["approved", "draft"] } }, order_by: { status: asc, created_at: desc }) {
         id
         discussion_id
         created_at
         content
+        status
+        post_type
+        draft_content
       }
     }
   `;
@@ -1016,10 +1019,15 @@
 						<div class="content-list">
 							{#each posts as p}
 								<div class="content-item">
-									<a href={`/discussions/${p.discussion_id}`} class="content-link"
-										>{toTextSnippet(p.content)}</a
+									<a href={p.status === 'draft'
+										? `/discussions/${p.discussion_id}?replyDraftId=${p.id}`
+										: `/discussions/${p.discussion_id}`
+									} class="content-link"
+										>{toTextSnippet(p.status === 'draft' ? p.draft_content || '' : p.content)}</a
 									>
-									<span class="content-meta">{new Date(p.created_at).toLocaleDateString()}</span>
+									<span class="content-meta">
+										{p.status === 'draft' ? 'Draft • ' : ''}{new Date(p.created_at).toLocaleDateString()}
+									</span>
 								</div>
 							{/each}
 						</div>

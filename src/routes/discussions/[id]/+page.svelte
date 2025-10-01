@@ -4,6 +4,7 @@
 	// Avoid importing gql to prevent type resolution issues; use plain string
 	import { nhost } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
+	import { slide } from 'svelte/transition';
 	import {
 		CREATE_POST_DRAFT,
 		CREATE_POST_DRAFT_WITH_STYLE,
@@ -184,6 +185,7 @@
 			versionLoading = false;
 		}
 	});
+
 
 	let editing = $state(false);
 	let editTitle = $state('');
@@ -461,7 +463,19 @@
 		if (replyDraftParam) {
 			// fetch that specific draft id if belongs to this discussion & user
 			const { data, error } = await nhost.graphql.request(
-				`query GetDraftById($id: uuid!, $authorId: uuid!, $discussionId: uuid!) { post(where: {id: {_eq: $id}}) { id draft_content discussion_id author_id } }`,
+				`query GetDraftById($id: uuid!, $authorId: uuid!, $discussionId: uuid!) {
+					post(where: {
+						id: {_eq: $id},
+						author_id: {_eq: $authorId},
+						discussion_id: {_eq: $discussionId}
+					}) {
+						id
+						draft_content
+						discussion_id
+						author_id
+						post_type
+					}
+				}`,
 				{ id: replyDraftParam, authorId: user.id, discussionId }
 			);
 			if (!error) {
@@ -474,8 +488,37 @@
 				) {
 					draftPostId = candidate.id;
 					newComment = candidate.draft_content || '';
+					// Calculate word count for the loaded draft content
+					commentWordCount = newComment.trim() ? newComment.trim().split(/\s+/).length : 0;
+					// Validate the loaded content
+					validateCommentContent();
+					// Set the post type from the draft
+					if (candidate.post_type) {
+						commentPostType = candidate.post_type;
+						postTypeExpanded = false; // Keep the post type collapsed since it's already selected
+					}
 					initAutosaver();
 					focusReplyOnMount = true;
+					commentFormExpanded = true; // Expand the comment form
+
+					// Focus and scroll immediately since onMount already ran
+					setTimeout(() => {
+						const ta = document.querySelector(
+							'textarea[aria-label="New comment"]'
+						) as HTMLTextAreaElement | null;
+						if (ta) {
+							ta.focus();
+						}
+
+						// Scroll to the comment section
+						const commentSection = document.querySelector('.add-comment');
+						if (commentSection) {
+							commentSection.scrollIntoView({
+								behavior: 'smooth',
+								block: 'center'
+							});
+						}
+					}, 500); // Longer delay to ensure DOM updates are complete
 
 					// Load citation data from localStorage (until database migration is applied)
 					if (typeof localStorage !== 'undefined' && draftPostId) {
@@ -509,6 +552,10 @@
 		if (existing) {
 			draftPostId = existing.id;
 			newComment = existing.draft_content || '';
+			// Calculate word count for the loaded draft content
+			commentWordCount = newComment.trim() ? newComment.trim().split(/\s+/).length : 0;
+			// Validate the loaded content
+			validateCommentContent();
 			initAutosaver();
 
 			// Load existing good faith analysis if available
@@ -1074,7 +1121,19 @@
 			const ta = document.querySelector(
 				'textarea[aria-label="New comment"]'
 			) as HTMLTextAreaElement | null;
-			if (ta) setTimeout(() => ta.focus(), 50);
+			if (ta) {
+				setTimeout(() => {
+					ta.focus();
+					// Scroll to the comment section
+					const commentSection = document.querySelector('.add-comment');
+					if (commentSection) {
+						commentSection.scrollIntoView({
+							behavior: 'smooth',
+							block: 'center'
+						});
+					}
+				}, 100);
+			}
 		}
 
 		// Handle window resize for auto-resizing textarea
@@ -3724,8 +3783,8 @@
 					<!-- Post Type Selection -->
 					<div class="post-type-selection">
 						{#if postTypeExpanded}
-							<div class="post-type-label">Choose Post Type:</div>
-							<div class="post-type-buttons">
+							<!-- <div class="post-type-label">Choose Post Type:</div> -->
+							<div class="post-type-buttons" transition:slide={{ duration: 300 }}>
 								{#each ['response', 'counter_argument', 'supporting_evidence', 'question'] as type}
 									{@const config = getPostTypeConfig(type as any)}
 									<button
@@ -3748,7 +3807,7 @@
 						{:else}
 							{@const config = getPostTypeConfig(commentPostType as any)}
 							<div class="post-type-selected">
-								<span class="post-type-label">Post Type:</span>
+								<!-- <span class="post-type-label">Post Type:</span> -->
 								<button
 									type="button"
 									class="post-type-btn selected compact"
@@ -5204,6 +5263,7 @@
 	/* Post Type Selection */
 	.post-type-selection {
 		margin: 0.5rem 0;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 	.post-type-label {
 		display: block;
@@ -5225,7 +5285,7 @@
 		border: 2px solid var(--color-border);
 		border-radius: var(--border-radius-sm);
 		cursor: pointer;
-		transition: all 0.2s ease;
+		transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 		background: var(--color-bg-primary);
 		text-align: left;
 		font-family: inherit;
@@ -5251,6 +5311,7 @@
 
 	.post-type-selected {
 		display: flex;
+    justify-content: space-between;
 		align-items: center;
 		gap: 0.75rem;
 		margin-bottom: 1rem;
