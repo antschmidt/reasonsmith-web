@@ -20,13 +20,22 @@
 		UPDATE_DISCUSSION_VERSION,
 		PUBLISH_DISCUSSION_VERSION,
 		GET_DISCUSSION_DRAFT_VERSION,
-		UPDATE_DISCUSSION_VERSION_GOOD_FAITH
+		UPDATE_DISCUSSION_VERSION_GOOD_FAITH,
+		GET_CONTRIBUTOR
 	} from '$lib/graphql/queries';
+	import {
+		canUseAnalysis,
+		getMonthlyCreditsRemaining,
+		getPurchasedCreditsRemaining,
+		checkAndResetMonthlyCredits
+	} from '$lib/creditUtils';
 
 	// --- State (Runes) ---
 	let user = $state(nhost.auth.getUser());
+	let contributor = $state<any>(null);
 	nhost.auth.onAuthStateChanged(() => {
 		user = nhost.auth.getUser();
+		loadContributor();
 	});
 
 	let title = $state('');
@@ -132,6 +141,8 @@
 			if (idParam && !discussionId) {
 				loadExistingDiscussion(idParam);
 			}
+			// Load contributor data on mount
+			loadContributor();
 		}
 	});
 
@@ -305,15 +316,45 @@
 			return;
 		}
 
+		// Check if user can use analysis (credits and permissions)
+		if (!contributor) {
+			publishError = 'Unable to load account information. Please try again.';
+			return;
+		}
+
+		if (!canUseAnalysis(contributor)) {
+			if (!contributor.analysis_enabled) {
+				publishError = 'Good-faith analysis has been disabled for your account. Please contact support.';
+				return;
+			}
+
+			const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
+			const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
+
+			if (monthlyRemaining === 0 && purchasedRemaining === 0) {
+				publishError = 'You have no analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.';
+				return;
+			} else {
+				publishError = 'Unable to proceed with analysis. Please check your credit balance.';
+				return;
+			}
+		}
+
 		publishing = true;
 		try {
 			// Good faith analysis gate - analyze BEFORE creating discussion
 			goodFaithTesting = true;
 			let goodFaithData;
 			try {
+				const accessToken = nhost.auth.getAccessToken();
+				const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+				if (accessToken) {
+					headers['Authorization'] = `Bearer ${accessToken}`;
+				}
+
 				const response = await fetch('/api/goodFaithClaude', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers,
 					body: JSON.stringify({
 						content: content,
 						title: title
@@ -440,9 +481,64 @@
 		}
 	}
 
+	// Check if user can use analysis (reactive)
+	const canUserUseAnalysis = $derived(contributor ? canUseAnalysis(contributor) : false);
+	const analysisBlockedReason = $derived(!contributor
+		? 'Unable to load account information'
+		: !contributor.analysis_enabled
+		? 'Good-faith analysis has been disabled for your account'
+		: getMonthlyCreditsRemaining(contributor) === 0 && getPurchasedCreditsRemaining(contributor) === 0
+		? 'No analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.'
+		: null);
+
 	const canPublish = $derived(
-		() => !!user && title.trim().length > 0 && content.trim().length > 0 && !publishing
+		() => !!user && title.trim().length > 0 && content.trim().length > 0 && !publishing && canUserUseAnalysis
 	);
+
+	async function loadContributor() {
+		if (!user?.id) {
+			contributor = null;
+			return;
+		}
+
+		try {
+			const result = await nhost.graphql.request(GET_CONTRIBUTOR, {
+				userId: user.id
+			});
+
+			if ((result as any).error) {
+				console.error('Error loading contributor:', (result as any).error);
+				return;
+			}
+
+			contributor = (result as any).data?.contributor_by_pk || null;
+
+			// Check and reset monthly credits if needed
+			if (contributor) {
+				try {
+					const didReset = await checkAndResetMonthlyCredits(
+						contributor,
+						process.env.HASURA_GRAPHQL_ENDPOINT || nhost.graphql.getUrl(),
+						nhost.auth.getAccessToken()
+					);
+					if (didReset) {
+						// Reload contributor data to get updated credit count
+						const updatedResult = await nhost.graphql.request(GET_CONTRIBUTOR, {
+							userId: user.id
+						});
+						if (!(updatedResult as any).error) {
+							contributor = (updatedResult as any).data?.contributor_by_pk || null;
+						}
+					}
+				} catch (resetError) {
+					console.error('Error resetting monthly credits:', resetError);
+				}
+			}
+		} catch (error) {
+			console.error('Error loading contributor:', error);
+			contributor = null;
+		}
+	}
 </script>
 
 <div class="editorial-page">
@@ -662,6 +758,17 @@
 									{/each}
 								</ul>
 							</div>
+						{/if}
+					</div>
+				{/if}
+
+				{#if !canUserUseAnalysis && analysisBlockedReason}
+					<div class="analysis-blocked-message">
+						<p class="error-message">{analysisBlockedReason}</p>
+						{#if analysisBlockedReason.includes('disabled')}
+							<p class="help-text">Contact support for assistance.</p>
+						{:else if analysisBlockedReason.includes('credits')}
+							<p class="help-text">Check your <a href="/profile">profile page</a> for credit information.</p>
 						{/if}
 					</div>
 				{/if}
@@ -1128,6 +1235,36 @@
 
 	.validation-issue:last-child {
 		margin-bottom: 0;
+	}
+
+	.analysis-blocked-message {
+		background: color-mix(in srgb, #ef4444 15%, transparent);
+		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+		border-radius: 16px;
+		padding: 1rem;
+		margin: 1rem 0;
+		backdrop-filter: blur(10px);
+	}
+
+	.analysis-blocked-message .error-message {
+		margin: 0 0 0.5rem 0;
+		font-weight: 500;
+		color: #ef4444;
+	}
+
+	.analysis-blocked-message .help-text {
+		margin: 0;
+		font-size: 0.9rem;
+		color: color-mix(in srgb, #ef4444 80%, white);
+	}
+
+	.analysis-blocked-message .help-text a {
+		color: #3b82f6;
+		text-decoration: none;
+	}
+
+	.analysis-blocked-message .help-text a:hover {
+		text-decoration: underline;
 	}
 
 	/* Citations Section */

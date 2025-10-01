@@ -238,6 +238,16 @@
 	let draftAnalysisExpanded = $state(false);
 	const COMMENT_GOOD_FAITH_THRESHOLD = 0.7; // 70%
 
+	// Check if user can use analysis (reactive)
+	const canUserUseAnalysis = $derived(contributor ? canUseAnalysis(contributor) : false);
+	const analysisBlockedReason = $derived(!contributor
+		? 'Unable to load account information'
+		: !contributor.analysis_enabled
+		? 'Good-faith analysis has been disabled for your account'
+		: getMonthlyCreditsRemaining(contributor) === 0 && getPurchasedCreditsRemaining(contributor) === 0
+		? 'No analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.'
+		: null);
+
 	// Automatically infer comment writing style based on content length
 	function getInferredCommentStyle(): WritingStyle {
 		if (commentWordCount <= 100) return 'quick_point';
@@ -581,6 +591,30 @@
 		if (!newComment.trim()) {
 			submitError = 'Comment cannot be empty.';
 			return;
+		}
+
+		// Check if user can use analysis (credits and permissions)
+		if (!contributor) {
+			submitError = 'Unable to load account information. Please try again.';
+			return;
+		}
+
+		if (!canUseAnalysis(contributor)) {
+			if (!contributor.analysis_enabled) {
+				submitError = 'Good-faith analysis has been disabled for your account. Please contact support.';
+				return;
+			}
+
+			const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
+			const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
+
+			if (monthlyRemaining === 0 && purchasedRemaining === 0) {
+				submitError = 'You have no analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.';
+				return;
+			} else {
+				submitError = 'Unable to proceed with analysis. Please check your credit balance.';
+				return;
+			}
 		}
 
 		submitting = true;
@@ -4123,10 +4157,20 @@
 								<button type="button" class="btn-link" onclick={clearReplying}>Cancel</button>
 							</div>
 						{/if}
+						{#if !canUserUseAnalysis && analysisBlockedReason}
+							<div class="analysis-blocked-message">
+								<p class="error-message">{analysisBlockedReason}</p>
+								{#if analysisBlockedReason.includes('disabled')}
+									<p class="help-text">Contact support for assistance.</p>
+								{:else if analysisBlockedReason.includes('credits')}
+									<p class="help-text">Check your <a href="/profile">profile page</a> for credit information.</p>
+								{/if}
+							</div>
+						{/if}
 						<button
 							type="submit"
 							class="btn-primary"
-							disabled={submitting || !newComment.trim() || !commentHeuristicPassed}
+							disabled={submitting || !newComment.trim() || !commentHeuristicPassed || !canUserUseAnalysis}
 						>
 							{#if submitting}
 								Publishing…
@@ -5287,6 +5331,34 @@
 
 	.error-message {
 		color: #ef4444;
+	}
+
+	.analysis-blocked-message {
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		border-radius: 6px;
+		padding: 12px;
+		margin: 8px 0;
+	}
+
+	.analysis-blocked-message .error-message {
+		margin: 0 0 4px 0;
+		font-weight: 500;
+	}
+
+	.analysis-blocked-message .help-text {
+		margin: 0;
+		font-size: 0.9rem;
+		color: #6b7280;
+	}
+
+	.analysis-blocked-message .help-text a {
+		color: #3b82f6;
+		text-decoration: none;
+	}
+
+	.analysis-blocked-message .help-text a:hover {
+		text-decoration: underline;
 	}
 	.draft-status {
 		font-size: 0.75rem;
