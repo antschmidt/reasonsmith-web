@@ -3,12 +3,23 @@
 	import { nhost } from '$lib/nhostClient';
 	import { goto } from '$app/navigation';
 	import FeaturedAnalysesCarousel from '$lib/components/FeaturedAnalysesCarousel.svelte';
-	import { LIST_PUBLISHED_DISCUSSIONS, SEARCH_PUBLISHED_DISCUSSIONS } from '$lib/graphql/queries';
+	import {
+		LIST_PUBLISHED_DISCUSSIONS,
+		SEARCH_PUBLISHED_DISCUSSIONS,
+		SEARCH_DISCUSSIONS_BY_TAGS,
+		GET_DISCUSSION_TAGS,
+		ADVANCED_SEARCH_DISCUSSIONS
+	} from '$lib/graphql/queries';
+	import { COMMON_DISCUSSION_TAGS, normalizeTag } from '$lib/types/writingStyle';
 	import type { PageData } from './$types';
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let q = $state('');
+
+	// Simple tag filtering for existing search
+	let selectedTags = $state<string[]>([]);
+	let showTagFilter = $state(false);
 	type DiscussionSummary = {
 		id: string;
 		created_at: string;
@@ -19,6 +30,7 @@
 			id: string;
 			title: string;
 			description?: string | null;
+			tags?: string[] | null;
 			good_faith_score?: number | null;
 			good_faith_label?: string | null;
 		}[];
@@ -54,6 +66,44 @@
 		showcaseItems = props.data?.showcaseItems ?? [];
 		showcaseError = props.data?.showcaseError ?? null;
 	});
+
+	// Tag filtering functions
+	function toggleTag(tag: string) {
+		if (selectedTags.includes(tag)) {
+			selectedTags = selectedTags.filter((t) => t !== tag);
+		} else {
+			selectedTags = [...selectedTags, tag];
+		}
+		// Trigger search if we have tags selected
+		if (selectedTags.length > 0) {
+			searchByTags();
+		} else if (q.trim()) {
+			search();
+		} else {
+			results = null;
+		}
+	}
+
+	async function searchByTags() {
+		if (selectedTags.length === 0) return;
+
+		loading = true;
+		error = null;
+		try {
+			const { data, error: gqlError } = await nhost.graphql.request(SEARCH_DISCUSSIONS_BY_TAGS, {
+				tags: selectedTags
+			});
+			if (gqlError)
+				throw Array.isArray(gqlError)
+					? new Error(gqlError.map((e: any) => e.message).join('; '))
+					: gqlError;
+			results = (data as any)?.discussion ?? [];
+		} catch (e: any) {
+			error = e.message ?? 'Tag search failed';
+		} finally {
+			loading = false;
+		}
+	}
 
 	// Using imported GraphQL queries for the new versioning system
 
@@ -341,6 +391,13 @@
 									{@html highlight(createSummary(d.current_version[0].description, 180), q)}
 								</p>
 							{/if}
+							{#if d.current_version?.[0]?.tags && d.current_version[0].tags.length > 0}
+								<div class="discussion-tags">
+									{#each d.current_version[0].tags as tag}
+										<span class="tag">{tag}</span>
+									{/each}
+								</div>
+							{/if}
 						</header>
 						<footer class="card-byline">
 							{#if d.is_anonymous}
@@ -572,6 +629,36 @@
 		max-width: 62ch;
 		font-size: 1rem;
 		font-weight: 400;
+	}
+
+	.discussion-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-top: 1rem;
+	}
+
+	.discussion-tags .tag {
+		display: inline-block;
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--color-primary) 15%, var(--color-surface)),
+			color-mix(in srgb, var(--color-accent) 10%, var(--color-surface))
+		);
+		color: var(--color-primary);
+		padding: 0.375rem 0.75rem;
+		border-radius: 16px;
+		font-size: 0.8rem;
+		font-weight: 500;
+		border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+		transition: all 0.2s ease;
+	}
+
+	.discussion-tags .tag:hover {
+		background: var(--color-primary);
+		color: white;
+		transform: translateY(-1px);
+		box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 25%, transparent);
 	}
 
 	.card-byline {

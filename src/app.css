@@ -14,7 +14,7 @@
 	--color-text-primary: #1a202c; /* Rich black */
 	--color-text-secondary: #4a5568; /* Sophisticated gray */
 	--color-text-tertiary: #718096; /* Light gray */
-	--color-border: #e2e8f0; /* Subtle border */
+	--color-border: #e2e8f094; /* Subtle border */
 	--color-input-bg: #ffffff;
 	--color-cta: var(--color-primary);
 	--color-link: #2b5797;
@@ -39,7 +39,7 @@
 	--color-text-primary: #f7fafc; /* Soft white */
 	--color-text-secondary: #a0aec0; /* Muted gray */
 	--color-text-tertiary: #718096; /* Darker gray */
-	--color-border: #4a5568; /* Dark border */
+	--color-border: #4a556870; /* Dark border */
 	--color-input-bg: #2d3748;
 	--color-cta: var(--color-primary);
 	--color-link: #90cdf4;
@@ -48,7 +48,7 @@
 
 body {
 	font-family: var(--font-family-sans);
-	font-size: 16px;
+	font-size: 0.9rem;
 	line-height: var(--line-height-normal);
 	background-color: var(--color-surface-alt);
 	color: var(--color-text-primary);
@@ -790,7 +790,7 @@ input::placeholder {
 
 /* Card and Surface Utilities */
 .card {
-	background: var(--color-surface);
+	/* background: var(--color-surface); */
 	border: 1px solid var(--color-border);
 	border-radius: 24px;
 	padding: 1.5rem;
@@ -798,7 +798,7 @@ input::placeholder {
 }
 
 .card--glass {
-	background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+	/* background: color-mix(in srgb, var(--color-surface) 40%, transparent); */
 	backdrop-filter: blur(20px);
 	border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 	box-shadow: 0 8px 32px color-mix(in srgb, var(--color-primary) 8%, transparent);

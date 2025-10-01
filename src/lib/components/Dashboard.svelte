@@ -20,25 +20,8 @@
 	};
 	let statsLoading = true;
 
-	type DashboardDiscussion = {
-		id: string;
-		created_at: string;
-		is_anonymous?: boolean | null;
-		status: string;
-		contributor?: { id: string; handle?: string | null; display_name?: string | null } | null;
-		current_version?: Array<{
-			title: string;
-			description?: string | null;
-		}>;
-		draft_version?: Array<{
-			title: string;
-			description?: string | null;
-		}>;
-	};
 
-	// Live data
-	let myDiscussions: DashboardDiscussion[] = [];
-	let repliedDiscussions: DashboardDiscussion[] = [];
+	// Focus on active work only
 
 	let drafts: Array<{
 		id: string;
@@ -80,8 +63,7 @@
 					? dashboardResult.error.map((e: any) => e.message ?? String(e)).join('; ')
 					: ((dashboardResult.error as any).message ?? 'Failed to load dashboard data');
 			} else if (dashboardResult.data) {
-				myDiscussions = dashboardResult.data.myDiscussions ?? [];
-				repliedDiscussions = dashboardResult.data.repliedDiscussions ?? [];
+				// Focus on drafts and active work only
 
 				// Get database drafts (comment drafts)
 				const dbDrafts = (dashboardResult.data.myPostDrafts ?? []).map((draft: any) => ({
@@ -116,10 +98,8 @@
 				);
 
 				// Get discussion description drafts from localStorage (legacy)
-				const localStorageDrafts = getDiscussionDraftsFromLocalStorage();
-
-				// Combine all types of drafts
-				drafts = [...dbDrafts, ...dbDiscussionDrafts, ...localStorageDrafts].sort((a, b) => {
+				// Combine database drafts
+				drafts = [...dbDrafts, ...dbDiscussionDrafts].sort((a, b) => {
 					const dateA = new Date(a.updated_at || 0).getTime();
 					const dateB = new Date(b.updated_at || 0).getTime();
 					return dateB - dateA; // Most recent first
@@ -143,37 +123,6 @@
 		statsLoading = false;
 	}
 
-	function getDiscussionDraftsFromLocalStorage() {
-		if (typeof localStorage === 'undefined') return [];
-
-		const discussionDrafts: any[] = [];
-
-		// Check localStorage for discussion drafts for discussions created by this user
-		myDiscussions.forEach((discussion) => {
-			const draftKey = `discussion_draft:${discussion.id}`;
-			const draftData = localStorage.getItem(draftKey);
-
-			if (draftData) {
-				try {
-					const draft = JSON.parse(draftData);
-					discussionDrafts.push({
-						id: `discussion_${discussion.id}`, // Unique ID for UI
-						draft_content: `${draft.title}\n\n${draft.description}`,
-						discussion_id: null, // This is the discussion itself, not a comment
-						updated_at: new Date(draft.lastSaved).toISOString(),
-						discussion_title: draft.title,
-						status: 'draft',
-						type: 'discussion',
-						original_discussion_id: discussion.id // Keep reference to original discussion
-					});
-				} catch (e) {
-					// Ignore invalid JSON
-				}
-			}
-		});
-
-		return discussionDrafts;
-	}
 
 	onMount(loadData);
 
@@ -257,28 +206,6 @@
 		return n;
 	}
 
-	function authorLabel(discussion: DashboardDiscussion, isOwner = false): string {
-		if (discussion.is_anonymous) {
-			return isOwner ? 'by You (anonymous to others)' : 'by Anonymous';
-		}
-		if (discussion.contributor?.display_name) {
-			return `by ${displayName(discussion.contributor.display_name)}`;
-		}
-		return isOwner ? 'by You' : '';
-	}
-
-	// Helper functions to get title and description from versioned structure
-	function getDiscussionTitle(discussion: DashboardDiscussion): string {
-		// Try current published version first, then draft version
-		const version = discussion.current_version?.[0] || discussion.draft_version?.[0];
-		return version?.title || 'Untitled Discussion';
-	}
-
-	function getDiscussionDescription(discussion: DashboardDiscussion): string | null {
-		// Try current published version first, then draft version
-		const version = discussion.current_version?.[0] || discussion.draft_version?.[0];
-		return version?.description || null;
-	}
 </script>
 
 <div class="dashboard-container">
@@ -449,79 +376,14 @@
 			{:else if error}
 				<p style="color: var(--color-accent)">{error}</p>
 			{:else}
-				{#if myDiscussions.length + repliedDiscussions.length === 0}
+				{#if drafts.length === 0}
 					<div class="card" style="margin-bottom: 1rem;">
-						<p>No discussions yet.</p>
+						<p>No active drafts. <a href="/discussions/new">Start a new discussion</a> or join an existing conversation.</p>
 					</div>
-				{/if}
-
-				{#if myDiscussions.length > 0}
-					<div class="discussions-list">
-						<h3 class="subsection-title">Discussions</h3>
-						{#each myDiscussions as discussion}
-							{@const label = authorLabel(discussion, true)}
-							{@const title = getDiscussionTitle(discussion)}
-							{@const description = getDiscussionDescription(discussion)}
-							<div
-								class="discussion-card"
-								role="button"
-								tabindex="0"
-								on:click={() => goto(`/discussions/${discussion.id}`)}
-								on:keydown={(e) =>
-									e.key === 'Enter' ? goto(`/discussions/${discussion.id}`) : null}
-							>
-								<h3 class="discussion-title">{title}</h3>
-								{#if description}
-									<p class="discussion-snippet">{description}</p>
-								{/if}
-								<p class="discussion-meta">
-									{#if label}
-										<span class:anonymous-author={discussion.is_anonymous}>{label}</span>
-									{/if}
-									{#if discussion.created_at}
-										{#if label}
-											<span class="dot-separator" aria-hidden="true">·</span>
-										{/if}
-										<span>{new Date(discussion.created_at).toLocaleString()}</span>
-									{/if}
-								</p>
-							</div>
-						{/each}
-					</div>
-				{/if}
-
-				{#if repliedDiscussions.length > 0}
-					<h3 class="subsection-title">You replied to</h3>
-					<div class="discussions-list">
-						{#each repliedDiscussions as discussion}
-							{@const label = authorLabel(discussion, false)}
-							{@const title = getDiscussionTitle(discussion)}
-							{@const description = getDiscussionDescription(discussion)}
-							<div
-								class="discussion-card"
-								role="button"
-								tabindex="0"
-								on:click={() => goto(`/discussions/${discussion.id}`)}
-								on:keydown={(e) =>
-									e.key === 'Enter' ? goto(`/discussions/${discussion.id}`) : null}
-							>
-								<h3 class="discussion-title">{title}</h3>
-								{#if description}
-									<p class="discussion-snippet">{description}</p>
-								{/if}
-								<p class="discussion-meta">
-									{#if label}
-										<span class:anonymous-author={discussion.is_anonymous}>{label}</span>
-									{/if}
-									{#if discussion.created_at}
-										{#if label}
-											<span class="dot-separator" aria-hidden="true">·</span>
-										{/if}
-										<span>{new Date(discussion.created_at).toLocaleString()}</span>
-									{/if}
-								</p>
-							</div>
-						{/each}
+				{:else}
+					<div class="drafts-focus">
+						<h3 class="subsection-title">Continue Working</h3>
+						<p class="section-description">Pick up where you left off on your drafts and active discussions.</p>
 					</div>
 				{/if}
 			{/if}
@@ -570,7 +432,7 @@
 	.stat-item {
 		padding: 1.5rem;
 		border-radius: var(--border-radius-sm);
-		background: var(--color-surface);
+		/* background: var(--color-surface); */
 		border: 1px solid var(--color-border);
 		text-align: center;
 		flex: 1;
@@ -632,7 +494,7 @@
 
 	/* Editorial Cards */
 	.card {
-		background: var(--color-surface);
+		/* background: var(--color-surface); */
 		border: 1px solid var(--color-border);
 		border-radius: var(--border-radius-sm);
 		padding: 2rem;

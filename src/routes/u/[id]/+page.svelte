@@ -247,7 +247,10 @@
 			<div class="profile-header-content">
 				<div class="profile-avatar">
 					{#if contributor.avatar_url}
-						<img src={contributor.avatar_url} alt="{displayName(contributor.display_name)} profile photo" />
+						<img
+							src={contributor.avatar_url}
+							alt="{displayName(contributor.display_name)} profile photo"
+						/>
 					{:else}
 						<div class="avatar-placeholder">
 							<span class="initials">{getInitials(displayName(contributor.display_name))}</span>
@@ -256,91 +259,86 @@
 				</div>
 				<div class="profile-info">
 					<h1>{displayName(contributor.display_name)}</h1>
-			{#if contributor.bio}
-				<p class="bio">{contributor.bio}</p>
-			{/if}
-			<div class="links">
-				{#if contributor.website}
-					<a class="link website" href={contributor.website} target="_blank" rel="noopener">
-						{websiteLabel(contributor.website)}
-					</a>
-				{/if}
-				{#if contributor.social_links}
-					{#each Object.entries(contributor.social_links) as [key, val]}
-						{#if val}
-							{@const href = getSocialLink(key, String(val))}
-							{#if href}
-								<a
-									class="link icon"
-									{href}
-									target="_blank"
-									rel="noopener"
-									title={key}
-									aria-label={key}
-								>
-									{@html socialIcon(key)}
-									<span class="sr-only">{key}</span>
-								</a>
-							{/if}
+					<div class="stats-container">
+						<div class="stat-item">
+							<h3 class="stat-title">Good-Faith Rate</h3>
+							<p class="stat-value">
+								{#if statsLoading}
+									<span class="loading-text">...</span>
+								{:else}
+									{stats.goodFaithRate}%
+								{/if}
+							</p>
+						</div>
+						<div class="stat-item">
+							<h3 class="stat-title">Source Accuracy</h3>
+							<p class="stat-value">
+								{#if statsLoading}
+									<span class="loading-text">...</span>
+								{:else}
+									{stats.sourceAccuracy}%
+								{/if}
+							</p>
+						</div>
+						<div class="stat-item">
+							<h3 class="stat-title">Reputation Score</h3>
+							<p class="stat-value">
+								{#if statsLoading}
+									<span class="loading-text">...</span>
+								{:else}
+									{stats.reputationScore.toLocaleString()}
+								{/if}
+							</p>
+						</div>
+					</div>
+					<!-- <div class="stats-container">
+						<div class="stat-item">
+							<h3 class="stat-title">discussions:</h3>
+							<span class="stat-value">{stats.totalDiscussions.toLocaleString()}</span>
+						</div>
+						<div class="stat-item">
+							<h3 class="stat-title">comments:</h3>
+							<p class="stat-value"></span>{stats.totalPosts.toLocaleString()}</span>
+						</div>
+						<div class="stat-item">
+							<h3 class="stat-title">collaborated:</h3>
+							<span class="stat-value">{stats.participatedDiscussions.toLocaleString()}</span>
+						</div>
+					</div> -->
+					{#if contributor.bio}
+						<p class="bio">{contributor.bio}</p>
+					{/if}
+					<div class="links">
+						{#if contributor.website}
+							<a class="link website" href={contributor.website} target="_blank" rel="noopener">
+								{websiteLabel(contributor.website)}
+							</a>
 						{/if}
-					{/each}
-				{/if}
-			</div>
+						{#if contributor.social_links}
+							{#each Object.entries(contributor.social_links) as [key, val]}
+								{#if val}
+									{@const href = getSocialLink(key, String(val))}
+									{#if href}
+										<a
+											class="link icon"
+											{href}
+											target="_blank"
+											rel="noopener"
+											title={key}
+											aria-label={key}
+										>
+											{@html socialIcon(key)}
+											<span class="sr-only">{key}</span>
+										</a>
+									{/if}
+								{/if}
+							{/each}
+						{/if}
+					</div>
 				</div>
 			</div>
 		</header>
-
-		<!-- Stats Section -->
-		<section class="profile-section stats-section">
-			<h2>Statistics</h2>
-			<div class="stats-container">
-				<div class="stat-item">
-					<h3 class="stat-title">Good-Faith Rate</h3>
-					<p class="stat-value">
-						{#if statsLoading}
-							<span class="loading-text">...</span>
-						{:else}
-							{stats.goodFaithRate}%
-						{/if}
-					</p>
-				</div>
-				<div class="stat-item">
-					<h3 class="stat-title">Source Accuracy</h3>
-					<p class="stat-value">
-						{#if statsLoading}
-							<span class="loading-text">...</span>
-						{:else}
-							{stats.sourceAccuracy}%
-						{/if}
-					</p>
-				</div>
-				<div class="stat-item">
-					<h3 class="stat-title">Reputation Score</h3>
-					<p class="stat-value">
-						{#if statsLoading}
-							<span class="loading-text">...</span>
-						{:else}
-							{stats.reputationScore.toLocaleString()}
-						{/if}
-					</p>
-				</div>
-			</div>
-			<div class="activity-summary">
-				<p class="activity-item">
-					<span class="activity-count">{stats.totalDiscussions.toLocaleString()}</span>
-					<span class="activity-label">discussions created</span>
-				</p>
-				<p class="activity-item">
-					<span class="activity-count">{stats.totalPosts.toLocaleString()}</span>
-					<span class="activity-label">comments posted</span>
-				</p>
-				<p class="activity-item">
-					<span class="activity-count">{stats.participatedDiscussions.toLocaleString()}</span>
-					<span class="activity-label">discussions joined</span>
-				</p>
-			</div>
-		</section>
-
+		
 		<section class="profile-section">
 			<h2>Discussions</h2>
 			{#if discussions.length === 0}
@@ -506,9 +504,9 @@
 
 	/* Stats Section */
 	.stats-section {
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: var(--border-radius-md);
+		/* background: var(--color-surface); */
+		border: 0px solid var(--color-border);
+		/* border-radius: var(--border-radius-md); */
 		padding: 1.5rem;
 		margin-top: 1.5rem;
 	}
@@ -516,38 +514,33 @@
 	.stats-container {
 		display: flex;
 		flex-direction: row;
-		justify-content: space-between;
-		gap: 0.75rem;
-		margin-bottom: 1.5rem;
+		justify-content: flex-start;
+		gap: 1.5rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
 	}
 
 	.stat-item {
-		padding: 0.75rem;
-		border-radius: var(--border-radius-sm);
-		transition: background-color 150ms ease-in-out;
-		background-color: var(--color-surface-alt);
-		border: 1px solid var(--color-border);
-		text-align: center;
-		flex: 1;
+		padding: 0;
+		text-align: left;
 		min-width: 0;
 	}
 
-	.stat-item:hover {
-		background-color: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface-alt));
-	}
-
 	.stat-title {
-		font-size: 0.75rem;
-		font-weight: 500;
+		font-size: 0.7rem;
+		font-weight: 400;
 		color: var(--color-text-secondary);
-		margin: 0 0 0.25rem 0;
+		margin: 0 0 0.1rem 0;
 		line-height: 1.2;
+		text-transform: uppercase;
+		letter-spacing: 0.3px;
+		opacity: 0.8;
 	}
 
 	.stat-value {
-		font-size: 1.125rem;
-		font-weight: 600;
-		color: var(--color-text-primary);
+		font-size: 0.9rem;
+		font-weight: 500;
+		text-align: center;
+		color: var(--color-text-secondary);
 		margin: 0;
 		line-height: 1.2;
 	}

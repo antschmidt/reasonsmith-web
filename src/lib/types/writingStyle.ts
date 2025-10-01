@@ -2,6 +2,16 @@
 
 export type WritingStyle = 'quick_point' | 'journalistic' | 'academic';
 
+export type PostType = 'response' | 'counter_argument' | 'supporting_evidence' | 'question';
+
+export interface DiscussionSection {
+	id: string;
+	title: string;
+	content: string;
+	anchor: string;
+	order: number;
+}
+
 // Database-compatible citation interface (matches the new citation table)
 export interface Citation {
 	id: string;
@@ -44,6 +54,69 @@ export interface StyleMetadata {
 	hasOutline?: boolean;
 	hasConclusion?: boolean;
 	factsVerified?: boolean;
+}
+
+// Post type configurations
+export const POST_TYPE_CONFIG = {
+	response: {
+		label: 'Response',
+		description: 'General response or comment to the discussion',
+		icon: '💬',
+		color: 'blue'
+	},
+	counter_argument: {
+		label: 'Counter-Argument',
+		description: 'Present an opposing viewpoint or challenge the main argument',
+		icon: '⚖️',
+		color: 'orange'
+	},
+	supporting_evidence: {
+		label: 'Supporting Evidence',
+		description: 'Provide additional evidence, data, or sources',
+		icon: '📊',
+		color: 'green'
+	},
+	question: {
+		label: 'Question',
+		description: 'Ask for clarification or explore a related point',
+		icon: '❓',
+		color: 'purple'
+	}
+} as const;
+
+export function getPostTypeConfig(type: PostType) {
+	return POST_TYPE_CONFIG[type];
+}
+
+// Tag helpers for discussions
+export const COMMON_DISCUSSION_TAGS = [
+	'politics',
+	'economics',
+	'environment',
+	'healthcare',
+	'education',
+	'technology',
+	'social-issues',
+	'foreign-policy',
+	'research',
+	'philosophy',
+	'ethics',
+	'culture',
+	'science',
+	'history'
+] as const;
+
+export type CommonTag = (typeof COMMON_DISCUSSION_TAGS)[number];
+
+export function normalizeTag(tag: string): string {
+	return tag.toLowerCase().trim().replace(/\s+/g, '-');
+}
+
+export function validateTags(tags: string[]): string[] {
+	return tags
+		.map((tag) => normalizeTag(tag))
+		.filter((tag) => tag.length > 0 && tag.length <= 50)
+		.slice(0, 10); // Max 10 tags
 }
 
 export interface PostWithStyle {

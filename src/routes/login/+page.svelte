@@ -78,3 +78,229 @@
 		<span>© {currentYear} ReasonSmith Media</span>
 	</footer>
 </div>
+
+<style>
+	/* Foreign Affairs/Atlantic inspired authentication page styling */
+	.auth-page {
+		min-height: 100vh;
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--color-surface) 85%, var(--color-primary) 15%),
+			color-mix(in srgb, var(--color-surface-alt) 80%, var(--color-accent) 12%)
+		);
+		display: flex;
+		flex-direction: column;
+		font-family: var(--font-family-sans);
+	}
+
+	.auth-masthead {
+		padding: 2rem;
+		text-align: center;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+		backdrop-filter: blur(20px);
+	}
+
+	.auth-brand {
+		font-family: var(--font-family-display);
+		font-size: 1.75rem;
+		font-weight: 700;
+		color: var(--color-text-primary);
+		text-decoration: none;
+		letter-spacing: -0.01em;
+		margin-bottom: 0.5rem;
+		display: block;
+	}
+
+	.auth-masthead p {
+		margin: 0.5rem 0 0;
+		color: var(--color-text-secondary);
+		font-style: italic;
+		font-size: 0.9rem;
+	}
+
+	.auth-main {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 2rem;
+	}
+
+	.auth-panel {
+		max-width: 900px;
+		width: 100%;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 24px;
+		box-shadow: 0 12px 40px color-mix(in srgb, var(--color-primary) 15%, transparent);
+		overflow: hidden;
+	}
+
+	.two-column {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		min-height: 500px;
+	}
+
+	@media (max-width: 768px) {
+		.two-column {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	.auth-intro {
+		padding: 3rem;
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)),
+			color-mix(in srgb, var(--color-accent) 3%, var(--color-surface-alt))
+		);
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+	}
+
+	.auth-intro h2 {
+		font-family: var(--font-family-display);
+		font-size: 2rem;
+		font-weight: 700;
+		color: var(--color-text-primary);
+		margin-bottom: 1.5rem;
+		line-height: var(--line-height-tight);
+		letter-spacing: -0.01em;
+	}
+
+	.auth-intro p {
+		color: var(--color-text-secondary);
+		line-height: var(--line-height-normal);
+		margin-bottom: 1.5rem;
+		font-size: 1rem;
+	}
+
+	.pull-quote {
+		font-style: italic;
+		color: var(--color-text-primary);
+		border-left: 3px solid var(--color-primary);
+		padding-left: 1rem;
+		margin: 2rem 0;
+		font-size: 1.1rem;
+	}
+
+	.auth-card {
+		padding: 3rem;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: 1.5rem;
+	}
+
+	.auth-card h1 {
+		font-family: var(--font-family-display);
+		font-size: 1.75rem;
+		font-weight: 700;
+		color: var(--color-text-primary);
+		margin: 0 0 1rem 0;
+		text-align: center;
+	}
+
+	.auth-card > p {
+		color: var(--color-text-secondary);
+		text-align: center;
+		margin: 0 0 2rem 0;
+		line-height: var(--line-height-normal);
+	}
+
+	.auth-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.auth-provider-button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+		padding: 1rem 2rem;
+		background: var(--color-primary);
+		color: white;
+		border: none;
+		border-radius: 12px;
+		font-size: 1rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		box-shadow: 0 4px 15px color-mix(in srgb, var(--color-primary) 25%, transparent);
+	}
+
+	.auth-provider-button:hover {
+		background: color-mix(in srgb, var(--color-primary) 90%, black);
+		transform: translateY(-2px);
+		box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 35%, transparent);
+	}
+
+	.auth-provider-button:active {
+		transform: translateY(0);
+	}
+
+	.auth-provider-button svg {
+		width: 20px;
+		height: 20px;
+		fill: currentColor;
+	}
+
+	.auth-error {
+		background: color-mix(in srgb, #ef4444 10%, transparent);
+		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+		color: #dc2626;
+		padding: 1rem;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		margin: 1rem 0 0 0;
+	}
+
+	.auth-footer {
+		padding: 2rem;
+		text-align: center;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+		backdrop-filter: blur(20px);
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.auth-footer nav {
+		display: flex;
+		justify-content: center;
+		gap: 2rem;
+	}
+
+	.auth-footer nav a {
+		color: var(--color-link);
+		text-decoration: none;
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+
+	.auth-footer nav a:hover {
+		color: var(--color-link-hover);
+		text-decoration: underline;
+	}
+
+	.auth-footer span {
+		color: var(--color-text-secondary);
+		font-size: 0.875rem;
+	}
+
+	/* Dark theme adjustments */
+	:global([data-theme='dark']) .auth-provider-button {
+		background: var(--color-primary);
+		color: var(--color-surface);
+	}
+
+	:global([data-theme='dark']) .auth-provider-button:hover {
+		background: var(--color-accent);
+	}
+</style>
