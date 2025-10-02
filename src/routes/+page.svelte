@@ -177,7 +177,7 @@
 		<section class="landing-features">
 			<div class="section-heading">
 				<span class="editorial-kicker">Why ReasonSmith</span>
-				<h2>Magazine discipline for modern discourse.</h2>
+				<h2>Required tools for productive discourse.</h2>
 			</div>
 			<div class="feature-columns">
 				<article>
