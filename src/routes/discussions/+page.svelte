@@ -453,7 +453,7 @@
 		background: var(--color-surface);
 	}
 
-	@media (min-width: 960px) {
+	@media (min-width: 1024px) {
 		.page-hero {
 			grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr);
 			align-items: center;
@@ -470,8 +470,8 @@
 	.search-card {
 		background: color-mix(in srgb, var(--color-surface-alt) 75%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
-		border-radius: 24px;
-		padding: clamp(1.75rem, 4vw, 2.5rem);
+		border-radius: var(--border-radius-xl);
+		padding: var(--space-fluid-md);
 		box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
 	}
 
@@ -514,9 +514,9 @@
 	.search-button {
 		padding: 0.85rem 1.8rem;
 		border-radius: 999px;
-		border: none;
-		background: var(--color-primary);
-		color: var(--color-surface);
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		color: var(--color-primary);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 		font-weight: 600;
 		font-size: 0.95rem;
 		cursor: pointer;
@@ -525,7 +525,8 @@
 
 	.search-button:hover,
 	.search-button:focus {
-		background: var(--color-accent);
+		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
 	}
 
 	.analysis-section {
@@ -571,7 +572,7 @@
 		gap: clamp(1.75rem, 4vw, 2.5rem);
 	}
 
-	@media (min-width: 960px) {
+	@media (min-width: 1024px) {
 		.article-list {
 			grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 		}
@@ -580,8 +581,8 @@
 	.discussion-card {
 		background: var(--color-surface);
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
-		border-radius: 24px;
-		padding: clamp(1.75rem, 4vw, 2.5rem);
+		border-radius: var(--border-radius-xl);
+		padding: var(--space-fluid-md);
 		box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
 		cursor: pointer;
 		transition:
@@ -647,7 +648,7 @@
 		);
 		color: var(--color-primary);
 		padding: 0.375rem 0.75rem;
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		font-size: 0.8rem;
 		font-weight: 500;
 		border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);

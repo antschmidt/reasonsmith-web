@@ -1,7 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { print } from 'graphql';
-import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
+import { INCREMENT_ANALYSIS_USAGE, INCREMENT_PURCHASED_CREDITS_USED } from '$lib/graphql/queries';
+import { checkAndResetMonthlyCredits, getMonthlyCreditsRemaining } from '$lib/creditUtils';
 
 // Import the same function from the Vercel function
 // We'll copy the logic here for local development
@@ -379,6 +380,16 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						contributor = contributorResult.data?.contributor_by_pk;
 						contributorId = contributor?.id;
 
+						// Check and reset monthly credits if needed
+						if (contributor) {
+							await checkAndResetMonthlyCredits(
+								contributor,
+								HASURA_GRAPHQL_ENDPOINT,
+								undefined,
+								HASURA_ADMIN_SECRET
+							);
+						}
+
 						// Check permissions only if we found a contributor
 						if (contributor) {
 							// Check if analysis is enabled
@@ -418,14 +429,20 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			// Use OpenAI scoring instead of heuristic
 			const scored = await scoreWithOpenAI(content);
 
-			// Increment usage count after successful analysis
-			if (contributorId) {
+			// Increment appropriate credit type after successful analysis
+			if (contributorId && contributor) {
 				try {
 					const HASURA_GRAPHQL_ENDPOINT =
 						process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
 					const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
 
 					if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
+						// Determine which credit type to use
+						const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
+						const shouldUseMonthlyCredit = monthlyRemaining > 0 || ['admin', 'slartibartfast'].includes(contributor.role);
+
+						const mutation = shouldUseMonthlyCredit ? INCREMENT_ANALYSIS_USAGE : INCREMENT_PURCHASED_CREDITS_USED;
+
 						await fetch(HASURA_GRAPHQL_ENDPOINT, {
 							method: 'POST',
 							headers: {
@@ -434,7 +451,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 								'x-hasura-role': 'admin'
 							},
 							body: JSON.stringify({
-								query: print(INCREMENT_ANALYSIS_USAGE),
+								query: print(mutation),
 								variables: { contributorId }
 							})
 						});

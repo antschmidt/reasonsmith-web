@@ -4,12 +4,15 @@
 	// Avoid importing gql to prevent type resolution issues; use plain string
 	import { nhost } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
+	import { slide } from 'svelte/transition';
 	import {
 		CREATE_POST_DRAFT,
 		CREATE_POST_DRAFT_WITH_STYLE,
 		UPDATE_DISCUSSION_VERSION_GOOD_FAITH,
 		UPDATE_POST_GOOD_FAITH,
 		GET_DISCUSSION_DETAILS as IMPORTED_GET_DISCUSSION_DETAILS,
+		GET_CONTRIBUTOR,
+		INCREMENT_PURCHASED_CREDITS_USED,
 		ANONYMIZE_POST,
 		ANONYMIZE_DISCUSSION,
 		UNANONYMIZE_POST,
@@ -26,6 +29,13 @@
 		getPostTypeConfig
 	} from '$lib/types/writingStyle';
 	import CitationForm from '$lib/components/CitationForm.svelte';
+	import {
+		canUseAnalysis,
+		getMonthlyCreditsRemaining,
+		getPurchasedCreditsRemaining,
+		willUsePurchasedCredit,
+		checkAndResetMonthlyCredits
+	} from '$lib/creditUtils';
 	import AnimatedLogo from '$lib/components/AnimatedLogo.svelte';
 	import {
 		checkPostDeletable,
@@ -39,6 +49,7 @@
 	let loading = $state(true);
 	let error = $state<Error | null>(null);
 	let authReady = $state(false);
+	let contributor = $state<any>(null);
 
 	// Helper functions to handle versioned discussion data
 	function getDiscussionTitle(): string {
@@ -90,9 +101,11 @@
 		'response' | 'counter_argument' | 'supporting_evidence' | 'question'
 	>('response');
 	let commentFormExpanded = $state(false);
+	let postTypeExpanded = $state(true);
 	let showAdvancedFeatures = $state(false);
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
+	let showOutOfCreditsModal = $state(false);
 	let user = $state(nhost.auth.getUser());
 	nhost.auth.onAuthStateChanged(() => {
 		user = nhost.auth.getUser();
@@ -173,6 +186,7 @@
 		}
 	});
 
+
 	let editing = $state(false);
 	let editTitle = $state('');
 	let editDescription = $state('');
@@ -227,6 +241,16 @@
 	} | null>(null);
 	let draftAnalysisExpanded = $state(false);
 	const COMMENT_GOOD_FAITH_THRESHOLD = 0.7; // 70%
+
+	// Check if user can use analysis (reactive)
+	const canUserUseAnalysis = $derived(contributor ? canUseAnalysis(contributor) : false);
+	const analysisBlockedReason = $derived(!contributor
+		? 'Unable to load account information'
+		: !contributor.analysis_enabled
+		? 'Good-faith analysis has been disabled for your account'
+		: getMonthlyCreditsRemaining(contributor) === 0 && getPurchasedCreditsRemaining(contributor) === 0
+		? 'No analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.'
+		: null);
 
 	// Automatically infer comment writing style based on content length
 	function getInferredCommentStyle(): WritingStyle {
@@ -439,7 +463,19 @@
 		if (replyDraftParam) {
 			// fetch that specific draft id if belongs to this discussion & user
 			const { data, error } = await nhost.graphql.request(
-				`query GetDraftById($id: uuid!, $authorId: uuid!, $discussionId: uuid!) { post(where: {id: {_eq: $id}}) { id draft_content discussion_id author_id } }`,
+				`query GetDraftById($id: uuid!, $authorId: uuid!, $discussionId: uuid!) {
+					post(where: {
+						id: {_eq: $id},
+						author_id: {_eq: $authorId},
+						discussion_id: {_eq: $discussionId}
+					}) {
+						id
+						draft_content
+						discussion_id
+						author_id
+						post_type
+					}
+				}`,
 				{ id: replyDraftParam, authorId: user.id, discussionId }
 			);
 			if (!error) {
@@ -452,8 +488,37 @@
 				) {
 					draftPostId = candidate.id;
 					newComment = candidate.draft_content || '';
+					// Calculate word count for the loaded draft content
+					commentWordCount = newComment.trim() ? newComment.trim().split(/\s+/).length : 0;
+					// Validate the loaded content
+					validateCommentContent();
+					// Set the post type from the draft
+					if (candidate.post_type) {
+						commentPostType = candidate.post_type;
+						postTypeExpanded = false; // Keep the post type collapsed since it's already selected
+					}
 					initAutosaver();
 					focusReplyOnMount = true;
+					commentFormExpanded = true; // Expand the comment form
+
+					// Focus and scroll immediately since onMount already ran
+					setTimeout(() => {
+						const ta = document.querySelector(
+							'textarea[aria-label="New comment"]'
+						) as HTMLTextAreaElement | null;
+						if (ta) {
+							ta.focus();
+						}
+
+						// Scroll to the comment section
+						const commentSection = document.querySelector('.add-comment');
+						if (commentSection) {
+							commentSection.scrollIntoView({
+								behavior: 'smooth',
+								block: 'center'
+							});
+						}
+					}, 500); // Longer delay to ensure DOM updates are complete
 
 					// Load citation data from localStorage (until database migration is applied)
 					if (typeof localStorage !== 'undefined' && draftPostId) {
@@ -487,6 +552,10 @@
 		if (existing) {
 			draftPostId = existing.id;
 			newComment = existing.draft_content || '';
+			// Calculate word count for the loaded draft content
+			commentWordCount = newComment.trim() ? newComment.trim().split(/\s+/).length : 0;
+			// Validate the loaded content
+			validateCommentContent();
 			initAutosaver();
 
 			// Load existing good faith analysis if available
@@ -573,6 +642,30 @@
 			return;
 		}
 
+		// Check if user can use analysis (credits and permissions)
+		if (!contributor) {
+			submitError = 'Unable to load account information. Please try again.';
+			return;
+		}
+
+		if (!canUseAnalysis(contributor)) {
+			if (!contributor.analysis_enabled) {
+				submitError = 'Good-faith analysis has been disabled for your account. Please contact support.';
+				return;
+			}
+
+			const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
+			const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
+
+			if (monthlyRemaining === 0 && purchasedRemaining === 0) {
+				submitError = 'You have no analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.';
+				return;
+			} else {
+				submitError = 'Unable to proceed with analysis. Please check your credit balance.';
+				return;
+			}
+		}
+
 		submitting = true;
 		try {
 			// Ensure draft exists
@@ -587,9 +680,18 @@
 			// Good-faith analysis gate
 			commentGoodFaithTesting = true;
 			try {
+				const user = nhost.auth.getUser();
+				const accessToken = nhost.auth.getAccessToken();
+				console.log('[DEBUG] User authenticated:', !!user, user?.id);
+				console.log('[DEBUG] Frontend access token:', !!accessToken, accessToken?.substring(0, 20) + '...');
+				const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+				if (accessToken) {
+					headers['Authorization'] = `Bearer ${accessToken}`;
+				}
+				console.log('[DEBUG] Headers being sent:', Object.keys(headers));
 				const response = await fetch('/api/goodFaithClaude', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers,
 					body: JSON.stringify({ postId: draftPostId, content: newComment })
 				});
 				if (!response.ok) {
@@ -962,6 +1064,53 @@
 		}
 	}
 
+	async function loadContributor() {
+		if (!user?.id) {
+			contributor = null;
+			return;
+		}
+
+		try {
+			const result = await nhost.graphql.request(GET_CONTRIBUTOR, {
+				userId: user.id
+			});
+
+			if ((result as any).error) {
+				console.error('Error loading contributor:', (result as any).error);
+				return;
+			}
+
+			contributor = (result as any).data?.contributor_by_pk || null;
+
+			// Check and reset monthly credits if needed
+			if (contributor) {
+				const HASURA_GRAPHQL_ENDPOINT = 'https://graphql.reasonsmith.com/v1/graphql';
+				const accessToken = nhost.auth.getAccessToken();
+
+				if (accessToken) {
+					const wasReset = await checkAndResetMonthlyCredits(
+						contributor,
+						HASURA_GRAPHQL_ENDPOINT,
+						accessToken
+					);
+
+					// If credits were reset, reload contributor to get updated values
+					if (wasReset) {
+						const updatedResult = await nhost.graphql.request(GET_CONTRIBUTOR, {
+							userId: user.id
+						});
+						if (!(updatedResult as any).error) {
+							contributor = (updatedResult as any).data?.contributor_by_pk || null;
+						}
+					}
+				}
+			}
+		} catch (error) {
+			console.error('Error loading contributor:', error);
+			contributor = null;
+		}
+	}
+
 	onMount(() => {
 		// Give auth a moment to initialize, then mark as ready
 		setTimeout(() => {
@@ -972,7 +1121,19 @@
 			const ta = document.querySelector(
 				'textarea[aria-label="New comment"]'
 			) as HTMLTextAreaElement | null;
-			if (ta) setTimeout(() => ta.focus(), 50);
+			if (ta) {
+				setTimeout(() => {
+					ta.focus();
+					// Scroll to the comment section
+					const commentSection = document.querySelector('.add-comment');
+					if (commentSection) {
+						commentSection.scrollIntoView({
+							behavior: 'smooth',
+							block: 'center'
+						});
+					}
+				}, 100);
+			}
 		}
 
 		// Handle window resize for auto-resizing textarea
@@ -1003,6 +1164,61 @@
 			checkAllDeletionStatus();
 		}
 	});
+
+	// Load contributor when user changes
+	$effect(() => {
+		if (user) {
+			loadContributor();
+		}
+	});
+
+	// Credit utility functions - using centralized logic
+	function getTotalCreditsRemaining(): number {
+		if (!contributor) return 0;
+		const monthly = getMonthlyCreditsRemaining(contributor);
+		const purchased = getPurchasedCreditsRemaining(contributor);
+
+		if (monthly === Infinity) return Infinity;
+		return monthly + purchased;
+	}
+
+	function getAnalysisLimitText(): string {
+		if (!contributor) return '';
+		if (!contributor.analysis_enabled) return 'Analysis disabled';
+		if (['admin', 'slartibartfast'].includes(contributor.role)) return 'Unlimited analysis';
+
+		const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
+		const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
+
+		if (monthlyRemaining === Infinity) return 'Unlimited analysis';
+
+		let text = `${monthlyRemaining}/${contributor.analysis_limit} monthly`;
+		if (purchasedRemaining > 0) {
+			text += ` • ${purchasedRemaining} purchased`;
+		}
+
+		return text;
+	}
+
+	async function consumeAnalysisCredit(): Promise<void> {
+		if (!contributor) return;
+
+		try {
+			// Check if we should use purchased credits instead of monthly
+			if (willUsePurchasedCredit(contributor)) {
+				// Use purchased credit
+				await nhost.graphql.request(INCREMENT_PURCHASED_CREDITS_USED, {
+					contributorId: contributor.id
+				});
+			}
+			// If using monthly credit, the existing INCREMENT_ANALYSIS_USAGE is called by the API endpoints
+
+			// Reload contributor data to reflect the updated counts
+			await loadContributor();
+		} catch (error) {
+			console.error('Error consuming analysis credit:', error);
+		}
+	}
 
 	async function createDatabaseDraft() {
 		if (!discussion || !user) return;
@@ -2114,6 +2330,12 @@
 			return;
 		}
 
+		// Check analysis limits
+		if (!contributor || !canUseAnalysis(contributor)) {
+			goodFaithError = getAnalysisLimitText() || 'Analysis not available';
+			return;
+		}
+
 		// Check cache first
 		const cachedResult = getCachedAnalysis(editDescription, 'openai');
 		if (cachedResult) {
@@ -2162,6 +2384,9 @@
 			// Cache the result
 			cacheAnalysis(editDescription, 'openai', goodFaithResult);
 
+			// Consume the appropriate credit (monthly or purchased)
+			await consumeAnalysisCredit();
+
 			// Save to database
 			await saveGoodFaithAnalysisToDatabase(goodFaithResult, 'openai');
 		} catch (error: any) {
@@ -2178,6 +2403,12 @@
 			return;
 		}
 
+		// Check analysis limits
+		if (!contributor || !canUseAnalysis(contributor)) {
+			claudeGoodFaithError = getAnalysisLimitText() || 'Analysis not available';
+			return;
+		}
+
 		// Check cache first
 		const cachedResult = getCachedAnalysis(editDescription, 'claude');
 		if (cachedResult) {
@@ -2190,11 +2421,14 @@
 		claudeGoodFaithResult = null;
 
 		try {
+			const accessToken = nhost.auth.getAccessToken();
+			const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+			if (accessToken) {
+				headers['Authorization'] = `Bearer ${accessToken}`;
+			}
 			const response = await fetch('/api/goodFaithClaude', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
+				headers,
 				body: JSON.stringify({
 					postId: 'test-claude',
 					content: editDescription
@@ -2221,6 +2455,9 @@
 
 			// Cache the result
 			cacheAnalysis(editDescription, 'claude', claudeGoodFaithResult);
+
+			// Consume the appropriate credit (monthly or purchased)
+			await consumeAnalysisCredit();
 
 			// Save to database
 			await saveGoodFaithAnalysisToDatabase(claudeGoodFaithResult, 'claude');
@@ -2609,6 +2846,13 @@
 							oninput={onEditDescriptionInput}
 						></textarea>
 					</label>
+
+					<!-- Analysis limit display -->
+					{#if contributor}
+						<div class="analysis-limit-info">
+							{getAnalysisLimitText()}
+						</div>
+					{/if}
 
 					<!-- Good Faith Testing and Citation Buttons -->
 					<div style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.5rem 0;">
@@ -3033,8 +3277,15 @@
 					{/if}
 
 					<div class="edit-autosave-indicator">
-						{#if editLastSavedAt}
-							Auto-saved {new Date(editLastSavedAt).toLocaleTimeString()}
+						<div class="autosave-status">
+							{#if editLastSavedAt}
+								Auto-saved {new Date(editLastSavedAt).toLocaleTimeString()}
+							{/if}
+						</div>
+						{#if contributor && editing}
+							<div class="credit-status-inline">
+								Credits: {getAnalysisLimitText()}
+							</div>
 						{/if}
 					</div>
 
@@ -3528,8 +3779,68 @@
 					}}
 					class="comment-form"
 				>
-					{#if showAdvancedFeatures}
-						<!-- Comment Word Count and Style Info -->
+
+					<!-- Post Type Selection -->
+					<div class="post-type-selection">
+						{#if postTypeExpanded}
+							<!-- <div class="post-type-label">Choose Post Type:</div> -->
+							<div class="post-type-buttons" transition:slide={{ duration: 300 }}>
+								{#each ['response', 'counter_argument', 'supporting_evidence', 'question'] as type}
+									{@const config = getPostTypeConfig(type as any)}
+									<button
+										type="button"
+										class="post-type-btn"
+										class:selected={commentPostType === type}
+										onclick={() => {
+											commentPostType = type as typeof commentPostType;
+											postTypeExpanded = false;
+										}}
+									>
+										<span class="post-type-icon">{config.icon}</span>
+										<span class="post-type-text">
+											<span class="post-type-title">{config.label}</span>
+											<span class="post-type-desc">{config.description}</span>
+										</span>
+									</button>
+								{/each}
+							</div>
+						{:else}
+							{@const config = getPostTypeConfig(commentPostType as any)}
+							<div class="post-type-selected">
+								<!-- <span class="post-type-label">Post Type:</span> -->
+								<button
+									type="button"
+									class="post-type-btn selected compact"
+									onclick={() => {
+										postTypeExpanded = true;
+									}}
+								>
+									<span class="post-type-icon">{config.icon}</span>
+									<span class="post-type-text">
+										<span class="post-type-title">{config.label}</span>
+									</span>
+								</button>
+
+								<!-- Advanced Features Toggle - Next to Post Type button -->
+								<button
+									type="button"
+									class="toggle-advanced-btn compact"
+									onclick={() => {
+										showAdvancedFeatures = !showAdvancedFeatures;
+									}}
+								>
+									{#if showAdvancedFeatures}
+										▲ Hide Citations & Analysis
+									{:else}
+										▼ Show Citations & Analysis
+									{/if}
+								</button>
+							</div>
+						{/if}
+					</div>
+
+					<!-- Citations & Analysis Section - Appears above textarea when activated -->
+					{#if showAdvancedFeatures && !postTypeExpanded}
 						<div class="comment-writing-info">
 							<div class="word-count">
 								<span class="word-count-label">Words: {commentWordCount}</span>
@@ -3570,47 +3881,6 @@
 						placeholder="Add your comment... (Style will be automatically determined by length)"
 						aria-label="New comment"
 					></textarea>
-
-					<!-- Post Type Selection -->
-					<div class="post-type-selection">
-						<div class="post-type-label">Post Type:</div>
-						<div class="post-type-buttons">
-							{#each ['response', 'counter_argument', 'supporting_evidence', 'question'] as type}
-								{@const config = getPostTypeConfig(type as any)}
-								<button
-									type="button"
-									class="post-type-btn"
-									class:selected={commentPostType === type}
-									onclick={() => {
-										commentPostType = type as typeof commentPostType;
-									}}
-								>
-									<span class="post-type-icon">{config.icon}</span>
-									<span class="post-type-text">
-										<span class="post-type-title">{config.label}</span>
-										<span class="post-type-desc">{config.description}</span>
-									</span>
-								</button>
-							{/each}
-						</div>
-					</div>
-
-					<!-- Advanced Features Toggle -->
-					<div class="advanced-features-toggle">
-						<button
-							type="button"
-							class="toggle-advanced-btn"
-							onclick={() => {
-								showAdvancedFeatures = !showAdvancedFeatures;
-							}}
-						>
-							{#if showAdvancedFeatures}
-								▲ Hide Advanced Features
-							{:else}
-								▼ Show Citations & Analysis
-							{/if}
-						</button>
-					</div>
 
 					{#if showAdvancedFeatures}
 						<!-- Insert Citation Reference Button -->
@@ -3957,12 +4227,19 @@
 					>
 						<div class="autosave-indicator" aria-live="polite">
 							{#if draftPostId}
-								{#if hasPending}
-									<span class="pending-dot" aria-hidden="true"></span> Saving…
-								{:else if lastSavedAt}
-									Saved {new Date(lastSavedAt).toLocaleTimeString()}
-								{:else}
-									Draft created
+								<div class="autosave-status">
+									{#if hasPending}
+										<span class="pending-dot" aria-hidden="true"></span> Saving…
+									{:else if lastSavedAt}
+										Saved {new Date(lastSavedAt).toLocaleTimeString()}
+									{:else}
+										Draft created
+									{/if}
+								</div>
+								{#if contributor}
+									<div class="credit-status">
+										{getAnalysisLimitText()}
+									</div>
 								{/if}
 							{/if}
 						</div>
@@ -3974,10 +4251,31 @@
 								<button type="button" class="btn-link" onclick={clearReplying}>Cancel</button>
 							</div>
 						{/if}
+						{#if !canUserUseAnalysis && analysisBlockedReason}
+							<div class="analysis-blocked-message">
+								<p class="error-message">{analysisBlockedReason}</p>
+								{#if analysisBlockedReason.includes('disabled')}
+									<p class="help-text">Contact support for assistance.</p>
+								{:else if analysisBlockedReason.includes('credits')}
+									<p class="help-text">Check your <a href="/profile">profile page</a> for credit information.</p>
+								{/if}
+							</div>
+						{/if}
 						<button
-							type="submit"
+							type="button"
 							class="btn-primary"
-							disabled={submitting || !newComment.trim() || !commentHeuristicPassed}
+							disabled={submitting || !newComment.trim()}
+							onclick={() => {
+								if (!commentHeuristicPassed) {
+									// Let normal validation messages show for content issues
+									return;
+								}
+								if (!canUserUseAnalysis) {
+									showOutOfCreditsModal = true;
+								} else {
+									publishDraft();
+								}
+							}}
 						>
 							{#if submitting}
 								Publishing…
@@ -3993,6 +4291,52 @@
 		<p>Discussion not found.</p>
 	{/if}
 </article>
+
+<!-- Out of Credits Modal -->
+{#if showOutOfCreditsModal}
+	<div class="modal-overlay" onclick={() => (showOutOfCreditsModal = false)}>
+		<div class="modal-content out-of-credits-modal" onclick={(e) => e.stopPropagation()}>
+			<div class="modal-header">
+				<h3>🚫 Out of Credits</h3>
+				<button
+					type="button"
+					class="modal-close-btn"
+					onclick={() => (showOutOfCreditsModal = false)}
+					aria-label="Close modal"
+				>
+					×
+				</button>
+			</div>
+			<div class="modal-body">
+				<p class="modal-main-message">
+					You don't have enough credits to publish this comment with analysis.
+				</p>
+				{#if analysisBlockedReason}
+					<div class="analysis-blocked-details">
+						<p class="error-message">{analysisBlockedReason}</p>
+						{#if analysisBlockedReason.includes('credits')}
+							<p class="help-text">Check your <a href="/profile">profile page</a> for credit information and options to purchase more credits.</p>
+						{:else if analysisBlockedReason.includes('disabled')}
+							<p class="help-text">Visit your <a href="/profile">profile page</a> to enable analysis features.</p>
+						{/if}
+					</div>
+				{/if}
+			</div>
+			<div class="modal-footer">
+				<button
+					type="button"
+					class="btn-secondary"
+					onclick={() => (showOutOfCreditsModal = false)}
+				>
+					Close
+				</button>
+				<a href="/profile" class="btn-primary">
+					View Profile
+				</a>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.discussion-article {
@@ -4237,6 +4581,14 @@
 	.good-faith-test-btn:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
+	}
+
+	/* Analysis Limit Info */
+	.analysis-limit-info {
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+		margin-bottom: 0.5rem;
+		font-style: italic;
 	}
 
 	/* Analysis Panel - Sleek Design */
@@ -4493,33 +4845,28 @@
 	}
 
 	.score-label.hostile {
-		background: color-mix(in srgb, #ef4444 20%, transparent);
-		color: #ef4444;
-		border: 1px solid #ef444461;
+		background: color-mix(in srgb, #ef4444 8%, transparent);
+		color: #f87171;
 	}
 
 	.score-label.questionable {
-		background: color-mix(in srgb, #f59e0b 20%, transparent);
-		color: #f59e0b;
-		border: 1px solid #f59e0b;
+		background: color-mix(in srgb, #f59e0b 8%, transparent);
+		color: #fbbf24;
 	}
 
 	.score-label.neutral {
-		background: color-mix(in srgb, #6b7280 20%, transparent);
-		color: #6b7280;
-		border: 1px solid #6b7280;
+		background: color-mix(in srgb, #6b7280 8%, transparent);
+		color: #9ca3af;
 	}
 
 	.score-label.constructive {
-		background: color-mix(in srgb, #10b98167 20%, transparent);
-		color: #10b981;
-		border: 1px solid #10b981;
+		background: color-mix(in srgb, #10b981 8%, transparent);
+		color: #34d399;
 	}
 
 	.score-label.exemplary {
-		background: color-mix(in srgb, #05966863 20%, transparent);
-		color: #059669;
-		border: 1px solid #059669;
+		background: color-mix(in srgb, #059669 8%, transparent);
+		color: #34d399;
 	}
 
 	.good-faith-rationale {
@@ -4911,6 +5258,7 @@
 	/* Post Type Selection */
 	.post-type-selection {
 		margin: 0.5rem 0;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 	.post-type-label {
 		display: block;
@@ -4932,7 +5280,7 @@
 		border: 2px solid var(--color-border);
 		border-radius: var(--border-radius-sm);
 		cursor: pointer;
-		transition: all 0.2s ease;
+		transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 		background: var(--color-bg-primary);
 		text-align: left;
 		font-family: inherit;
@@ -4947,6 +5295,44 @@
 		border-color: var(--color-primary);
 		background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-primary));
 		box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent);
+	}
+
+	.post-type-btn.compact {
+		display: inline-flex;
+		width: auto;
+		font-size: 0.9rem;
+		padding: 0.5rem 0.75rem;
+	}
+
+	.post-type-selected {
+		display: flex;
+    justify-content: space-between;
+		align-items: center;
+		gap: 0.75rem;
+		margin-bottom: 1rem;
+	}
+
+	.post-type-selected .post-type-label {
+		font-weight: 500;
+		color: var(--color-text-primary);
+	}
+
+	.toggle-advanced-btn.compact {
+		font-size: 0.85rem;
+		padding: 0.5rem 0.75rem;
+		border: 2px solid var(--color-border);
+		border-radius: 8px;
+		background: var(--color-bg-primary);
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		transition: all 0.2s ease;
+		white-space: nowrap;
+	}
+
+	.toggle-advanced-btn.compact:hover {
+		border-color: var(--color-primary);
+		background: var(--color-bg-secondary);
+		color: var(--color-text-primary);
 	}
 	.post-type-icon {
 		font-size: 1.2rem;
@@ -5028,16 +5414,17 @@
 		cursor: pointer;
 	}
 	.btn-primary {
-		background-color: var(--color-primary);
-		color: var(--color-surface);
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		color: var(--color-primary);
 		padding: 0.6rem 1.2rem;
 		border-radius: var(--border-radius-md);
-		border: none;
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 		cursor: pointer;
 		font-weight: 600;
 	}
 	.btn-primary:hover {
-		opacity: 0.9;
+		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
 	}
 	.btn-primary:disabled {
 		opacity: 0.55;
@@ -5131,6 +5518,34 @@
 	.error-message {
 		color: #ef4444;
 	}
+
+	.analysis-blocked-message {
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		border-radius: 6px;
+		padding: 12px;
+		margin: 8px 0;
+	}
+
+	.analysis-blocked-message .error-message {
+		margin: 0 0 4px 0;
+		font-weight: 500;
+	}
+
+	.analysis-blocked-message .help-text {
+		margin: 0;
+		font-size: 0.9rem;
+		color: #6b7280;
+	}
+
+	.analysis-blocked-message .help-text a {
+		color: #3b82f6;
+		text-decoration: none;
+	}
+
+	.analysis-blocked-message .help-text a:hover {
+		text-decoration: underline;
+	}
 	.draft-status {
 		font-size: 0.75rem;
 		color: var(--color-text-secondary);
@@ -5143,8 +5558,30 @@
 		color: var(--color-text-secondary);
 		min-height: 0.9rem;
 		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.2rem;
+	}
+
+	.autosave-status {
+		display: flex;
 		align-items: center;
 		gap: 0.35rem;
+	}
+
+	.credit-status {
+		font-size: 0.6rem;
+		color: var(--color-text-tertiary);
+		opacity: 0.8;
+		font-style: italic;
+	}
+
+	.credit-status-inline {
+		font-size: 0.6rem;
+		color: var(--color-text-tertiary);
+		opacity: 0.8;
+		font-style: italic;
+		margin-top: 0.2rem;
 	}
 	.pending-dot {
 		width: 6px;
@@ -5230,6 +5667,18 @@
 		color: var(--color-text-secondary);
 		margin: 0.5rem 0;
 		min-height: 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.edit-autosave-indicator .autosave-status {
+		display: flex;
+		align-items: center;
+	}
+
+	.edit-autosave-indicator .credit-status-inline {
+		font-size: 0.65rem;
 	}
 	.historical-version-banner {
 		background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-alt));
@@ -5911,26 +6360,26 @@
 	/* Score label colors (reusing existing styles) */
 	.score-label.hostile,
 	.score-label-badge.hostile {
-		background-color: #fef2f2;
-		color: #dc2626;
+		background: color-mix(in srgb, #ef4444 8%, transparent);
+		color: #f87171;
 	}
 
 	.score-label.questionable,
 	.score-label-badge.questionable {
-		background-color: #fffbeb;
-		color: #d97706;
+		background: color-mix(in srgb, #f59e0b 8%, transparent);
+		color: #fbbf24;
 	}
 
 	.score-label.neutral,
 	.score-label-badge.neutral {
-		background-color: #f3f4f6;
-		color: #6b7280;
+		background: color-mix(in srgb, #6b7280 8%, transparent);
+		color: #9ca3af;
 	}
 
 	.score-label.constructive,
 	.score-label-badge.constructive {
-		background-color: #f0f9ff;
-		color: #0369a1;
+		background: color-mix(in srgb, #10b981 8%, transparent);
+		color: #34d399;
 	}
 
 	/* Nuclear approach - override ALL link colors in dark mode */
@@ -6176,6 +6625,187 @@
 		to {
 			opacity: 1;
 			transform: translateY(0);
+		}
+	}
+
+	/* Out of Credits Modal Styles */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		background: rgba(0, 0, 0, 0.6);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+		backdrop-filter: blur(2px);
+	}
+
+	.modal-content {
+		background: var(--color-bg-primary);
+		border-radius: 12px;
+		box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+		max-width: 500px;
+		width: 90%;
+		max-height: 80vh;
+		overflow-y: auto;
+		animation: modal-appear 0.2s ease-out;
+	}
+
+	@keyframes modal-appear {
+		from {
+			opacity: 0;
+			transform: scale(0.9) translateY(-20px);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1) translateY(0);
+		}
+	}
+
+	.modal-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 1.5rem 1.5rem 1rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.modal-header h3 {
+		margin: 0;
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.modal-close-btn {
+		background: none;
+		border: none;
+		font-size: 1.5rem;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		padding: 0.25rem;
+		border-radius: 4px;
+		line-height: 1;
+		transition: all 0.2s ease;
+	}
+
+	.modal-close-btn:hover {
+		background: var(--color-bg-secondary);
+		color: var(--color-text-primary);
+	}
+
+	.modal-body {
+		padding: 1.5rem;
+	}
+
+	.modal-main-message {
+		font-size: 1.1rem;
+		color: var(--color-text-primary);
+		margin: 0 0 1rem 0;
+		line-height: 1.5;
+	}
+
+	.analysis-blocked-details {
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		padding: 1rem;
+		margin-top: 1rem;
+	}
+
+	.analysis-blocked-details .error-message {
+		color: var(--color-error);
+		font-weight: 500;
+		margin: 0 0 0.5rem 0;
+	}
+
+	.analysis-blocked-details .help-text {
+		color: var(--color-text-secondary);
+		margin: 0;
+		font-size: 0.9rem;
+	}
+
+	.analysis-blocked-details .help-text a {
+		color: var(--color-primary);
+		text-decoration: none;
+		font-weight: 500;
+	}
+
+	.analysis-blocked-details .help-text a:hover {
+		text-decoration: underline;
+	}
+
+	.modal-footer {
+		padding: 1rem 1.5rem 1.5rem;
+		border-top: 1px solid var(--color-border);
+		display: flex;
+		gap: 0.75rem;
+		justify-content: flex-end;
+	}
+
+	.modal-footer .btn-secondary {
+		background: var(--color-bg-secondary);
+		color: var(--color-text-primary);
+		border: 1px solid var(--color-border);
+		padding: 0.625rem 1.25rem;
+		border-radius: 8px;
+		font-size: 0.9rem;
+		font-weight: 500;
+		cursor: pointer;
+		text-decoration: none;
+		transition: all 0.2s ease;
+	}
+
+	.modal-footer .btn-secondary:hover {
+		background: var(--color-bg-tertiary);
+		border-color: var(--color-text-secondary);
+	}
+
+	.modal-footer .btn-primary {
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		color: var(--color-primary);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+		padding: 0.625rem 1.25rem;
+		border-radius: 8px;
+		font-size: 0.9rem;
+		font-weight: 500;
+		cursor: pointer;
+		text-decoration: none;
+		transition: all 0.2s ease;
+	}
+
+	.modal-footer .btn-primary:hover {
+		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 12%, transparent);
+	}
+
+	@media (max-width: 640px) {
+		.modal-content {
+			width: 95%;
+			margin: 1rem;
+		}
+
+		.modal-header,
+		.modal-body,
+		.modal-footer {
+			padding-left: 1rem;
+			padding-right: 1rem;
+		}
+
+		.modal-footer {
+			flex-direction: column;
+		}
+
+		.modal-footer .btn-secondary,
+		.modal-footer .btn-primary {
+			width: 100%;
+			justify-content: center;
+			display: flex;
 		}
 	}
 </style>

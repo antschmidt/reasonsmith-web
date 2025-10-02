@@ -1,6 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import Anthropic from '@anthropic-ai/sdk';
+import { print } from 'graphql';
+import { INCREMENT_ANALYSIS_USAGE, INCREMENT_PURCHASED_CREDITS_USED } from '$lib/graphql/queries';
+import { checkAndResetMonthlyCredits, getMonthlyCreditsRemaining } from '$lib/creditUtils';
 
 const anthropic = new Anthropic({
 	apiKey: process.env.ANTHROPIC_API_KEY
@@ -48,7 +51,7 @@ async function analyzeWithClaude(content: string): Promise<ClaudeScoreResponse> 
 		}
 
 		const msg = await anthropic.messages.create({
-			model: 'claude-sonnet-4-20250514',
+			model: 'claude-sonnet-4-5-20250929',
 			max_tokens: 20000,
 			temperature: 0.2,
 			system:
@@ -140,23 +143,232 @@ function heuristicScore(content: string): ClaudeScoreResponse {
 	};
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, cookies }) => {
+	console.log('=== Claude API endpoint called ===');
 	try {
 		const body = await request.json();
-		const { postId, content } = body as { postId?: string; content?: string };
+		const { postId, content } = body as {
+			postId?: string;
+			content?: string;
+		};
 
 		if (typeof content !== 'string' || !content.trim()) {
 			return json({ error: 'content required' }, { status: 400 });
 		}
 
-		console.log('Claude API key present:', !!process.env.ANTHROPIC_API_KEY);
-		console.log('Processing request for content length:', content.length);
+		// Get user from session to track usage
+		let accessToken = cookies.get('nhost.accessToken');
+		console.log('[DEBUG] Cookie access token:', !!accessToken);
+		// Also check Authorization header if cookie not found
+		if (!accessToken) {
+			const authHeader = request.headers.get('authorization');
+			console.log('[DEBUG] Authorization header:', authHeader?.substring(0, 30) + '...');
+			if (authHeader && authHeader.startsWith('Bearer ')) {
+				accessToken = authHeader.substring(7);
+			}
+		}
+	console.log('Access token found:', !!accessToken);
+		let contributorId: string | null = null;
+		let contributor: any = null;
 
-		// Use Claude analysis
-		const scored = await analyzeWithClaude(content);
-		return json({ ...scored, postId: postId || null });
+		if (accessToken) {
+			let HASURA_GRAPHQL_ENDPOINT =
+				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
+			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+
+			// Try alternative endpoint URL if the first one doesn't work
+			const alternativeEndpoint = HASURA_GRAPHQL_ENDPOINT.replace('.graphql.', '.hasura.');
+			console.log('[DEBUG] Primary endpoint:', HASURA_GRAPHQL_ENDPOINT);
+			console.log('[DEBUG] Alternative endpoint:', alternativeEndpoint);
+			console.log('[DEBUG] Admin secret present:', !!HASURA_ADMIN_SECRET);
+
+			if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
+				console.log('[DEBUG] Starting contributor lookup...');
+				try {
+					// Decode JWT token to get user ID
+					const tokenPayload = JSON.parse(atob(accessToken.split('.')[1]));
+					const userId = tokenPayload.sub || tokenPayload['https://hasura.io/jwt/claims']?.['x-hasura-user-id'];
+					console.log('[DEBUG] JWT payload:', tokenPayload);
+					console.log('[DEBUG] JWT payload user ID:', userId);
+
+					// Test admin access first with primary endpoint
+					let testResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+							'x-hasura-role': 'admin'
+						},
+						body: JSON.stringify({
+							query: `query { contributor(limit: 1) { id } }`
+						})
+					});
+					let testResult = await testResponse.json();
+					console.log('[DEBUG] Primary endpoint test:', testResult);
+
+					// If primary fails, try alternative endpoint
+					if (testResult.error) {
+						console.log('[DEBUG] Trying alternative endpoint...');
+						HASURA_GRAPHQL_ENDPOINT = alternativeEndpoint;
+						testResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+								'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+								'x-hasura-role': 'admin'
+							},
+							body: JSON.stringify({
+								query: `query { contributor(limit: 1) { id } }`
+							})
+						});
+						testResult = await testResponse.json();
+						console.log('[DEBUG] Alternative endpoint test:', testResult);
+					}
+
+					if (userId) {
+						// Get contributor info using admin access
+						const contributorResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+								'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+								'x-hasura-role': 'admin'
+							},
+							body: JSON.stringify({
+								query: `
+									query GetContributor($userId: uuid!) {
+										contributor_by_pk(id: $userId) {
+											id
+											role
+											analysis_enabled
+											analysis_limit
+											analysis_count_used
+										}
+									}
+								`,
+								variables: { userId }
+							})
+						});
+
+						const contributorResult = await contributorResponse.json();
+						console.log('[DEBUG] Contributor lookup result:', contributorResult);
+						contributor = contributorResult.data?.contributor_by_pk;
+						contributorId = contributor?.id;
+						console.log('[DEBUG] Found contributor:', !!contributor, contributorId);
+
+						// Check permissions only if we found a contributor
+						if (contributor) {
+							// Check if analysis is enabled
+							if (!contributor.analysis_enabled) {
+								return json(
+									{ error: 'Analysis access is disabled for this account' },
+									{ status: 403 }
+								);
+							}
+
+							// Check if user has reached their limit (unless they're admin/slartibartfast role)
+							if (
+								!['admin', 'slartibartfast'].includes(contributor.role) &&
+								contributor.analysis_limit !== null
+							) {
+								if (contributor.analysis_count_used >= contributor.analysis_limit) {
+									return json(
+										{
+											error: 'Analysis limit reached',
+											limit: contributor.analysis_limit,
+											used: contributor.analysis_count_used
+										},
+										{ status: 429 }
+									);
+								}
+							}
+						}
+					}
+				} catch (dbError) {
+					console.error('Database check failed:', dbError);
+					// Continue with analysis but log the error
+				}
+			}
+		}
+
+		try {
+			console.log('Claude API key present:', !!process.env.ANTHROPIC_API_KEY);
+			console.log('Processing request for content length:', content.length);
+
+			// Use Claude analysis
+			const scored = await analyzeWithClaude(content);
+
+			// Increment appropriate credit type after successful analysis
+			console.log('Checking credit consumption:', { contributorId: !!contributorId, contributor: !!contributor });
+		if (contributorId && contributor) {
+				try {
+					// Use the working endpoint URL that was discovered during contributor lookup
+					let CREDIT_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
+					const alternativeEndpoint = CREDIT_ENDPOINT.replace('.graphql.', '.hasura.');
+
+					// Test which endpoint works for credit operations
+					const testResponse = await fetch(CREDIT_ENDPOINT, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'x-hasura-admin-secret': process.env.HASURA_ADMIN_SECRET || '',
+							'x-hasura-role': 'admin'
+						},
+						body: JSON.stringify({ query: `query { contributor(limit: 1) { id } }` })
+					});
+					const testResult = await testResponse.json();
+
+					if (testResult.error) {
+						console.log('[DEBUG] Using alternative endpoint for credits');
+						CREDIT_ENDPOINT = alternativeEndpoint;
+					}
+
+					const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+					console.log('[DEBUG] Credit endpoint:', CREDIT_ENDPOINT);
+
+					if (CREDIT_ENDPOINT && HASURA_ADMIN_SECRET) {
+						// Determine which credit type to use\n\t\t\t\t\t\tconsole.log('Contributor for credit check:', contributor);
+						const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
+						const shouldUseMonthlyCredit = monthlyRemaining > 0 || ['admin', 'slartibartfast'].includes(contributor.role);
+
+						const mutation = shouldUseMonthlyCredit ? INCREMENT_ANALYSIS_USAGE : INCREMENT_PURCHASED_CREDITS_USED;
+
+						console.log('[DEBUG] Executing credit mutation...');
+						const creditResponse = await fetch(CREDIT_ENDPOINT, {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+								'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+								'x-hasura-role': 'admin'
+							},
+							body: JSON.stringify({
+								query: print(mutation),
+								variables: { contributorId }
+							})
+						});
+
+						const creditResult = await creditResponse.json();
+						console.log('[DEBUG] Credit mutation result:', creditResult);
+
+						if (creditResult.errors) {
+							console.error('[DEBUG] Credit mutation failed:', creditResult.errors);
+						} else {
+							console.log('[DEBUG] Credit mutation successful');
+						}
+					}
+				} catch (usageError) {
+					console.error('Failed to increment usage count:', usageError);
+					// Don't fail the request if usage tracking fails
+				}
+			}
+
+			return json({ ...scored, postId: postId || null });
+		} catch (error) {
+			console.error('Good faith analysis failed:', error);
+			const message = error instanceof Error ? error.message : 'Analysis request failed';
+			return json({ error: message }, { status: 502 });
+		}
 	} catch (e: any) {
-		console.error('POST handler error:', e);
 		return json({ error: e?.message || 'Internal error' }, { status: 500 });
 	}
 };

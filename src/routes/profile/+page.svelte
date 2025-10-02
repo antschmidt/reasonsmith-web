@@ -16,6 +16,18 @@
 
 	let user = nhost.auth.getUser();
 	let authEmail = user?.email || '';
+
+	// Listen for auth state changes
+	nhost.auth.onAuthStateChanged(async (_event, session) => {
+		user = session?.user || null;
+		authEmail = user?.email || '';
+
+		// Load profile data when auth state becomes available, but avoid duplicate loading
+		if (user && !fetching) {
+			profilePath = `/u/${user.id}`;
+			await loadProfile();
+		}
+	});
 	let loading = false;
 	let fetching = false;
 	let statsLoading = false;
@@ -76,6 +88,9 @@
         analysis_limit
         analysis_count_used
         analysis_count_reset_at
+        purchased_credits_total
+        purchased_credits_used
+        subscription_tier
         avatar_url
       }
       discussion(where: { created_by: { _eq: $id } }, order_by: { created_at: desc }) {
@@ -96,11 +111,14 @@
           title
         }
       }
-      post(where: { author_id: { _eq: $id }, status: { _eq: "approved" } }, order_by: { created_at: desc }) {
+      post(where: { author_id: { _eq: $id }, status: { _in: ["approved", "draft"] } }, order_by: { status: asc, created_at: desc }) {
         id
         discussion_id
         created_at
         content
+        status
+        post_type
+        draft_content
       }
     }
   `;
@@ -516,7 +534,7 @@
 			<button
 				class="btn-primary sign-in-btn"
 				type="button"
-				on:click={() => {
+				onclick={() => {
 					showAuthOverlay = true;
 					toggleAuthModeView(true);
 				}}
@@ -531,7 +549,7 @@
 
 		{#if editing}
 			<div class="profile-card edit-form-container">
-				<form class="profile-form" on:submit|preventDefault={save}>
+				<form class="profile-form" onsubmit={(e) => { e.preventDefault(); save(); }}>
 					<fieldset disabled={loading || fetching}>
 						<div class="field">
 							<ProfilePhotoUpload
@@ -562,7 +580,7 @@
 								bind:value={handle}
 								placeholder="yourname"
 								maxlength="30"
-								on:input={() => (handle = (handle || '').toLowerCase())}
+								oninput={() => (handle = (handle || '').toLowerCase())}
 							/>
 							<small class="hint">Profile URL: {handle ? `/u/${handle}` : '/u/your-handle'}</small>
 						</label>
@@ -744,7 +762,7 @@
 							<button class="btn-primary" type="submit" disabled={loading}>
 								{#if loading}Saving…{:else}Save Profile{/if}
 							</button>
-							<button class="btn-secondary" type="button" on:click={cancelEdit} disabled={loading}
+							<button class="btn-secondary" type="button" onclick={cancelEdit} disabled={loading}
 								>Cancel</button
 							>
 						</div>
@@ -782,7 +800,7 @@
 								{/if}
 							</div>
 						</div>
-						<button class="btn-primary" type="button" on:click={enterEdit}>Edit Profile</button>
+						<button class="btn-primary" type="button" onclick={enterEdit}>Edit Profile</button>
 					</div>
 
 					{#if bio}
@@ -899,14 +917,26 @@
 								<div class="credit-status limited">
 									<div class="status-icon">🔢</div>
 									<div class="status-text">
-										<div class="status-label">
-											{(contributor?.analysis_limit || 0) - (contributor?.analysis_count_used || 0)}
-											of {contributor?.analysis_limit || 0} remaining
+										<!-- Monthly Credits -->
+										<div class="credit-tier">
+											<div class="status-label">
+												Monthly: {(contributor?.analysis_limit || 0) - (contributor?.analysis_count_used || 0)}
+												of {contributor?.analysis_limit || 0} remaining
+											</div>
+											<div class="status-description">
+												Resets at the end of the month
+											</div>
 										</div>
-										<div class="status-description">
-											Resets: {contributor?.analysis_count_reset_at
-												? new Date(contributor.analysis_count_reset_at).toLocaleDateString()
-												: 'Unknown'}
+
+										<!-- Purchased Credits -->
+										<div class="credit-tier">
+											<div class="status-label">
+												Purchased: {(contributor?.purchased_credits_total || 0) - (contributor?.purchased_credits_used || 0)}
+												of {contributor?.purchased_credits_total || 0} available
+											</div>
+											<div class="status-description">
+												Used only after monthly credits are exhausted
+											</div>
 										</div>
 									</div>
 								</div>
@@ -989,10 +1019,15 @@
 						<div class="content-list">
 							{#each posts as p}
 								<div class="content-item">
-									<a href={`/discussions/${p.discussion_id}`} class="content-link"
-										>{toTextSnippet(p.content)}</a
+									<a href={p.status === 'draft'
+										? `/discussions/${p.discussion_id}?replyDraftId=${p.id}`
+										: `/discussions/${p.discussion_id}`
+									} class="content-link"
+										>{toTextSnippet(p.status === 'draft' ? p.draft_content || '' : p.content)}</a
 									>
-									<span class="content-meta">{new Date(p.created_at).toLocaleDateString()}</span>
+									<span class="content-meta">
+										{p.status === 'draft' ? 'Draft • ' : ''}{new Date(p.created_at).toLocaleDateString()}
+									</span>
 								</div>
 							{/each}
 						</div>
@@ -1014,7 +1049,7 @@
 			<button
 				class="close-auth-overlay"
 				type="button"
-				on:click={() => (showAuthOverlay = false)}
+				onclick={() => (showAuthOverlay = false)}
 				aria-label="Close authentication panel">&times;</button
 			>
 			<h2 id="auth-dialog-title">{isLoginView ? 'Login' : 'Sign Up'}</h2>
@@ -1025,15 +1060,15 @@
 						aria-label="Continue with Email/Password"
 						type="button"
 						class="oauth-button"
-						on:click={() => (activeAuthView = 'emailPassword')}>Continue with Email/Password</button
+						onclick={() => (activeAuthView = 'emailPassword')}>Continue with Email/Password</button
 					>
-					<button type="button" class="oauth-button" on:click={() => (activeAuthView = 'magicLink')}
+					<button type="button" class="oauth-button" onclick={() => (activeAuthView = 'magicLink')}
 						>{isLoginView ? 'Use Magic Link to Sign In' : 'Use Magic Link to Sign Up'}</button
 					>
 					<button
 						type="button"
 						class="oauth-button"
-						on:click={() => (activeAuthView = 'securityKey')}
+						onclick={() => (activeAuthView = 'securityKey')}
 						>{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key</button
 					>
 				</div>
@@ -1042,20 +1077,20 @@
 					<button
 						type="button"
 						class="oauth-button"
-						on:click={signInWithGoogle}
+						onclick={signInWithGoogle}
 						aria-label="Sign in with Google"><span>Sign in with Google</span></button
 					>
 					<button
 						type="button"
 						class="oauth-button"
-						on:click={signInWithGitHub}
+						onclick={signInWithGitHub}
 						aria-label="Sign in with GitHub"><span>Sign in with GitHub</span></button
 					>
 				</div>
 				<button
 					type="button"
 					class="toggle-auth-mode"
-					on:click={() => toggleAuthModeView(!isLoginView)}
+					onclick={() => toggleAuthModeView(!isLoginView)}
 					>{isLoginView
 						? "Don't have an account? Sign up"
 						: 'Already have an account? Log in'}</button
@@ -1063,18 +1098,18 @@
 			{:else if activeAuthView === 'emailPassword'}
 				<input type="email" placeholder="Email" bind:value={email} />
 				<input type="password" placeholder="Password" bind:value={password} />
-				<button type="button" class="auth-primary-action" on:click={isLoginView ? login : signup}
+				<button type="button" class="auth-primary-action" onclick={isLoginView ? login : signup}
 					>{isLoginView ? 'Login' : 'Sign Up'}</button
 				>
-				<button type="button" class="toggle-auth-mode" on:click={() => (activeAuthView = 'initial')}
+				<button type="button" class="toggle-auth-mode" onclick={() => (activeAuthView = 'initial')}
 					>Back to options</button
 				>
 			{:else if activeAuthView === 'magicLink'}
 				<input type="email" placeholder="Email" bind:value={email} />
-				<button type="button" class="oauth-button" on:click={sendMagicLink} disabled={magicLinkSent}
+				<button type="button" class="oauth-button" onclick={sendMagicLink} disabled={magicLinkSent}
 					>{magicLinkSent ? 'Magic Link Sent' : 'Send Magic Link'}</button
 				>
-				<button type="button" class="toggle-auth-mode" on:click={() => (activeAuthView = 'initial')}
+				<button type="button" class="toggle-auth-mode" onclick={() => (activeAuthView = 'initial')}
 					>Back to options</button
 				>
 			{:else if activeAuthView === 'securityKey'}
@@ -1082,10 +1117,10 @@
 				<button
 					type="button"
 					class="oauth-button"
-					on:click={isLoginView ? signInWithSecurityKey : signUpWithSecurityKey}
+					onclick={isLoginView ? signInWithSecurityKey : signUpWithSecurityKey}
 					>{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key</button
 				>
-				<button type="button" class="toggle-auth-mode" on:click={() => (activeAuthView = 'initial')}
+				<button type="button" class="toggle-auth-mode" onclick={() => (activeAuthView = 'initial')}
 					>Back to options</button
 				>
 			{/if}
@@ -1130,20 +1165,6 @@
 	}
 
 	/* Layout */
-	.profile-container {
-		min-height: 100vh;
-		padding: clamp(1rem, 4vw, 2rem);
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 2rem;
-		position: relative;
-	}
-
-	.profile-container.editing {
-		max-width: 800px;
-		width: 100%;
-	}
 
 	.profile-view {
 		display: flex;
@@ -1774,10 +1795,6 @@
 	}
 
 	@media (max-width: 480px) {
-		.profile-container {
-			padding: 1rem;
-		}
-
 		.profile-card {
 			border-radius: 20px;
 		}

@@ -308,7 +308,7 @@
 											class="role-select"
 											value={contributor.role}
 											disabled={saving || (contributor.id === user?.id && !isAdmin)}
-											on:change={(e) => updateUserRole(contributor.id, e.currentTarget.value)}
+											onchange={(e) => updateUserRole(contributor.id, e.currentTarget.value)}
 										>
 											<option value="user">User</option>
 											<option value="slartibartfast">Site Manager</option>
@@ -326,7 +326,7 @@
 											type="checkbox"
 											checked={contributor.analysis_enabled}
 											disabled={saving || contributor.role === 'admin'}
-											on:change={(e) =>
+											onchange={(e) =>
 												updateAnalysisSettings(
 													contributor.id,
 													e.currentTarget.checked,
@@ -344,7 +344,7 @@
 										placeholder="Unlimited"
 										min="0"
 										disabled={saving || contributor.role === 'me'}
-										on:blur={(e) => {
+										onblur={(e) => {
 											const value = e.currentTarget.value ? parseInt(e.currentTarget.value) : null;
 											updateAnalysisSettings(contributor.id, contributor.analysis_enabled, value);
 										}}
@@ -365,7 +365,7 @@
 									<button
 										class="btn-secondary reset-btn"
 										disabled={saving || contributor.role === 'me'}
-										on:click={() => resetAnalysisCount(contributor.id)}
+										onclick={() => resetAnalysisCount(contributor.id)}
 									>
 										Reset Count
 									</button>

@@ -135,13 +135,6 @@
 </script>
 
 {#if user}
-	<nav class="main-nav">
-		<button type="button" onclick={toggleTheme} aria-label="Toggle theme" class="theme-toggle">
-			{themeValue === 'light' ? '🌙' : '☀️'}
-		</button>
-		<div class="user-email">{user.email}</div>
-		<button type="button" onclick={logout} class="logout-button">Logout</button>
-	</nav>
 	<Dashboard {user} />
 {:else}
 	<div class="landing-shell">
@@ -364,40 +357,6 @@
 {/if}
 
 <style>
-	.main-nav {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 1rem;
-		/* margin-bottom: 2rem; */
-		background: var(--color-surface);
-		color: var(--color-text-primary);
-		border-radius: var(--border-radius-sm);
-	}
-	.theme-toggle {
-		background: transparent;
-		font-size: 1.5rem;
-		cursor: pointer;
-		border: 0;
-		padding: 0;
-		margin: 0;
-		color: var(--color-text-primary);
-	}
-	.theme-toggle:hover {
-		background-color: var(--color-surface);
-	}
-	.logout-button {
-		padding: 0.75rem;
-		border: none;
-		background: var(--color-cta);
-		color: var(--color-surface);
-		border-radius: var(--border-radius-sm);
-		cursor: pointer;
-		transition: background-color var(--transition-speed) ease;
-	}
-	.logout-button:hover {
-		background: var(--color-primary);
-	}
 
 	.landing-shell {
 		background: var(--color-surface-alt);
@@ -437,7 +396,7 @@
 		z-index: 1;
 	}
 
-	@media (min-width: 980px) {
+	@media (min-width: 1024px) {
 		.hero-grid {
 			grid-template-columns: minmax(0, 1.15fr) minmax(320px, 1fr);
 		}
@@ -680,12 +639,12 @@
 		color: #f87171;
 	}
 	.cta-button {
-		background: var(--color-primary);
-		color: var(--color-surface);
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		color: var(--color-primary);
 		padding: 1rem 2.5rem;
 		font-size: 1rem;
 		font-weight: 600;
-		border: none;
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 		border-radius: var(--border-radius-sm);
 		cursor: pointer;
 		transition: all var(--transition-speed) ease;
@@ -694,9 +653,10 @@
 	}
 
 	.cta-button:hover {
-		background: var(--color-accent);
+		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
 		transform: translateY(-1px);
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 12%, transparent);
 	}
 
 	.login-page-wrapper {

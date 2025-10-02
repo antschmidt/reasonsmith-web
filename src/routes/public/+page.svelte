@@ -552,7 +552,9 @@
 									onclick={() => removeItem(item.id)}
 									disabled={deleting === item.id}
 								>
-									{deleting === item.id ? '…' : '×'}
+									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6m4-6v6"/>
+									</svg>
 								</button>
 							</li>
 						{/each}
@@ -867,26 +869,33 @@
 	}
 	.delete-button {
 		border: none;
-		background: linear-gradient(135deg, #ef4444, #dc2626);
-		color: white;
-		width: 3rem;
+		background: transparent;
+		color: var(--color-text-secondary);
+		width: 2.5rem;
+		height: auto;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 1.25rem;
 		cursor: pointer;
-		transition: all 0.3s ease;
-		box-shadow: 0 4px 12px color-mix(in srgb, #ef4444 25%, transparent);
+		transition: all 0.2s ease;
+		border-radius: var(--border-radius-sm);
+	}
+	.delete-button svg {
+		width: 20px;
+		height: 20px;
+		opacity: 0.6;
+		transition: all 0.2s ease;
 	}
 	.delete-button:hover:not(:disabled) {
-		background: linear-gradient(135deg, #dc2626, #b91c1c);
-		transform: translateY(-1px);
-		box-shadow: 0 6px 20px color-mix(in srgb, #ef4444 35%, transparent);
+		background: color-mix(in srgb, #ef4444 10%, transparent);
+		color: #ef4444;
+	}
+	.delete-button:hover:not(:disabled) svg {
+		opacity: 1;
 	}
 	.delete-button:disabled {
-		opacity: 0.5;
+		opacity: 0.3;
 		cursor: not-allowed;
-		transform: none;
 	}
 	.form-panel {
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
