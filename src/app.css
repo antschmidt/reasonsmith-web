@@ -966,6 +966,7 @@ input::placeholder {
 .input,
 .textarea {
 	padding: 1rem 1.25rem;
+	min-height: 20rem;
 	border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
 	border-radius: 16px;
 	background: color-mix(in srgb, var(--color-surface) 60%, transparent);
@@ -1001,7 +1002,7 @@ input::placeholder {
 }
 
 .textarea--large {
-	min-height: 200px;
+	min-height: 20rem;
 }
 
 .select {

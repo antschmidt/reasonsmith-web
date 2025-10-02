@@ -602,7 +602,7 @@
 					<textarea
 						id="description"
 						bind:value={content}
-						rows="8"
+						rows="35"
 						placeholder="Share your thoughts... (Style will be automatically determined by length)"
 						oninput={onContentInput}
 						onfocus={() => (contentFocused = true)}

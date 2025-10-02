@@ -142,7 +142,22 @@
 	}
 
 	const DELETE_DRAFT = `mutation DeleteDraft($id: uuid!, $authorId: uuid!) { delete_post(where:{id:{_eq:$id}, author_id:{_eq:$authorId}, status:{_eq:"draft"}}){ affected_rows } }`;
-	const DELETE_DISCUSSION_VERSION = `mutation DeleteDiscussionVersion($id: uuid!, $createdBy: uuid!) { delete_discussion_version(where:{id:{_eq:$id}, created_by:{_eq:$createdBy}, version_type:{_eq:"draft"}}){ affected_rows } }`;
+	const DELETE_DISCUSSION_DRAFT = `
+		mutation DeleteDiscussionDraft($versionId: uuid!, $discussionId: uuid!, $createdBy: uuid!) {
+			# Delete the draft version
+			delete_discussion_version(where:{id:{_eq:$versionId}, created_by:{_eq:$createdBy}, version_type:{_eq:"draft"}}) {
+				affected_rows
+			}
+			# Delete the discussion if it has no published versions (i.e., it was never published)
+			delete_discussion(where:{
+				id:{_eq:$discussionId},
+				created_by:{_eq:$createdBy},
+				status:{_eq:"draft"}
+			}) {
+				affected_rows
+			}
+		}
+	`;
 
 	async function deleteDraft(d: { id: string; type?: string; original_discussion_id?: string }) {
 		if (!user) return;
@@ -152,10 +167,11 @@
 		if (d.type === 'discussion' && d.original_discussion_id) {
 			// Check if this is a database draft (starts with discussion_version_) or localStorage draft
 			if (d.id.startsWith('discussion_version_')) {
-				// Delete discussion version draft from database
+				// Delete discussion version draft and discussion from database
 				const draftVersionId = d.id.replace('discussion_version_', '');
-				const { error: delErr } = await nhost.graphql.request(DELETE_DISCUSSION_VERSION, {
-					id: draftVersionId,
+				const { error: delErr } = await nhost.graphql.request(DELETE_DISCUSSION_DRAFT, {
+					versionId: draftVersionId,
+					discussionId: d.original_discussion_id,
 					createdBy: user.id as unknown as string
 				});
 				if (delErr) {

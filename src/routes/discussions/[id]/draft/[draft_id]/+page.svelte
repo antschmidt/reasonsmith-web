@@ -30,8 +30,8 @@
 	let goodFaithTesting = $state(false);
 	let goodFaithResult = $state<any>(null);
 	let goodFaithError = $state<string | null>(null);
-	let lastAnalysisTime = $state<Date | null>(null);
-	let lastEditTime = $state<Date | null>(null);
+	let isAnalyzing = $state(false);
+	let analysisCollapsed = $state(false);
 
 	// Draft data
 	let draft = $state<any>(null);
@@ -55,45 +55,26 @@
 		user = nhost.auth.getUser();
 	});
 
-	// Track content changes to determine if analysis is needed
-	let initialLoadComplete = $state(false);
-	let initialTitle = $state('');
-	let initialDescription = $state('');
-
-	$effect(() => {
-		// Only track changes after initial load
-		if (initialLoadComplete) {
-			// Check if content has actually changed from initial values
-			if (title !== initialTitle || description !== initialDescription) {
-				console.log('Content changed, updating lastEditTime');
-				lastEditTime = new Date();
-			}
-		}
+	// Computed properties for publish logic
+	let canPublish = $derived.by(() => {
+		if (!draft) return false;
+		// If no analysis has been run yet, can't publish
+		if (!draft.good_faith_last_evaluated) return false;
+		// If no edits have been made, can publish
+		if (!draft.edited_at) return true;
+		// If analysis is more recent than last edit, can publish
+		return new Date(draft.good_faith_last_evaluated) > new Date(draft.edited_at);
 	});
 
-	// Computed property to check if publish should be available
-	let canPublish = $derived.by(() => {
-		// If no analysis has been run yet, can't publish
-		if (!lastAnalysisTime) {
-			console.log('canPublish: false - no analysis yet');
-			return false;
-		}
+	let analysisPassedCriteria = $derived.by(() => {
+		if (!draft?.good_faith_label) return false;
+		// Pass criteria: constructive, exemplary, or neutral (score >= 0.4)
+		return ['constructive', 'exemplary', 'neutral'].includes(draft.good_faith_label);
+	});
 
-		// If no edits have been made since load, can publish
-		if (!lastEditTime) {
-			console.log('canPublish: true - analysis exists, no edits yet');
-			return true;
-		}
-
-		// If analysis is more recent than last edit, can publish
-		const result = lastAnalysisTime > lastEditTime;
-		console.log('canPublish check:', {
-			lastAnalysisTime,
-			lastEditTime,
-			result,
-			analysisAfterEdit: result
-		});
-		return result;
+	let analysisIsOutdated = $derived.by(() => {
+		if (!draft?.good_faith_last_evaluated || !draft?.edited_at) return false;
+		return new Date(draft.edited_at) > new Date(draft.good_faith_last_evaluated);
 	});
 
 	async function loadDraft() {
@@ -149,6 +130,9 @@
 							good_faith_score
 							good_faith_label
 							good_faith_last_evaluated
+							good_faith_analysis
+							edited_at
+							created_at
 						}
 					}
 				`,
@@ -190,14 +174,17 @@
 			title = draft.title || '';
 			description = draft.description || '';
 
-			// Store initial values for change tracking
-			initialTitle = title;
-			initialDescription = description;
-
-			// Mark initial load as complete to start tracking edits
-			setTimeout(() => {
-				initialLoadComplete = true;
-			}, 100);
+			// Load existing good faith analysis if available
+			if (draft.good_faith_score !== null && draft.good_faith_label) {
+				goodFaithResult = {
+					good_faith_score: draft.good_faith_score,
+					good_faith_label: draft.good_faith_label,
+					rationale: draft.good_faith_analysis?.rationale || null,
+					claims: draft.good_faith_analysis?.claims || [],
+					provider: draft.good_faith_analysis?.provider || 'claude'
+				};
+				analysisCollapsed = true;
+			}
 		} catch (err: any) {
 			console.error('Error loading draft:', err);
 			error = err.message || 'Failed to load draft';
@@ -215,24 +202,27 @@
 
 			const result = await nhost.graphql.request(
 				`
-				mutation UpdateDraft($draftId: uuid!, $title: String!, $description: String!) {
+				mutation UpdateDraft($draftId: uuid!, $title: String!, $description: String!, $editedAt: timestamptz!) {
 					update_discussion_version_by_pk(
 						pk_columns: { id: $draftId }
 						_set: {
 							title: $title
 							description: $description
+							edited_at: $editedAt
 						}
 					) {
 						id
 						title
 						description
+						edited_at
 					}
 				}
 			`,
 				{
 					draftId: draft.id,
 					title: title.trim(),
-					description: description.trim()
+					description: description.trim(),
+					editedAt: new Date().toISOString()
 				}
 			);
 
@@ -243,6 +233,7 @@
 			// Update local state
 			draft.title = title.trim();
 			draft.description = description.trim();
+			draft.edited_at = new Date().toISOString();
 		} catch (err: any) {
 			console.error('Error saving draft:', err);
 			error = err.message || 'Failed to save draft';
@@ -256,6 +247,7 @@
 
 		goodFaithError = null;
 		goodFaithResult = null;
+		isAnalyzing = true;
 
 		try {
 			goodFaithTesting = true;
@@ -313,14 +305,21 @@
 					return null;
 				}
 
-				// Update analysis timestamp
-				lastAnalysisTime = new Date();
+				// Update local draft state with analysis results
+				draft.good_faith_score = goodFaithData.score;
+				draft.good_faith_label = goodFaithData.label;
+				draft.good_faith_last_evaluated = new Date().toISOString();
 
 				console.log('Good faith analysis saved to database successfully');
+
+				// Keep isAnalyzing true - user must click "Continue Editing" or "Publish"
+				isAnalyzing = true;
+
 				return goodFaithData;
 			} catch (e: any) {
 				console.error('Good faith analysis failed:', e);
 				goodFaithError = e?.message || 'Failed to analyze discussion for good faith.';
+				isAnalyzing = false;
 				return null;
 			}
 		} finally {
@@ -624,6 +623,15 @@
 		goto(`/discussions/${discussionId}`);
 	}
 
+	function continueEditing() {
+		isAnalyzing = false;
+		analysisCollapsed = true;
+	}
+
+	function toggleAnalysis() {
+		analysisCollapsed = !analysisCollapsed;
+	}
+
 	onMount(() => {
 		if (user) {
 			loadDraft();
@@ -695,37 +703,55 @@
 					</p>
 				</div>
 				<div class="header-actions">
-					<button type="button" class="btn-secondary" onclick={cancel}>Cancel</button>
-					<button
-						type="button"
-						class="btn-secondary logo-btn"
-						onclick={analyzeGoodFaith}
-						disabled={goodFaithTesting || saving || publishing}
-						title={goodFaithTesting ? 'Analyzing good faith...' : 'Test good faith analysis'}
-					>
-						{#if goodFaithTesting}
-							<AnimatedLogo size="20px" isAnimating={true} />
-						{:else}
-							<img src="/logo-only-transparent.svg" alt="Test Good Faith" width="20" height="20" />
-						{/if}
-					</button>
-					{#if canPublish}
+					<!-- Button 1: Continue Editing (shown after analysis) -->
+					{#if isAnalyzing}
+						<button type="button" class="btn-secondary" onclick={continueEditing}>
+							Continue Editing
+						</button>
+					{/if}
+
+					<!-- Button 2: Analysis/Publish -->
+					{#if !canPublish}
+						<!-- State A: Need Analysis -->
+						<button
+							type="button"
+							class="btn-secondary logo-btn"
+							onclick={analyzeGoodFaith}
+							disabled={goodFaithTesting || saving || publishing}
+							title="Run good faith analysis to enable publishing"
+						>
+							{#if goodFaithTesting}
+								<AnimatedLogo size="20px" isAnimating={true} />
+								<div>Analyzing...</div>
+							{:else}
+								<img src="/logo-only-transparent.svg" alt="" width="40" height="40" />
+								<div>Run Analysis to Enable Publishing</div>
+							{/if}
+						</button>
+					{:else if publishing}
+						<!-- State B: Publishing -->
+						<button type="button" class="btn-accent" disabled>
+							<AnimatedLogo size="20px" isAnimating={true} /> Publishing...
+						</button>
+					{:else if analysisPassedCriteria}
+						<!-- State C: Analysis Passed - Can Publish -->
 						<button
 							type="button"
 							class="btn-accent"
 							onclick={publishDraft}
-							disabled={publishing || saving}
+							disabled={saving}
 						>
-							{#if publishing}
-								<AnimatedLogo size="20px" isAnimating={true} /> Publishing...
-							{:else}
-								Publish
-							{/if}
+							<span class="check-icon">✓</span> Publish
 						</button>
 					{:else}
-						<div class="publish-hint">
-							<span class="hint-text">Run good faith analysis to enable publishing</span>
-						</div>
+						<!-- State D: Analysis Failed - Return to Forge -->
+						<button
+							type="button"
+							class="btn-disabled"
+							onclick={continueEditing}
+						>
+							<span class="x-icon">✗</span> Return to the Forge
+						</button>
 					{/if}
 				</div>
 			</header>
@@ -753,19 +779,33 @@
 
 			{#if goodFaithResult}
 				<div class="good-faith-analysis">
-					<div class="analysis-summary">
-						<div class="analysis-badge {goodFaithResult.good_faith_label}">
-							<span class="analysis-score">{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span>
-							<span class="analysis-label">{goodFaithResult.good_faith_label}</span>
+					<div class="analysis-header">
+						<div class="analysis-summary">
+							<div class="analysis-badge {goodFaithResult.good_faith_label}">
+								<span class="analysis-score">{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span>
+								<span class="analysis-label">{goodFaithResult.good_faith_label}</span>
+							</div>
+							{#if analysisIsOutdated}
+								<span class="outdated-badge">Outdated - Content edited since analysis</span>
+							{/if}
 						</div>
+						{#if analysisCollapsed}
+							<button type="button" class="expand-btn" onclick={toggleAnalysis}>
+								Expand Analysis
+							</button>
+						{:else}
+							<button type="button" class="collapse-btn" onclick={toggleAnalysis}>
+								Collapse
+							</button>
+						{/if}
 					</div>
-					{#if goodFaithResult.rationale}
+					{#if !analysisCollapsed && goodFaithResult.rationale}
 						<div class="analysis-section">
 							<strong>Analysis Summary:</strong>
 							{goodFaithResult.rationale}
 						</div>
 					{/if}
-					{#if goodFaithResult.claims && goodFaithResult.claims.length > 0}
+					{#if !analysisCollapsed && goodFaithResult.claims && goodFaithResult.claims.length > 0}
 						<div class="analysis-section">
 							<strong>Claims Analysis:</strong>
 							{#each goodFaithResult.claims as claimObj}
@@ -809,6 +849,7 @@
 						bind:value={title}
 						placeholder="Discussion title..."
 						required
+						disabled={isAnalyzing}
 					/>
 				</div>
 
@@ -820,6 +861,7 @@
 						placeholder="Describe your discussion..."
 						rows="20"
 						required
+						disabled={isAnalyzing}
 					></textarea>
 				</div>
 
@@ -935,11 +977,11 @@
 
 	.draft-editor-container {
 		min-height: 100vh;
-		background: #fafafa;
+		background: var(--color-surface-alt);
 		font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 		font-size: 15px;
 		line-height: 1.6;
-		color: #1f2937;
+		color: var(--color-text-primary);
 	}
 
 	.loading,
@@ -962,10 +1004,10 @@
 		max-width: 800px;
 		margin: 0 auto;
 		padding: 3rem 2rem;
-		background: #ffffff;
-		box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
-		border-left: 1px solid #e5e7eb;
-		border-right: 1px solid #e5e7eb;
+		background: var(--color-surface);
+		box-shadow: 0 0 0 1px var(--color-border);
+		border-left: 1px solid var(--color-border);
+		border-right: 1px solid var(--color-border);
 	}
 
 	.editor-header {
@@ -974,14 +1016,14 @@
 		align-items: flex-start;
 		margin-bottom: 3rem;
 		padding-bottom: 2rem;
-		border-bottom: 1px solid #e5e7eb;
+		border-bottom: 1px solid var(--color-border);
 	}
 
 	.header-content h1 {
 		font-family: 'Crimson Text', Georgia, serif;
 		font-size: 2.25rem;
 		font-weight: 600;
-		color: #111827;
+		color: var(--color-text-primary);
 		margin: 0 0 0.75rem 0;
 		letter-spacing: -0.025em;
 		line-height: 1.2;
@@ -1006,6 +1048,14 @@
 		display: flex;
 		gap: 1rem;
 		align-items: center;
+	}
+
+	.header-actions button {
+		gap: 0.5rem;
+	}
+
+	.header-actions button {
+		max-width: 12rem;
 	}
 
 	.error-banner {
@@ -1037,7 +1087,7 @@
 		display: block;
 		font-weight: 500;
 		margin-bottom: 0.75rem;
-		color: #374151;
+		color: var(--color-text-secondary);
 		font-size: 15px;
 		letter-spacing: 0.025em;
 	}
@@ -1046,10 +1096,10 @@
 	textarea {
 		width: 100%;
 		padding: 0.875rem 1rem;
-		border: 1px solid #d1d5db;
+		border: 1px solid var(--color-border);
 		border-radius: 3px;
-		background: #ffffff;
-		color: #111827;
+		background: var(--color-input-bg);
+		color: var(--color-text-primary);
 		font-family: inherit;
 		font-size: 15px;
 		line-height: 1.5;
@@ -1059,8 +1109,8 @@
 	input:focus,
 	textarea:focus {
 		outline: none;
-		border-color: #6b7280;
-		box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.1);
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 10%, transparent);
 	}
 
 	textarea {
@@ -1113,39 +1163,50 @@
 	}
 
 	.btn-primary {
-		background: #374151;
-		color: #ffffff;
-		border-color: #374151;
+		background: var(--color-primary);
+		color: var(--color-surface);
+		border-color: var(--color-primary);
 	}
 
 	.btn-primary:hover:not(:disabled) {
-		background: #1f2937;
-		border-color: #1f2937;
+		background: color-mix(in srgb, var(--color-primary) 80%, black);
+		border-color: color-mix(in srgb, var(--color-primary) 80%, black);
 	}
 
 	.btn-secondary {
-		background: #ffffff;
-		color: #374151;
-		border-color: #d1d5db;
+		background: var(--color-surface);
+		color: var(--color-text-primary);
+		border-color: var(--color-border);
 	}
 
 	.btn-secondary:hover:not(:disabled) {
-		border-color: #374151;
-		background: #f9fafb;
+		border-color: var(--color-primary);
+		background: var(--color-surface-alt);
 	}
 
 	.btn-accent {
-		background: #dc2626;
-		color: #ffffff;
-		border-color: #dc2626;
-		display: flex;
+		padding: 0.625rem 1.25rem;
+		border: 1px solid #10b981;
+		background: transparent;
+		color: var(--color-text-primary);
+		border-radius: 3px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		font-size: 14px;
+		font-weight: 500;
+		font-family: inherit;
+		letter-spacing: 0.025em;
+		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;
+		box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
 	}
 
 	.btn-accent:hover:not(:disabled) {
-		background: #b91c1c;
-		border-color: #b91c1c;
+		background: rgba(16, 185, 129, 0.05);
+		border-color: #10b981;
+		color: #10b981;
+		box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
 	}
 
 	.logo-btn {
@@ -1205,11 +1266,19 @@
 		font-size: 0.95rem;
 	}
 
+	.analysis-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 1rem;
+		margin-bottom: 1rem;
+	}
+
 	.analysis-summary {
 		display: flex;
 		align-items: center;
 		gap: 1rem;
-		margin-bottom: 1rem;
+		flex-wrap: wrap;
 	}
 
 	.analysis-badge {
@@ -1499,5 +1568,76 @@
 		.editor-form {
 			padding: 1.5rem;
 		}
+	}
+
+	/* Checkmark and X icons for publish states */
+	.check-icon {
+		color: #10b981;
+		font-weight: 600;
+		margin-right: 0.5rem;
+	}
+
+	.x-icon {
+		color: #ef4444;
+		font-weight: 600;
+		margin-right: 0.5rem;
+	}
+
+	.btn-disabled {
+		background: var(--color-surface);
+		color: var(--color-text-secondary);
+		border-color: var(--color-border);
+		padding: 0.625rem 1.25rem;
+		border-radius: 3px;
+		font-weight: 500;
+		font-size: 14px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		font-family: inherit;
+		letter-spacing: 0.025em;
+		opacity: 0.7;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.btn-disabled:hover {
+		background: var(--color-surface-alt);
+		border-color: var(--color-primary);
+		opacity: 1;
+	}
+
+	/* Outdated badge */
+	.outdated-badge {
+		display: inline-block;
+		padding: 0.25rem 0.75rem;
+		background: color-mix(in srgb, #f59e0b 15%, transparent);
+		color: #d97706;
+		font-size: 0.85rem;
+		font-weight: 500;
+		border-radius: var(--border-radius-sm);
+		border: 1px solid color-mix(in srgb, #f59e0b 25%, transparent);
+	}
+
+	/* Expand/Collapse buttons */
+	.expand-btn,
+	.collapse-btn {
+		padding: 0.375rem 0.75rem;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: var(--color-text-secondary);
+		border-radius: var(--border-radius-sm);
+		cursor: pointer;
+		transition: all 0.15s ease;
+		font-size: 0.85rem;
+		font-weight: 500;
+		white-space: nowrap;
+	}
+
+	.expand-btn:hover,
+	.collapse-btn:hover {
+		background: var(--color-surface-alt);
+		border-color: var(--color-primary);
+		color: var(--color-primary);
 	}
 </style>

@@ -827,7 +827,7 @@
 	async function refreshApprovedPosts(discussionId: string) {
 		const result = await nhost.graphql.request(IMPORTED_GET_DISCUSSION_DETAILS, { discussionId });
 		if ((result as any).error) return;
-		const fresh = (result as any).data?.discussion?.[0];
+		const fresh = (result as any).data?.discussion_by_pk;
 		if (fresh) discussion.posts = fresh.posts; // only need posts
 	}
 
@@ -970,7 +970,7 @@
 			// Create a modified query that includes user filtering for draft versions
 			const GET_DISCUSSION_WITH_USER_DRAFTS = `
 				query GetDiscussionDetails($discussionId: uuid!, $userId: uuid) {
-					discussion(where: { id: { _eq: $discussionId } }) {
+					discussion_by_pk(id: $discussionId) {
 						id
 						created_at
 						created_by
@@ -1045,12 +1045,12 @@
 				);
 			}
 
-			const discussions = (result as any).data?.discussion;
-			if (!discussions || discussions.length === 0) {
+			const discussionData = (result as any).data?.discussion_by_pk;
+			if (!discussionData) {
 				throw new Error('Discussion not found');
 			}
 
-			discussion = discussions[0];
+			discussion = discussionData;
 
 			// Load citations from the new citation tables
 			await loadDiscussionCitations();
@@ -1244,7 +1244,7 @@
 			const existingDraftCheck = await nhost.graphql.request(
 				`
 				query CheckExistingDraft($discussionId: uuid!, $userId: uuid!) {
-					discussion(where: { id: { _eq: $discussionId } }) {
+					discussion_by_pk(id: $discussionId) {
 						discussion_versions(
 							where: {
 								version_type: { _eq: "draft" }
@@ -1264,7 +1264,7 @@
 				}
 			);
 
-			const existingDraft = existingDraftCheck.data?.discussion?.[0]?.discussion_versions?.[0];
+			const existingDraft = existingDraftCheck.data?.discussion_by_pk?.discussion_versions?.[0];
 
 			if (existingDraft) {
 				// Update existing draft instead of creating new one
@@ -1321,7 +1321,7 @@
 			const versionQuery = await nhost.graphql.request(
 				`
 				query GetMaxVersionNumber($discussionId: uuid!) {
-					discussion(where: { id: { _eq: $discussionId } }) {
+					discussion_by_pk(id: $discussionId) {
 						discussion_versions(
 							order_by: { version_number: desc }
 							limit: 1
@@ -1337,7 +1337,7 @@
 			);
 
 			const maxVersion =
-				versionQuery.data?.discussion?.[0]?.discussion_versions?.[0]?.version_number || 0;
+				versionQuery.data?.discussion_by_pk?.discussion_versions?.[0]?.version_number || 0;
 			const nextVersionNumber = maxVersion + 1;
 
 			// Create a draft version in the database
@@ -1536,7 +1536,7 @@
 			const commentsCheck = await nhost.graphql.request(
 				`
 				query CheckVersionComments($discussionId: uuid!) {
-					discussion(where: {id: {_eq: $discussionId}}) {
+					discussion_by_pk(id: $discussionId) {
 						discussion_versions(where: {version_type: {_eq: "published"}}) {
 							id
 							version_number
@@ -1555,7 +1555,7 @@
 				{ discussionId }
 			);
 
-			const currentPublished = commentsCheck.data?.discussion?.[0]?.discussion_versions?.[0];
+			const currentPublished = commentsCheck.data?.discussion_by_pk?.discussion_versions?.[0];
 			const commentsData = commentsCheck.data?.post_aggregate;
 			const hasComments = commentsData?.aggregate?.count > 0;
 
@@ -2841,7 +2841,7 @@
 						Description
 						<textarea
 							id="edit-description"
-							rows="3"
+							rows="30"
 							bind:value={editDescription}
 							oninput={onEditDescriptionInput}
 						></textarea>
@@ -3608,7 +3608,7 @@
 					{/snippet}
 					{#if editingPostId === post.id}
 						<div class="post-edit-block">
-							<textarea rows="4" bind:value={editingPostContent}></textarea>
+							<textarea id="post-edit-textarea" rows="24" bind:value={editingPostContent}></textarea>
 							{#if editPostError}<div class="error-message" style="margin-top:0.25rem;">
 									{editPostError}
 								</div>{/if}
@@ -3877,7 +3877,7 @@
 							validateCommentContent();
 						}}
 						onfocus={loadExistingDraft}
-						rows="5"
+						rows="25"
 						placeholder="Add your comment... (Style will be automatically determined by length)"
 						aria-label="New comment"
 					></textarea>
@@ -5637,6 +5637,7 @@
 		flex-direction: column;
 		gap: 0.75rem;
 		background: var(--color-surface-alt);
+		color: var(--color-text-primary);
 		padding: 1rem;
 		border-radius: var(--border-radius-md);
 		border: 1px solid var(--color-border);
@@ -5653,6 +5654,8 @@
 		padding: 0.5rem;
 		border-radius: var(--border-radius-sm);
 		border: 1px solid var(--color-border);
+		background: var(--color-input-bg);
+		color: var(--color-text-primary);
 		font: inherit;
 	}
 	.edit-form input:focus,

@@ -625,7 +625,7 @@
 							</p>
 						</div>
 						<textarea
-							rows="6"
+							rows="30"
 							bind:value={rawContent}
 							placeholder="Paste transcript excerpts, statements, or notes to analyze…"
 						></textarea>
