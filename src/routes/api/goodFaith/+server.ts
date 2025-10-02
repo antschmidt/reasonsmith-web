@@ -1,7 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { print } from 'graphql';
-import { INCREMENT_ANALYSIS_USAGE, INCREMENT_PURCHASED_CREDITS_USED } from '$lib/graphql/queries';\nimport { checkAndResetMonthlyCredits, getMonthlyCreditsRemaining } from '$lib/creditUtils';
+import { INCREMENT_ANALYSIS_USAGE, INCREMENT_PURCHASED_CREDITS_USED } from '$lib/graphql/queries';
+import { checkAndResetMonthlyCredits, getMonthlyCreditsRemaining } from '$lib/creditUtils';
 
 // Import the same function from the Vercel function
 // We'll copy the logic here for local development
