@@ -155,12 +155,12 @@
 
 	.carousel-viewport::-webkit-scrollbar-track {
 		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
-		border-radius: 10px;
+		border-radius: var(--border-radius-md);
 	}
 
 	.carousel-viewport::-webkit-scrollbar-thumb {
 		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-		border-radius: 10px;
+		border-radius: var(--border-radius-md);
 		border: 2px solid transparent;
 		background-clip: content-box;
 	}
@@ -177,7 +177,7 @@
 		scroll-snap-align: start;
 		min-width: clamp(280px, 45vw, 350px);
 		position: relative;
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 		/* background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent); */
 		backdrop-filter: blur(20px) saturate(1.2);
@@ -203,7 +203,7 @@
 		right: 0;
 		height: 3px;
 		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-		border-radius: 24px 24px 0 0;
+		border-radius: var(--border-radius-xl) var(--border-radius-xl) 0 0;
 	}
 
 	.carousel-card:hover {
@@ -260,7 +260,7 @@
 		font-style: italic;
 		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
 		padding: 0.75rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		border-left: 3px solid color-mix(in srgb, var(--color-primary) 50%, transparent);
 		backdrop-filter: blur(5px);
 	}
@@ -331,7 +331,7 @@
 	.nav-button {
 		width: 3rem;
 		height: 3rem;
-		border-radius: 20px;
+		border-radius: var(--border-radius-xl);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		backdrop-filter: blur(20px);

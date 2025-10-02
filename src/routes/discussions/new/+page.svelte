@@ -1223,9 +1223,9 @@
 	}
 
 	.btn-add-citation-inline {
-		background: var(--color-primary);
-		color: white;
-		border: none;
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		color: var(--color-primary);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 		padding: 0.75rem 1.5rem;
 		border-radius: 6px;
 		font-size: 0.875rem;
@@ -1240,7 +1240,8 @@
 	}
 
 	.btn-add-citation-inline:hover {
-		background: color-mix(in srgb, var(--color-primary) 90%, black);
+		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
 	}
 
 	@media (max-width: 640px) {

@@ -534,7 +534,7 @@
 			<button
 				class="btn-primary sign-in-btn"
 				type="button"
-				on:click={() => {
+				onclick={() => {
 					showAuthOverlay = true;
 					toggleAuthModeView(true);
 				}}
@@ -549,7 +549,7 @@
 
 		{#if editing}
 			<div class="profile-card edit-form-container">
-				<form class="profile-form" on:submit|preventDefault={save}>
+				<form class="profile-form" onsubmit={(e) => { e.preventDefault(); save(); }}>
 					<fieldset disabled={loading || fetching}>
 						<div class="field">
 							<ProfilePhotoUpload
@@ -580,7 +580,7 @@
 								bind:value={handle}
 								placeholder="yourname"
 								maxlength="30"
-								on:input={() => (handle = (handle || '').toLowerCase())}
+								oninput={() => (handle = (handle || '').toLowerCase())}
 							/>
 							<small class="hint">Profile URL: {handle ? `/u/${handle}` : '/u/your-handle'}</small>
 						</label>
@@ -762,7 +762,7 @@
 							<button class="btn-primary" type="submit" disabled={loading}>
 								{#if loading}Saving…{:else}Save Profile{/if}
 							</button>
-							<button class="btn-secondary" type="button" on:click={cancelEdit} disabled={loading}
+							<button class="btn-secondary" type="button" onclick={cancelEdit} disabled={loading}
 								>Cancel</button
 							>
 						</div>
@@ -800,7 +800,7 @@
 								{/if}
 							</div>
 						</div>
-						<button class="btn-primary" type="button" on:click={enterEdit}>Edit Profile</button>
+						<button class="btn-primary" type="button" onclick={enterEdit}>Edit Profile</button>
 					</div>
 
 					{#if bio}
@@ -1049,7 +1049,7 @@
 			<button
 				class="close-auth-overlay"
 				type="button"
-				on:click={() => (showAuthOverlay = false)}
+				onclick={() => (showAuthOverlay = false)}
 				aria-label="Close authentication panel">&times;</button
 			>
 			<h2 id="auth-dialog-title">{isLoginView ? 'Login' : 'Sign Up'}</h2>
@@ -1060,15 +1060,15 @@
 						aria-label="Continue with Email/Password"
 						type="button"
 						class="oauth-button"
-						on:click={() => (activeAuthView = 'emailPassword')}>Continue with Email/Password</button
+						onclick={() => (activeAuthView = 'emailPassword')}>Continue with Email/Password</button
 					>
-					<button type="button" class="oauth-button" on:click={() => (activeAuthView = 'magicLink')}
+					<button type="button" class="oauth-button" onclick={() => (activeAuthView = 'magicLink')}
 						>{isLoginView ? 'Use Magic Link to Sign In' : 'Use Magic Link to Sign Up'}</button
 					>
 					<button
 						type="button"
 						class="oauth-button"
-						on:click={() => (activeAuthView = 'securityKey')}
+						onclick={() => (activeAuthView = 'securityKey')}
 						>{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key</button
 					>
 				</div>
@@ -1077,20 +1077,20 @@
 					<button
 						type="button"
 						class="oauth-button"
-						on:click={signInWithGoogle}
+						onclick={signInWithGoogle}
 						aria-label="Sign in with Google"><span>Sign in with Google</span></button
 					>
 					<button
 						type="button"
 						class="oauth-button"
-						on:click={signInWithGitHub}
+						onclick={signInWithGitHub}
 						aria-label="Sign in with GitHub"><span>Sign in with GitHub</span></button
 					>
 				</div>
 				<button
 					type="button"
 					class="toggle-auth-mode"
-					on:click={() => toggleAuthModeView(!isLoginView)}
+					onclick={() => toggleAuthModeView(!isLoginView)}
 					>{isLoginView
 						? "Don't have an account? Sign up"
 						: 'Already have an account? Log in'}</button
@@ -1098,18 +1098,18 @@
 			{:else if activeAuthView === 'emailPassword'}
 				<input type="email" placeholder="Email" bind:value={email} />
 				<input type="password" placeholder="Password" bind:value={password} />
-				<button type="button" class="auth-primary-action" on:click={isLoginView ? login : signup}
+				<button type="button" class="auth-primary-action" onclick={isLoginView ? login : signup}
 					>{isLoginView ? 'Login' : 'Sign Up'}</button
 				>
-				<button type="button" class="toggle-auth-mode" on:click={() => (activeAuthView = 'initial')}
+				<button type="button" class="toggle-auth-mode" onclick={() => (activeAuthView = 'initial')}
 					>Back to options</button
 				>
 			{:else if activeAuthView === 'magicLink'}
 				<input type="email" placeholder="Email" bind:value={email} />
-				<button type="button" class="oauth-button" on:click={sendMagicLink} disabled={magicLinkSent}
+				<button type="button" class="oauth-button" onclick={sendMagicLink} disabled={magicLinkSent}
 					>{magicLinkSent ? 'Magic Link Sent' : 'Send Magic Link'}</button
 				>
-				<button type="button" class="toggle-auth-mode" on:click={() => (activeAuthView = 'initial')}
+				<button type="button" class="toggle-auth-mode" onclick={() => (activeAuthView = 'initial')}
 					>Back to options</button
 				>
 			{:else if activeAuthView === 'securityKey'}
@@ -1117,10 +1117,10 @@
 				<button
 					type="button"
 					class="oauth-button"
-					on:click={isLoginView ? signInWithSecurityKey : signUpWithSecurityKey}
+					onclick={isLoginView ? signInWithSecurityKey : signUpWithSecurityKey}
 					>{isLoginView ? 'Sign In' : 'Sign Up'} with Security Key</button
 				>
-				<button type="button" class="toggle-auth-mode" on:click={() => (activeAuthView = 'initial')}
+				<button type="button" class="toggle-auth-mode" onclick={() => (activeAuthView = 'initial')}
 					>Back to options</button
 				>
 			{/if}
@@ -1165,20 +1165,6 @@
 	}
 
 	/* Layout */
-	.profile-container {
-		min-height: 100vh;
-		padding: clamp(1rem, 4vw, 2rem);
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 2rem;
-		position: relative;
-	}
-
-	.profile-container.editing {
-		max-width: 800px;
-		width: 100%;
-	}
 
 	.profile-view {
 		display: flex;
@@ -1809,10 +1795,6 @@
 	}
 
 	@media (max-width: 480px) {
-		.profile-container {
-			padding: 1rem;
-		}
-
 		.profile-card {
 			border-radius: 20px;
 		}

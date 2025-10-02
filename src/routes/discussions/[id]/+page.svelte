@@ -4845,33 +4845,28 @@
 	}
 
 	.score-label.hostile {
-		background: color-mix(in srgb, #ef4444 20%, transparent);
-		color: #ef4444;
-		border: 1px solid #ef444461;
+		background: color-mix(in srgb, #ef4444 8%, transparent);
+		color: #f87171;
 	}
 
 	.score-label.questionable {
-		background: color-mix(in srgb, #f59e0b 20%, transparent);
-		color: #f59e0b;
-		border: 1px solid #f59e0b;
+		background: color-mix(in srgb, #f59e0b 8%, transparent);
+		color: #fbbf24;
 	}
 
 	.score-label.neutral {
-		background: color-mix(in srgb, #6b7280 20%, transparent);
-		color: #6b7280;
-		border: 1px solid #6b7280;
+		background: color-mix(in srgb, #6b7280 8%, transparent);
+		color: #9ca3af;
 	}
 
 	.score-label.constructive {
-		background: color-mix(in srgb, #10b98167 20%, transparent);
-		color: #10b981;
-		border: 1px solid #10b981;
+		background: color-mix(in srgb, #10b981 8%, transparent);
+		color: #34d399;
 	}
 
 	.score-label.exemplary {
-		background: color-mix(in srgb, #05966863 20%, transparent);
-		color: #059669;
-		border: 1px solid #059669;
+		background: color-mix(in srgb, #059669 8%, transparent);
+		color: #34d399;
 	}
 
 	.good-faith-rationale {
@@ -5419,16 +5414,17 @@
 		cursor: pointer;
 	}
 	.btn-primary {
-		background-color: var(--color-primary);
-		color: var(--color-surface);
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		color: var(--color-primary);
 		padding: 0.6rem 1.2rem;
 		border-radius: var(--border-radius-md);
-		border: none;
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 		cursor: pointer;
 		font-weight: 600;
 	}
 	.btn-primary:hover {
-		opacity: 0.9;
+		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
 	}
 	.btn-primary:disabled {
 		opacity: 0.55;
@@ -6364,26 +6360,26 @@
 	/* Score label colors (reusing existing styles) */
 	.score-label.hostile,
 	.score-label-badge.hostile {
-		background-color: #fef2f2;
-		color: #dc2626;
+		background: color-mix(in srgb, #ef4444 8%, transparent);
+		color: #f87171;
 	}
 
 	.score-label.questionable,
 	.score-label-badge.questionable {
-		background-color: #fffbeb;
-		color: #d97706;
+		background: color-mix(in srgb, #f59e0b 8%, transparent);
+		color: #fbbf24;
 	}
 
 	.score-label.neutral,
 	.score-label-badge.neutral {
-		background-color: #f3f4f6;
-		color: #6b7280;
+		background: color-mix(in srgb, #6b7280 8%, transparent);
+		color: #9ca3af;
 	}
 
 	.score-label.constructive,
 	.score-label-badge.constructive {
-		background-color: #f0f9ff;
-		color: #0369a1;
+		background: color-mix(in srgb, #10b981 8%, transparent);
+		color: #34d399;
 	}
 
 	/* Nuclear approach - override ALL link colors in dark mode */
@@ -6769,9 +6765,9 @@
 	}
 
 	.modal-footer .btn-primary {
-		background: var(--color-primary);
-		color: white;
-		border: none;
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		color: var(--color-primary);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 		padding: 0.625rem 1.25rem;
 		border-radius: 8px;
 		font-size: 0.9rem;
@@ -6782,9 +6778,10 @@
 	}
 
 	.modal-footer .btn-primary:hover {
-		background: var(--color-primary-dark);
+		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
 		transform: translateY(-1px);
-		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 25%, transparent);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 12%, transparent);
 	}
 
 	@media (max-width: 640px) {

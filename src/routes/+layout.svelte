@@ -1,9 +1,10 @@
 <script>
 	import '../app.css';
 	import { nhost } from '$lib/nhostClient';
-	import { theme } from '$lib/themeStore';
+	import { theme, toggleTheme } from '$lib/themeStore';
 	import { dev } from '$app/environment';
 	import { injectAnalytics } from '@vercel/analytics/sveltekit';
+	import { page } from '$app/stores';
 
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = nhost.auth.getUser();
@@ -96,17 +97,36 @@
 			document.documentElement.setAttribute('data-theme', value || 'dark');
 		}
 	});
+
+	// Logout function
+	async function logout() {
+		await nhost.auth.signOut();
+		window.location.href = '/';
+	}
+
+	// Check if we're on the profile page
+	$: isProfilePage = $page.url.pathname === '/profile';
 </script>
 
 {#if user}
 	<nav class="top-nav" aria-label="Main navigation">
 		<a href="/" class="brand" aria-label="Go to Dashboard">
 			<span class="brand-icon">
-				<img src="/ReasonSmith-transparent.png" alt="ReasonSmith Home" />
+				<img src="/logo-only.png" alt="ReasonSmith Home" />
 			</span>
 			<span class="sr-only">Dashboard</span>
 		</a>
-		<div class="nav-spacer"></div>
+		<div class="nav-spacer">
+			{#if isProfilePage}
+				<div class="profile-nav-controls">
+					<button type="button" onclick={toggleTheme} aria-label="Toggle theme" class="theme-toggle">
+						{currentTheme === 'light' ? '🌙' : '☀️'}
+					</button>
+					<span class="user-email-nav">{user.email}</span>
+					<button type="button" onclick={logout} class="logout-button-nav">Logout</button>
+				</div>
+			{/if}
+		</div>
 		<div class="nav-actions" role="group" aria-label="Primary actions">
 			{#if hasAdminAccess}
 				<a href="/admin" class="nav-icon" aria-label="User management">
@@ -161,9 +181,10 @@
 		align-items: center;
 		gap: 1rem;
 		padding: 1rem 2rem;
-		background: var(--color-surface);
-		border-bottom: 2px solid var(--color-border);
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		background: #fafafa; /* Solid background for light mode */
+		border-bottom: 1px solid var(--color-border);
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+		backdrop-filter: blur(10px);
 	}
 
 	@media (max-width: 768px) {
@@ -172,9 +193,9 @@
 		}
 	}
 	:global([data-theme='dark']) .top-nav {
-		background: var(--color-surface);
+		background: #1a1a1a; /* Solid background for dark mode */
 		border-bottom-color: var(--color-border);
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 	}
 	.brand {
 		display: inline-flex;
@@ -191,7 +212,7 @@
 		padding: 0.25rem;
 		border-radius: var(--border-radius-sm);
 		background: var(--color-surface);
-		border: 1px solid var(--color-border);
+		border: 0px solid var(--color-border);
 		transition: all var(--transition-speed) ease;
 	}
 	:global([data-theme='dark']) .brand-icon {
@@ -221,6 +242,49 @@
 	}
 	.nav-spacer {
 		margin-left: auto;
+		display: flex;
+		align-items: center;
+		width:100%;
+	}
+	.profile-nav-controls {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		justify-content: space-evenly;
+		gap: 1rem;
+	}
+	.theme-toggle {
+		background: transparent;
+		font-size: 1.5rem;
+		cursor: pointer;
+		border: 0;
+		padding: 0.5rem;
+		color: var(--color-text-primary);
+		border-radius: var(--border-radius-sm);
+		transition: background var(--transition-speed) ease;
+	}
+	.theme-toggle:hover {
+		background: var(--color-surface);
+	}
+	.user-email-nav {
+		color: var(--color-text-secondary);
+		font-size: 0.9rem;
+		padding: 0 0.5rem;
+	}
+	.logout-button-nav {
+		padding: 0.5rem 1rem;
+		border: 1px solid var(--color-border);
+		background: transparent;
+		color: var(--color-text-secondary);
+		border-radius: var(--border-radius-sm);
+		cursor: pointer;
+		transition: all var(--transition-speed) ease;
+		font-size: 0.9rem;
+	}
+	.logout-button-nav:hover {
+		background: rgba(0, 0, 0, 0.05);
+		border-color: var(--color-primary);
+		color: var(--color-primary);
 	}
 	.nav-actions {
 		display: flex;
@@ -236,7 +300,7 @@
 		height: var(--_size);
 		border-radius: var(--border-radius-sm);
 		background: var(--color-surface);
-		border: 1px solid var(--color-border);
+		border: 0px solid var(--color-border);
 		text-decoration: none;
 		transition: all var(--transition-speed) ease;
 		color: var(--color-text-secondary);

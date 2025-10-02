@@ -49,7 +49,7 @@
 					<button
 						type="button"
 						class="auth-provider-button"
-						on:click={handleSignIn}
+						onclick={handleSignIn}
 						aria-label="Sign in with GitHub"
 					>
 						<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">

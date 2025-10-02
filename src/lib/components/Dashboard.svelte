@@ -1,29 +1,15 @@
 <script lang="ts">
 	import type { User } from '@nhost/nhost-js';
-	import { onMount } from 'svelte';
 	// Avoid importing gql to prevent type resolution issues; use plain strings
 	import { nhost } from '$lib/nhostClient';
-	import { GET_DASHBOARD_DATA, GET_USER_STATS } from '$lib/graphql/queries';
-	import { goto } from '$app/navigation';
-	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
+	import { GET_DASHBOARD_DATA } from '$lib/graphql/queries';
 
-	export let user: User;
-
-	// Real user statistics
-	let stats: UserStats = {
-		goodFaithRate: 0,
-		sourceAccuracy: 0,
-		reputationScore: 0,
-		totalPosts: 0,
-		totalDiscussions: 0,
-		participatedDiscussions: 0
-	};
-	let statsLoading = true;
+	let { user } = $props<{ user: User }>();
 
 
 	// Focus on active work only
 
-	let drafts: Array<{
+	let drafts = $state<Array<{
 		id: string;
 		draft_content?: string | null;
 		discussion_id?: string | null;
@@ -36,26 +22,20 @@
 		good_faith_label?: string | null;
 		good_faith_last_evaluated?: string | null;
 		good_faith_analysis?: any;
-	}> = [];
+	}>>([]);
 
-	let loading = true;
-	let error: string | null = null;
+	let loading = $state(true);
+	let error = $state<string | null>(null);
 
 	async function loadData() {
 		loading = true;
-		statsLoading = true;
 		error = null;
 
 		try {
-			// Load dashboard data and user stats in parallel
-			const [dashboardResult, statsResult] = await Promise.all([
-				nhost.graphql.request(GET_DASHBOARD_DATA, {
-					userId: user.id as unknown as string
-				}),
-				nhost.graphql.request(GET_USER_STATS, {
-					userId: user.id as unknown as string
-				})
-			]);
+			// Load dashboard data
+			const dashboardResult = await nhost.graphql.request(GET_DASHBOARD_DATA, {
+				userId: user.id as unknown as string
+			});
 
 			// Handle dashboard data
 			if (dashboardResult.error) {
@@ -105,26 +85,17 @@
 					return dateB - dateA; // Most recent first
 				});
 			}
-
-			// Handle user stats
-			if (statsResult.error) {
-				console.error('Failed to load user stats:', statsResult.error);
-				console.error('Full stats result:', statsResult);
-				// Keep default stats values
-			} else if (statsResult.data) {
-				stats = calculateUserStats(statsResult.data);
-			}
 		} catch (err) {
 			error = `Failed to load data: ${err}`;
 			console.error('Error loading dashboard data:', err);
 		}
 
 		loading = false;
-		statsLoading = false;
 	}
 
-
-	onMount(loadData);
+	$effect(() => {
+		loadData();
+	});
 
 	function getDraftHref(d: {
 		id: string;
@@ -197,65 +168,18 @@
 		}
 	}
 
-	// Prefer a human-friendly display over raw email-like strings
-	function displayName(name?: string | null): string {
-		if (!name) return '';
-		const n = String(name).trim();
-		const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n);
-		if (isEmail) return n.split('@')[0];
-		return n;
-	}
-
 </script>
 
 <div class="dashboard-container">
 	<!-- Main Content Grid -->
 	<div class="dashboard-grid">
 		<!-- Sidebar (Right Column) -->
-		<!-- Replace "Your Drafts" list with live data -->
 		<aside class="sidebar">
-			<!-- Stats Section -->
-			<section class="card stats-section">
-				<div class="stats-container">
-					<div class="stat-item">
-						<h3 class="stat-title">Good-Faith Rate</h3>
-						<p class="stat-value">
-							{#if statsLoading}
-								<span class="loading-text">...</span>
-							{:else}
-								{stats.goodFaithRate}%
-							{/if}
-						</p>
-					</div>
-					<div class="stat-item">
-						<h3 class="stat-title">Source Accuracy</h3>
-						<p class="stat-value">
-							{#if statsLoading}
-								<span class="loading-text">...</span>
-							{:else}
-								{stats.sourceAccuracy}%
-							{/if}
-						</p>
-					</div>
-					<div class="stat-item">
-						<h3 class="stat-title">Reputation Score</h3>
-						<p class="stat-value">
-							{#if statsLoading}
-								<span class="loading-text">...</span>
-							{:else}
-								{stats.reputationScore.toLocaleString()}
-							{/if}
-						</p>
-					</div>
-				</div>
-			</section>
-
 			<!-- Single Action: New Discussion -->
 			<section class="card quick-discussion">
-				<a href="/discussions/new" class="btn-primary full-width">
+				<a href="/discussions/new" class="btn btn-secondary btn-sm">
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
-						class="btn-icon"
 						viewBox="0 0 20 20"
 						fill="currentColor"
 						><path
@@ -268,124 +192,94 @@
 				</a>
 			</section>
 
-			<!-- Your Drafts -->
-			<section class="card">
-				<h2 class="section-title">Drafts</h2>
-				{#if loading}
-					<p>Loading…</p>
-				{:else if drafts.length === 0}
-					<p>No drafts yet.</p>
-				{:else}
-					<ul class="list">
-						{#each drafts as draft}
-							<li class="list-item">
-								<div class="draft-row">
-									<div>
-										<a href={getDraftHref(draft)} class="draft-button">
-											{extractSnippet(draft.draft_content || '')}
-										</a>
-										<div
-											class="draft-meta"
-											style="font-size:0.8em; color:var(--color-text-secondary); margin-top:2px; display:flex; flex-wrap:wrap; align-items:center;"
-										>
-											{#if draft.type === 'discussion'}
-												<span>Discussion description draft</span>
-												{#if draft.discussion_title}
-													&nbsp;for <span class="discussion-title">{draft.discussion_title}</span>
-												{/if}
-											{:else if draft.discussion_id}
-												<span>Reply draft</span>
-												{#if draft.discussion_title}
-													&nbsp;to&nbsp;<span class="discussion-title"
-														>{draft.discussion_title}</span
-													>
-												{/if}
-											{:else}
-												<span>Discussion draft</span>
-											{/if}
-											{#if draft.status === 'pending'}
-												<span class="pending-badge" title="Awaiting moderation / processing"
-													>Pending…</span
-												>
-											{/if}
-										</div>
-
-										<!-- Good Faith Analysis Display -->
-										{#if draft.good_faith_score !== null && draft.good_faith_score !== undefined}
-											<div class="draft-analysis" style="margin-top:4px;">
-												<div
-													class="good-faith-pill {draft.good_faith_label || 'neutral'}"
-													title="Good faith score: {(draft.good_faith_score * 100).toFixed(0)}%"
-												>
-													<span class="gf-score">{(draft.good_faith_score * 100).toFixed(0)}%</span>
-													<span class="gf-label">{draft.good_faith_label || 'unrated'}</span>
-												</div>
-												{#if draft.good_faith_last_evaluated}
-													<span
-														class="analysis-date"
-														style="font-size:0.7em; color:var(--color-text-secondary); margin-left:6px;"
-													>
-														Analyzed {new Date(
-															draft.good_faith_last_evaluated
-														).toLocaleDateString()}
-													</span>
-												{/if}
-											</div>
-										{/if}
-									</div>
-									<button
-										type="button"
-										class="draft-delete"
-										aria-label="Delete draft"
-										title="Delete draft"
-										on:click={() => deleteDraft(draft)}
-									>
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											width="12"
-											height="12"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="2"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-										>
-											<polyline points="3,6 5,6 21,6"></polyline>
-											<path d="m5,6 1,14 c0,1 1,2 2,2 h8 c1,0 2,-1 2,-2 l1,-14"></path>
-											<path d="m10,11 v6"></path>
-											<path d="m14,11 v6"></path>
-											<path d="M7,6V4c0-1,1-2,2-2h6c0,1,1,2h-2V6"></path>
-										</svg>
-									</button>
-								</div>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-				<!-- Removed inline editor; navigation now handles drafting -->
-			</section>
-
 			<!-- Pinned Threads, Leaderboard, Notifications remain placeholders for now -->
 			<!-- ...existing code... -->
 		</aside>
-		<!-- Your Discussions (Left Column) -->
+		<!-- Main Content (Left Column) -->
 		<main class="main-content">
 			{#if loading}
 				<p>Loading…</p>
 			{:else if error}
 				<p style="color: var(--color-accent)">{error}</p>
+			{:else if drafts.length === 0}
+				<div class="card" style="margin-bottom: 1rem;">
+					<p>No active drafts. <a href="/discussions/new">Start a new discussion</a> or join an existing conversation.</p>
+				</div>
 			{:else}
-				{#if drafts.length === 0}
-					<div class="card" style="margin-bottom: 1rem;">
-						<p>No active drafts. <a href="/discussions/new">Start a new discussion</a> or join an existing conversation.</p>
-					</div>
-				{:else}
-					<div class="drafts-focus">
-						<h3 class="subsection-title">Continue Working</h3>
-						<p class="section-description">Pick up where you left off on your drafts and active discussions.</p>
-					</div>
-				{/if}
+				<div class="drafts-focus">
+					<h3 class="subsection-title">Continue Working</h3>
+					<p class="section-description">Pick up where you left off on your drafts and active discussions.</p>
+				</div>
+
+				<!-- Drafts List -->
+				<div class="drafts-list">
+					{#each drafts as draft}
+						<article class="draft-item">
+							<div class="draft-content">
+								<a href={getDraftHref(draft)} class="draft-title">
+									{extractSnippet(draft.draft_content || '')}
+								</a>
+
+								<div class="draft-meta">
+									{#if draft.type === 'discussion'}
+										<span>Discussion draft</span>
+										{#if draft.discussion_title}
+											<span class="meta-separator">·</span>
+											<span class="discussion-ref">{draft.discussion_title}</span>
+										{/if}
+									{:else if draft.discussion_id}
+										<span>Reply to</span>
+										{#if draft.discussion_title}
+											<span class="meta-separator">·</span>
+											<span class="discussion-ref">{draft.discussion_title}</span>
+										{/if}
+									{:else}
+										<span>New discussion</span>
+									{/if}
+									{#if draft.status === 'pending'}
+										<span class="meta-separator">·</span>
+										<span class="status-pending">Pending review</span>
+									{/if}
+								</div>
+
+								<!-- Good Faith Score (if available) -->
+								{#if draft.good_faith_score !== null && draft.good_faith_score !== undefined}
+									<div class="draft-score">
+										<span class="score-pill {draft.good_faith_label || 'neutral'}">
+											{(draft.good_faith_score * 100).toFixed(0)}% {draft.good_faith_label || 'unrated'}
+										</span>
+									</div>
+								{/if}
+							</div>
+
+							<button
+								type="button"
+								class="draft-delete-icon"
+								aria-label="Delete draft"
+								title="Delete draft"
+								onclick={() => deleteDraft(draft)}
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="18"
+									height="18"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<polyline points="3,6 5,6 21,6"></polyline>
+									<path d="m5,6 1,14 c0,1 1,2 2,2 h8 c1,0 2,-1 2,-2 l1,-14"></path>
+									<path d="m10,11 v6"></path>
+									<path d="m14,11 v6"></path>
+									<path d="M7,6V4c0-1,1-2,2-2h6c0,1,1,2h-2V6"></path>
+								</svg>
+							</button>
+						</article>
+					{/each}
+				</div>
 			{/if}
 		</main>
 	</div>
@@ -419,47 +313,6 @@
 		.dashboard-container {
 			padding: 3rem 2rem;
 		}
-	}
-
-	/* Editorial Stats Section */
-	.stats-container {
-		display: flex;
-		flex-direction: row;
-		justify-content: space-between;
-		gap: 1rem;
-	}
-
-	.stat-item {
-		padding: 1.5rem;
-		border-radius: var(--border-radius-sm);
-		/* background: var(--color-surface); */
-		border: 1px solid var(--color-border);
-		text-align: center;
-		flex: 1;
-		min-width: 0;
-		transition: all var(--transition-speed) ease;
-	}
-
-	.stat-item:hover {
-		border-color: var(--color-primary);
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-	}
-	.stat-title {
-		font-size: 0.8rem;
-		font-weight: 600;
-		color: var(--color-text-secondary);
-		margin: 0 0 0.75rem 0;
-		line-height: 1.3;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-	.stat-value {
-		font-size: clamp(1.25rem, 3vw, 1.75rem);
-		font-weight: 900;
-		color: var(--color-text-primary);
-		margin: 0;
-		line-height: 1.1;
-		font-family: var(--font-family-display);
 	}
 
 	/* Grid */
@@ -496,9 +349,9 @@
 	.card {
 		/* background: var(--color-surface); */
 		border: 1px solid var(--color-border);
-		border-radius: var(--border-radius-sm);
-		padding: 2rem;
-		margin-bottom: 2rem;
+		border-radius: var(--border-radius-lg);
+		padding: var(--space-lg);
+		margin-bottom: var(--space-lg);
 		transition: all var(--transition-speed) ease;
 	}
 
@@ -524,8 +377,8 @@
 	.discussion-card {
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		backdrop-filter: blur(15px) saturate(1.1);
-		padding: 2rem;
-		border-radius: 20px;
+		padding: var(--space-lg);
+		border-radius: var(--border-radius-xl);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 		box-shadow: 0 6px 20px color-mix(in srgb, var(--color-primary) 6%, transparent);
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -542,7 +395,7 @@
 		right: 0;
 		height: 3px;
 		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-		border-radius: 20px 20px 0 0;
+		border-radius: var(--border-radius-xl) var(--border-radius-xl) 0 0;
 	}
 
 	.discussion-card:hover {
@@ -582,13 +435,6 @@
 		text-transform: uppercase;
 		letter-spacing: 0.025em;
 	}
-	.discussion-meta .dot-separator {
-		color: var(--color-text-secondary);
-	}
-	.discussion-meta .anonymous-author {
-		font-weight: 600;
-		color: var(--color-text-primary);
-	}
 	/* .load-more removed: no longer used */
 
 	/* Sidebar Lists */
@@ -605,8 +451,8 @@
 		background: color-mix(in srgb, var(--color-surface) 50%, transparent);
 		backdrop-filter: blur(10px);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 16px;
-		padding: 1.5rem;
+		border-radius: var(--border-radius-lg);
+		padding: var(--space-md);
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 5%, transparent);
 	}
@@ -621,49 +467,18 @@
 		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
 	}
 
-	/* Editorial Buttons */
-	.btn-primary {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-weight: 600;
-		padding: 1rem 2rem;
-		border-radius: var(--border-radius-sm);
-		transition: all var(--transition-speed) ease;
-		cursor: pointer;
-		text-decoration: none;
-		background: var(--color-primary);
-		color: var(--color-surface);
-		border: none;
-		font-family: var(--font-family-ui);
-		font-size: 0.95rem;
-		letter-spacing: 0.025em;
-	}
-
-	.btn-primary:hover {
-		background: var(--color-accent);
-		transform: translateY(-1px);
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-	}
-
-	.btn-primary:focus {
-		outline: none;
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
-	}
-	.btn-icon {
-		width: 1.25rem;
-		height: 1.25rem;
-		margin-right: 0.75rem;
-		filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+	/* Use global button styles from app.css */
+	.full-width {
+		width: 100%;
 	}
 
 	/* Footer */
 	.dashboard-footer {
-		margin-top: 4rem;
-		padding: 2rem;
+		margin-top: var(--space-2xl);
+		padding: var(--space-lg);
 		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
 		backdrop-filter: blur(20px);
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
 		box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 8%, transparent);
 	}
@@ -676,9 +491,9 @@
 	.footer-links a {
 		color: var(--color-primary);
 		text-decoration: none;
-		padding: 1rem 1.5rem;
+		padding: var(--space-sm) var(--space-md);
 		background: color-mix(in srgb, var(--color-surface) 40%, transparent);
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 		font-weight: 500;
@@ -693,143 +508,133 @@
 		box-shadow: 0 6px 20px color-mix(in srgb, var(--color-primary) 12%, transparent);
 	}
 
-	/* Draft Delete Button */
-	.draft-row {
+	/* Editorial-Style Drafts List (Foreign Affairs inspired) */
+	.drafts-list {
 		display: flex;
-		align-items: center;
+		flex-direction: column;
+		gap: 0;
+	}
+
+	.draft-item {
+		display: flex;
+		align-items: flex-start;
 		justify-content: space-between;
-		gap: 0.5rem;
+		gap: var(--space-md);
+		padding: var(--space-lg) 0;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		transition: background-color 0.2s ease;
 	}
-	.draft-meta {
-		padding: 0.5rem 0 0.5rem 0;
+
+	.draft-item:hover {
+		background-color: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
 	}
-	.draft-button {
-		border: none;
-		border-radius: 12px;
-		color: var(--color-primary);
-		cursor: pointer;
-		font: inherit;
-		text-align: left;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 8%, transparent);
-		text-decoration: none;
+
+	.draft-content {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.draft-title {
 		display: block;
-		width: 100%;
-		padding: 1rem;
-		background: color-mix(in srgb, var(--color-surface) 40%, transparent);
-		backdrop-filter: blur(5px);
-		border: 1px solid color-mix(in srgb, var(--color-border) 25%, transparent);
-		font-weight: 600;
-	}
-	.draft-button:hover,
-	.draft-button:focus {
-		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-		text-decoration: none;
-		outline: none;
-		transform: translateY(-2px);
-		box-shadow: 0 6px 20px color-mix(in srgb, var(--color-primary) 15%, transparent);
-		border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
-		color: var(--color-accent);
-	}
-	.draft-delete {
-		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
-		backdrop-filter: blur(5px);
-		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		color: var(--color-text-secondary);
-		cursor: pointer;
-		padding: 0.5rem;
-		border-radius: 10px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 5%, transparent);
-	}
-	.draft-delete:hover,
-	.draft-delete:focus {
-		color: #ef4444;
-		outline: none;
-		background: color-mix(in srgb, #ef4444 10%, transparent);
-		border-color: color-mix(in srgb, #ef4444 30%, transparent);
-		transform: translateY(-1px);
-		box-shadow: 0 4px 12px color-mix(in srgb, #ef4444 15%, transparent);
-	}
-	.draft-delete svg {
-		width: 24px;
-		height: 24px;
-	}
-	.pending-badge {
-		background: color-mix(in srgb, var(--color-accent) 18%, transparent);
-		color: var(--color-accent);
-		padding: 2px 6px;
-		border-radius: 999px;
-		font-size: 0.6rem;
-		font-weight: 600;
-		letter-spacing: 0.5px;
-		border: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
-	}
-
-	/* Good Faith Analysis Display */
-	.draft-analysis {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: 4px;
-	}
-
-	.good-faith-pill {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		padding: 2px 8px;
-		border-radius: 12px;
-		font-size: 0.7rem;
-		font-weight: 600;
-		border: 1px solid;
-		white-space: nowrap;
-	}
-
-	.good-faith-pill.hostile {
-		background: color-mix(in srgb, #dc2626 15%, transparent);
-		color: #dc2626;
-		border-color: color-mix(in srgb, #dc2626 30%, transparent);
-	}
-
-	.good-faith-pill.questionable {
-		background: color-mix(in srgb, #ea580c 15%, transparent);
-		color: #ea580c;
-		border-color: color-mix(in srgb, #ea580c 30%, transparent);
-	}
-
-	.good-faith-pill.neutral {
-		background: color-mix(in srgb, #6b7280 15%, transparent);
-		color: #6b7280;
-		border-color: color-mix(in srgb, #6b7280 30%, transparent);
-	}
-
-	.good-faith-pill.constructive {
-		background: color-mix(in srgb, #059669 15%, transparent);
-		color: #059669;
-		border-color: color-mix(in srgb, #059669 30%, transparent);
-	}
-
-	.good-faith-pill.exemplary {
-		background: color-mix(in srgb, #0284c7 15%, transparent);
-		color: #0284c7;
-		border-color: color-mix(in srgb, #0284c7 30%, transparent);
-	}
-
-	.gf-score {
+		font-family: var(--font-family-display);
+		font-size: 1.375rem;
 		font-weight: 700;
+		line-height: var(--line-height-tight);
+		color: var(--color-text-primary);
+		text-decoration: none;
+		margin-bottom: 0.5rem;
+		transition: color 0.2s ease;
 	}
 
-	.gf-label {
+	.draft-title:hover {
+		color: var(--color-primary);
+	}
+
+	.draft-meta {
+		font-family: var(--font-family-ui);
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+		line-height: 1.5;
+		margin-bottom: 0.5rem;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.meta-separator {
+		margin: 0 0.25rem;
+		opacity: 0.5;
+	}
+
+	.discussion-ref {
+		font-style: italic;
+		color: var(--color-text-primary);
+	}
+
+	.status-pending {
+		color: var(--color-accent);
 		font-weight: 500;
+	}
+
+	.draft-score {
+		margin-top: 0.5rem;
+	}
+
+	.score-pill {
+		display: inline-block;
+		font-size: 0.75rem;
+		font-weight: 600;
+		padding: 0.25rem 0.75rem;
+		border-radius: var(--border-radius-full);
 		text-transform: capitalize;
 	}
 
-	.analysis-date {
-		opacity: 0.8;
+	.score-pill.hostile {
+		background: color-mix(in srgb, #ef4444 8%, transparent);
+		color: #f87171;
+	}
+
+	.score-pill.questionable {
+		background: color-mix(in srgb, #f59e0b 8%, transparent);
+		color: #fbbf24;
+	}
+
+	.score-pill.neutral {
+		background: color-mix(in srgb, #6b7280 8%, transparent);
+		color: #9ca3af;
+	}
+
+	.score-pill.constructive {
+		background: color-mix(in srgb, #10b981 8%, transparent);
+		color: #34d399;
+	}
+
+	.score-pill.exemplary {
+		background: color-mix(in srgb, #059669 8%, transparent);
+		color: #34d399;
+	}
+
+	.draft-delete-icon {
+		flex-shrink: 0;
+		background: transparent;
+		border: none;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		padding: 0.5rem;
+		border-radius: var(--border-radius-sm);
+		transition: all 0.2s ease;
+		opacity: 0.5;
+	}
+
+	.draft-delete-icon:hover {
+		color: #ef4444;
+		background: color-mix(in srgb, #ef4444 10%, transparent);
+		opacity: 1;
+	}
+
+	.draft-item:hover .draft-delete-icon {
+		opacity: 1;
 	}
 
 	/* Subsection Titles */
@@ -864,15 +669,6 @@
 			padding: 1.5rem;
 			border-radius: 20px;
 			margin-bottom: 1.5rem;
-		}
-
-		.stats-container {
-			flex-direction: column;
-			gap: 1rem;
-		}
-
-		.stat-item {
-			padding: 1.25rem;
 		}
 
 		.discussion-card {
@@ -920,22 +716,5 @@
 			align-items: flex-start;
 			gap: 0.25rem;
 		}
-	}
-
-	/* Loading text for stats */
-	.loading-text {
-		color: var(--color-text-secondary);
-		font-weight: 400;
-	}
-
-	/* Nuclear approach - override ALL link colors in dark mode */
-	:global([data-theme='dark'] a),
-	:global([data-theme='dark'] a:link),
-	:global([data-theme='dark'] a:visited),
-	:global([data-theme='dark'] a:hover),
-	:global([data-theme='dark'] a:active),
-	:global([data-theme='dark'] a:focus),
-	:global([data-theme='dark'] a:focus-visible) {
-		color: #a9c8ff;
 	}
 </style>
