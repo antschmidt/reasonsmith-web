@@ -55,7 +55,7 @@ fqdn = ['auth.reasonsmith.com']
 mode = 'disabled'
 
 [auth.redirections]
-clientUrl = 'http://slarti.tonyschmidt.io:5173'
+clientUrl = 'https://reasonsmith.com'
 allowedUrls = ['https://*.vercel.app', 'http://slarti.tonyschmidt.io:5173', 'http://localhost:5173', 'http://localhost:3000']
 
 [auth.signUp]
@@ -65,7 +65,7 @@ disableNewUsers = false
 [auth.user]
 [auth.user.roles]
 default = 'user'
-allowed = ['user', 'me', 'anonymous']
+allowed = ['user', 'me']
 
 [auth.user.locale]
 default = 'en'
@@ -126,7 +126,8 @@ enabled = false
 [auth.method.oauth.github]
 enabled = true
 clientId = 'Ov23lihjwwgE7Iu3gE0F'
-clientSecret = '{{ secrets.GITHUB_OAUTH_CLIENT_SECRET }}'
+clientSecret = 'd8219dfd476beb0c3d6ebe5f027c55a1bca528a4'
+
 [auth.method.oauth.gitlab]
 enabled = false
 
@@ -195,6 +196,10 @@ version = '14.17-20250530-1'
 capacity = 1
 
 [provider]
+[provider.sms]
+accountSid = '{{ secrets.TWILIO_ACCOUNT_SID }}'
+authToken = '{{ secrets.TWILIO_AUTH_TOKEN }}'
+messagingServiceId = 'smsauth'
 
 [storage]
 version = '0.7.2'
