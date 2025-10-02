@@ -287,6 +287,13 @@
 		font-size: 0.9rem;
 		padding: 0 0.5rem;
 	}
+
+	@media (max-width: 768px) {
+		.user-email-nav {
+			display: none;
+		}
+	}
+
 	.logout-button-nav {
 		padding: 0.5rem 1rem;
 		border: 1px solid var(--color-border);

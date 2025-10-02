@@ -173,7 +173,7 @@
 		<textarea
 			id="pointSupported"
 			bind:value={pointSupported}
-			rows="2"
+			rows="5"
 			placeholder="Describe the specific claim or point this source supports"
 			class:error={errors.pointSupported}
 		></textarea>
@@ -185,7 +185,7 @@
 		<textarea
 			id="relevantQuote"
 			bind:value={relevantQuote}
-			rows="3"
+			rows="5"
 			placeholder="Copy the exact text from the source that supports your point"
 			class:error={errors.relevantQuote}
 		></textarea>

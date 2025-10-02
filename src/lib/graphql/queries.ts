@@ -152,7 +152,7 @@ export const GET_DASHBOARD_DATA = gql`
 // This is now replaced by GET_DISCUSSION_WITH_CURRENT_VERSION but kept for backward compatibility
 export const GET_DISCUSSION_DETAILS = gql`
 	query GetDiscussionDetails($discussionId: uuid!) {
-		discussion(where: { id: { _eq: $discussionId } }) {
+		discussion_by_pk(id: $discussionId) {
 			id
 			created_at
 			is_anonymous
