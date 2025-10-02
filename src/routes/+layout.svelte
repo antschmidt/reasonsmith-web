@@ -211,12 +211,12 @@
 		height: 44px;
 		padding: 0.25rem;
 		border-radius: var(--border-radius-sm);
-		background: var(--color-surface);
+		background: transparent;
 		border: 0px solid var(--color-border);
 		transition: all var(--transition-speed) ease;
 	}
 	:global([data-theme='dark']) .brand-icon {
-		background: var(--color-surface);
+		background: transparent;
 		border-color: var(--color-border);
 	}
 
@@ -299,7 +299,7 @@
 		width: var(--_size);
 		height: var(--_size);
 		border-radius: var(--border-radius-sm);
-		background: var(--color-surface);
+		background: transparent;
 		border: 0px solid var(--color-border);
 		text-decoration: none;
 		transition: all var(--transition-speed) ease;

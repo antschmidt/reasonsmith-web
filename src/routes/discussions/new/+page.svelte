@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fade, scale } from 'svelte/transition';
 	import { page } from '$app/stores';
 	import { nhost } from '$lib/nhostClient';
 	import { goto } from '$app/navigation';
@@ -66,6 +67,16 @@
 	let discussionTags = $state<string[]>([]);
 	let newTag = $state('');
 	let showTagSuggestions = $state(false);
+	let showTagModal = $state(false);
+
+	// Label visibility state
+	let titleFocused = $state(false);
+	let tagsFocused = $state(false);
+	let contentFocused = $state(false);
+
+	const showTitleLabel = $derived(titleFocused || title.length > 0);
+	const showTagsLabel = $derived(tagsFocused || discussionTags.length > 0 || newTag.length > 0);
+	const showContentLabel = $derived(contentFocused || content.length > 0);
 
 	// Automatically infer writing style based on content length
 	function getInferredStyle(): WritingStyle {
@@ -562,7 +573,6 @@
 <div class="editorial-page">
 	<div class="container">
 		<div class="editorial-card main-card">
-			<h1 class="page-title">Create a New Discussion</h1>
 			<form
 				onsubmit={(e) => {
 					e.preventDefault();
@@ -570,72 +580,33 @@
 				}}
 			>
 				<div class="form-group">
-					<label for="title">Title</label>
+					{#if showTitleLabel}
+						<label for="title" class="floating-label" transition:fade={{ duration: 200 }}>Title</label>
+					{/if}
 					<input
 						id="title"
 						type="text"
 						bind:value={title}
 						placeholder="Enter a clear and concise title"
 						oninput={onTitleInput}
+						onfocus={() => (titleFocused = true)}
+						onblur={() => (titleFocused = false)}
 						required
 					/>
 				</div>
 
-				<!-- Tags Section -->
 				<div class="form-group">
-					<label for="tags">Topic Tags</label>
-					<div class="tags-input-container">
-						<div class="current-tags">
-							{#each discussionTags as tag}
-								<span class="tag">
-									{tag}
-									<button
-										type="button"
-										class="remove-tag"
-										onclick={() => removeTag(tag)}
-										aria-label="Remove tag"
-									>
-										×
-									</button>
-								</span>
-							{/each}
-						</div>
-						<div class="tag-input-wrapper">
-							<input
-								id="tags"
-								type="text"
-								bind:value={newTag}
-								placeholder="Add tags to help others discover your discussion"
-								onkeydown={handleTagInput}
-								onfocus={() => (showTagSuggestions = true)}
-								onblur={() => setTimeout(() => (showTagSuggestions = false), 150)}
-							/>
-							<button type="button" class="add-tag-btn" onclick={addNewTag}>Add</button>
-						</div>
-						{#if showTagSuggestions}
-							<div class="tag-suggestions">
-								{#each COMMON_DISCUSSION_TAGS.filter((tag) => !discussionTags.includes(tag) && tag.includes(newTag.toLowerCase())) as suggestion}
-									<button type="button" class="tag-suggestion" onclick={() => addTag(suggestion)}>
-										{suggestion}
-									</button>
-								{/each}
-							</div>
-						{/if}
-					</div>
-					<div class="form-hint">
-						Add up to 10 topic tags to help others discover your discussion. Press Enter or click
-						Add to add a tag.
-					</div>
-				</div>
-
-				<div class="form-group">
-					<label for="description">Description</label>
+					{#if showContentLabel}
+						<label for="description" class="floating-label" transition:fade={{ duration: 200 }}>Content</label>
+					{/if}
 					<textarea
 						id="description"
 						bind:value={content}
 						rows="8"
 						placeholder="Share your thoughts... (Style will be automatically determined by length)"
 						oninput={onContentInput}
+						onfocus={() => (contentFocused = true)}
+						onblur={() => (contentFocused = false)}
 					></textarea>
 					<div class="word-count">
 						<span class="word-count-label">Words: {wordCount}</span>
@@ -645,36 +616,51 @@
 					<!-- Word Count and Style Info -->
 					<div class="form-group">
 						<div class="writing-info">
-							<div class="citation-reminder" class:active={showCitationReminder}>
-								<div class="reminder-icon">📚</div>
-								<div class="reminder-text">
-									<strong>{showCitationReminder ? 'Add citations' : 'Cite your sources'}</strong>
-									<span
-										>{showCitationReminder
-											? 'Support your claims with references for better credibility.'
-											: 'Adding sources now makes it easier to reference them later.'}</span
+							<div class="citation-transition-container">
+								{#if !showCitationForm}
+									<div
+										class="citation-reminder"
+										class:active={showCitationReminder}
+										transition:scale={{ duration: 300, start: 0.95 }}
 									>
-								</div>
-								<button
-									type="button"
-									class="btn-add-citation-inline"
-									onclick={() => showAddCitationForm()}
-								>
-									Add Citation
-								</button>
+										<div class="reminder-icon">📚</div>
+										<div class="reminder-text">
+											<strong>{showCitationReminder ? 'Add citations' : 'Cite your sources'}</strong>
+											<span
+												>{showCitationReminder
+													? 'Support your claims with references for better credibility.'
+													: 'Adding sources now makes it easier to reference them later.'}</span
+											>
+										</div>
+										<button
+											type="button"
+											class="btn-add-citation-inline"
+											onclick={() => showAddCitationForm()}
+										>
+											Add Citation
+										</button>
+									</div>
+								{/if}
+
+								<!-- Citation Form -->
+								{#if showCitationForm}
+									<div class="citation-form-wrapper" transition:scale={{ duration: 300, start: 0.95 }}>
+										<CitationForm onAdd={addCitation} onCancel={() => (showCitationForm = false)} />
+									</div>
+								{/if}
 							</div>
 						</div>
 					</div>
 
 					<!-- Citations Management -->
-					<div class="form-group">
-						<div class="citations-section">
-							<div class="citations-header">
-								<h3>Citations</h3>
-							</div>
+					{#if hasCitations}
+						<div class="form-group">
+							<div class="citations-section">
+								<div class="citations-header">
+									<h3>Citations</h3>
+								</div>
 
-							<!-- Display existing citations -->
-							{#if styleMetadata.citations && styleMetadata.citations.length > 0}
+								<!-- Display existing citations -->
 								<div class="citations-list">
 									{#each styleMetadata.citations as citation}
 										<div class="citation-item">
@@ -706,12 +692,33 @@
 										</div>
 									{/each}
 								</div>
-							{/if}
+							</div>
+						</div>
+					{/if}
 
-							<!-- Citation Form -->
-							{#if showCitationForm}
-								<CitationForm onAdd={addCitation} onCancel={() => (showCitationForm = false)} />
+					<!-- Tags Section -->
+					<div class="form-group">
+						<div class="tags-display">
+							{#if discussionTags.length > 0}
+								<div class="current-tags">
+									{#each discussionTags as tag}
+										<span class="tag">
+											{tag}
+											<button
+												type="button"
+												class="remove-tag"
+												onclick={() => removeTag(tag)}
+												aria-label="Remove tag"
+											>
+												×
+											</button>
+										</span>
+									{/each}
+								</div>
 							{/if}
+							<button type="button" class="btn-add-tags" onclick={() => (showTagModal = true)}>
+								{discussionTags.length > 0 ? 'Edit Tags' : 'Add Tags'}
+							</button>
 						</div>
 					</div>
 
@@ -808,6 +815,69 @@
 		</div>
 	</div>
 </div>
+
+<!-- Tag Modal -->
+{#if showTagModal}
+	<div class="modal-overlay" onclick={() => (showTagModal = false)} transition:fade={{ duration: 200 }}>
+		<div class="modal-content" onclick={(e) => e.stopPropagation()} transition:fade={{ duration: 200 }}>
+			<div class="modal-header">
+				<h2>Topic Tags</h2>
+				<button type="button" class="modal-close" onclick={() => (showTagModal = false)}>×</button>
+			</div>
+			<div class="modal-body">
+				<div class="current-tags">
+					{#each discussionTags as tag}
+						<span class="tag">
+							{tag}
+							<button
+								type="button"
+								class="remove-tag"
+								onclick={() => removeTag(tag)}
+								aria-label="Remove tag"
+							>
+								×
+							</button>
+						</span>
+					{/each}
+				</div>
+				<div class="tag-input-wrapper">
+					<input
+						id="tags-modal"
+						type="text"
+						bind:value={newTag}
+						placeholder="Add tags to help others discover your discussion"
+						onkeydown={handleTagInput}
+						onfocus={() => {
+							showTagSuggestions = true;
+							tagsFocused = true;
+						}}
+						onblur={() => {
+							setTimeout(() => (showTagSuggestions = false), 150);
+							tagsFocused = false;
+						}}
+					/>
+					<button type="button" class="add-tag-btn" onclick={addNewTag}>Add</button>
+				</div>
+				{#if showTagSuggestions}
+					<div class="tag-suggestions">
+						{#each COMMON_DISCUSSION_TAGS.filter((tag) => !discussionTags.includes(tag) && tag.includes(newTag.toLowerCase())) as suggestion}
+							<button type="button" class="tag-suggestion" onclick={() => addTag(suggestion)}>
+								{suggestion}
+							</button>
+						{/each}
+					</div>
+				{/if}
+				<div class="form-hint">
+					Add up to 10 topic tags to help others discover your discussion. Press Enter or click
+					Add to add a tag.
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn-primary" onclick={() => (showTagModal = false)}>Done</button>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	/* Immersive background */
@@ -918,7 +988,7 @@
 	/* Layout */
 	.container {
 		min-height: 100vh;
-		padding: clamp(1rem, 4vw, 2rem);
+		/* padding: clamp(1rem, 4vw, 2rem); */
 		display: flex;
 		justify-content: center;
 		align-items: flex-start;
@@ -952,12 +1022,27 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+		position: relative;
 	}
 
 	label {
 		font-weight: 600;
 		color: var(--color-text-primary);
 		font-size: 1rem;
+	}
+
+	.floating-label {
+		position: absolute;
+		top: -2px;
+		right: 50%;
+		transform: translateX(50%) translateY(-19px);
+		margin: 0;
+		padding: 0 0.5rem;
+		background: transparent;
+		border-radius: 4px;
+		font-size: 0.875rem;
+		pointer-events: none;
+		z-index: 1;
 	}
 
 	input[type='text'],
@@ -1057,7 +1142,30 @@
 		font-weight: 500;
 	}
 
+	.citation-transition-container {
+		position: relative;
+		min-height: 150px;
+	}
+
+	.citation-transition-container:has(.citation-form-wrapper) {
+		min-height: 800px;
+	}
+
+	@media (max-width: 768px) {
+		.citation-transition-container {
+			min-height: 200px;
+		}
+
+		.citation-transition-container:has(.citation-form-wrapper) {
+			min-height: 1000px;
+		}
+	}
+
 	.citation-reminder {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
@@ -1227,7 +1335,7 @@
 		color: var(--color-primary);
 		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 		padding: 0.75rem 1.5rem;
-		border-radius: 6px;
+		border-radius: 8px;
 		font-size: 0.875rem;
 		font-weight: 500;
 		cursor: pointer;
@@ -1314,6 +1422,15 @@
 		border-radius: 8px;
 		padding: 1.5rem;
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+		position: relative;
+	}
+
+	.citation-form-wrapper {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 1;
 	}
 
 	.citations-header {
@@ -1489,23 +1606,19 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;
-		background: linear-gradient(
-			135deg,
-			var(--color-primary),
-			color-mix(in srgb, var(--color-primary) 90%, var(--color-accent))
-		);
-		color: white;
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		color: var(--color-primary);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 		padding: 0.5rem 0.75rem;
 		border-radius: 20px;
 		font-size: 0.85rem;
 		font-weight: 500;
-		box-shadow: 0 2px 4px color-mix(in srgb, var(--color-primary) 20%, transparent);
 	}
 
 	.remove-tag {
 		background: none;
 		border: none;
-		color: white;
+		color: var(--color-primary);
 		font-size: 1.1rem;
 		line-height: 1;
 		cursor: pointer;
@@ -1517,11 +1630,13 @@
 		align-items: center;
 		justify-content: center;
 		border-radius: 50%;
-		transition: background-color 0.2s ease;
+		transition: all 0.2s ease;
+		opacity: 0.7;
 	}
 
 	.remove-tag:hover {
-		background: color-mix(in srgb, white 20%, transparent);
+		opacity: 1;
+		background: color-mix(in srgb, var(--color-primary) 15%, transparent);
 	}
 
 	.tag-input-wrapper {
@@ -1535,9 +1650,9 @@
 	}
 
 	.add-tag-btn {
-		background: var(--color-accent);
-		color: white;
-		border: none;
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		color: var(--color-primary);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 		padding: 0.75rem 1rem;
 		border-radius: 8px;
 		font-size: 0.875rem;
@@ -1548,8 +1663,8 @@
 	}
 
 	.add-tag-btn:hover {
-		background: color-mix(in srgb, var(--color-accent) 90%, black);
-		transform: translateY(-1px);
+		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
 	}
 
 	.tag-suggestions {
@@ -1558,9 +1673,10 @@
 		left: 0;
 		right: 0;
 		background: var(--color-surface);
+		backdrop-filter: blur(20px);
 		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+		box-shadow: 0 8px 24px color-mix(in srgb, var(--color-text-primary) 20%, transparent);
 		z-index: 10;
 		max-height: 200px;
 		overflow-y: auto;
@@ -1597,5 +1713,150 @@
 		color: var(--color-text-secondary);
 		margin-top: 0.5rem;
 		line-height: 1.4;
+	}
+
+	/* Modal Styles */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: color-mix(in srgb, var(--color-text-primary) 50%, transparent);
+		backdrop-filter: blur(8px);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+		padding: 1rem;
+	}
+
+	@media (max-width: 768px) {
+		.modal-overlay {
+			align-items: flex-start;
+			padding: 0;
+		}
+
+		.modal-content {
+			border-radius: 0;
+			max-height: 100vh;
+			min-height: 100vh;
+		}
+	}
+
+	.modal-content {
+		background: #fafafa;
+		border: 1px solid var(--color-border);
+		border-radius: 16px;
+		max-width: 600px;
+		width: 100%;
+		max-height: 80vh;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		box-shadow: 0 20px 60px color-mix(in srgb, var(--color-text-primary) 30%, transparent);
+	}
+
+	:global([data-theme='dark']) .modal-content {
+		background: #1a1a1a;
+	}
+
+	.modal-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 1.5rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.modal-header h2 {
+		margin: 0;
+		font-size: 1.5rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.modal-close {
+		background: none;
+		border: none;
+		font-size: 2rem;
+		line-height: 1;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		padding: 0;
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 6px;
+		transition: all 0.2s ease;
+	}
+
+	.modal-close:hover {
+		background: var(--color-surface-alt);
+		color: var(--color-text-primary);
+	}
+
+	.modal-body {
+		padding: 1.5rem;
+		overflow-y: auto;
+		flex: 1;
+		min-height: 300px;
+	}
+
+	.modal-body .current-tags {
+		min-height: 3rem;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.modal-footer {
+		padding: 1.5rem;
+		border-top: 1px solid var(--color-border);
+		display: flex;
+		justify-content: flex-end;
+		gap: 1rem;
+	}
+
+	.tags-display {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.btn-add-tags {
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		width: 100%;
+		color: var(--color-primary);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+		padding: 0.75rem 1.5rem;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.btn-add-tags:hover {
+		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+	}
+
+	.modal-body .tag-input-wrapper {
+		margin-top: 1rem;
+	}
+
+	.modal-body .tag-suggestions {
+		position: relative;
+		margin-top: 0.5rem;
+		min-height: 150px;
+		max-height: 200px;
+	}
+
+	.modal-body .tag-input-wrapper {
+		position: relative;
 	}
 </style>

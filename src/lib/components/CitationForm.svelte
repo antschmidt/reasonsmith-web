@@ -280,32 +280,38 @@
 	}
 
 	.btn-primary {
-		background: var(--color-primary);
-		color: var(--color-surface);
-		border: none;
-		padding: 0.5rem 1rem;
-		border-radius: var(--border-radius-sm);
-		font-weight: 600;
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		color: var(--color-primary);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+		padding: 0.75rem 1.5rem;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		font-weight: 500;
 		cursor: pointer;
-		transition: opacity 0.2s;
+		transition: all 0.2s ease;
 	}
 
 	.btn-primary:hover {
-		opacity: 0.9;
+		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
 	}
 
 	.btn-secondary {
-		background: transparent;
+		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+		backdrop-filter: blur(10px);
 		color: var(--color-text-primary);
-		border: 1px solid var(--color-border);
-		padding: 0.5rem 1rem;
-		border-radius: var(--border-radius-sm);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		padding: 0.75rem 1.5rem;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		font-weight: 500;
 		cursor: pointer;
-		transition: background-color 0.2s;
+		transition: all 0.2s ease;
 	}
 
 	.btn-secondary:hover {
-		background: var(--color-surface-alt);
+		border-color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
 	}
 
 	@media (max-width: 640px) {
