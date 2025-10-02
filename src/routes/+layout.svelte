@@ -5,6 +5,7 @@
 	import { dev } from '$app/environment';
 	import { injectAnalytics } from '@vercel/analytics/sveltekit';
 	import { page } from '$app/stores';
+	import InstallPrompt from '$lib/components/InstallPrompt.svelte';
 
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = nhost.auth.getUser();
@@ -184,6 +185,8 @@
 <div class="app-shell">
 	<slot />
 </div>
+
+<InstallPrompt />
 
 <style>
 	.top-nav {

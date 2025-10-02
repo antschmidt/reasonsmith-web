@@ -2,13 +2,50 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
+
+		<!-- Viewport -->
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+		<!-- PWA Manifest -->
+		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+
+		<!-- Theme Colors -->
+		<meta name="theme-color" content="#546e7a" />
+		<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a1a1a" />
+
 		<!-- Favicon -->
 		<link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.ico" type="image/x-icon" />
-		<link rel="apple-touch-icon" href="%sveltekit.assets%/favicon.png" />
 		<link rel="shortcut icon" href="%sveltekit.assets%/favicon.ico" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+		<!-- Apple Touch Icons -->
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+		<link rel="apple-touch-icon" sizes="180x180" href="%sveltekit.assets%/apple-touch-icon.png" />
+
+		<!-- iOS PWA Support -->
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+		<meta name="apple-mobile-web-app-title" content="ReasonSmith" />
+
+		<!-- App Description -->
+		<meta name="description" content="ReasonSmith - Journal of Constructive Argument. A writing desk for structured public discourse with editorial discipline." />
+
 		%sveltekit.head%
+
+		<!-- Service Worker Registration -->
+		<script>
+			if ('serviceWorker' in navigator) {
+				window.addEventListener('load', () => {
+					navigator.serviceWorker.register('/service-worker.js')
+						.then(registration => {
+							console.log('[PWA] Service Worker registered:', registration.scope);
+						})
+						.catch(error => {
+							console.log('[PWA] Service Worker registration failed:', error);
+						});
+				});
+			}
+		</script>
 	</head>
 	<body data-sveltekit-preload-data="hover">
 		<div style="display: contents">%sveltekit.body%</div>

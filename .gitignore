@@ -12,3 +12,5 @@ nhost/migrations/
 nhost/metadata/
 .vercel
 .vite
+.env.local
+.claude
