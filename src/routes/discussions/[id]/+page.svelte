@@ -3608,7 +3608,7 @@
 					{/snippet}
 					{#if editingPostId === post.id}
 						<div class="post-edit-block">
-							<textarea id="post-edit-textarea" rows="24" bind:value={editingPostContent}></textarea>
+							<textarea id="post-edit-textarea" rows="10" bind:value={editingPostContent}></textarea>
 							{#if editPostError}<div class="error-message" style="margin-top:0.25rem;">
 									{editPostError}
 								</div>{/if}
