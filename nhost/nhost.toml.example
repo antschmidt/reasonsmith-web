@@ -125,8 +125,8 @@ enabled = false
 
 [auth.method.oauth.github]
 enabled = true
-clientId = 'Ov23lihjwwgE7Iu3gE0F'
-clientSecret = 'd8219dfd476beb0c3d6ebe5f027c55a1bca528a4'
+clientId = '{{ secrets.GITHUB_OAUTH_CLIENT_ID }}'
+clientSecret = '{{ secrets.GITHUB_OAUTH_CLIENT_SECRET }}'
 
 [auth.method.oauth.gitlab]
 enabled = false
