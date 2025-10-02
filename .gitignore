@@ -2,12 +2,13 @@
 .secrets
 .env
 .svelte-kit/*
+.project/*
 node_modules
 dist
 .vscode
 .DS_Store
-nhost/*
 !nhost/nhost.toml
 nhost/migrations/
+nhost/metadata/
 .vercel
 .vite
