@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { nhost } from '$lib/nhostClient';
+	import { getOAuthRedirectURL, isStandalone } from '$lib/utils/pwa';
 
 	let error: Error | null = null;
 	let email = '';
@@ -13,10 +14,11 @@
 
 	const handleGitHubSignIn = async () => {
 		try {
+			const isPWA = isStandalone();
 			await nhost.auth.signIn({
 				provider: 'github',
 				options: {
-					redirectTo: '/auth/callback'
+					redirectTo: getOAuthRedirectURL('/auth/callback', isPWA)
 				}
 			});
 		} catch (err) {
@@ -28,10 +30,11 @@
 		error = null;
 		magicLinkSent = false;
 		try {
+			const isPWA = isStandalone();
 			await nhost.auth.signIn({
 				email: magicLinkEmail,
 				options: {
-					redirectTo: '/auth/callback'
+					redirectTo: getOAuthRedirectURL('/auth/callback', isPWA)
 				}
 			});
 			magicLinkSent = true;

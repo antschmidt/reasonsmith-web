@@ -5238,7 +5238,6 @@
 	}
 	.comment-form textarea {
 		width: 100%;
-		padding: 0.75rem;
 		border: 1px solid var(--color-border);
 		border-radius: var(--border-radius-sm);
 		background-color: var(--color-input-bg);
