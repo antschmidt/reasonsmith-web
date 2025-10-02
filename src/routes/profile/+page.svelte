@@ -4,14 +4,20 @@
 	import { GET_USER_STATS, UPDATE_CONTRIBUTOR_AVATAR } from '$lib/graphql/queries';
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
 	import { env as publicEnv } from '$env/dynamic/public';
+	import { getOAuthRedirectURL, isStandalone } from '$lib/utils/pwa';
 	import ProfilePhotoUpload from '$lib/components/ProfilePhotoUpload.svelte';
 
 	const SITE_URL = publicEnv.PUBLIC_SITE_URL;
 
 	function getRedirect() {
-		if (SITE_URL) return SITE_URL.replace(/\/$/, '') + '/auth/callback';
-		if (typeof window !== 'undefined') return window.location.origin + '/auth/callback';
-		return undefined;
+		const isPWA = typeof window !== 'undefined' && isStandalone();
+		const baseRedirect = SITE_URL
+			? SITE_URL.replace(/\/$/, '') + '/auth/callback'
+			: typeof window !== 'undefined'
+				? window.location.origin + '/auth/callback'
+				: undefined;
+
+		return baseRedirect ? getOAuthRedirectURL(baseRedirect, isPWA) : undefined;
 	}
 
 	let user = nhost.auth.getUser();
