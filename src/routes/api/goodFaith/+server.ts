@@ -378,7 +378,17 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
 						const contributorResult = await contributorResponse.json();
 						contributor = contributorResult.data?.contributor_by_pk;
-						contributorId = contributor?.id;\n\n\t\t\t\t\t// Check and reset monthly credits if needed\n\t\t\t\t\tif (contributor) {\n\t\t\t\t\t\tawait checkAndResetMonthlyCredits(\n\t\t\t\t\t\t\tcontributor,\n\t\t\t\t\t\t\tHASURA_GRAPHQL_ENDPOINT,\n\t\t\t\t\t\t\tundefined,\n\t\t\t\t\t\t\tHASURA_ADMIN_SECRET\n\t\t\t\t\t\t);\n\t\t\t\t\t}
+						contributorId = contributor?.id;
+
+						// Check and reset monthly credits if needed
+						if (contributor) {
+							await checkAndResetMonthlyCredits(
+								contributor,
+								HASURA_GRAPHQL_ENDPOINT,
+								undefined,
+								HASURA_ADMIN_SECRET
+							);
+						}
 
 						// Check permissions only if we found a contributor
 						if (contributor) {
