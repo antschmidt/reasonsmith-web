@@ -1,430 +1,720 @@
 <script lang="ts">
-  import type { User } from '@nhost/nhost-js';
+	import type { User } from '@nhost/nhost-js';
+	// Avoid importing gql to prevent type resolution issues; use plain strings
+	import { nhost } from '$lib/nhostClient';
+	import { GET_DASHBOARD_DATA } from '$lib/graphql/queries';
 
-  export let user: User;
+	let { user } = $props<{ user: User }>();
 
-  // Placeholder data - replace with actual data from your backend
-  const stats = {
-    goodFaithRate: 88,
-    sourceAccuracy: 95,
-    reputationScore: 750
-  };
 
-  const recentDiscussions = [
-    { id: 1, title: 'Is utilitarianism a complete ethical framework?', snippet: 'I argue that while useful, it fails to account for...', author: 'Alice', timestamp: '2h ago' },
-    { id: 2, title: 'The role of AI in moderating online discourse', snippet: 'Can an algorithm truly understand context and intent? Let\'s explore...', author: 'Bob', timestamp: '5h ago' },
-    { id: 3, title: 'Debating the merits of decentralized social media', snippet: 'Freedom from central control vs. the challenge of content moderation...', author: 'Charlie', timestamp: '1d ago' }
-  ];
+	// Focus on active work only
 
-  const drafts = [
-    { id: 1, title: 'A critique of pure reason, simplified' },
-    { id: 2, title: 'Re: The role of AI in moderating' }
-  ];
+	let drafts = $state<Array<{
+		id: string;
+		draft_content?: string | null;
+		discussion_id?: string | null;
+		updated_at?: string | null;
+		discussion_title?: string | null;
+		status?: string | null;
+		type?: string;
+		original_discussion_id?: string;
+		good_faith_score?: number | null;
+		good_faith_label?: string | null;
+		good_faith_last_evaluated?: string | null;
+		good_faith_analysis?: any;
+	}>>([]);
 
-  const pinnedThreads = [
-    { id: 1, title: 'Community Guidelines & Best Practices' }
-  ];
+	let loading = $state(true);
+	let error = $state<string | null>(null);
 
-  const leaderboard = [
-    { rank: 1, name: 'Eve', score: 1250 },
-    { rank: 2, name: 'Mallory', score: 1100 },
-    { rank: 3, name: 'Trent', score: 980 },
-    { rank: 4, name: 'Alice', score: 950 },
-    { rank: 5, name: 'Bob', score: 890 }
-  ];
+	async function loadData() {
+		loading = true;
+		error = null;
 
-  const currentUserRank = 12;
+		try {
+			// Load dashboard data
+			const dashboardResult = await nhost.graphql.request(GET_DASHBOARD_DATA, {
+				userId: user.id as unknown as string
+			});
 
-  const notifications = [
-    { id: 1, type: 'mention', text: 'Dave mentioned you in "The Paradox of Tolerance"' },
-    { id: 2, type: 'review', text: 'Your post "On the nature of evidence" is pending review' },
-    { id: 3, type: 'alert', text: 'A source in your post needs verification' }
-  ];
+			// Handle dashboard data
+			if (dashboardResult.error) {
+				error = Array.isArray(dashboardResult.error)
+					? dashboardResult.error.map((e: any) => e.message ?? String(e)).join('; ')
+					: ((dashboardResult.error as any).message ?? 'Failed to load dashboard data');
+			} else if (dashboardResult.data) {
+				// Focus on drafts and active work only
+
+				// Get database drafts (comment drafts)
+				const dbDrafts = (dashboardResult.data.myPostDrafts ?? []).map((draft: any) => ({
+					id: draft.id,
+					draft_content: draft.draft_content,
+					discussion_id: draft.discussion_id,
+					updated_at: draft.updated_at,
+					discussion_title: draft.discussion?.discussion_versions?.[0]?.title ?? null,
+					status: draft.status,
+					type: 'comment',
+					good_faith_score: draft.good_faith_score,
+					good_faith_label: draft.good_faith_label,
+					good_faith_last_evaluated: draft.good_faith_last_evaluated,
+					good_faith_analysis: draft.good_faith_analysis
+				}));
+
+				// Get discussion drafts from database
+				const dbDiscussionDrafts = (dashboardResult.data.myDiscussionDrafts ?? []).map(
+					(draft: any) => ({
+						id: `discussion_version_${draft.id}`,
+						draft_content: `${draft.title}\n\n${draft.description || ''}`,
+						discussion_id: draft.discussion_id,
+						updated_at: draft.created_at,
+						discussion_title: draft.title,
+						status: 'draft',
+						type: 'discussion',
+						good_faith_score: draft.good_faith_score,
+						good_faith_label: draft.good_faith_label,
+						good_faith_last_evaluated: draft.good_faith_last_evaluated,
+						original_discussion_id: draft.discussion_id
+					})
+				);
+
+				// Get discussion description drafts from localStorage (legacy)
+				// Combine database drafts
+				drafts = [...dbDrafts, ...dbDiscussionDrafts].sort((a, b) => {
+					const dateA = new Date(a.updated_at || 0).getTime();
+					const dateB = new Date(b.updated_at || 0).getTime();
+					return dateB - dateA; // Most recent first
+				});
+			}
+		} catch (err) {
+			error = `Failed to load data: ${err}`;
+			console.error('Error loading dashboard data:', err);
+		}
+
+		loading = false;
+	}
+
+	$effect(() => {
+		loadData();
+	});
+
+	function getDraftHref(d: {
+		id: string;
+		discussion_id?: string | null;
+		type?: string;
+		original_discussion_id?: string;
+	}) {
+		if (d.type === 'discussion' && d.original_discussion_id) {
+			// Check if this is a database draft (starts with discussion_version_) or localStorage draft (starts with discussion_)
+			if (d.id.startsWith('discussion_version_')) {
+				// Database draft - use dedicated draft editing page
+				const draftVersionId = d.id.replace('discussion_version_', '');
+				return `/discussions/${d.original_discussion_id}/draft/${draftVersionId}`;
+			} else if (d.id.startsWith('discussion_')) {
+				// localStorage draft - just go to the discussion page, it will load from localStorage
+				return `/discussions/${d.original_discussion_id}`;
+			} else {
+				// Unknown draft type - fallback
+				return `/discussions/${d.original_discussion_id}`;
+			}
+		} else if (d.discussion_id) {
+			return `/discussions/${d.discussion_id}?replyDraftId=${d.id}`;
+		} else {
+			return `/discussions/new?draftId=${d.id}`;
+		}
+	}
+
+	function extractSnippet(html: string, max = 80) {
+		if (!html) return 'Untitled draft';
+		const txt = html
+			.replace(/<style[\s\S]*?<\/style>/gi, ' ')
+			.replace(/<script[\s\S]*?<\/script>/gi, ' ')
+			.replace(/<[^>]+>/g, ' ') // remove tags
+			.replace(/&nbsp;/gi, ' ')
+			.replace(/&amp;/gi, '&')
+			.replace(/&lt;/gi, '<')
+			.replace(/&gt;/gi, '>')
+			.replace(/&quot;/gi, '"')
+			.replace(/&#39;/gi, "'")
+			.replace(/\s+/g, ' ') // collapse whitespace
+			.trim();
+		if (!txt) return 'Untitled draft';
+		return txt.length > max ? txt.slice(0, max) + '…' : txt;
+	}
+
+	const DELETE_DRAFT = `mutation DeleteDraft($id: uuid!, $authorId: uuid!) { delete_post(where:{id:{_eq:$id}, author_id:{_eq:$authorId}, status:{_eq:"draft"}}){ affected_rows } }`;
+
+	async function deleteDraft(d: { id: string; type?: string; original_discussion_id?: string }) {
+		if (!user) return;
+		const ok = typeof window !== 'undefined' ? confirm('Delete this draft?') : true;
+		if (!ok) return;
+
+		if (d.type === 'discussion' && d.original_discussion_id) {
+			// Delete discussion description draft from localStorage
+			const draftKey = `discussion_draft:${d.original_discussion_id}`;
+			localStorage.removeItem(draftKey);
+			drafts = drafts.filter((dr) => dr.id !== d.id);
+		} else {
+			// Delete comment draft from database
+			const { error: delErr } = await nhost.graphql.request(DELETE_DRAFT, {
+				id: d.id,
+				authorId: user.id as unknown as string
+			});
+			if (delErr) {
+				// simple inline fallback; could add toast later
+				console.warn('Failed to delete draft', delErr);
+				return;
+			}
+			drafts = drafts.filter((dr) => dr.id !== d.id);
+		}
+	}
+
 </script>
 
 <div class="dashboard-container">
-  <!-- 1. Welcome & At-a-Glance Metrics -->
-  <section class="welcome-card">
-    <div class="welcome-card-content">
-        <h1 class="welcome-title">
-          Welcome back, {user.displayName}!
-        </h1>
-        <div class="stats-container">
-          <div class="stat-item">
-            <h3 class="stat-title">Good-Faith Rate</h3>
-            <p class="stat-value">{stats.goodFaithRate}%</p>
-          </div>
-          <div class="stat-item">
-            <h3 class="stat-title">Source Accuracy</h3>
-            <p class="stat-value">{stats.sourceAccuracy}%</p>
-          </div>
-          <div class="stat-item">
-            <h3 class="stat-title">Reputation Score</h3>
-            <p class="stat-value">{stats.reputationScore}</p>
-          </div>
-        </div>
-    </div>
-  </section>
+	<!-- Main Content Grid -->
+	<div class="dashboard-grid">
+		<!-- Sidebar (Right Column) -->
+		<aside class="sidebar">
+			<!-- Single Action: New Discussion -->
+			<section class="card quick-discussion">
+				<a href="/discussions/new" class="btn btn-secondary btn-sm">
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						viewBox="0 0 20 20"
+						fill="currentColor"
+						><path
+							fill-rule="evenodd"
+							d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+							clip-rule="evenodd"
+						/></svg
+					>
+					New Discussion
+				</a>
+			</section>
 
-  <!-- Main Content Grid -->
-  <div class="dashboard-grid">
-    <!-- 3. Recent & Pinned Discussions (Left Column) -->
-    <main class="main-content">
-      <h2 class="section-title">Recent Discussions</h2>
-      <div class="discussions-list">
-        {#each recentDiscussions as discussion}
-          <div class="discussion-card">
-            <h3 class="discussion-title">{discussion.title}</h3>
-            <p class="discussion-snippet">{discussion.snippet}</p>
-            <p class="discussion-meta">by {discussion.author} &middot; {discussion.timestamp}</p>
-          </div>
-        {/each}
-      </div>
-      <button class="btn-secondary load-more">Load More</button>
-    </main>
+			<!-- Pinned Threads, Leaderboard, Notifications remain placeholders for now -->
+			<!-- ...existing code... -->
+		</aside>
+		<!-- Main Content (Left Column) -->
+		<main class="main-content">
+			{#if loading}
+				<p>Loading…</p>
+			{:else if error}
+				<p style="color: var(--color-accent)">{error}</p>
+			{:else if drafts.length === 0}
+				<div class="card" style="margin-bottom: 1rem;">
+					<p>No active drafts. <a href="/discussions/new">Start a new discussion</a> or join an existing conversation.</p>
+				</div>
+			{:else}
+				<div class="drafts-focus">
+					<h3 class="subsection-title">Continue Working</h3>
+					<p class="section-description">Pick up where you left off on your drafts and active discussions.</p>
+				</div>
 
-    <!-- Sidebar (Right Column) -->
-    <aside class="sidebar">
-      <!-- Quick Actions -->
-      <section class="card">
-        <h2 class="section-title">Quick Actions</h2>
-        <div class="quick-actions">
-          <button class="btn-primary">
-            <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
-            New Discussion
-          </button>
-          <button class="btn-secondary">
-            <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg>
-            New Reply
-          </button>
-          <button class="btn-secondary">
-            <svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 11a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1v-1z" /></svg>
-            Invite Collaborator
-          </button>
-        </div>
-      </section>
+				<!-- Drafts List -->
+				<div class="drafts-list">
+					{#each drafts as draft}
+						<article class="draft-item">
+							<div class="draft-content">
+								<a href={getDraftHref(draft)} class="draft-title">
+									{extractSnippet(draft.draft_content || '')}
+								</a>
 
-      <!-- Your Drafts -->
-      <section class="card">
-        <h2 class="section-title">Your Drafts</h2>
-        <ul class="list">
-          {#each drafts as draft}
-            <li class="list-item">{draft.title}</li>
-          {/each}
-        </ul>
-      </section>
+								<div class="draft-meta">
+									{#if draft.type === 'discussion'}
+										<span>Discussion draft</span>
+										{#if draft.discussion_title}
+											<span class="meta-separator">·</span>
+											<span class="discussion-ref">{draft.discussion_title}</span>
+										{/if}
+									{:else if draft.discussion_id}
+										<span>Reply to</span>
+										{#if draft.discussion_title}
+											<span class="meta-separator">·</span>
+											<span class="discussion-ref">{draft.discussion_title}</span>
+										{/if}
+									{:else}
+										<span>New discussion</span>
+									{/if}
+									{#if draft.status === 'pending'}
+										<span class="meta-separator">·</span>
+										<span class="status-pending">Pending review</span>
+									{/if}
+								</div>
 
-      <!-- Pinned Threads -->
-      <section class="card">
-        <h2 class="section-title">Pinned Threads</h2>
-        <ul class="list">
-          {#each pinnedThreads as thread}
-            <li class="list-item">{thread.title}</li>
-          {/each}
-        </ul>
-      </section>
+								<!-- Good Faith Score (if available) -->
+								{#if draft.good_faith_score !== null && draft.good_faith_score !== undefined}
+									<div class="draft-score">
+										<span class="score-pill {draft.good_faith_label || 'neutral'}">
+											{(draft.good_faith_score * 100).toFixed(0)}% {draft.good_faith_label || 'unrated'}
+										</span>
+									</div>
+								{/if}
+							</div>
 
-      <!-- 4. Leaderboard -->
-      <section class="card">
-        <h2 class="section-title">Top Contributors</h2>
-        <ul class="list">
-          {#each leaderboard as contributor}
-            <li class="leaderboard-item">
-              <span>{contributor.rank}. {contributor.name}</span>
-              <span class="leaderboard-score">{contributor.score} pts</span>
-            </li>
-          {/each}
-        </ul>
-        <p class="current-rank">You're #{currentUserRank} this week!</p>
-      </section>
+							<button
+								type="button"
+								class="draft-delete-icon"
+								aria-label="Delete draft"
+								title="Delete draft"
+								onclick={() => deleteDraft(draft)}
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="18"
+									height="18"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<polyline points="3,6 5,6 21,6"></polyline>
+									<path d="m5,6 1,14 c0,1 1,2 2,2 h8 c1,0 2,-1 2,-2 l1,-14"></path>
+									<path d="m10,11 v6"></path>
+									<path d="m14,11 v6"></path>
+									<path d="M7,6V4c0-1,1-2,2-2h6c0,1,1,2h-2V6"></path>
+								</svg>
+							</button>
+						</article>
+					{/each}
+				</div>
+			{/if}
+		</main>
+	</div>
 
-      <!-- 5. Notifications -->
-      <section class="card">
-        <h2 class="section-title">Notifications</h2>
-        <ul class="list">
-          {#each notifications as notification}
-            <li class="notification-item">
-              <span class="notification-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
-              </span>
-              <p>{notification.text}</p>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    </aside>
-  </div>
-
-  <!-- 6. Learning & Resources -->
-  <footer class="dashboard-footer">
-    <h2 class="section-title">Learning & Resources</h2>
-    <div class="footer-links">
-      <a href="#">How to Craft Good-Faith Arguments</a>
-      <a href="#">Citation Best Practices</a>
-      <a href="#">Community Guidelines</a>
-    </div>
-  </footer>
+	<!-- Learning & Resources -->
+	<footer class="dashboard-footer">
+		<h2 class="section-title">Learning & Resources</h2>
+		<div class="footer-links">
+			<a href="/resources/good-faith-arguments">How to Craft Good-Faith Arguments</a>
+			<a href="/resources/citation-best-practices">Citation Best Practices</a>
+			<a href="/resources/community-guidelines">Community Guidelines</a>
+		</div>
+	</footer>
 </div>
 
 <style>
-  .dashboard-container {
-    padding: 1rem;
-    max-width: 1280px;
-    margin: 0 auto;
-  }
-  @media (min-width: 640px) {
-    .dashboard-container {
-      padding: 1.5rem;
-    }
-  }
-  @media (min-width: 1024px) {
-    .dashboard-container {
-      padding: 2rem;
-    }
-  }
+	.dashboard-container {
+		padding: 2rem 1rem;
+		max-width: 1200px;
+		margin: 0 auto;
+		background: var(--color-surface-alt);
+		min-height: 100vh;
+	}
 
-  /* Welcome Card */
-  .welcome-card {
-    background-color: var(--color-surface);
-    padding: 1.25rem;
-    border-radius: var(--border-radius-md);
-    border: 1px solid var(--color-border);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    margin-bottom: 2rem;
-  }
-  .welcome-card-content {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-  .welcome-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    font-family: var(--font-family-display);
-    color: var(--color-text-primary);
-  }
-  .stats-container {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  .stat-item {
-    padding: 0.75rem;
-    border-radius: var(--border-radius-md);
-    transition: background-color 150ms ease-in-out;
-  }
-  .stat-item:hover {
-    background-color: var(--color-surface-alt);
-  }
-  .stat-title {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--color-text-secondary);
-  }
-  .stat-value {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--color-text-primary);
-  }
+	@media (min-width: 640px) {
+		.dashboard-container {
+			padding: 2rem 1.5rem;
+		}
+	}
+	@media (min-width: 1024px) {
+		.dashboard-container {
+			padding: 3rem 2rem;
+		}
+	}
 
-  /* Grid */
-  .dashboard-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 2rem;
-  }
-  @media (min-width: 1024px) {
-    .dashboard-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-    .main-content {
-      grid-column: span 2 / span 2;
-    }
-    .sidebar {
-      grid-column: span 1 / span 1;
-    }
-  }
-  .main-content {
-    margin-bottom: 2rem;
-  }
-  @media (min-width: 1024px) {
-    .main-content {
-      margin-bottom: 0;
-    }
-  }
-  .sidebar {
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-  }
+	/* Grid */
+	.dashboard-grid {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 2rem;
+	}
+	@media (min-width: 1024px) {
+		.dashboard-grid {
+			grid-template-columns: repeat(3, 1fr);
+		}
+		.main-content {
+			grid-column: span 2 / span 2;
+		}
+		.sidebar {
+			grid-column: span 1 / span 1;
+		}
+	}
+	.main-content {
+		margin-bottom: 2rem;
+	}
+	@media (min-width: 1024px) {
+		.main-content {
+			margin-bottom: 0;
+		}
+	}
+	.sidebar {
+		display: flex;
+		flex-direction: column;
+	}
 
-  /* Cards */
-  .card {
-    background-color: var(--color-surface);
-    padding: 1.25rem;
-    border-radius: var(--border-radius-md);
-    border: 1px solid var(--color-border);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  }
-  .section-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin-bottom: 1rem;
-    font-family: var(--font-family-display);
-    color: var(--color-text-primary);
-  }
+	/* Editorial Cards */
+	.card {
+		/* background: var(--color-surface); */
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-lg);
+		padding: var(--space-lg);
+		margin-bottom: var(--space-lg);
+		transition: all var(--transition-speed) ease;
+	}
 
-  /* Discussion List */
-  .discussions-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-  .discussion-card {
-    background-color: var(--color-surface);
-    padding: 1.25rem;
-    border-radius: var(--border-radius-md);
-    border: 1px solid var(--color-border);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    transition: box-shadow 150ms ease-in-out;
-    cursor: pointer;
-  }
-  .discussion-card:hover {
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  }
-  .discussion-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--color-primary);
-  }
-  .discussion-snippet {
-    color: var(--color-text-secondary);
-    font-size: 0.875rem;
-    margin: 0.25rem 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-  .discussion-meta {
-    font-size: 0.75rem;
-    color: var(--color-text-secondary);
-  }
-  .load-more {
-    margin-top: 1.5rem;
-    width: 100%;
-  }
+	.card:hover {
+		border-color: var(--color-primary);
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+	}
+	.section-title {
+		font-size: 1.125rem;
+		font-weight: 700;
+		margin-bottom: 1.5rem;
+		font-family: var(--font-family-display);
+		color: var(--color-text-primary);
+		text-align: left;
+	}
 
-  /* Sidebar Lists */
-  .list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    list-style: none;
-    padding: 0;
-  }
-  .list-item {
-    color: var(--color-primary);
-    cursor: pointer;
-  }
-  .list-item:hover {
-    text-decoration: underline;
-  }
-  .leaderboard-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .leaderboard-score {
-    font-size: 0.875rem;
-    color: var(--color-text-secondary);
-  }
-  .current-rank {
-    margin-top: 1rem;
-    text-align: center;
-    background-color: var(--color-surface-alt);
-    padding: 0.5rem;
-    border-radius: var(--border-radius-md);
-    font-size: 0.875rem;
-  }
-  .notification-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    font-size: 0.875rem;
-  }
-  .notification-icon {
-    margin-top: 0.25rem;
-    color: var(--color-accent);
-  }
-  .notification-icon svg {
-      width: 1.25rem;
-      height: 1.25rem;
-  }
+	/* Discussion List */
+	.discussions-list {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+	}
+	.discussion-card {
+		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+		backdrop-filter: blur(15px) saturate(1.1);
+		padding: var(--space-lg);
+		border-radius: var(--border-radius-xl);
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		box-shadow: 0 6px 20px color-mix(in srgb, var(--color-primary) 6%, transparent);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		cursor: pointer;
+		position: relative;
+		overflow: hidden;
+	}
 
-  /* Quick Actions */
-  .quick-actions {
-    display: inline-flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
+	.discussion-card::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 3px;
+		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+		border-radius: var(--border-radius-xl) var(--border-radius-xl) 0 0;
+	}
 
-  /* Buttons */
-  .btn-primary, .btn-secondary {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    padding: 0.5rem 1rem;
-    border-radius: var(--border-radius-md);
-    transition: all 150ms ease-in-out;
-    cursor: pointer;
-  }
-  .btn-primary {
-    background-color: var(--color-primary);
-    color: var(--color-surface);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  }
-  .btn-primary:hover {
-    opacity: 0.9;
-  }
-  .btn-secondary {
-    background-color: var(--color-surface);
-    color: var(--color-text-primary);
-    border: 1px solid var(--color-border);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  }
-  .btn-secondary:hover {
-    background-color: var(--color-surface-alt);
-  }
-  .btn-primary:focus, .btn-secondary:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
-  }
-  .btn-icon {
-    width: 1.25rem;
-    height: 1.25rem;
-    margin-right: 0.5rem;
-  }
+	.discussion-card:hover {
+		transform: translateY(-6px);
+		box-shadow: 0 15px 40px color-mix(in srgb, var(--color-primary) 15%, transparent);
+		background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+	.discussion-title {
+		font-size: 1.375rem;
+		font-weight: 700;
+		color: var(--color-text-primary);
+		font-family: var(--font-family-display);
+		margin-bottom: 0.75rem;
+		line-height: 1.3;
+	}
+	.discussion-snippet {
+		color: var(--color-text-primary);
+		font-size: 1rem;
+		margin: 0 0 1rem 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		line-clamp: 2;
+		line-height: 1.6;
+	}
+	.discussion-meta {
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.025em;
+	}
+	/* .load-more removed: no longer used */
 
-  /* Footer */
-  .dashboard-footer {
-    margin-top: 3rem;
-    padding-top: 2rem;
-    border-top: 1px solid var(--color-border);
-  }
-  .footer-links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 1.5rem;
-  }
-  .footer-links a {
-    color: var(--color-primary);
-  }
-  .footer-links a:hover {
-    text-decoration: underline;
-  }
+	/* Sidebar Lists */
+	.list {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		list-style: none;
+		padding: 0;
+	}
+	.list-item {
+		color: var(--color-text-primary);
+		cursor: pointer;
+		background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+		backdrop-filter: blur(10px);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: var(--border-radius-lg);
+		padding: var(--space-md);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 5%, transparent);
+	}
+
+	.discussion-title {
+		font-weight: 600;
+	}
+	.list-item:hover {
+		transform: translateY(-2px);
+		background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+		box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 12%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+	}
+
+	/* Use global button styles from app.css */
+	.full-width {
+		width: 100%;
+	}
+
+	/* Footer */
+	.dashboard-footer {
+		margin-top: var(--space-2xl);
+		padding: var(--space-lg);
+		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+		backdrop-filter: blur(20px);
+		border-radius: var(--border-radius-xl);
+		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+		box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 8%, transparent);
+	}
+	.footer-links {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		text-align: center;
+		gap: 1rem;
+	}
+	.footer-links a {
+		color: var(--color-primary);
+		text-decoration: none;
+		padding: var(--space-sm) var(--space-md);
+		background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+		border-radius: var(--border-radius-lg);
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		font-weight: 500;
+		display: block;
+		backdrop-filter: blur(5px);
+	}
+	.footer-links a:hover {
+		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+		color: var(--color-accent);
+		transform: translateY(-2px);
+		box-shadow: 0 6px 20px color-mix(in srgb, var(--color-primary) 12%, transparent);
+	}
+
+	/* Editorial-Style Drafts List (Foreign Affairs inspired) */
+	.drafts-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+	}
+
+	.draft-item {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: var(--space-md);
+		padding: var(--space-lg) 0;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		transition: background-color 0.2s ease;
+	}
+
+	.draft-item:hover {
+		background-color: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
+	}
+
+	.draft-content {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.draft-title {
+		display: block;
+		font-family: var(--font-family-display);
+		font-size: 1.375rem;
+		font-weight: 700;
+		line-height: var(--line-height-tight);
+		color: var(--color-text-primary);
+		text-decoration: none;
+		margin-bottom: 0.5rem;
+		transition: color 0.2s ease;
+	}
+
+	.draft-title:hover {
+		color: var(--color-primary);
+	}
+
+	.draft-meta {
+		font-family: var(--font-family-ui);
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+		line-height: 1.5;
+		margin-bottom: 0.5rem;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.meta-separator {
+		margin: 0 0.25rem;
+		opacity: 0.5;
+	}
+
+	.discussion-ref {
+		font-style: italic;
+		color: var(--color-text-primary);
+	}
+
+	.status-pending {
+		color: var(--color-accent);
+		font-weight: 500;
+	}
+
+	.draft-score {
+		margin-top: 0.5rem;
+	}
+
+	.score-pill {
+		display: inline-block;
+		font-size: 0.75rem;
+		font-weight: 600;
+		padding: 0.25rem 0.75rem;
+		border-radius: var(--border-radius-full);
+		text-transform: capitalize;
+	}
+
+	.score-pill.hostile {
+		background: color-mix(in srgb, #ef4444 8%, transparent);
+		color: #f87171;
+	}
+
+	.score-pill.questionable {
+		background: color-mix(in srgb, #f59e0b 8%, transparent);
+		color: #fbbf24;
+	}
+
+	.score-pill.neutral {
+		background: color-mix(in srgb, #6b7280 8%, transparent);
+		color: #9ca3af;
+	}
+
+	.score-pill.constructive {
+		background: color-mix(in srgb, #10b981 8%, transparent);
+		color: #34d399;
+	}
+
+	.score-pill.exemplary {
+		background: color-mix(in srgb, #059669 8%, transparent);
+		color: #34d399;
+	}
+
+	.draft-delete-icon {
+		flex-shrink: 0;
+		background: transparent;
+		border: none;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		padding: 0.5rem;
+		border-radius: var(--border-radius-sm);
+		transition: all 0.2s ease;
+		opacity: 0.5;
+	}
+
+	.draft-delete-icon:hover {
+		color: #ef4444;
+		background: color-mix(in srgb, #ef4444 10%, transparent);
+		opacity: 1;
+	}
+
+	.draft-item:hover .draft-delete-icon {
+		opacity: 1;
+	}
+
+	/* Subsection Titles */
+	.subsection-title {
+		font-size: clamp(1.25rem, 2.5vw, 1.75rem);
+		font-weight: 800;
+		color: var(--color-text-primary);
+		font-family: var(--font-family-display);
+		margin: 2rem 0 1.5rem 0;
+		letter-spacing: -0.01em;
+		position: relative;
+	}
+
+	.subsection-title::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		bottom: -6px;
+		width: 60px;
+		height: 3px;
+		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+		border-radius: 2px;
+	}
+
+	/* Responsive Design */
+	@media (max-width: 768px) {
+		.dashboard-container {
+			padding: 1rem 0.5rem;
+		}
+
+		.card {
+			padding: 1.5rem;
+			border-radius: 20px;
+			margin-bottom: 1.5rem;
+		}
+
+		.discussion-card {
+			padding: 1.5rem;
+		}
+
+		.discussion-title {
+			font-size: 1.25rem;
+		}
+
+		.btn-primary {
+			padding: 0.875rem 1.75rem;
+			font-size: 0.9rem;
+		}
+
+		.list-item {
+			padding: 1.25rem;
+		}
+
+		.dashboard-footer {
+			margin-top: 3rem;
+			padding: 1.5rem;
+		}
+
+		.footer-links {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.dashboard-container {
+			padding: 0.75rem 0.25rem;
+		}
+
+		.section-title {
+			font-size: 1.5rem;
+		}
+
+		.subsection-title {
+			font-size: 1.25rem;
+		}
+
+		.discussion-meta {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.25rem;
+		}
+	}
 </style>

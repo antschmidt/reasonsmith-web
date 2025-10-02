@@ -7,5 +7,7 @@ dist
 .vscode
 .DS_Store
 nhost/*
+!nhost/nhost.toml
+nhost/migrations/
 .vercel
 .vite

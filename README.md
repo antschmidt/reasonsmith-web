@@ -8,10 +8,10 @@ A platform for good-faith political discussion, where ideas are crafted and hone
 
 ## 🚀 Tech Stack
 
-* **Frontend:** SvelteKit, TypeScript
-* **Backend:** Nhost (Hasura GraphQL + PostgreSQL)
-* **GraphQL Client:** Apollo Client
-* **LLM Moderation:** Vercel Serverless Functions + OpenAI API
+- **Frontend:** SvelteKit, TypeScript
+- **Backend:** Nhost (Hasura GraphQL + PostgreSQL)
+- **GraphQL Client:** Apollo Client
+- **LLM Moderation:** Vercel Serverless Functions + OpenAI API
 
 ---
 
@@ -87,8 +87,8 @@ reasonsmith-web/
 
 ## 🎨 Brand & Assets
 
-* Logo: `static/logo.svg`, `static/logo-dark.svg`
-* Color palette & typography details in `/docs/brand.md`
+- Logo: `static/logo.svg`, `static/logo-dark.svg`
+- Color palette & typography details in `/docs/brand.md`
 
 ---
 
