@@ -142,6 +142,7 @@
 	}
 
 	const DELETE_DRAFT = `mutation DeleteDraft($id: uuid!, $authorId: uuid!) { delete_post(where:{id:{_eq:$id}, author_id:{_eq:$authorId}, status:{_eq:"draft"}}){ affected_rows } }`;
+	const DELETE_DISCUSSION_VERSION = `mutation DeleteDiscussionVersion($id: uuid!, $createdBy: uuid!) { delete_discussion_version(where:{id:{_eq:$id}, created_by:{_eq:$createdBy}, version_type:{_eq:"draft"}}){ affected_rows } }`;
 
 	async function deleteDraft(d: { id: string; type?: string; original_discussion_id?: string }) {
 		if (!user) return;
@@ -149,10 +150,25 @@
 		if (!ok) return;
 
 		if (d.type === 'discussion' && d.original_discussion_id) {
-			// Delete discussion description draft from localStorage
-			const draftKey = `discussion_draft:${d.original_discussion_id}`;
-			localStorage.removeItem(draftKey);
-			drafts = drafts.filter((dr) => dr.id !== d.id);
+			// Check if this is a database draft (starts with discussion_version_) or localStorage draft
+			if (d.id.startsWith('discussion_version_')) {
+				// Delete discussion version draft from database
+				const draftVersionId = d.id.replace('discussion_version_', '');
+				const { error: delErr } = await nhost.graphql.request(DELETE_DISCUSSION_VERSION, {
+					id: draftVersionId,
+					createdBy: user.id as unknown as string
+				});
+				if (delErr) {
+					console.warn('Failed to delete discussion draft', delErr);
+					return;
+				}
+				drafts = drafts.filter((dr) => dr.id !== d.id);
+			} else {
+				// Delete discussion description draft from localStorage (legacy)
+				const draftKey = `discussion_draft:${d.original_discussion_id}`;
+				localStorage.removeItem(draftKey);
+				drafts = drafts.filter((dr) => dr.id !== d.id);
+			}
 		} else {
 			// Delete comment draft from database
 			const { error: delErr } = await nhost.graphql.request(DELETE_DRAFT, {
