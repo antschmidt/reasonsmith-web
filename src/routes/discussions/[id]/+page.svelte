@@ -47,6 +47,9 @@
 	} from '$lib/utils/deletePost';
 	import OutOfCreditsModal from '$lib/components/OutOfCreditsModal.svelte';
 
+	// Configuration constants
+	const QUESTION_PATTERN = /\?$/;
+
 	let discussion = $state<any>(null);
 	let loading = $state(true);
 	let error = $state<Error | null>(null);
@@ -278,7 +281,6 @@
 
 		// Structure assessment (0-25 points)
 		const sentences = content.split(/[.!?]+/).filter((s) => s.trim().length > 0);
-		const isQuestion = /\?/.test(content) || /\b(what|why|how|when|where|who|can|could|would|should|is|are|do|does)\b/i.test(content);
 
 		if (sentences.length >= 3) score += 25;
 		else if (sentences.length >= 2) score += 15;
@@ -304,13 +306,13 @@
 		else issues.push('Content needs proper capitalization and punctuation');
 
 		// Substance assessment (0-15 points)
-		const hasQuestionWords = /\b(what|why|how|when|where|who)\b/i.test(content);
+		const isQuestion = QUESTION_PATTERN.test(content.trim());
 		const hasReasoningWords = /\b(because|since|therefore|however|although|while)\b/i.test(content);
 		const hasEvidence = /\b(study|research|data|evidence|example|according to)\b/i.test(content);
 
 		if (hasEvidence) score += 15;
 		else if (hasReasoningWords) score += 10;
-		else if (hasQuestionWords) score += 5;
+		else if (isQuestion) score += 5;
 		else issues.push('Content could benefit from more reasoning, evidence, or specific examples');
 
 		const passed = score >= 50; // 50% threshold
