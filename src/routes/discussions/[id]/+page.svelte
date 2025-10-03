@@ -4,7 +4,7 @@
 	// Avoid importing gql to prevent type resolution issues; use plain string
 	import { nhost } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
-	import { slide } from 'svelte/transition';
+	import { slide, scale } from 'svelte/transition';
 	import {
 		CREATE_POST_DRAFT,
 		CREATE_POST_DRAFT_WITH_STYLE,
@@ -29,6 +29,7 @@
 		getPostTypeConfig
 	} from '$lib/types/writingStyle';
 	import CitationForm from '$lib/components/CitationForm.svelte';
+	import Button from '$lib/components/Button.svelte';
 	import {
 		canUseAnalysis,
 		getMonthlyCreditsRemaining,
@@ -44,6 +45,7 @@
 		deleteDiscussion,
 		confirmDeletion
 	} from '$lib/utils/deletePost';
+	import OutOfCreditsModal from '$lib/components/OutOfCreditsModal.svelte';
 
 	let discussion = $state<any>(null);
 	let loading = $state(true);
@@ -276,8 +278,11 @@
 
 		// Structure assessment (0-25 points)
 		const sentences = content.split(/[.!?]+/).filter((s) => s.trim().length > 0);
+		const isQuestion = /\?/.test(content) || /\b(what|why|how|when|where|who|can|could|would|should|is|are|do|does)\b/i.test(content);
+
 		if (sentences.length >= 3) score += 25;
 		else if (sentences.length >= 2) score += 15;
+		else if (sentences.length >= 1 && isQuestion) score += 15; // Questions can be shorter
 		else issues.push('Content needs more detailed explanation (at least 2-3 sentences)');
 
 		// Title assessment for discussions (0-15 points)
@@ -2743,7 +2748,7 @@
 				</div>
 			{/if}
 			<p class="discussion-meta">
-				<span>
+				<span class="byline">
 					Started by {#if discussion.is_anonymous}
 						<span class="anonymous-author">Anonymous</span>
 					{:else}
@@ -2756,8 +2761,8 @@
 					<span class="discussion-actions">
 						<button class="edit-btn" onclick={startEdit} title="Edit discussion">
 							<svg
-								width="16"
-								height="16"
+								width="24"
+								height="24"
 								viewBox="0 0 24 24"
 								fill="none"
 								stroke="currentColor"
@@ -2787,8 +2792,8 @@
 							>
 								{#if discussionCanDelete}
 									<svg
-										width="16"
-										height="16"
+										width="24"
+										height="24"
 										viewBox="0 0 24 24"
 										fill="none"
 										stroke="#ef4444"
@@ -2796,17 +2801,16 @@
 										stroke-linecap="round"
 										stroke-linejoin="round"
 									>
-										<polyline points="3,6 5,6 21,6" />
-										<path
-											d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"
-										/>
+										<path d="M3 6h18" />
+										<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+										<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
 										<line x1="10" y1="11" x2="10" y2="17" />
 										<line x1="14" y1="11" x2="14" y2="17" />
 									</svg>
 								{:else}
 									<svg
-										width="16"
-										height="16"
+										width="24"
+										height="24"
 										viewBox="0 0 24 24"
 										fill="none"
 										stroke="currentColor"
@@ -3074,15 +3078,16 @@
 						<div class="citation-header">
 							<h4>References</h4>
 							<div class="citation-buttons">
-								<button
+								<Button
 									type="button"
-									class="btn-secondary"
+									variant="secondary"
+									size="sm"
 									onclick={() => {
 										showEditCitationForm = true;
 									}}
 								>
 									Add Citation
-								</button>
+								</Button>
 							</div>
 						</div>
 
@@ -3847,26 +3852,52 @@
 								<span class="style-indicator">({getStyleConfig(commentSelectedStyle).label})</span>
 							</div>
 
-							<div class="citation-reminder" class:active={showCommentCitationReminder}>
-								<div class="reminder-icon">📚</div>
-								<div class="reminder-text">
-									<strong
-										>{showCommentCitationReminder ? 'Add citations' : 'Cite your sources'}</strong
+							{#if !showCommentCitationForm && !showCommentCitationEditForm}
+								<div class="citation-reminder" class:active={showCommentCitationReminder} transition:scale={{ duration: 200 }}>
+									<div class="reminder-icon">📚</div>
+									<div class="reminder-text">
+										<strong
+											>{showCommentCitationReminder ? 'Add citations' : 'Cite your sources'}</strong
+										>
+										<span
+											>{showCommentCitationReminder
+												? 'Support your claims with references for better credibility.'
+												: 'Adding sources now makes it easier to reference them later.'}</span
+										>
+									</div>
+									<Button
+										type="button"
+										variant="secondary"
+										size="sm"
+										onclick={() => (showCommentCitationForm = true)}
 									>
-									<span
-										>{showCommentCitationReminder
-											? 'Support your claims with references for better credibility.'
-											: 'Adding sources now makes it easier to reference them later.'}</span
-									>
+										Add Citation
+									</Button>
 								</div>
-								<button
-									type="button"
-									class="btn-add-citation-inline"
-									onclick={() => (showCommentCitationForm = true)}
-								>
-									Add Citation
-								</button>
-							</div>
+							{:else}
+								<div class="citation-section-inline" transition:scale={{ duration: 200 }}>
+									<div class="citation-header">
+										<h4>Add Reference</h4>
+									</div>
+
+									<!-- Add Comment Citation Form -->
+									{#if showCommentCitationForm && !editingCommentCitation}
+										<CitationForm
+											onAdd={addCommentCitation}
+											onCancel={() => (showCommentCitationForm = false)}
+										/>
+									{/if}
+
+									<!-- Edit Comment Citation Form -->
+									{#if showCommentCitationEditForm && editingCommentCitation}
+										<CitationForm
+											editingItem={editingCommentCitation}
+											onAdd={updateCommentCitation}
+											onCancel={cancelCommentCitationEdit}
+										/>
+									{/if}
+								</div>
+							{/if}
 						</div>
 					{/if}
 
@@ -3887,93 +3918,6 @@
 						<button type="button" class="insert-citation-btn" onclick={openCommentCitationPicker}>
 							📎 Insert Citation Reference
 						</button>
-
-						<!-- Citation/Source Management for Comments -->
-						<div class="citation-section">
-							<div class="citation-header">
-								<h4>References</h4>
-							</div>
-
-							<!-- Add Comment Citation Form -->
-							{#if showCommentCitationForm && !editingCommentCitation}
-								<CitationForm
-									onAdd={addCommentCitation}
-									onCancel={() => (showCommentCitationForm = false)}
-								/>
-							{/if}
-
-							<!-- Edit Comment Citation Form -->
-							{#if showCommentCitationEditForm && editingCommentCitation}
-								<CitationForm
-									editingItem={editingCommentCitation}
-									onAdd={updateCommentCitation}
-									onCancel={cancelCommentCitationEdit}
-								/>
-							{/if}
-
-							<!-- Display existing citations -->
-							{#if commentStyleMetadata.citations?.length}
-								<div class="citations-list">
-									<h5>Citations:</h5>
-									{#each commentStyleMetadata.citations as Citation[] as citation}
-										<div class="citation-item">
-											<div class="citation-content">
-												<div class="citation-title">{citation.title}</div>
-												<div class="citation-url">
-													<a href={citation.url} target="_blank">{citation.url}</a>
-												</div>
-												{#if citation.author}<div class="citation-author">
-														Author: {citation.author}
-													</div>{/if}
-												{#if citation.publishDate}<div class="citation-date">
-														Published: {citation.publishDate}
-													</div>{/if}
-												{#if citation.publisher}<div class="citation-publisher">
-														Publisher: {citation.publisher}
-													</div>{/if}
-												{#if citation.pageNumber}<div class="citation-page">
-														Page: {citation.pageNumber}
-													</div>{/if}
-												<details class="citation-details">
-													<summary>
-														<span class="summary-arrow">▶</span>
-														<span class="summary-text">Context</span>
-													</summary>
-													<div class="citation-context">
-														<div class="citation-point">
-															<strong>Supports:</strong>
-															{citation.pointSupported}
-														</div>
-														<div class="citation-quote">
-															<strong>Quote:</strong> "{citation.relevantQuote}"
-														</div>
-													</div>
-												</details>
-											</div>
-											<div class="citation-actions">
-												<button
-													type="button"
-													class="insert-ref-btn"
-													onclick={() => insertCommentCitationReference(citation.id)}
-													title="Insert citation reference at cursor">Insert Ref</button
-												>
-												<button
-													type="button"
-													class="edit-btn"
-													onclick={() => startEditCommentCitation(citation.id)}
-													title="Edit citation">Edit</button
-												>
-												<button
-													type="button"
-													class="remove-btn"
-													onclick={() => removeCommentCitation(citation.id)}>Remove</button
-												>
-											</div>
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
 
 						<!-- Citation Picker Modal for Comments -->
 						{#if showCommentCitationPicker}
@@ -4292,51 +4236,11 @@
 	{/if}
 </article>
 
-<!-- Out of Credits Modal -->
-{#if showOutOfCreditsModal}
-	<div class="modal-overlay" onclick={() => (showOutOfCreditsModal = false)}>
-		<div class="modal-content out-of-credits-modal" onclick={(e) => e.stopPropagation()}>
-			<div class="modal-header">
-				<h3>🚫 Out of Credits</h3>
-				<button
-					type="button"
-					class="modal-close-btn"
-					onclick={() => (showOutOfCreditsModal = false)}
-					aria-label="Close modal"
-				>
-					×
-				</button>
-			</div>
-			<div class="modal-body">
-				<p class="modal-main-message">
-					You don't have enough credits to publish this comment with analysis.
-				</p>
-				{#if analysisBlockedReason}
-					<div class="analysis-blocked-details">
-						<p class="error-message">{analysisBlockedReason}</p>
-						{#if analysisBlockedReason.includes('credits')}
-							<p class="help-text">Check your <a href="/profile">profile page</a> for credit information and options to purchase more credits.</p>
-						{:else if analysisBlockedReason.includes('disabled')}
-							<p class="help-text">Visit your <a href="/profile">profile page</a> to enable analysis features.</p>
-						{/if}
-					</div>
-				{/if}
-			</div>
-			<div class="modal-footer">
-				<button
-					type="button"
-					class="btn-secondary"
-					onclick={() => (showOutOfCreditsModal = false)}
-				>
-					Close
-				</button>
-				<a href="/profile" class="btn-primary">
-					View Profile
-				</a>
-			</div>
-		</div>
-	</div>
-{/if}
+<OutOfCreditsModal
+	bind:show={showOutOfCreditsModal}
+	{analysisBlockedReason}
+	onClose={() => (showOutOfCreditsModal = false)}
+/>
 
 <style>
 	.discussion-article {
@@ -4405,7 +4309,7 @@
 		justify-content: space-between;
 		font-size: 0.875rem;
 		color: var(--color-text-secondary);
-		margin-bottom: 0;
+		margin-bottom: 1rem;
 		line-height: var(--line-height-normal);
 	}
 
@@ -4425,6 +4329,10 @@
 	.anonymous-author {
 		color: var(--color-text-primary);
 		font-weight: 600;
+	}
+	.byline {
+		display:flex;
+		flex-direction: column;
 	}
 	.discussion-description {
 		font-size: 1.125rem;
@@ -5202,22 +5110,23 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.75rem 1.25rem;
-		background: var(--color-primary);
-		color: white;
-		border: none;
-		border-radius: var(--border-radius-sm);
+		background: var(--color-surface);
+		color: var(--color-text-primary);
+		border: 1px solid var(--color-border);
+		border-radius: 3px;
 		font-size: 1rem;
 		font-weight: 500;
 		cursor: pointer;
-		transition: all 0.2s ease;
+		transition: all 0.15s ease;
 		margin: 0 auto;
 		min-width: 200px;
 		justify-content: center;
+		font-family: inherit;
+		letter-spacing: 0.025em;
 	}
 	.leave-comment-btn:hover {
-		background: color-mix(in srgb, var(--color-primary) 90%, black);
-		transform: translateY(-1px);
-		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 30%, transparent);
+		border-color: var(--color-primary);
+		background: var(--color-surface-alt);
 	}
 	.comment-form {
 		display: flex;
@@ -5612,8 +5521,8 @@
 	/* Editorial Edit Button */
 	.edit-btn {
 		font-size: 0.75rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
+		background: transparent;
+		border: 0px solid var(--color-border);
 		color: var(--color-text-secondary);
 		cursor: pointer;
 		padding: 0.25rem 0.75rem;
@@ -5991,9 +5900,8 @@
 	}
 
 	.edit-btn {
-		background: var(--color-surface);
 		color: var(--color-text-secondary);
-		border: 1px solid var(--color-border);
+		border: 0px solid var(--color-border);
 		padding: 0.5rem;
 		border-radius: 4px;
 		font-size: 0.75rem;
@@ -6196,64 +6104,54 @@
 		box-sizing: border-box;
 	}
 
-	/* Delete Discussion Button - Match the modern style */
+	/* Delete Discussion Button */
 	.delete-discussion-btn {
-		background: color-mix(in srgb, var(--color-surface) 40%, transparent);
-		backdrop-filter: blur(10px);
-		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+		background: transparent;
+		border: 0px solid var(--color-border);
 		color: var(--color-text-secondary);
 		cursor: pointer;
 		font-size: 0.75rem;
 		font-weight: 500;
-		padding: 0.4rem 0.75rem;
-		border-radius: 8px;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		padding: 0.25rem 0.75rem;
+		border-radius: var(--border-radius-sm);
+		transition: all 0.15s ease;
 		display: inline-flex;
 		align-items: center;
 		gap: 0.3rem;
 		text-decoration: none;
-		margin-left: 0.5rem;
-		opacity: 0.6;
-		box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 4%, transparent);
+		font-family: var(--font-family-ui);
+		letter-spacing: 0.025em;
 	}
 
 	.delete-discussion-btn:hover {
-		background: color-mix(in srgb, #dc2626 8%, var(--color-surface));
-		border-color: color-mix(in srgb, #dc2626 30%, transparent);
+		background: var(--color-surface-alt);
+		border-color: #dc2626;
 		color: #dc2626;
-		opacity: 1;
-		transform: translateY(-1px);
-		box-shadow: 0 4px 12px color-mix(in srgb, #dc2626 15%, transparent);
 	}
 
 	/* Reveal Identity Button */
 	.reveal-identity-btn {
-		background: color-mix(in srgb, var(--color-surface) 40%, transparent);
-		backdrop-filter: blur(10px);
-		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
 		color: var(--color-text-secondary);
 		cursor: pointer;
 		font-size: 0.75rem;
 		font-weight: 500;
-		padding: 0.4rem 0.75rem;
-		border-radius: 8px;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		padding: 0.25rem 0.75rem;
+		border-radius: var(--border-radius-sm);
+		transition: all 0.15s ease;
 		display: inline-flex;
 		align-items: center;
 		gap: 0.3rem;
 		text-decoration: none;
-		margin-left: 0.5rem;
-		opacity: 0.6;
-		box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 4%, transparent);
+		font-family: var(--font-family-ui);
+		letter-spacing: 0.025em;
 	}
 
 	.reveal-identity-btn:hover {
-		background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
-		border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
-		color: var(--color-accent);
-		opacity: 1;
-		transform: translateY(-1px);
-		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-accent) 15%, transparent);
+		background: var(--color-surface-alt);
+		border-color: var(--color-primary);
+		color: var(--color-primary);
 	}
 
 	/* Good faith analysis toggle styles */
@@ -6466,6 +6364,25 @@
 		}
 	}
 
+	/* Citation Section Inline Styles */
+	.citation-section-inline {
+		padding: 1rem;
+		border-radius: var(--border-radius-md);
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+	}
+
+	.citation-section-inline .citation-header {
+		margin-bottom: 1rem;
+	}
+
+	.citation-section-inline .citation-header h4 {
+		margin: 0;
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
 	.comment-writing-info .word-count-label {
 		font-weight: 600;
 		color: var(--color-text-primary);
@@ -6630,184 +6547,4 @@
 		}
 	}
 
-	/* Out of Credits Modal Styles */
-	.modal-overlay {
-		position: fixed;
-		top: 0;
-		left: 0;
-		width: 100%;
-		height: 100%;
-		background: rgba(0, 0, 0, 0.6);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 1000;
-		backdrop-filter: blur(2px);
-	}
-
-	.modal-content {
-		background: var(--color-bg-primary);
-		border-radius: 12px;
-		box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-		max-width: 500px;
-		width: 90%;
-		max-height: 80vh;
-		overflow-y: auto;
-		animation: modal-appear 0.2s ease-out;
-	}
-
-	@keyframes modal-appear {
-		from {
-			opacity: 0;
-			transform: scale(0.9) translateY(-20px);
-		}
-		to {
-			opacity: 1;
-			transform: scale(1) translateY(0);
-		}
-	}
-
-	.modal-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 1.5rem 1.5rem 1rem;
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.modal-header h3 {
-		margin: 0;
-		font-size: 1.25rem;
-		font-weight: 600;
-		color: var(--color-text-primary);
-	}
-
-	.modal-close-btn {
-		background: none;
-		border: none;
-		font-size: 1.5rem;
-		color: var(--color-text-secondary);
-		cursor: pointer;
-		padding: 0.25rem;
-		border-radius: 4px;
-		line-height: 1;
-		transition: all 0.2s ease;
-	}
-
-	.modal-close-btn:hover {
-		background: var(--color-bg-secondary);
-		color: var(--color-text-primary);
-	}
-
-	.modal-body {
-		padding: 1.5rem;
-	}
-
-	.modal-main-message {
-		font-size: 1.1rem;
-		color: var(--color-text-primary);
-		margin: 0 0 1rem 0;
-		line-height: 1.5;
-	}
-
-	.analysis-blocked-details {
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		padding: 1rem;
-		margin-top: 1rem;
-	}
-
-	.analysis-blocked-details .error-message {
-		color: var(--color-error);
-		font-weight: 500;
-		margin: 0 0 0.5rem 0;
-	}
-
-	.analysis-blocked-details .help-text {
-		color: var(--color-text-secondary);
-		margin: 0;
-		font-size: 0.9rem;
-	}
-
-	.analysis-blocked-details .help-text a {
-		color: var(--color-primary);
-		text-decoration: none;
-		font-weight: 500;
-	}
-
-	.analysis-blocked-details .help-text a:hover {
-		text-decoration: underline;
-	}
-
-	.modal-footer {
-		padding: 1rem 1.5rem 1.5rem;
-		border-top: 1px solid var(--color-border);
-		display: flex;
-		gap: 0.75rem;
-		justify-content: flex-end;
-	}
-
-	.modal-footer .btn-secondary {
-		background: var(--color-bg-secondary);
-		color: var(--color-text-primary);
-		border: 1px solid var(--color-border);
-		padding: 0.625rem 1.25rem;
-		border-radius: 8px;
-		font-size: 0.9rem;
-		font-weight: 500;
-		cursor: pointer;
-		text-decoration: none;
-		transition: all 0.2s ease;
-	}
-
-	.modal-footer .btn-secondary:hover {
-		background: var(--color-bg-tertiary);
-		border-color: var(--color-text-secondary);
-	}
-
-	.modal-footer .btn-primary {
-		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-		color: var(--color-primary);
-		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
-		padding: 0.625rem 1.25rem;
-		border-radius: 8px;
-		font-size: 0.9rem;
-		font-weight: 500;
-		cursor: pointer;
-		text-decoration: none;
-		transition: all 0.2s ease;
-	}
-
-	.modal-footer .btn-primary:hover {
-		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
-		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
-		transform: translateY(-1px);
-		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 12%, transparent);
-	}
-
-	@media (max-width: 640px) {
-		.modal-content {
-			width: 95%;
-			margin: 1rem;
-		}
-
-		.modal-header,
-		.modal-body,
-		.modal-footer {
-			padding-left: 1rem;
-			padding-right: 1rem;
-		}
-
-		.modal-footer {
-			flex-direction: column;
-		}
-
-		.modal-footer .btn-secondary,
-		.modal-footer .btn-primary {
-			width: 100%;
-			justify-content: center;
-			display: flex;
-		}
-	}
 </style>

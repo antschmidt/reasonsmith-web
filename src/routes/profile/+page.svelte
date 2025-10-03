@@ -313,7 +313,13 @@
 			const data = profileResult.data as any;
 			contributor = data?.contributor_by_pk ?? null;
 			discussions = normalizeDiscussions(data?.discussion);
-			posts = data?.post ?? [];
+			// Filter out drafts with empty content
+			posts = (data?.post ?? []).filter((p: any) => {
+				if (p.status === 'draft') {
+					return p.draft_content && p.draft_content.trim().length > 0;
+				}
+				return true;
+			});
 
 			if (!contributor) {
 				await ensureContributor();
@@ -324,7 +330,13 @@
 				const retryData = retry.data as any;
 				contributor = retryData?.contributor_by_pk ?? null;
 				discussions = normalizeDiscussions(retryData?.discussion);
-				posts = retryData?.post ?? [];
+				// Filter out drafts with empty content
+				posts = (retryData?.post ?? []).filter((p: any) => {
+					if (p.status === 'draft') {
+						return p.draft_content && p.draft_content.trim().length > 0;
+					}
+					return true;
+				});
 			}
 
 			syncFormFields();
@@ -1566,49 +1578,27 @@
 	}
 	/* Buttons */
 	.btn-primary {
-		background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-		color: #ffffff;
-		border: none;
-		padding: 1rem 2rem;
-		border-radius: 16px;
-		font-weight: 600;
-		font-size: 1rem;
+		background: var(--color-surface);
+		color: var(--color-text-primary);
+		border: 1px solid var(--color-border);
+		padding: 0.625rem 1.25rem;
+		border-radius: 3px;
+		font-weight: 500;
+		font-size: 14px;
 		cursor: pointer;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		box-shadow: 0 4px 16px color-mix(in srgb, var(--color-primary) 20%, transparent);
-		position: relative;
-		overflow: hidden;
+		transition: all 0.15s ease;
+		font-family: inherit;
+		letter-spacing: 0.025em;
 	}
 
-	:global([data-theme='dark']) .btn-primary {
-		color: #000000;
-		text-shadow: 0 1px 2px rgba(255, 255, 255, 0.1);
-	}
-
-	.btn-primary::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: -100%;
-		width: 100%;
-		height: 100%;
-		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-		transition: left 0.5s;
-	}
-
-	.btn-primary:hover::before {
-		left: 100%;
-	}
-
-	.btn-primary:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 8px 24px color-mix(in srgb, var(--color-primary) 30%, transparent);
+	.btn-primary:hover:not(:disabled) {
+		border-color: var(--color-primary);
+		background: var(--color-surface-alt);
 	}
 
 	.btn-primary:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
-		transform: none;
 	}
 
 	.btn-secondary {

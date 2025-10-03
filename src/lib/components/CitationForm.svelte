@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Citation } from '$lib/types/writingStyle';
+	import Button from './Button.svelte';
 
 	interface Props {
 		onAdd: (item: Citation) => void;
@@ -193,10 +194,10 @@
 	</div>
 
 	<div class="form-actions">
-		<button type="button" class="btn-primary" onclick={handleSubmit}>
+		<Button type="button" variant="secondary" onclick={handleSubmit}>
 			{editingItem ? 'Update' : 'Add'} Citation
-		</button>
-		<button type="button" class="btn-secondary" onclick={onCancel}> Cancel </button>
+		</Button>
+		<Button type="button" variant="secondary" onclick={onCancel}>Cancel</Button>
 	</div>
 </div>
 
