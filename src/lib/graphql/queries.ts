@@ -12,10 +12,14 @@ const CONTRIBUTOR_FIELDS = gql`
 		analysis_limit
 		analysis_count_used
 		analysis_count_reset_at
+		monthly_credits_remaining
+		monthly_credits_reset_at
 		purchased_credits_total
 		purchased_credits_used
+		purchased_credits_remaining
 		subscription_tier
 		avatar_url
+		account_disabled
 	}
 `;
 
@@ -1345,6 +1349,73 @@ export const REMOVE_CITATION_FROM_DISCUSSION = gql`
 				citation_id: { _eq: $citation_id }
 			}
 		) {
+			affected_rows
+		}
+	}
+`;
+
+// Notification queries
+const NOTIFICATION_FIELDS = gql`
+	fragment NotificationFields on notification {
+		id
+		type
+		discussion_id
+		post_id
+		actor_id
+		read
+		created_at
+		discussion {
+			id
+			discussion_versions(
+				where: { version_type: { _eq: "published" } }
+				order_by: { version_number: desc }
+				limit: 1
+			) {
+				title
+			}
+		}
+		post {
+			id
+			content
+		}
+	}
+`;
+
+export const GET_NOTIFICATIONS = gql`
+	query GetNotifications($userId: uuid!, $limit: Int = 20) {
+		notification(
+			where: { recipient_id: { _eq: $userId } }
+			order_by: { created_at: desc }
+			limit: $limit
+		) {
+			...NotificationFields
+		}
+	}
+	${NOTIFICATION_FIELDS}
+`;
+
+export const GET_UNREAD_NOTIFICATION_COUNT = gql`
+	query GetUnreadNotificationCount($userId: uuid!) {
+		notification_aggregate(where: { recipient_id: { _eq: $userId }, read: { _eq: false } }) {
+			aggregate {
+				count
+			}
+		}
+	}
+`;
+
+export const MARK_NOTIFICATION_AS_READ = gql`
+	mutation MarkNotificationAsRead($notificationId: uuid!) {
+		update_notification_by_pk(pk_columns: { id: $notificationId }, _set: { read: true }) {
+			id
+			read
+		}
+	}
+`;
+
+export const MARK_ALL_NOTIFICATIONS_AS_READ = gql`
+	mutation MarkAllNotificationsAsRead($userId: uuid!) {
+		update_notification(where: { recipient_id: { _eq: $userId } }, _set: { read: true }) {
 			affected_rows
 		}
 	}

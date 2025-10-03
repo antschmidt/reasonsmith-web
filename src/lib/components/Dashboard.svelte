@@ -3,6 +3,7 @@
 	// Avoid importing gql to prevent type resolution issues; use plain strings
 	import { nhost } from '$lib/nhostClient';
 	import { GET_DASHBOARD_DATA } from '$lib/graphql/queries';
+	import Notifications from './Notifications.svelte';
 
 	let { user } = $props<{ user: User }>();
 
@@ -207,6 +208,9 @@
 	<div class="dashboard-grid">
 		<!-- Sidebar (Right Column) -->
 		<aside class="sidebar">
+			<!-- Notifications -->
+			<Notifications userId={user.id as unknown as string} />
+
 			<!-- Single Action: New Discussion -->
 			<section class="card quick-discussion">
 				<a href="/discussions/new" class="btn btn-secondary btn-sm">
@@ -224,7 +228,7 @@
 				</a>
 			</section>
 
-			<!-- Pinned Threads, Leaderboard, Notifications remain placeholders for now -->
+			<!-- Pinned Threads, Leaderboard remain placeholders for now -->
 			<!-- ...existing code... -->
 		</aside>
 		<!-- Main Content (Left Column) -->
@@ -359,13 +363,16 @@
 		}
 		.main-content {
 			grid-column: span 2 / span 2;
+			order: 1;
 		}
 		.sidebar {
 			grid-column: span 1 / span 1;
+			order: 2;
 		}
 	}
 	.main-content {
 		margin-bottom: 2rem;
+		order: 1; /* Main content first on mobile */
 	}
 	@media (min-width: 1024px) {
 		.main-content {
@@ -375,6 +382,7 @@
 	.sidebar {
 		display: flex;
 		flex-direction: column;
+		order: 2; /* Sidebar second on mobile */
 	}
 
 	/* Editorial Cards */

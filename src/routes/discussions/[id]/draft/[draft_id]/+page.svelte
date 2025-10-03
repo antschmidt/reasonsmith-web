@@ -14,6 +14,15 @@
 		getPostTypeConfig
 	} from '$lib/types/writingStyle';
 	import CitationForm from '$lib/components/CitationForm.svelte';
+	import Button from '$lib/components/Button.svelte';
+	import OutOfCreditsModal from '$lib/components/OutOfCreditsModal.svelte';
+	import {
+		canUseAnalysis,
+		getMonthlyCreditsRemaining,
+		getPurchasedCreditsRemaining,
+		checkAndResetMonthlyCredits
+	} from '$lib/creditUtils';
+	import { INCREMENT_PURCHASED_CREDITS_USED } from '$lib/graphql/queries';
 
 	// Get parameters
 	const discussionId = $page.params.id;
@@ -32,6 +41,7 @@
 	let goodFaithError = $state<string | null>(null);
 	let isAnalyzing = $state(false);
 	let analysisCollapsed = $state(false);
+	let analysisResultsDismissed = $state(false);
 
 	// Draft data
 	let draft = $state<any>(null);
@@ -53,9 +63,32 @@
 	let user = $state(nhost.auth.getUser());
 	nhost.auth.onAuthStateChanged(() => {
 		user = nhost.auth.getUser();
+		// Load draft once user is authenticated (handles direct navigation to draft URL)
+		if (user && !loadAttempted) {
+			loadDraft();
+		}
 	});
 
+	// Credits and modal state
+	let contributor = $state<any>(null);
+	let showOutOfCreditsModal = $state(false);
+	let analysisBlockedReason = $state<string | null>(null);
+
 	// Computed properties for publish logic
+	let isPublishedVersion = $derived.by(() => {
+		if (!draft || !discussion?.current_version?.[0]) return false;
+		const publishedVersion = discussion.current_version[0];
+
+		// Check if this draft ID matches the published version ID
+		if (draft.id === publishedVersion.id) return true;
+
+		// Also check if the content is identical to the published version
+		const titleMatches = title.trim() === (publishedVersion.title || '').trim();
+		const descriptionMatches = description.trim() === (publishedVersion.description || '').trim();
+
+		return titleMatches && descriptionMatches;
+	});
+
 	let canPublish = $derived.by(() => {
 		if (!draft) return false;
 		// If no analysis has been run yet, can't publish
@@ -77,14 +110,19 @@
 		return new Date(draft.edited_at) > new Date(draft.good_faith_last_evaluated);
 	});
 
+	let hasCredits = $derived.by(() => {
+		if (!contributor) return false;
+		return canUseAnalysis(contributor);
+	});
+
 	async function loadDraft() {
 		try {
 			loading = true;
 			error = null;
 			loadAttempted = true;
 
-			// Load both the discussion and the specific draft
-			const [discussionResult, draftResult] = await Promise.all([
+			// Load the discussion, draft, and contributor data
+			const [discussionResult, draftResult, contributorResult] = await Promise.all([
 				nhost.graphql.request(
 					`
 					query GetDiscussion($discussionId: uuid!) {
@@ -137,6 +175,22 @@
 					}
 				`,
 					{ draftId }
+				),
+
+				nhost.graphql.request(
+					`
+					query GetContributor($userId: uuid!) {
+						contributor(where: { user_id: { _eq: $userId } }, limit: 1) {
+							id
+							user_id
+							monthly_credits_remaining
+							purchased_credits_remaining
+							monthly_credits_reset_at
+							account_disabled
+						}
+					}
+				`,
+					{ userId: user?.id }
 				)
 			]);
 
@@ -152,6 +206,7 @@
 
 			discussion = discussionResult.data?.discussion_by_pk;
 			draft = draftResult.data?.discussion_version_by_pk;
+			contributor = contributorResult.data?.contributor?.[0] || null;
 
 			if (!discussion) {
 				throw new Error('Discussion not found');
@@ -159,6 +214,11 @@
 
 			if (!draft) {
 				throw new Error('Draft not found');
+			}
+
+			// Check and reset monthly credits if needed
+			if (contributor) {
+				await checkAndResetMonthlyCredits(nhost, contributor);
 			}
 
 			// Check permissions
@@ -185,12 +245,115 @@
 				};
 				analysisCollapsed = true;
 			}
+
+			// Check if analysis was in progress when user navigated away
+			const analysisInProgress = sessionStorage.getItem(`analysis-${draftId}`);
+			if (analysisInProgress === 'true') {
+				// Check if analysis has completed
+				const analysisDate = draft.good_faith_last_evaluated ? new Date(draft.good_faith_last_evaluated) : null;
+				const editDate = draft.edited_at ? new Date(draft.edited_at) : null;
+
+				if (analysisDate && editDate && analysisDate > editDate) {
+					// Analysis completed while away
+					sessionStorage.removeItem(`analysis-${draftId}`);
+				} else {
+					// Analysis still in progress, start polling
+					startPollingForAnalysis();
+				}
+			}
+
 		} catch (err: any) {
 			console.error('Error loading draft:', err);
 			error = err.message || 'Failed to load draft';
 		} finally {
 			loading = false;
 		}
+	}
+
+	let pollingInterval: ReturnType<typeof setInterval> | null = null;
+
+	function startPollingForAnalysis() {
+		// Clear any existing interval
+		if (pollingInterval) {
+			clearInterval(pollingInterval);
+		}
+
+		goodFaithTesting = true;
+
+		// Poll every 2 seconds for up to 2 minutes
+		let pollCount = 0;
+		const maxPolls = 60; // 2 minutes
+
+		pollingInterval = setInterval(async () => {
+			pollCount++;
+
+			try {
+				// Refetch the draft to check for updated analysis
+				const result = await nhost.graphql.request(
+					`
+					query GetDraftAnalysis($draftId: uuid!) {
+						discussion_version_by_pk(id: $draftId) {
+							id
+							good_faith_score
+							good_faith_label
+							good_faith_last_evaluated
+							good_faith_analysis
+							edited_at
+						}
+					}
+				`,
+					{ draftId: draft.id }
+				);
+
+				const updatedDraft = result.data?.discussion_version_by_pk;
+
+				if (updatedDraft && updatedDraft.good_faith_last_evaluated) {
+					const analysisDate = new Date(updatedDraft.good_faith_last_evaluated);
+					const editDate = updatedDraft.edited_at ? new Date(updatedDraft.edited_at) : null;
+
+					// Check if analysis is newer than edit (or no edit date)
+					if (!editDate || analysisDate > editDate) {
+						// Analysis completed!
+						draft.good_faith_score = updatedDraft.good_faith_score;
+						draft.good_faith_label = updatedDraft.good_faith_label;
+						draft.good_faith_last_evaluated = updatedDraft.good_faith_last_evaluated;
+
+						goodFaithResult = {
+							good_faith_score: updatedDraft.good_faith_score,
+							good_faith_label: updatedDraft.good_faith_label,
+							rationale: updatedDraft.good_faith_analysis?.rationale || null,
+							claims: updatedDraft.good_faith_analysis?.claims || [],
+							provider: updatedDraft.good_faith_analysis?.provider || 'claude'
+						};
+
+						goodFaithTesting = false;
+						isAnalyzing = true;
+						analysisCollapsed = true;
+
+						// Clear the analysis flag
+						sessionStorage.removeItem(`analysis-${draftId}`);
+
+						// Stop polling
+						if (pollingInterval) {
+							clearInterval(pollingInterval);
+							pollingInterval = null;
+						}
+					}
+				}
+
+				// Stop after max polls
+				if (pollCount >= maxPolls) {
+					goodFaithTesting = false;
+					if (pollingInterval) {
+						clearInterval(pollingInterval);
+						pollingInterval = null;
+					}
+					console.log('Analysis polling timed out');
+				}
+			} catch (err) {
+				console.error('Error polling for analysis:', err);
+			}
+		}, 2000);
 	}
 
 	async function saveDraft() {
@@ -243,11 +406,25 @@
 	}
 
 	async function analyzeGoodFaith() {
-		if (!draft || !user) return null;
+		if (!draft || !user || !contributor) return null;
+
+		// Check if user can use analysis (has credits and account not disabled)
+		const canAnalyze = canUseAnalysis(contributor);
+		if (!canAnalyze) {
+			analysisBlockedReason = contributor.account_disabled
+				? 'Your account has been disabled. Please contact support.'
+				: 'You do not have enough credits to run analysis.';
+			showOutOfCreditsModal = true;
+			return null;
+		}
 
 		goodFaithError = null;
 		goodFaithResult = null;
-		isAnalyzing = true;
+		isAnalyzing = false;
+		analysisResultsDismissed = false;
+
+		// Set flag so we know analysis is in progress (for polling if user navigates away)
+		sessionStorage.setItem(`analysis-${draftId}`, 'true');
 
 		try {
 			goodFaithTesting = true;
@@ -256,11 +433,16 @@
 			try {
 				const content = `${title.trim()}\n\n${description.trim()}`.trim();
 
+				// Get the access token for authentication
+				const accessToken = nhost.auth.getAccessToken();
+				const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+				if (accessToken) {
+					headers['Authorization'] = `Bearer ${accessToken}`;
+				}
+
 				const response = await fetch('/api/goodFaithClaude', {
 					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json'
-					},
+					headers,
 					body: JSON.stringify({
 						content: content
 					})
@@ -312,14 +494,36 @@
 
 				console.log('Good faith analysis saved to database successfully');
 
+				// Decrement credits
+				if (contributor) {
+					const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
+					const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
+
+					if (monthlyRemaining > 0) {
+						// Use monthly credit
+						contributor.monthly_credits_remaining = monthlyRemaining - 1;
+					} else if (purchasedRemaining > 0) {
+						// Use purchased credit
+						await nhost.graphql.request(INCREMENT_PURCHASED_CREDITS_USED, {
+							contributorId: contributor.id
+						});
+						contributor.purchased_credits_remaining = purchasedRemaining - 1;
+					}
+				}
+
 				// Keep isAnalyzing true - user must click "Continue Editing" or "Publish"
 				isAnalyzing = true;
+
+				// Clear the analysis flag
+				sessionStorage.removeItem(`analysis-${draftId}`);
 
 				return goodFaithData;
 			} catch (e: any) {
 				console.error('Good faith analysis failed:', e);
 				goodFaithError = e?.message || 'Failed to analyze discussion for good faith.';
 				isAnalyzing = false;
+				// Clear the analysis flag on error too
+				sessionStorage.removeItem(`analysis-${draftId}`);
 				return null;
 			}
 		} finally {
@@ -380,8 +584,11 @@
 			publishing = true;
 			error = null;
 
-			// First save current changes
-			await saveDraft();
+			// Save current changes only if there are unsaved changes
+			const hasUnsavedChanges = title !== (draft.title ?? '') || description !== (draft.description ?? '');
+			if (hasUnsavedChanges) {
+				await saveDraft();
+			}
 
 			// Step 1: Check if we need to run good faith analysis
 			let goodFaithData = null;
@@ -626,6 +833,7 @@
 	function continueEditing() {
 		isAnalyzing = false;
 		analysisCollapsed = true;
+		analysisResultsDismissed = true;
 	}
 
 	function toggleAnalysis() {
@@ -636,6 +844,16 @@
 		if (user) {
 			loadDraft();
 		}
+
+		// Cleanup on unmount
+		return () => {
+			if (pollingInterval) {
+				clearInterval(pollingInterval);
+			}
+			if (autoSaveInterval) {
+				clearInterval(autoSaveInterval);
+			}
+		};
 	});
 
 	// Reload when user changes
@@ -683,13 +901,12 @@
 		<div class="error">
 			<h2>Error</h2>
 			<p>{error}</p>
-			<button
-				type="button"
-				class="btn-secondary"
+			<Button
+				variant="secondary"
 				onclick={() => goto(`/discussions/${discussionId}`)}
 			>
 				Back to Discussion
-			</button>
+			</Button>
 		</div>
 	{:else if draft && discussion}
 		<div class="draft-editor">
@@ -703,55 +920,69 @@
 					</p>
 				</div>
 				<div class="header-actions">
-					<!-- Button 1: Continue Editing (shown after analysis) -->
-					{#if isAnalyzing}
-						<button type="button" class="btn-secondary" onclick={continueEditing}>
+					<!-- Button 1: Continue Editing (shown only when form is disabled) -->
+					{#if !analysisResultsDismissed && isAnalyzing}
+						<Button variant="secondary" onclick={continueEditing}>
 							Continue Editing
-						</button>
+						</Button>
 					{/if}
 
 					<!-- Button 2: Analysis/Publish -->
-					{#if !canPublish}
+					{#if isPublishedVersion}
+						<!-- State: Already Published -->
+						<Button variant="secondary" disabled>
+							Published Version
+						</Button>
+					{:else if !canPublish}
 						<!-- State A: Need Analysis -->
-						<button
-							type="button"
-							class="btn-secondary logo-btn"
-							onclick={analyzeGoodFaith}
-							disabled={goodFaithTesting || saving || publishing}
-							title="Run good faith analysis to enable publishing"
-						>
-							{#if goodFaithTesting}
-								<AnimatedLogo size="20px" isAnimating={true} />
-								<div>Analyzing...</div>
-							{:else}
-								<img src="/logo-only-transparent.svg" alt="" width="40" height="40" />
-								<div>Run Analysis to Enable Publishing</div>
-							{/if}
-						</button>
+						{#if !hasCredits}
+							<Button
+								variant="secondary"
+								onclick={() => goto('/profile')}
+								title="You need credits to run analysis"
+							>
+								Out of Credits. Buy More or Subscribe
+							</Button>
+						{:else}
+							<Button
+								variant="secondary"
+								class="logo-btn"
+								onclick={analyzeGoodFaith}
+								disabled={goodFaithTesting || saving || publishing}
+								title="Run good faith analysis to enable publishing"
+							>
+								{#if goodFaithTesting}
+									<AnimatedLogo size="20px" isAnimating={true} />
+									<div>Analyzing...</div>
+								{:else}
+									<img src="/logo-only-transparent.svg" alt="" width="40" height="40" />
+									<div>Run Analysis to Enable Publishing</div>
+								{/if}
+							</Button>
+						{/if}
 					{:else if publishing}
 						<!-- State B: Publishing -->
-						<button type="button" class="btn-accent" disabled>
+						<Button variant="accent" disabled>
 							<AnimatedLogo size="20px" isAnimating={true} /> Publishing...
-						</button>
+						</Button>
 					{:else if analysisPassedCriteria}
 						<!-- State C: Analysis Passed - Can Publish -->
-						<button
+						<Button
 							type="button"
-							class="btn-accent"
+							variant="accent"
 							onclick={publishDraft}
 							disabled={saving}
 						>
 							<span class="check-icon">✓</span> Publish
-						</button>
+						</Button>
 					{:else}
 						<!-- State D: Analysis Failed - Return to Forge -->
-						<button
-							type="button"
-							class="btn-disabled"
+						<Button
+							variant="secondary"
 							onclick={continueEditing}
 						>
 							<span class="x-icon">✗</span> Return to the Forge
-						</button>
+						</Button>
 					{/if}
 				</div>
 			</header>
@@ -790,13 +1021,13 @@
 							{/if}
 						</div>
 						{#if analysisCollapsed}
-							<button type="button" class="expand-btn" onclick={toggleAnalysis}>
+							<Button type="button" variant="ghost" size="sm" onclick={toggleAnalysis}>
 								Expand Analysis
-							</button>
+							</Button>
 						{:else}
-							<button type="button" class="collapse-btn" onclick={toggleAnalysis}>
+							<Button type="button" variant="ghost" size="sm" onclick={toggleAnalysis}>
 								Collapse
-							</button>
+							</Button>
 						{/if}
 					</div>
 					{#if !analysisCollapsed && goodFaithResult.rationale}
@@ -849,7 +1080,7 @@
 						bind:value={title}
 						placeholder="Discussion title..."
 						required
-						disabled={isAnalyzing}
+						disabled={isAnalyzing || goodFaithTesting}
 					/>
 				</div>
 
@@ -861,7 +1092,7 @@
 						placeholder="Describe your discussion..."
 						rows="20"
 						required
-						disabled={isAnalyzing}
+						disabled={isAnalyzing || goodFaithTesting}
 					></textarea>
 				</div>
 
@@ -869,16 +1100,17 @@
 				<div class="form-group">
 					<div class="citations-header">
 						<label>Citations</label>
-						<button
+						<Button
 							type="button"
-							class="btn-secondary small"
+							variant="secondary"
+							size="sm"
 							onclick={() => {
 								editingCitation = null;
 								showCitationForm = true;
 							}}
 						>
 							Add Citation
-						</button>
+						</Button>
 					</div>
 
 					{#if styleMetadata.citations && styleMetadata.citations.length > 0}
@@ -901,21 +1133,30 @@
 										</div>
 									</div>
 									<div class="citation-actions">
-										<button
-											type="button"
-											class="action-btn"
+										<Button
+											variant="ghost"
+											size="sm"
 											onclick={() => insertCitationReference(citation.id)}
-											title="Insert citation reference">Insert</button>
-										<button
-											type="button"
-											class="action-btn"
+											title="Insert citation reference"
+										>
+											Insert
+										</Button>
+										<Button
+											variant="ghost"
+											size="sm"
 											onclick={() => startEditCitation(citation.id)}
-											title="Edit citation">Edit</button>
-										<button
-											type="button"
-											class="action-btn danger"
+											title="Edit citation"
+										>
+											Edit
+										</Button>
+										<Button
+											variant="ghost"
+											size="sm"
 											onclick={() => removeCitation(citation.id)}
-											title="Remove citation">Remove</button>
+											title="Remove citation"
+										>
+											Remove
+										</Button>
 									</div>
 								</div>
 							{/each}
@@ -934,16 +1175,16 @@
 					<div class="citation-modal-content">
 						<div class="citation-modal-header">
 							<h3>{editingCitation ? 'Edit Citation' : 'Add Citation'}</h3>
-							<button
+							<Button
 								type="button"
-								class="close-btn"
+								variant="ghost"
 								onclick={() => {
 									showCitationForm = false;
 									editingCitation = null;
 								}}
 							>
 								✕
-							</button>
+							</Button>
 						</div>
 						<CitationForm
 							citation={editingCitation}
@@ -970,6 +1211,13 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Out of Credits Modal -->
+<OutOfCreditsModal
+	bind:show={showOutOfCreditsModal}
+	{analysisBlockedReason}
+	onClose={() => (showOutOfCreditsModal = false)}
+/>
 
 <style>
 	/* Import sophisticated fonts */

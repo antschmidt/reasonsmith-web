@@ -99,31 +99,58 @@ export async function checkAndResetMonthlyCredits(
  * Takes into account whether a reset is needed.
  */
 export function getMonthlyCreditsRemaining(contributor: {
-	analysis_limit: number | null;
-	analysis_count_used: number;
-	analysis_count_reset_at: string | null;
+	analysis_limit?: number | null;
+	monthly_credits_remaining?: number | null;
+	analysis_count_used?: number;
+	analysis_count_reset_at?: string | null;
+	monthly_credits_reset_at?: string | null;
+	role?: string;
 }): number {
+	// Check for unlimited access
+	if (contributor.role && ['admin', 'slartibartfast'].includes(contributor.role)) {
+		return Infinity;
+	}
+
 	if (contributor.analysis_limit === null) {
 		return Infinity; // Unlimited
 	}
 
-	// If a reset is needed, they have their full limit available
-	if (shouldResetMonthlyCredits(contributor.analysis_count_reset_at)) {
-		return contributor.analysis_limit;
+	// Use the new monthly_credits_remaining field if available
+	if (typeof contributor.monthly_credits_remaining === 'number') {
+		return Math.max(0, contributor.monthly_credits_remaining);
 	}
 
-	// Otherwise, calculate remaining from current usage
-	return Math.max(0, contributor.analysis_limit - contributor.analysis_count_used);
+	// Fallback to old calculation for backward compatibility
+	if (typeof contributor.analysis_limit === 'number') {
+		// If a reset is needed, they have their full limit available
+		if (shouldResetMonthlyCredits(contributor.analysis_count_reset_at || contributor.monthly_credits_reset_at || null)) {
+			return contributor.analysis_limit;
+		}
+
+		// Otherwise, calculate remaining from current usage
+		return Math.max(0, contributor.analysis_limit - (contributor.analysis_count_used || 0));
+	}
+
+	return 0;
 }
 
 /**
  * Gets the purchased credits remaining for a contributor.
  */
 export function getPurchasedCreditsRemaining(contributor: {
+	purchased_credits_remaining?: number | null;
 	purchased_credits_total?: number;
 	purchased_credits_used?: number;
 }): number {
-	// Default to 0 if fields don't exist (before migration)\n\tconst total = contributor.purchased_credits_total ?? 0;\n\tconst used = contributor.purchased_credits_used ?? 0;\n\treturn Math.max(0, total - used);
+	// Use the new purchased_credits_remaining field if available
+	if (typeof contributor.purchased_credits_remaining === 'number') {
+		return Math.max(0, contributor.purchased_credits_remaining);
+	}
+
+	// Fallback to calculation for backward compatibility
+	const total = contributor.purchased_credits_total ?? 0;
+	const used = contributor.purchased_credits_used ?? 0;
+	return Math.max(0, total - used);
 }
 
 /**

@@ -32,6 +32,9 @@ interface ClaudeScoreResponse {
 	good_faith_score?: number;
 	good_faith_label?: string;
 	rationale?: string;
+
+	// Flag to indicate if this used Claude or fell back to heuristic
+	usedClaude?: boolean;
 }
 
 function getLabel(score: number): string {
@@ -80,7 +83,15 @@ async function analyzeWithClaude(content: string): Promise<ClaudeScoreResponse> 
 			cleanedResponse = cleanedResponse.replace(/^```\s*/, '').replace(/\s*```$/, '');
 		}
 
+		// Try to extract JSON if Claude included extra text
+		// Look for JSON object pattern
+		const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+		if (jsonMatch) {
+			cleanedResponse = jsonMatch[0];
+		}
+
 		console.log('Claude cleaned response length:', cleanedResponse.length);
+		console.log('Claude response preview:', cleanedResponse.substring(0, 200));
 
 		// Parse the JSON response
 		const result: ClaudeScoreResponse = JSON.parse(cleanedResponse);
@@ -90,6 +101,7 @@ async function analyzeWithClaude(content: string): Promise<ClaudeScoreResponse> 
 		result.good_faith_score = result.goodFaithScore / 100; // Convert 0-100 to 0-1
 		result.good_faith_label = getLabel(result.good_faith_score); // Use 0-1 scale
 		result.rationale = result.overallAnalysis;
+		result.usedClaude = true; // Mark that Claude analysis was successful
 
 		return result;
 	} catch (error: any) {
@@ -139,7 +151,8 @@ function heuristicScore(content: string): ClaudeScoreResponse {
 		overallAnalysis: 'Heuristic fallback analysis. Claude analysis unavailable.',
 		good_faith_score: score / 100,
 		good_faith_label: getLabel(score / 100),
-		rationale: 'Heuristic fallback score.'
+		rationale: 'Heuristic fallback score.',
+		usedClaude: false // Mark that heuristic fallback was used
 	};
 }
 
@@ -298,9 +311,9 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			// Use Claude analysis
 			const scored = await analyzeWithClaude(content);
 
-			// Increment appropriate credit type after successful analysis
-			console.log('Checking credit consumption:', { contributorId: !!contributorId, contributor: !!contributor });
-		if (contributorId && contributor) {
+			// Increment appropriate credit type only if Claude was actually used (not heuristic fallback)
+			console.log('Checking credit consumption:', { contributorId: !!contributorId, contributor: !!contributor, usedClaude: scored.usedClaude });
+		if (contributorId && contributor && scored.usedClaude) {
 				try {
 					// Use the working endpoint URL that was discovered during contributor lookup
 					let CREDIT_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
