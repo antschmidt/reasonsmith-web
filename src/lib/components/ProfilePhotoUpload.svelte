@@ -2,16 +2,20 @@
 	import { nhost } from '$lib/nhostClient';
 	import { UPDATE_CONTRIBUTOR_AVATAR } from '$lib/graphql/queries';
 
-	export let currentAvatarUrl: string | null = null;
-	export let contributorId: string;
-	export let onUpdate: (newAvatarUrl: string | null) => void = () => {};
+	interface Props {
+		currentAvatarUrl: string | null;
+		contributorId: string;
+		onUpdate?: (newAvatarUrl: string | null) => void;
+	}
 
-	let uploading = false;
-	let error: string | null = null;
-	let fileInput: HTMLInputElement;
+	let { currentAvatarUrl = $bindable(), contributorId, onUpdate = () => {} }: Props = $props();
+
+	let uploading = $state(false);
+	let error = $state<string | null>(null);
+	let fileInput = $state<HTMLInputElement>();
 
 	// Temporary preview URL for newly selected file
-	let previewUrl: string | null = null;
+	let previewUrl = $state<string | null>(null);
 
 	function getAvatarDisplay() {
 		return previewUrl || currentAvatarUrl;
@@ -84,7 +88,10 @@
 				previewUrl = null;
 			}
 
-			// Update parent component
+			// Update the current avatar URL (bindable prop)
+			currentAvatarUrl = avatarUrl;
+
+			// Notify parent component
 			onUpdate(avatarUrl);
 		} catch (err: any) {
 			error = err.message || 'Failed to upload photo';
@@ -119,7 +126,10 @@
 				previewUrl = null;
 			}
 
-			// Update parent component
+			// Update the current avatar URL (bindable prop)
+			currentAvatarUrl = null;
+
+			// Notify parent component
 			onUpdate(null);
 		} catch (err: any) {
 			error = err.message || 'Failed to remove photo';
