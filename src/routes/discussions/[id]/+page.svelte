@@ -160,37 +160,44 @@
     }
   `;
 
-	let historicalVersion = $state<any>(null);
-	let versionLoading = $state(false);
-	let versionError = $state<string | null>(null);
+	// Track which post is showing historical context
+	let showingContextForPost = $state<string | null>(null);
+	let historicalVersions = $state<Record<string, any>>({});
+	let versionLoading = $state<Record<string, boolean>>({});
+	let versionError = $state<Record<string, string>>({});
 
-	$effect(() => {
-		const versionRef = $page.url.searchParams.get('versionRef');
-		if (versionRef) {
-			versionLoading = true;
-			versionError = null;
-			nhost.graphql
-				.request(GET_DISCUSSION_VERSION, { versionId: versionRef })
-				.then(({ data, error }) => {
-					if (error) {
-						// error could be array or object; attempt to normalize
-						versionError = Array.isArray(error)
-							? error.map((e) => (e as any).message || 'Error').join(', ')
-							: (error as any).message || 'Error';
-					} else {
-						historicalVersion = (data as any)?.discussion_version_by_pk;
-					}
-				})
-				.finally(() => {
-					versionLoading = false;
-				});
-		} else {
-			historicalVersion = null;
-			versionError = null;
-			versionLoading = false;
+	// Function to load and show historical context for a post
+	async function toggleHistoricalContext(postId: string, versionId: string) {
+		if (showingContextForPost === postId) {
+			// Hide if already showing
+			showingContextForPost = null;
+			return;
 		}
-	});
 
+		// Show for this post
+		showingContextForPost = postId;
+
+		// Load if not already cached
+		if (!historicalVersions[versionId]) {
+			versionLoading[versionId] = true;
+			versionError[versionId] = '';
+
+			try {
+				const { data, error } = await nhost.graphql.request(GET_DISCUSSION_VERSION, { versionId });
+				if (error) {
+					versionError[versionId] = Array.isArray(error)
+						? error.map((e: any) => e.message || 'Error').join(', ')
+						: (error as any).message || 'Error';
+				} else {
+					historicalVersions[versionId] = (data as any)?.discussion_version_by_pk;
+				}
+			} catch (e: any) {
+				versionError[versionId] = e.message || 'Failed to load context';
+			} finally {
+				versionLoading[versionId] = false;
+			}
+		}
+	}
 
 	let editing = $state(false);
 	let editTitle = $state('');
@@ -249,13 +256,16 @@
 
 	// Check if user can use analysis (reactive)
 	const canUserUseAnalysis = $derived(contributor ? canUseAnalysis(contributor) : false);
-	const analysisBlockedReason = $derived(!contributor
-		? 'Unable to load account information'
-		: !contributor.analysis_enabled
-		? 'Good-faith analysis has been disabled for your account'
-		: getMonthlyCreditsRemaining(contributor) === 0 && getPurchasedCreditsRemaining(contributor) === 0
-		? 'No analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.'
-		: null);
+	const analysisBlockedReason = $derived(
+		!contributor
+			? 'Unable to load account information'
+			: !contributor.analysis_enabled
+				? 'Good-faith analysis has been disabled for your account'
+				: getMonthlyCreditsRemaining(contributor) === 0 &&
+					  getPurchasedCreditsRemaining(contributor) === 0
+					? 'No analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.'
+					: null
+	);
 
 	// Automatically infer comment writing style based on content length
 	function getInferredCommentStyle(): WritingStyle {
@@ -279,12 +289,18 @@
 		else if (wordCount >= 10) score += 10;
 		else issues.push(`Content too short (${wordCount} words, minimum 25 recommended)`);
 
+		// Substance assessment (0-15 points)
+		const isQuestion = QUESTION_PATTERN.test(content.trim());
+		const hasReasoningWords = /\b(because|since|therefore|however|although|while)\b/i.test(content);
+		const hasEvidence = /\b(study|research|data|evidence|example|according to)\b/i.test(content);
+
 		// Structure assessment (0-25 points)
 		const sentences = content.split(/[.!?]+/).filter((s) => s.trim().length > 0);
 
 		if (sentences.length >= 3) score += 25;
 		else if (sentences.length >= 2) score += 15;
-		else if (sentences.length >= 1 && isQuestion) score += 15; // Questions can be shorter
+		else if (sentences.length >= 1 && isQuestion)
+			score += 15; // Questions can be shorter
 		else issues.push('Content needs more detailed explanation (at least 2-3 sentences)');
 
 		// Title assessment for discussions (0-15 points)
@@ -304,11 +320,6 @@
 		else if (hasCapitalization && hasPunctuation) score += 15;
 		else if (hasCapitalization || hasPunctuation) score += 10;
 		else issues.push('Content needs proper capitalization and punctuation');
-
-		// Substance assessment (0-15 points)
-		const isQuestion = QUESTION_PATTERN.test(content.trim());
-		const hasReasoningWords = /\b(because|since|therefore|however|although|while)\b/i.test(content);
-		const hasEvidence = /\b(study|research|data|evidence|example|according to)\b/i.test(content);
 
 		if (hasEvidence) score += 15;
 		else if (hasReasoningWords) score += 10;
@@ -346,11 +357,8 @@
 	} | null>(null);
 	let claudeGoodFaithError = $state<string | null>(null);
 
-	// Good faith analysis visibility toggle for published posts
-	let showGoodFaithAnalysis = $state(false);
-
-	// Good faith analysis visibility toggle for discussion description
-	let showDiscussionGoodFaithAnalysis = $state(false);
+	// Good faith analysis visibility - track which item is showing analysis
+	let showGoodFaithAnalysisFor = $state<string | null>(null); // Stores 'discussion' or post ID
 
 	// Analysis cache
 	interface CachedAnalysis {
@@ -657,7 +665,8 @@
 
 		if (!canUseAnalysis(contributor)) {
 			if (!contributor.analysis_enabled) {
-				submitError = 'Good-faith analysis has been disabled for your account. Please contact support.';
+				submitError =
+					'Good-faith analysis has been disabled for your account. Please contact support.';
 				return;
 			}
 
@@ -665,7 +674,8 @@
 			const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
 
 			if (monthlyRemaining === 0 && purchasedRemaining === 0) {
-				submitError = 'You have no analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.';
+				submitError =
+					'You have no analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.';
 				return;
 			} else {
 				submitError = 'Unable to proceed with analysis. Please check your credit balance.';
@@ -690,7 +700,11 @@
 				const user = nhost.auth.getUser();
 				const accessToken = nhost.auth.getAccessToken();
 				console.log('[DEBUG] User authenticated:', !!user, user?.id);
-				console.log('[DEBUG] Frontend access token:', !!accessToken, accessToken?.substring(0, 20) + '...');
+				console.log(
+					'[DEBUG] Frontend access token:',
+					!!accessToken,
+					accessToken?.substring(0, 20) + '...'
+				);
 				const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 				if (accessToken) {
 					headers['Authorization'] = `Bearer ${accessToken}`;
@@ -3355,126 +3369,25 @@
 					</div>
 				{/if}
 
-				<!-- Good Faith Analysis Display for Discussion Description -->
+				<!-- Good Faith Analysis Icon for Discussion -->
 				{#if getDiscussionGoodFaithScore() != null && typeof getDiscussionGoodFaithScore() === 'number' && getDiscussionGoodFaithLabel() && !editing}
-					<div class="good-faith-analysis-section">
-						<button
-							type="button"
-							class="good-faith-toggle"
-							onclick={() => (showDiscussionGoodFaithAnalysis = !showDiscussionGoodFaithAnalysis)}
-							aria-expanded={showDiscussionGoodFaithAnalysis}
-						>
-							<span class="toggle-icon">{showDiscussionGoodFaithAnalysis ? '▼' : '▶'}</span>
-							Good Faith Analysis
-							<span class="good-faith-score-inline">
-								<span class="score-value">{(getDiscussionGoodFaithScore() * 100).toFixed(0)}%</span>
-								<span class="score-label {getDiscussionGoodFaithLabel()}"
-									>{getDiscussionGoodFaithLabel()}</span
-								>
-							</span>
-						</button>
-
-						{#if showDiscussionGoodFaithAnalysis}
-							<div class="good-faith-details">
-								<div class="score-breakdown">
-									{#if getDiscussionGoodFaithLastEvaluated()}
-										<div class="evaluation-date">
-											Evaluated: {new Date(getDiscussionGoodFaithLastEvaluated()).toLocaleString()}
-										</div>
-									{/if}
-								</div>
-
-								<!-- Full Analysis Breakdown -->
-								{#if getDiscussionGoodFaithAnalysis()}
-									{@const analysis = getDiscussionGoodFaithAnalysis()}
-									<!-- Debug: {console.log('Analysis data:', analysis)} -->
-
-									{#if analysis.claims && analysis.claims.length > 0}
-										<div class="analysis-section">
-											<strong>Claims Analysis:</strong>
-											{#each analysis.claims as claim}
-												<div class="claim-item">
-													<div class="claim-text"><strong>Claim:</strong> {claim.claim}</div>
-													{#if claim.supportingArguments || claim.arguments}
-														{#each (claim.supportingArguments || claim.arguments) as arg}
-															<div class="argument-item">
-																{#if arg.argument}
-																	<div class="argument-text"><strong>Analysis:</strong> {arg.argument}</div>
-																{/if}
-																<span class="argument-score">Score: {arg.score}/10</span>
-																{#if arg.fallacies && arg.fallacies.length > 0}
-																	<span class="fallacies"
-																		>Fallacies: {arg.fallacies.join(', ')}</span
-																	>
-																{/if}
-																{#if arg.improvements}
-																	<div class="improvements"><strong>Improvements:</strong> {arg.improvements}</div>
-																{/if}
-															</div>
-														{/each}
-													{/if}
-												</div>
-											{/each}
-										</div>
-									{/if}
-
-									{#if analysis.cultishPhrases && analysis.cultishPhrases.length > 0}
-										<div class="analysis-section">
-											<strong>Manipulative Language:</strong>
-											{analysis.cultishPhrases.join(', ')}
-										</div>
-									{/if}
-
-									{#if analysis.fallacyOverload}
-										<div class="analysis-section fallacy-warning">
-											<strong>⚠️ Fallacy Overload:</strong> This content contains a high proportion of
-											fallacious arguments.
-										</div>
-									{/if}
-
-									{#if analysis.rationale}
-										<div class="analysis-section">
-											<strong>Analysis Summary:</strong>
-											{analysis.rationale}
-										</div>
-									{/if}
-
-									{#if analysis.provider}
-										<div class="analysis-meta">
-											<small
-												>Analyzed by: {analysis.provider.charAt(0).toUpperCase() +
-													analysis.provider.slice(1)}</small
-											>
-										</div>
-									{/if}
-								{/if}
-							</div>
-						{/if}
-					</div>
+					<button
+						type="button"
+						class="good-faith-info-icon"
+						onclick={() =>
+							(showGoodFaithAnalysisFor =
+								showGoodFaithAnalysisFor === 'discussion' ? null : 'discussion')}
+						title="View Good Faith Analysis"
+						aria-label="View Good Faith Analysis"
+					>
+						<span class="icon-symbol">ℹ</span>
+						<span class="good-faith-pill {getDiscussionGoodFaithLabel()}">
+							{(getDiscussionGoodFaithScore() * 100).toFixed(0)}%
+						</span>
+					</button>
 				{/if}
 			{/if}
 		</header>
-
-		{#if historicalVersion}
-			<div class="historical-version-banner">
-				<div class="historical-header">
-					<strong>📚 Viewing Archived Version #{historicalVersion.version_number}</strong>
-					<a href={`/discussions/${discussion.id}`} class="return-current-btn"
-						>↩️ Return to Current Version</a
-					>
-				</div>
-				<div class="historical-content">
-					<h3 class="historical-title">{historicalVersion.title}</h3>
-					<div class="historical-description">
-						{@html historicalVersion.description.replace(/\n/g, '<br>')}
-					</div>
-				</div>
-			</div>
-		{:else if versionLoading}
-			<div class="historical-version-banner">Loading historical version…</div>
-		{:else if versionError}
-			<div class="historical-version-banner error-message">{versionError}</div>
-		{/if}
 
 		<div class="posts-list">
 			{#each discussion.posts as post}
@@ -3496,18 +3409,6 @@
 						>
 						<span>&middot;</span>
 						<time>{new Date(post.created_at).toLocaleString()}</time>
-						<span
-							class="writing-style-badge"
-							class:journalistic={post.writing_style === 'journalistic'}
-							class:academic={post.writing_style === 'academic'}
-						>
-							{getStyleConfig(post.writing_style || 'quick_point').label}
-						</span>
-						{#if post.context_version_id}
-							<a class="post-version-link" href={`?versionRef=${post.context_version_id}`}
-								>📖 view original context</a
-							>
-						{/if}
 						<span class="spacer"></span>
 						<button
 							type="button"
@@ -3615,7 +3516,8 @@
 					{/snippet}
 					{#if editingPostId === post.id}
 						<div class="post-edit-block">
-							<textarea id="post-edit-textarea" rows="10" bind:value={editingPostContent}></textarea>
+							<textarea id="post-edit-textarea" rows="10" bind:value={editingPostContent}
+							></textarea>
 							{#if editPostError}<div class="error-message" style="margin-top:0.25rem;">
 									{editPostError}
 								</div>{/if}
@@ -3637,126 +3539,99 @@
 						</div>
 					{:else}
 						{@render postWithCitations()}
-					{/if}
 
-					<!-- Good Faith Analysis Display -->
-					{#if post?.good_faith_score != null && typeof post.good_faith_score === 'number' && post.good_faith_label}
-						<div class="good-faith-analysis-section">
-							<button
-								type="button"
-								class="good-faith-toggle"
-								onclick={() => (showGoodFaithAnalysis = !showGoodFaithAnalysis)}
-								aria-expanded={showGoodFaithAnalysis}
+						<!-- Inline Historical Context Display -->
+						{#if showingContextForPost === post.id && post.context_version_id}
+							{@const version = historicalVersions[post.context_version_id]}
+							{@const loading = versionLoading[post.context_version_id]}
+							{@const error = versionError[post.context_version_id]}
+
+							<div
+								class="historical-context-inline"
+								transition:scale={{ duration: 300, start: 0.95 }}
 							>
-								<span class="toggle-icon">{showGoodFaithAnalysis ? '▼' : '▶'}</span>
-								Good Faith Analysis
-								<span class="good-faith-score-inline">
-									<span class="score-value">{(post.good_faith_score * 100).toFixed(0)}%</span>
-									<span class="score-label {post.good_faith_label}">{post.good_faith_label}</span>
-								</span>
-							</button>
-
-							{#if showGoodFaithAnalysis}
-								<div class="good-faith-details">
-									<div class="score-breakdown">
-										<div class="score-row">
-											<span class="score-label-text">Score:</span>
-											<span class="score-value-large"
-												>{(post.good_faith_score * 100).toFixed(0)}%</span
-											>
-											<span class="score-label-badge {post.good_faith_label}"
-												>{post.good_faith_label}</span
-											>
+								{#if loading}
+									<div class="context-loading">
+										<span class="loading-spinner">⟳</span> Loading original context...
+									</div>
+								{:else if error}
+									<div class="context-error">
+										<strong>Error:</strong>
+										{error}
+									</div>
+								{:else if version}
+									<div class="context-header">
+										<span class="context-label"
+											>📚 Original Context (Version #{version.version_number})</span
+										>
+										<button
+											type="button"
+											class="context-close-btn"
+											onclick={() => (showingContextForPost = null)}
+										>
+											✕
+										</button>
+									</div>
+									<div class="context-content">
+										<h4 class="context-title">{version.title}</h4>
+										<div class="context-description">
+											{@html version.description.replace(/\n/g, '<br>')}
 										</div>
-										{#if post.good_faith_last_evaluated}
-											<div class="evaluation-date">
-												Evaluated: {new Date(post.good_faith_last_evaluated).toLocaleString()}
+										{#if version.created_at}
+											<div class="context-meta">
+												Version created: {new Date(version.created_at).toLocaleDateString('en-US', {
+													year: 'numeric',
+													month: 'long',
+													day: 'numeric'
+												})}
 											</div>
 										{/if}
 									</div>
+								{/if}
+							</div>
+						{/if}
+					{/if}
 
-									<!-- Full Analysis Breakdown for Post -->
-									{#if post.good_faith_analysis && typeof post.good_faith_analysis === 'object'}
-										{@const analysis = post.good_faith_analysis}
+					<!-- Post Badges Container (lower right) -->
+					{#if editingPostId !== post.id}
+						<div class="post-badges-container">
+							<!-- Writing Style Badge -->
+							<span
+								class="writing-style-badge"
+								class:journalistic={post.writing_style === 'journalistic'}
+								class:academic={post.writing_style === 'academic'}
+							>
+								{getStyleConfig(post.writing_style || 'quick_point').label}
+							</span>
 
-										<!-- Claims Analysis -->
-										{#if analysis.claims_analysis?.claims && Array.isArray(analysis.claims_analysis.claims)}
-											<div class="analysis-section">
-												<h4>Claims Analysis</h4>
-												<div class="claims-list">
-													{#each analysis.claims_analysis.claims as claim, index}
-														<div class="claim-item">
-															<div class="claim-header">
-																<strong>Claim {index + 1}:</strong>
-																{claim.claim}
-															</div>
-															{#if claim.supporting_arguments && Array.isArray(claim.supporting_arguments)}
-																<div class="supporting-args">
-																	<h5>Supporting Arguments:</h5>
-																	{#each claim.supporting_arguments as arg}
-																		<div class="argument-item">
-																			<div class="argument-text">{arg.argument}</div>
-																			<div class="argument-meta">
-																				<span class="score">Score: {arg.good_faith_score}/10</span>
-																				{#if arg.fallacies && Array.isArray(arg.fallacies) && arg.fallacies.length > 0}
-																					<span class="fallacies"
-																						>Fallacies: {arg.fallacies.join(', ')}</span
-																					>
-																				{/if}
-																			</div>
-																		</div>
-																	{/each}
-																</div>
-															{/if}
-														</div>
-													{/each}
-												</div>
-											</div>
-										{/if}
+							<!-- View Original Context Link -->
+							{#if post.context_version_id}
+								<button
+									type="button"
+									class="post-version-link"
+									class:active={showingContextForPost === post.id}
+									onclick={() => toggleHistoricalContext(post.id, post.context_version_id)}
+								>
+									📖 {showingContextForPost === post.id ? 'hide' : 'context'}
+								</button>
+							{/if}
 
-										<!-- Manipulative Language -->
-										{#if analysis.manipulative_language && Array.isArray(analysis.manipulative_language) && analysis.manipulative_language.length > 0}
-											<div class="analysis-section warning">
-												<h4>Manipulative Language Detected</h4>
-												<div class="manipulative-phrases">
-													{#each analysis.manipulative_language as phrase}
-														<span class="phrase-badge">{phrase}</span>
-													{/each}
-												</div>
-											</div>
-										{/if}
-
-										<!-- Fallacy Overload Warning -->
-										{#if analysis.fallacy_overload}
-											<div class="analysis-section critical">
-												<h4>⚠️ Fallacy Overload Detected</h4>
-												<p>
-													This content contains an unusually high concentration of logical
-													fallacies, which may indicate bad-faith argumentation.
-												</p>
-											</div>
-										{/if}
-
-										<!-- Analysis Rationale -->
-										{#if analysis.rationale || analysis.summary}
-											<div class="analysis-section">
-												<h4>Analysis Summary</h4>
-												<p class="rationale-text">{analysis.rationale || analysis.summary}</p>
-											</div>
-										{/if}
-
-										<!-- Provider Attribution -->
-										{#if analysis.provider}
-											<div class="analysis-attribution">
-												<small
-													>Analysis by: {analysis.provider === 'openai'
-														? 'OpenAI'
-														: 'Claude'}</small
-												>
-											</div>
-										{/if}
-									{/if}
-								</div>
+							<!-- Good Faith Analysis Icon -->
+							{#if post?.good_faith_score != null && typeof post.good_faith_score === 'number' && post.good_faith_label}
+								<button
+									type="button"
+									class="good-faith-info-icon"
+									onclick={() =>
+										(showGoodFaithAnalysisFor =
+											showGoodFaithAnalysisFor === post.id ? null : post.id)}
+									title="View Good Faith Analysis"
+									aria-label="View Good Faith Analysis"
+								>
+									<span class="icon-symbol">ℹ</span>
+									<span class="good-faith-pill {post.good_faith_label}">
+										{(post.good_faith_score * 100).toFixed(0)}%
+									</span>
+								</button>
 							{/if}
 						</div>
 					{/if}
@@ -3786,7 +3661,6 @@
 					}}
 					class="comment-form"
 				>
-
 					<!-- Post Type Selection -->
 					<div class="post-type-selection">
 						{#if postTypeExpanded}
@@ -3855,7 +3729,11 @@
 							</div>
 
 							{#if !showCommentCitationForm && !showCommentCitationEditForm}
-								<div class="citation-reminder" class:active={showCommentCitationReminder} transition:scale={{ duration: 200 }}>
+								<div
+									class="citation-reminder"
+									class:active={showCommentCitationReminder}
+									transition:scale={{ duration: 200 }}
+								>
 									<div class="reminder-icon">📚</div>
 									<div class="reminder-text">
 										<strong
@@ -4203,7 +4081,9 @@
 								{#if analysisBlockedReason.includes('disabled')}
 									<p class="help-text">Contact support for assistance.</p>
 								{:else if analysisBlockedReason.includes('credits')}
-									<p class="help-text">Check your <a href="/profile">profile page</a> for credit information.</p>
+									<p class="help-text">
+										Check your <a href="/profile">profile page</a> for credit information.
+									</p>
 								{/if}
 							</div>
 						{/if}
@@ -4235,6 +4115,194 @@
 		</section>
 	{:else}
 		<p>Discussion not found.</p>
+	{/if}
+
+	<!-- Good Faith Analysis Modal -->
+	{#if showGoodFaithAnalysisFor}
+		{@const analysisData =
+			showGoodFaithAnalysisFor === 'discussion'
+				? {
+						score: getDiscussionGoodFaithScore(),
+						label: getDiscussionGoodFaithLabel(),
+						analysis: getDiscussionGoodFaithAnalysis(),
+						lastEvaluated: getDiscussionGoodFaithLastEvaluated()
+					}
+				: discussion?.posts?.find((p) => p.id === showGoodFaithAnalysisFor)}
+		<div class="good-faith-modal-overlay" onclick={() => (showGoodFaithAnalysisFor = null)}>
+			<div class="good-faith-modal" onclick={(e) => e.stopPropagation()}>
+				{#if analysisData}
+					<div class="modal-header">
+						<h3>Good Faith Analysis</h3>
+						<button
+							type="button"
+							class="modal-close"
+							onclick={() => (showGoodFaithAnalysisFor = null)}
+							aria-label="Close"
+						>
+							✕
+						</button>
+					</div>
+
+					<div class="modal-body">
+						<div class="score-display">
+							<div
+								class="score-circle {showGoodFaithAnalysisFor === 'discussion'
+									? analysisData.label
+									: analysisData.good_faith_label}"
+							>
+								<span class="score-number">
+									{showGoodFaithAnalysisFor === 'discussion'
+										? (analysisData.score * 100).toFixed(0)
+										: (analysisData.good_faith_score * 100).toFixed(0)}%
+								</span>
+								<span class="score-label">
+									{showGoodFaithAnalysisFor === 'discussion'
+										? analysisData.label
+										: analysisData.good_faith_label}
+								</span>
+							</div>
+							{#if showGoodFaithAnalysisFor === 'discussion' ? analysisData.lastEvaluated : analysisData.good_faith_last_evaluated}
+								<div class="evaluation-timestamp">
+									Evaluated: {new Date(
+										showGoodFaithAnalysisFor === 'discussion'
+											? analysisData.lastEvaluated
+											: analysisData.good_faith_last_evaluated
+									).toLocaleString()}
+								</div>
+							{/if}
+						</div>
+
+						{#if showGoodFaithAnalysisFor === 'discussion' ? analysisData.analysis : analysisData.good_faith_analysis}
+							{@const analysis =
+								showGoodFaithAnalysisFor === 'discussion'
+									? analysisData.analysis
+									: analysisData.good_faith_analysis}
+							{#if typeof analysis === 'object'}
+								<!-- Claims Analysis -->
+								{#if analysis.claims && Array.isArray(analysis.claims) && analysis.claims.length > 0}
+									<div class="analysis-block">
+										<h4>Claims Analysis</h4>
+										{#each analysis.claims as claim, index}
+											<div class="claim-card">
+												<div class="claim-header">
+													<strong>Claim {index + 1}:</strong>
+													{claim.claim}
+												</div>
+												{#if claim.supportingArguments || claim.arguments || claim.supporting_arguments}
+													{@const args =
+														claim.supportingArguments ||
+														claim.arguments ||
+														claim.supporting_arguments}
+													<div class="arguments-list">
+														{#each args as arg}
+															<div class="argument-card">
+																{#if arg.argument}
+																	<div class="argument-text">{arg.argument}</div>
+																{/if}
+																<div class="argument-meta">
+																	<span class="arg-score"
+																		>Score: {arg.score || arg.good_faith_score}/10</span
+																	>
+																	{#if arg.fallacies && arg.fallacies.length > 0}
+																		<span class="fallacies">⚠️ {arg.fallacies.join(', ')}</span>
+																	{/if}
+																</div>
+																{#if arg.improvements}
+																	<div class="improvements">💡 {arg.improvements}</div>
+																{/if}
+															</div>
+														{/each}
+													</div>
+												{/if}
+											</div>
+										{/each}
+									</div>
+								{:else if analysis.claims_analysis?.claims && Array.isArray(analysis.claims_analysis.claims)}
+									<div class="analysis-block">
+										<h4>Claims Analysis</h4>
+										{#each analysis.claims_analysis.claims as claim, index}
+											<div class="claim-card">
+												<div class="claim-header">
+													<strong>Claim {index + 1}:</strong>
+													{claim.claim}
+												</div>
+												{#if claim.supporting_arguments && Array.isArray(claim.supporting_arguments)}
+													<div class="arguments-list">
+														{#each claim.supporting_arguments as arg}
+															<div class="argument-card">
+																<div class="argument-text">{arg.argument}</div>
+																<div class="argument-meta">
+																	<span class="arg-score">Score: {arg.good_faith_score}/10</span>
+																	{#if arg.fallacies && arg.fallacies.length > 0}
+																		<span class="fallacies">⚠️ {arg.fallacies.join(', ')}</span>
+																	{/if}
+																</div>
+															</div>
+														{/each}
+													</div>
+												{/if}
+											</div>
+										{/each}
+									</div>
+								{/if}
+
+								<!-- Manipulative Language -->
+								{#if analysis.cultishPhrases && Array.isArray(analysis.cultishPhrases) && analysis.cultishPhrases.length > 0}
+									<div class="analysis-block warning">
+										<h4>⚠️ Manipulative Language Detected</h4>
+										<div class="phrase-list">
+											{#each analysis.cultishPhrases as phrase}
+												<span class="phrase-tag">{phrase}</span>
+											{/each}
+										</div>
+									</div>
+								{:else if analysis.manipulative_language && Array.isArray(analysis.manipulative_language) && analysis.manipulative_language.length > 0}
+									<div class="analysis-block warning">
+										<h4>⚠️ Manipulative Language Detected</h4>
+										<div class="phrase-list">
+											{#each analysis.manipulative_language as phrase}
+												<span class="phrase-tag">{phrase}</span>
+											{/each}
+										</div>
+									</div>
+								{/if}
+
+								<!-- Fallacy Overload -->
+								{#if analysis.fallacy_overload || analysis.fallacyOverload}
+									<div class="analysis-block critical">
+										<h4>⚠️ Fallacy Overload</h4>
+										<p>
+											This content contains an unusually high concentration of logical fallacies,
+											which may indicate bad-faith argumentation.
+										</p>
+									</div>
+								{/if}
+
+								<!-- Analysis Summary -->
+								{#if analysis.rationale || analysis.summary}
+									<div class="analysis-block">
+										<h4>Analysis Summary</h4>
+										<p>{analysis.rationale || analysis.summary}</p>
+									</div>
+								{/if}
+
+								<!-- Provider Attribution -->
+								{#if analysis.provider}
+									<div class="provider-attribution">
+										<small
+											>Analysis by: {analysis.provider === 'openai'
+												? 'OpenAI'
+												: analysis.provider.charAt(0).toUpperCase() +
+													analysis.provider.slice(1)}</small
+										>
+									</div>
+								{/if}
+							{/if}
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</div>
 	{/if}
 </article>
 
@@ -4333,7 +4401,7 @@
 		font-weight: 600;
 	}
 	.byline {
-		display:flex;
+		display: flex;
 		flex-direction: column;
 	}
 	.discussion-description {
@@ -5216,7 +5284,7 @@
 
 	.post-type-selected {
 		display: flex;
-    justify-content: space-between;
+		justify-content: space-between;
 		align-items: center;
 		gap: 0.75rem;
 		margin-bottom: 1rem;
@@ -6549,4 +6617,546 @@
 		}
 	}
 
+	/* Good Faith Info Icon */
+	.good-faith-info-icon {
+		position: absolute;
+		bottom: 1rem;
+		right: 1rem;
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		padding: 0.625rem 1rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		cursor: pointer;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+		box-shadow:
+			0 1px 3px rgba(15, 23, 42, 0.08),
+			0 0 0 1px color-mix(in srgb, var(--color-border) 50%, transparent);
+		font-family: var(--font-family-sans);
+	}
+
+	.good-faith-info-icon:hover {
+		transform: translateY(-1px);
+		box-shadow:
+			0 4px 12px rgba(15, 23, 42, 0.12),
+			0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+		color: var(--color-text-primary);
+	}
+
+	.good-faith-info-icon:hover .icon-symbol {
+		background: var(--color-primary);
+		color: white;
+	}
+
+	.good-faith-info-icon .icon-symbol {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.375rem;
+		height: 1.375rem;
+		background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface-alt));
+		color: var(--color-primary);
+		border-radius: 50%;
+		font-weight: 700;
+		font-size: 0.875rem;
+		font-family: var(--font-family-display);
+		font-style: italic;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		line-height: 1;
+	}
+
+	.discussion-header {
+		position: relative;
+	}
+
+	.post-card {
+		position: relative;
+	}
+
+	/* Post Badges Container */
+	.post-badges-container {
+		position: absolute;
+		bottom: 1rem;
+		right: 1rem;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+	}
+
+	/* Update writing style badge for new location */
+	.post-badges-container .writing-style-badge {
+		font-size: 0.75rem;
+		padding: 0.5rem 0.875rem;
+		border-radius: 999px;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		color: var(--color-text-secondary);
+		font-weight: 500;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		box-shadow:
+			0 1px 3px rgba(15, 23, 42, 0.08),
+			0 0 0 1px color-mix(in srgb, var(--color-border) 50%, transparent);
+	}
+
+	.post-badges-container .writing-style-badge:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+	}
+
+	.post-badges-container .writing-style-badge.journalistic {
+		background: color-mix(in srgb, #3b82f6 8%, var(--color-surface));
+		border-color: color-mix(in srgb, #3b82f6 30%, transparent);
+		color: #3b82f6;
+	}
+
+	.post-badges-container .writing-style-badge.journalistic:hover {
+		background: color-mix(in srgb, #3b82f6 12%, var(--color-surface));
+		border-color: #3b82f6;
+	}
+
+	.post-badges-container .writing-style-badge.academic {
+		background: color-mix(in srgb, #7c3aed 8%, var(--color-surface));
+		border-color: color-mix(in srgb, #7c3aed 30%, transparent);
+		color: #7c3aed;
+	}
+
+	.post-badges-container .writing-style-badge.academic:hover {
+		background: color-mix(in srgb, #7c3aed 12%, var(--color-surface));
+		border-color: #7c3aed;
+	}
+
+	/* Update post version link for new location */
+	.post-badges-container .post-version-link {
+		font-size: 0.75rem;
+		padding: 0.5rem 0.875rem;
+		border-radius: 999px;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		color: var(--color-text-secondary);
+		text-decoration: none;
+		font-weight: 500;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		box-shadow:
+			0 1px 3px rgba(15, 23, 42, 0.08),
+			0 0 0 1px color-mix(in srgb, var(--color-border) 50%, transparent);
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.post-badges-container .post-version-link:hover {
+		transform: translateY(-1px);
+		box-shadow:
+			0 4px 12px rgba(15, 23, 42, 0.12),
+			0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+		color: var(--color-text-primary);
+	}
+
+	/* Update good faith icon for container context */
+	.post-badges-container .good-faith-info-icon {
+		position: static;
+		bottom: auto;
+		right: auto;
+	}
+
+	/* Active state for context button */
+	.post-badges-container .post-version-link.active {
+		background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+		font-weight: 600;
+	}
+
+	/* Inline Historical Context Display */
+	.historical-context-inline {
+		margin-top: 1.5rem;
+		margin-bottom: 3.5rem;
+		padding: 1.5rem;
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-alt)),
+			color-mix(in srgb, var(--color-primary) 5%, var(--color-surface-alt))
+		);
+		border: 2px solid var(--color-accent);
+		border-radius: var(--border-radius-lg);
+		box-shadow: 0 4px 16px rgba(15, 23, 42, 0.1);
+		transform-origin: top;
+	}
+
+	.context-loading,
+	.context-error {
+		padding: 1rem;
+		text-align: center;
+		color: var(--color-text-secondary);
+	}
+
+	.context-error {
+		color: #ef4444;
+	}
+
+	.loading-spinner {
+		display: inline-block;
+		animation: spin 1s linear infinite;
+		font-size: 1.2rem;
+	}
+
+	@keyframes spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	.context-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 1rem;
+		padding-bottom: 0.75rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+	}
+
+	.context-label {
+		font-weight: 600;
+		color: var(--color-accent);
+		font-size: 0.9rem;
+		font-family: var(--font-family-display);
+	}
+
+	.context-close-btn {
+		background: none;
+		border: none;
+		font-size: 1.25rem;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		padding: 0.25rem;
+		line-height: 1;
+		transition: color 0.2s ease;
+	}
+
+	.context-close-btn:hover {
+		color: var(--color-text-primary);
+	}
+
+	.context-content {
+		color: var(--color-text-primary);
+	}
+
+	.context-title {
+		margin: 0 0 1rem 0;
+		font-family: var(--font-family-display);
+		font-size: 1.25rem;
+		color: var(--color-text-primary);
+		font-weight: 600;
+	}
+
+	.context-description {
+		line-height: var(--line-height-relaxed);
+		margin-bottom: 1rem;
+	}
+
+	.context-meta {
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+		font-style: italic;
+		padding-top: 0.75rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+	}
+
+	/* Good Faith Modal */
+	.good-faith-modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(15, 23, 42, 0.7);
+		backdrop-filter: blur(4px);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+		padding: 1rem;
+		animation: fadeIn 0.2s ease;
+	}
+
+	.good-faith-modal {
+		background: var(--color-surface);
+		border-radius: var(--border-radius-xl);
+		box-shadow: 0 20px 60px rgba(15, 23, 42, 0.3);
+		max-width: 48rem;
+		width: 100%;
+		max-height: 85vh;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		animation: slideUp 0.3s ease;
+	}
+
+	.modal-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 1.5rem;
+		border-bottom: 1px solid var(--color-border);
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)),
+			color-mix(in srgb, var(--color-accent) 3%, var(--color-surface))
+		);
+	}
+
+	.modal-header h3 {
+		margin: 0;
+		font-family: var(--font-family-display);
+		font-size: 1.5rem;
+		color: var(--color-text-primary);
+	}
+
+	.modal-close {
+		background: none;
+		border: none;
+		font-size: 1.5rem;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		padding: 0.25rem;
+		line-height: 1;
+		transition: color 0.2s ease;
+	}
+
+	.modal-close:hover {
+		color: var(--color-text-primary);
+	}
+
+	.modal-body {
+		padding: 1.5rem;
+		overflow-y: auto;
+	}
+
+	.score-display {
+		text-align: center;
+		padding: 1.5rem 0;
+		margin-bottom: 1.5rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.score-circle {
+		display: inline-flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		width: 10rem;
+		height: 10rem;
+		border-radius: 50%;
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--color-primary) 10%, var(--color-surface)),
+			color-mix(in srgb, var(--color-accent) 8%, var(--color-surface))
+		);
+		border: 3px solid var(--color-primary);
+		margin: 0 auto;
+	}
+
+	.score-circle.constructive,
+	.score-circle.exemplary {
+		border-color: #10b981;
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, #10b981 10%, var(--color-surface)),
+			color-mix(in srgb, #059669 8%, var(--color-surface))
+		);
+	}
+
+	.score-circle.neutral {
+		border-color: #6b7280;
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, #6b7280 10%, var(--color-surface)),
+			color-mix(in srgb, #4b5563 8%, var(--color-surface))
+		);
+	}
+
+	.score-circle.questionable {
+		border-color: #f59e0b;
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, #f59e0b 10%, var(--color-surface)),
+			color-mix(in srgb, #d97706 8%, var(--color-surface))
+		);
+	}
+
+	.score-circle.hostile {
+		border-color: #ef4444;
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, #ef4444 10%, var(--color-surface)),
+			color-mix(in srgb, #dc2626 8%, var(--color-surface))
+		);
+	}
+
+	.score-number {
+		font-size: 2.5rem;
+		font-weight: bold;
+		color: var(--color-text-primary);
+		line-height: 1;
+		margin-bottom: 0.5rem;
+	}
+
+	.score-circle .score-label {
+		font-size: 1rem;
+		font-weight: 600;
+		text-transform: capitalize;
+		color: var(--color-text-secondary);
+	}
+
+	.evaluation-timestamp {
+		margin-top: 1rem;
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+	}
+
+	.analysis-block {
+		margin-bottom: 1.5rem;
+		padding: 1rem;
+		background: var(--color-surface-alt);
+		border-radius: var(--border-radius-lg);
+		border-left: 3px solid var(--color-primary);
+	}
+
+	.analysis-block h4 {
+		margin: 0 0 1rem 0;
+		font-family: var(--font-family-display);
+		font-size: 1.1rem;
+		color: var(--color-text-primary);
+	}
+
+	.analysis-block.warning {
+		border-left-color: #f59e0b;
+		background: color-mix(in srgb, #f59e0b 5%, var(--color-surface-alt));
+	}
+
+	.analysis-block.critical {
+		border-left-color: #ef4444;
+		background: color-mix(in srgb, #ef4444 5%, var(--color-surface-alt));
+	}
+
+	.claim-card {
+		margin-bottom: 1rem;
+		padding: 1rem;
+		background: var(--color-surface);
+		border-radius: var(--border-radius-md);
+		border: 1px solid var(--color-border);
+	}
+
+	.claim-card:last-child {
+		margin-bottom: 0;
+	}
+
+	.claim-header {
+		margin-bottom: 0.75rem;
+		font-size: 0.95rem;
+		line-height: 1.5;
+		color: var(--color-text-primary);
+	}
+
+	.arguments-list {
+		margin-top: 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.argument-card {
+		padding: 0.75rem;
+		background: var(--color-surface-alt);
+		border-radius: var(--border-radius-sm);
+		font-size: 0.9rem;
+	}
+
+	.argument-text {
+		margin-bottom: 0.5rem;
+		line-height: 1.5;
+		color: var(--color-text-primary);
+	}
+
+	.argument-meta {
+		display: flex;
+		gap: 1rem;
+		flex-wrap: wrap;
+		font-size: 0.85rem;
+	}
+
+	.arg-score {
+		color: var(--color-primary);
+		font-weight: 600;
+	}
+
+	.fallacies {
+		color: #f59e0b;
+	}
+
+	.improvements {
+		margin-top: 0.5rem;
+		padding: 0.5rem;
+		background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
+		border-radius: var(--border-radius-sm);
+		font-size: 0.85rem;
+		color: var(--color-text-primary);
+	}
+
+	.phrase-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	.phrase-tag {
+		display: inline-block;
+		padding: 0.375rem 0.75rem;
+		background: color-mix(in srgb, #f59e0b 15%, var(--color-surface));
+		color: #f59e0b;
+		border-radius: var(--border-radius-md);
+		font-size: 0.85rem;
+		font-weight: 500;
+		border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+	}
+
+	.provider-attribution {
+		margin-top: 1.5rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--color-border);
+		text-align: center;
+		color: var(--color-text-secondary);
+		font-size: 0.85rem;
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes slideUp {
+		from {
+			opacity: 0;
+			transform: translateY(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
 </style>

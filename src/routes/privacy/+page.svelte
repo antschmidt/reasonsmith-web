@@ -17,8 +17,8 @@
 				<h2>1. Introduction</h2>
 				<p>
 					ReasonSmith ("we," "our," or "us") is committed to protecting your privacy. This Privacy
-					Policy explains how we collect, use, disclose, and safeguard your information when you
-					use our platform.
+					Policy explains how we collect, use, disclose, and safeguard your information when you use
+					our platform.
 				</p>
 			</section>
 
@@ -100,7 +100,9 @@
 				<h3>Service Providers</h3>
 				<p>We share information with third-party service providers who help us operate:</p>
 				<ul>
-					<li><strong>Nhost</strong> - Backend infrastructure, authentication, and database hosting</li>
+					<li>
+						<strong>Nhost</strong> - Backend infrastructure, authentication, and database hosting
+					</li>
 					<li><strong>Vercel</strong> - Frontend hosting and analytics</li>
 					<li><strong>OpenAI</strong> - AI-assisted content moderation and scoring</li>
 				</ul>
@@ -194,16 +196,16 @@
 					<li>Improve performance and user experience</li>
 				</ul>
 				<p>
-					You can control cookie preferences through your browser settings, though some features
-					may not function properly without cookies.
+					You can control cookie preferences through your browser settings, though some features may
+					not function properly without cookies.
 				</p>
 			</section>
 
 			<section>
 				<h2>10. Third-Party Links</h2>
 				<p>
-					ReasonSmith may contain links to external websites and sources. We are not responsible
-					for the privacy practices of third-party sites. We encourage you to review their privacy
+					ReasonSmith may contain links to external websites and sources. We are not responsible for
+					the privacy practices of third-party sites. We encourage you to review their privacy
 					policies.
 				</p>
 			</section>
@@ -212,8 +214,8 @@
 				<h2>11. Children's Privacy</h2>
 				<p>
 					ReasonSmith is not intended for users under 13 years of age. We do not knowingly collect
-					information from children. If we discover we have collected information from a child
-					under 13, we will delete it promptly.
+					information from children. If we discover we have collected information from a child under
+					13, we will delete it promptly.
 				</p>
 			</section>
 

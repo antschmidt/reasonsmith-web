@@ -14,10 +14,7 @@ export function shouldResetMonthlyCredits(lastResetDate: string | null): boolean
 	const now = new Date();
 
 	// Check if we're in a different month than the last reset
-	return (
-		now.getFullYear() !== lastReset.getFullYear() ||
-		now.getMonth() !== lastReset.getMonth()
-	);
+	return now.getFullYear() !== lastReset.getFullYear() || now.getMonth() !== lastReset.getMonth();
 }
 
 /**
@@ -84,12 +81,7 @@ export async function checkAndResetMonthlyCredits(
 	adminSecret?: string
 ): Promise<boolean> {
 	if (shouldResetMonthlyCredits(contributor.analysis_count_reset_at)) {
-		return await resetMonthlyCredits(
-			contributor.id,
-			graphqlEndpoint,
-			accessToken,
-			adminSecret
-		);
+		return await resetMonthlyCredits(contributor.id, graphqlEndpoint, accessToken, adminSecret);
 	}
 	return false; // No reset was needed
 }
@@ -123,7 +115,11 @@ export function getMonthlyCreditsRemaining(contributor: {
 	// Fallback to old calculation for backward compatibility
 	if (typeof contributor.analysis_limit === 'number') {
 		// If a reset is needed, they have their full limit available
-		if (shouldResetMonthlyCredits(contributor.analysis_count_reset_at || contributor.monthly_credits_reset_at || null)) {
+		if (
+			shouldResetMonthlyCredits(
+				contributor.analysis_count_reset_at || contributor.monthly_credits_reset_at || null
+			)
+		) {
 			return contributor.analysis_limit;
 		}
 

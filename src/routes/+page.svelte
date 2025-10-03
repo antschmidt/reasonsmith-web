@@ -372,7 +372,6 @@
 {/if}
 
 <style>
-
 	.landing-shell {
 		background: var(--color-surface-alt);
 	}

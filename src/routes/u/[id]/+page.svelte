@@ -338,7 +338,7 @@
 				</div>
 			</div>
 		</header>
-		
+
 		<section class="profile-section">
 			<h2>Discussions</h2>
 			{#if discussions.length === 0}

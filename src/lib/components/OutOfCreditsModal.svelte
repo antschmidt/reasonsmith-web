@@ -13,16 +13,14 @@
 
 <Modal bind:show {onClose} title="🚫 Out of Credits">
 	{#snippet children()}
-		<p class="main-message">
-			You don't have enough credits to publish this comment with analysis.
-		</p>
+		<p class="main-message">You don't have enough credits to publish this comment with analysis.</p>
 		{#if analysisBlockedReason}
 			<div class="blocked-details">
 				<p class="error-message">{analysisBlockedReason}</p>
 				{#if analysisBlockedReason.includes('credits')}
 					<p class="help-text">
-						Check your <a href="/profile">profile page</a> for credit information and options
-						to purchase more credits.
+						Check your <a href="/profile">profile page</a> for credit information and options to purchase
+						more credits.
 					</p>
 				{:else if analysisBlockedReason.includes('disabled')}
 					<p class="help-text">

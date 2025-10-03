@@ -102,12 +102,14 @@ iOS requires Safari for PWA installation (not Chrome).
 ### 2. **iOS Limitations**
 
 ⚠️ iOS has limited PWA support:
+
 - No install banner (users must manually add)
 - Service Worker limited to 50MB cache
 - No push notifications
 - Background sync not supported
 
 But you still get:
+
 - ✅ Home screen icon
 - ✅ Full-screen mode
 - ✅ Offline caching
@@ -125,6 +127,7 @@ But you still get:
 **Target Score: 100/100**
 
 You should pass all checks:
+
 - ✅ Installable
 - ✅ PWA optimized
 - ✅ Fast and reliable
@@ -143,6 +146,7 @@ You should pass all checks:
 ### Icons not showing in manifest
 
 **Solution:**
+
 ```bash
 # Regenerate icons
 pnpm generate-icons
@@ -152,6 +156,7 @@ pnpm build
 ### Install prompt not showing
 
 **Reasons:**
+
 - Already installed
 - Using HTTP instead of HTTPS (Vercel auto-uses HTTPS)
 - User dismissed it (clears after session)
@@ -173,8 +178,8 @@ The InstallPrompt component logs to console. You can add analytics:
 ```javascript
 // In InstallPrompt.svelte, after successful install
 if (outcome === 'accepted') {
-  // Track with Vercel Analytics or your analytics tool
-  console.log('[PWA] Install accepted - track this event');
+	// Track with Vercel Analytics or your analytics tool
+	console.log('[PWA] Install accepted - track this event');
 }
 ```
 
@@ -185,6 +190,7 @@ Service workers auto-update when you deploy new code. Users will get the update 
 ## Next Steps
 
 ### 1. **Deploy to Production**
+
 ```bash
 git add .
 git commit -m "Add PWA support with offline functionality"
@@ -192,17 +198,20 @@ git push
 ```
 
 ### 2. **Test on Real Devices**
+
 - Android phone with Chrome
 - iPhone with Safari
 - Verify install works
 - Test offline functionality
 
 ### 3. **Monitor Usage**
+
 - Track install rates
 - Monitor offline usage
 - Gather user feedback
 
 ### 4. **Future Enhancements** (Optional)
+
 - [ ] Add push notifications
 - [ ] Implement background sync for drafts
 - [ ] Add app shortcuts (already in manifest)
@@ -212,6 +221,7 @@ git push
 ## PWA vs Native App Decision
 
 **Start with PWA because:**
+
 - ✅ Zero app store friction
 - ✅ Instant updates (no store approval)
 - ✅ Works on both Android and iOS
@@ -219,6 +229,7 @@ git push
 - ✅ No platform-specific code
 
 **Consider Native Android App when:**
+
 - Install rates plateau
 - Users request native features (camera, contacts, etc.)
 - You want Google Play Store visibility
@@ -230,6 +241,7 @@ For now, **PWA is the perfect solution** - you get 90% of native app benefits wi
 ## Support
 
 If you encounter issues:
+
 1. Check Chrome DevTools > Console for errors
 2. Verify manifest in Application > Manifest
 3. Check service worker status in Application > Service Workers

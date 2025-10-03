@@ -167,7 +167,7 @@
 			return;
 		}
 
-		const selectedDiscussion = discussions.find(d => d.id === selectedDiscussionId);
+		const selectedDiscussion = discussions.find((d) => d.id === selectedDiscussionId);
 		if (!selectedDiscussion) {
 			discussionError = 'Selected discussion not found';
 			return;
@@ -250,7 +250,13 @@
 	});
 </script>
 
-<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="showcase-form">
+<form
+	onsubmit={(e) => {
+		e.preventDefault();
+		handleSubmit();
+	}}
+	class="showcase-form"
+>
 	<!-- URL Import Section -->
 	<div class="import-section">
 		<h4>Import from URL (Optional)</h4>
@@ -294,11 +300,7 @@
 			<div class="loading-discussions">Loading discussions...</div>
 		{:else if discussions.length > 0}
 			<div class="import-controls">
-				<select
-					bind:value={selectedDiscussionId}
-					class="discussion-select"
-					disabled={saving}
-				>
+				<select bind:value={selectedDiscussionId} class="discussion-select" disabled={saving}>
 					<option value="">Choose a discussion...</option>
 					{#each discussions as discussion (discussion.id)}
 						<option value={discussion.id}>
@@ -412,7 +414,7 @@
 			<textarea
 				id="analysis"
 				bind:value={analysisText}
-				placeholder="{`{\"score\": 0.8, \"reasoning\": \"...\", \"highlights\": [...]}`}"
+				placeholder={`{\"score\": 0.8, \"reasoning\": \"...\", \"highlights\": [...]}`}
 				rows="8"
 				disabled={saving}
 				class="form-textarea code"

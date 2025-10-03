@@ -124,7 +124,5 @@ self.addEventListener('push', (event) => {
 // Notification click handling
 self.addEventListener('notificationclick', (event) => {
 	event.notification.close();
-	event.waitUntil(
-		clients.openWindow(event.notification.data || '/')
-	);
+	event.waitUntil(clients.openWindow(event.notification.data || '/'));
 });

@@ -57,18 +57,21 @@ Your ReasonSmith web app is now a fully-featured Progressive Web App (PWA)!
 ## Features Enabled
 
 ### ✅ Core PWA Features
+
 - **Installable** - Users can install to home screen on Android/iOS
 - **Offline Support** - Previously viewed pages work without internet
 - **Fast Loading** - Assets cached for instant loading
 - **App-like Experience** - Full-screen mode, no browser UI
 
 ### ✅ Mobile Features
+
 - **Home Screen Icon** - Branded icon on device home screen
 - **Splash Screen** - 512px icon used for splash on Android
 - **Theme Integration** - Status bar matches app theme (#546e7a)
 - **Standalone Mode** - Opens like native app
 
 ### ✅ Developer Experience
+
 - **One Command Icon Generation** - `pnpm generate-icons`
 - **Clear Documentation** - PWA_TESTING_GUIDE.md
 - **Easy Deployment** - Works with Vercel out of the box
@@ -140,11 +143,13 @@ git push
 ## Browser Support
 
 ### ✅ Full Support
+
 - **Chrome** (Desktop & Android) - Full PWA support
 - **Edge** (Desktop & Android) - Full PWA support
 - **Samsung Internet** - Full PWA support
 
 ### ⚠️ Partial Support
+
 - **Safari** (iOS/macOS) - Install works, limited service worker
   - No automatic install banner
   - 50MB cache limit
@@ -152,17 +157,20 @@ git push
   - No background sync
 
 ### ❌ No Support
+
 - **Firefox** (Desktop) - Service workers work, no install prompt
 - **Internet Explorer** - No PWA support
 
 ## Performance Impact
 
 ### Pros
+
 - **Faster subsequent loads** - Cached assets load instantly
 - **Offline capability** - Works without internet
 - **Reduced server load** - Cached content not re-fetched
 
 ### Cons
+
 - **First visit overhead** - Service worker registration (minimal ~100ms)
 - **Cache storage** - Uses device storage (automatically managed)
 
@@ -184,19 +192,21 @@ Add tracking in `InstallPrompt.svelte`:
 import { track } from '@vercel/analytics';
 
 if (outcome === 'accepted') {
-  track('pwa_installed');
+	track('pwa_installed');
 }
 ```
 
 ## Future Enhancements
 
 ### Phase 2 (Optional)
+
 - [ ] **Push Notifications** - Notify users of replies/moderation
 - [ ] **Background Sync** - Sync drafts when back online
 - [ ] **Share Target** - Let users share links to ReasonSmith
 - [ ] **Periodic Background Sync** - Check for new discussions
 
 ### Phase 3 (If Needed)
+
 - [ ] **Native Android App** - If install rates justify investment
 - [ ] **App Store Listing** - Via Google Play or Microsoft Store
 - [ ] **Advanced Features** - Camera access, contacts, etc.
@@ -206,11 +216,13 @@ if (outcome === 'accepted') {
 ### Service Worker Not Registering
 
 **Check:**
+
 - File is at `/service-worker.js` in static folder
 - HTTPS is enabled (required for service workers)
 - No console errors
 
 **Fix:**
+
 ```bash
 pnpm build
 # Check build/static folder contains service-worker.js
@@ -219,6 +231,7 @@ pnpm build
 ### Icons Not Showing
 
 **Regenerate:**
+
 ```bash
 pnpm generate-icons
 pnpm build
@@ -227,6 +240,7 @@ pnpm build
 ### Install Prompt Not Appearing
 
 **Reasons:**
+
 - User already installed PWA
 - Browser doesn't support PWA
 - Site not served over HTTPS

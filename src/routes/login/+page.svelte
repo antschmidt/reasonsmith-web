@@ -82,7 +82,7 @@
 
 	<main class="auth-main">
 		<div class="auth-panel two-column">
-						<section class="auth-card" aria-labelledby="auth-heading">
+			<section class="auth-card" aria-labelledby="auth-heading">
 				<div class="auth-tabs">
 					<button
 						type="button"
@@ -187,7 +187,9 @@
 							<button
 								type="button"
 								class="auth-submit-button"
-								onclick={activeTab === 'signin' ? handleEmailPasswordSignIn : handleEmailPasswordSignUp}
+								onclick={activeTab === 'signin'
+									? handleEmailPasswordSignIn
+									: handleEmailPasswordSignUp}
 								disabled={!email || !password}
 							>
 								{activeTab === 'signin' ? 'Sign In' : 'Sign Up'}

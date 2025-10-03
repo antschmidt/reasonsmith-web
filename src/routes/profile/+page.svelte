@@ -567,7 +567,13 @@
 
 		{#if editing}
 			<div class="profile-card edit-form-container">
-				<form class="profile-form" onsubmit={(e) => { e.preventDefault(); save(); }}>
+				<form
+					class="profile-form"
+					onsubmit={(e) => {
+						e.preventDefault();
+						save();
+					}}
+				>
 					<fieldset disabled={loading || fetching}>
 						<div class="field">
 							<ProfilePhotoUpload
@@ -938,18 +944,18 @@
 										<!-- Monthly Credits -->
 										<div class="credit-tier">
 											<div class="status-label">
-												Monthly: {(contributor?.analysis_limit || 0) - (contributor?.analysis_count_used || 0)}
+												Monthly: {(contributor?.analysis_limit || 0) -
+													(contributor?.analysis_count_used || 0)}
 												of {contributor?.analysis_limit || 0} remaining
 											</div>
-											<div class="status-description">
-												Resets at the end of the month
-											</div>
+											<div class="status-description">Resets at the end of the month</div>
 										</div>
 
 										<!-- Purchased Credits -->
 										<div class="credit-tier">
 											<div class="status-label">
-												Purchased: {(contributor?.purchased_credits_total || 0) - (contributor?.purchased_credits_used || 0)}
+												Purchased: {(contributor?.purchased_credits_total || 0) -
+													(contributor?.purchased_credits_used || 0)}
 												of {contributor?.purchased_credits_total || 0} available
 											</div>
 											<div class="status-description">
@@ -1037,14 +1043,17 @@
 						<div class="content-list">
 							{#each posts as p}
 								<div class="content-item">
-									<a href={p.status === 'draft'
-										? `/discussions/${p.discussion_id}?replyDraftId=${p.id}`
-										: `/discussions/${p.discussion_id}`
-									} class="content-link"
+									<a
+										href={p.status === 'draft'
+											? `/discussions/${p.discussion_id}?replyDraftId=${p.id}`
+											: `/discussions/${p.discussion_id}`}
+										class="content-link"
 										>{toTextSnippet(p.status === 'draft' ? p.draft_content || '' : p.content)}</a
 									>
 									<span class="content-meta">
-										{p.status === 'draft' ? 'Draft • ' : ''}{new Date(p.created_at).toLocaleDateString()}
+										{p.status === 'draft' ? 'Draft • ' : ''}{new Date(
+											p.created_at
+										).toLocaleDateString()}
 									</span>
 								</div>
 							{/each}

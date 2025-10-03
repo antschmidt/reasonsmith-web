@@ -335,7 +335,8 @@
 
 		if (!canUseAnalysis(contributor)) {
 			if (!contributor.analysis_enabled) {
-				publishError = 'Good-faith analysis has been disabled for your account. Please contact support.';
+				publishError =
+					'Good-faith analysis has been disabled for your account. Please contact support.';
 				return;
 			}
 
@@ -343,7 +344,8 @@
 			const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
 
 			if (monthlyRemaining === 0 && purchasedRemaining === 0) {
-				publishError = 'You have no analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.';
+				publishError =
+					'You have no analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.';
 				return;
 			} else {
 				publishError = 'Unable to proceed with analysis. Please check your credit balance.';
@@ -494,16 +496,24 @@
 
 	// Check if user can use analysis (reactive)
 	const canUserUseAnalysis = $derived(contributor ? canUseAnalysis(contributor) : false);
-	const analysisBlockedReason = $derived(!contributor
-		? 'Unable to load account information'
-		: !contributor.analysis_enabled
-		? 'Good-faith analysis has been disabled for your account'
-		: getMonthlyCreditsRemaining(contributor) === 0 && getPurchasedCreditsRemaining(contributor) === 0
-		? 'No analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.'
-		: null);
+	const analysisBlockedReason = $derived(
+		!contributor
+			? 'Unable to load account information'
+			: !contributor.analysis_enabled
+				? 'Good-faith analysis has been disabled for your account'
+				: getMonthlyCreditsRemaining(contributor) === 0 &&
+					  getPurchasedCreditsRemaining(contributor) === 0
+					? 'No analysis credits remaining. Monthly credits reset at the end of the month, or you can purchase additional credits.'
+					: null
+	);
 
 	const canPublish = $derived(
-		() => !!user && title.trim().length > 0 && content.trim().length > 0 && !publishing && canUserUseAnalysis
+		() =>
+			!!user &&
+			title.trim().length > 0 &&
+			content.trim().length > 0 &&
+			!publishing &&
+			canUserUseAnalysis
 	);
 
 	function getAnalysisLimitText(): string {
@@ -581,7 +591,9 @@
 			>
 				<div class="form-group">
 					{#if showTitleLabel}
-						<label for="title" class="floating-label" transition:fade={{ duration: 200 }}>Title</label>
+						<label for="title" class="floating-label" transition:fade={{ duration: 200 }}
+							>Title</label
+						>
 					{/if}
 					<input
 						id="title"
@@ -597,7 +609,9 @@
 
 				<div class="form-group">
 					{#if showContentLabel}
-						<label for="description" class="floating-label" transition:fade={{ duration: 200 }}>Content</label>
+						<label for="description" class="floating-label" transition:fade={{ duration: 200 }}
+							>Content</label
+						>
 					{/if}
 					<textarea
 						id="description"
@@ -625,7 +639,8 @@
 									>
 										<div class="reminder-icon">📚</div>
 										<div class="reminder-text">
-											<strong>{showCitationReminder ? 'Add citations' : 'Cite your sources'}</strong>
+											<strong>{showCitationReminder ? 'Add citations' : 'Cite your sources'}</strong
+											>
 											<span
 												>{showCitationReminder
 													? 'Support your claims with references for better credibility.'
@@ -644,7 +659,10 @@
 
 								<!-- Citation Form -->
 								{#if showCitationForm}
-									<div class="citation-form-wrapper" transition:scale={{ duration: 300, start: 0.95 }}>
+									<div
+										class="citation-form-wrapper"
+										transition:scale={{ duration: 300, start: 0.95 }}
+									>
 										<CitationForm onAdd={addCitation} onCancel={() => (showCitationForm = false)} />
 									</div>
 								{/if}
@@ -800,7 +818,9 @@
 						{#if analysisBlockedReason.includes('disabled')}
 							<p class="help-text">Contact support for assistance.</p>
 						{:else if analysisBlockedReason.includes('credits')}
-							<p class="help-text">Check your <a href="/profile">profile page</a> for credit information.</p>
+							<p class="help-text">
+								Check your <a href="/profile">profile page</a> for credit information.
+							</p>
 						{/if}
 					</div>
 				{/if}
@@ -818,8 +838,16 @@
 
 <!-- Tag Modal -->
 {#if showTagModal}
-	<div class="modal-overlay" onclick={() => (showTagModal = false)} transition:fade={{ duration: 200 }}>
-		<div class="modal-content" onclick={(e) => e.stopPropagation()} transition:fade={{ duration: 200 }}>
+	<div
+		class="modal-overlay"
+		onclick={() => (showTagModal = false)}
+		transition:fade={{ duration: 200 }}
+	>
+		<div
+			class="modal-content"
+			onclick={(e) => e.stopPropagation()}
+			transition:fade={{ duration: 200 }}
+		>
 			<div class="modal-header">
 				<h2>Topic Tags</h2>
 				<button type="button" class="modal-close" onclick={() => (showTagModal = false)}>×</button>
@@ -868,12 +896,14 @@
 					</div>
 				{/if}
 				<div class="form-hint">
-					Add up to 10 topic tags to help others discover your discussion. Press Enter or click
-					Add to add a tag.
+					Add up to 10 topic tags to help others discover your discussion. Press Enter or click Add
+					to add a tag.
 				</div>
 			</div>
 			<div class="modal-footer">
-				<button type="button" class="btn-primary" onclick={() => (showTagModal = false)}>Done</button>
+				<button type="button" class="btn-primary" onclick={() => (showTagModal = false)}
+					>Done</button
+				>
 			</div>
 		</div>
 	</div>
