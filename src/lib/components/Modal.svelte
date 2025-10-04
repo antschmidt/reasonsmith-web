@@ -44,7 +44,10 @@
 				{:else if title}
 					<h3 class="modal-title">{title}</h3>
 				{/if}
-				<button type="button" class="modal-close-btn" onclick={onClose} aria-label="Close modal">
+				<button type="button"
+				class="modal-close-btn"
+				onclick={onClose}
+				aria-label="Close modal">
 					×
 				</button>
 			</div>

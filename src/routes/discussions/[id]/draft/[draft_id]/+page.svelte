@@ -589,8 +589,7 @@
 			error = null;
 
 			// Save current changes only if there are unsaved changes
-			const hasUnsavedChanges =
-				title !== (draft.title ?? '') || description !== (draft.description ?? '');
+			const hasUnsavedChanges = title !== (draft.title ?? '') || description !== (draft.description ?? '');
 			if (hasUnsavedChanges) {
 				await saveDraft();
 			}

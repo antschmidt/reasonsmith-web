@@ -117,9 +117,7 @@ export function getMonthlyCreditsRemaining(contributor: {
 		// If a reset is needed, they have their full limit available
 		if (
 			shouldResetMonthlyCredits(
-				contributor.analysis_count_reset_at || contributor.monthly_credits_reset_at || null
-			)
-		) {
+				contributor.analysis_count_reset_at || contributor.monthly_credits_reset_at || null)) {
 			return contributor.analysis_limit;
 		}
 
