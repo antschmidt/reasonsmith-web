@@ -250,7 +250,9 @@
 			const analysisInProgress = sessionStorage.getItem(`analysis-${draftId}`);
 			if (analysisInProgress === 'true') {
 				// Check if analysis has completed
-				const analysisDate = draft.good_faith_last_evaluated ? new Date(draft.good_faith_last_evaluated) : null;
+				const analysisDate = draft.good_faith_last_evaluated
+					? new Date(draft.good_faith_last_evaluated)
+					: null;
 				const editDate = draft.edited_at ? new Date(draft.edited_at) : null;
 
 				if (analysisDate && editDate && analysisDate > editDate) {
@@ -261,7 +263,6 @@
 					startPollingForAnalysis();
 				}
 			}
-
 		} catch (err: any) {
 			console.error('Error loading draft:', err);
 			error = err.message || 'Failed to load draft';
@@ -461,7 +462,7 @@
 				goodFaithData = {
 					score: score01,
 					analysis: data.good_faith_analysis,
-					label: data.good_faith_label,
+					label: data.good_faith_label
 				};
 
 				// Store result for UI display
@@ -474,12 +475,15 @@
 				};
 
 				// Save to database
-				const { error: saveError } = await nhost.graphql.request(UPDATE_DISCUSSION_VERSION_GOOD_FAITH, {
-					versionId: draft.id,
-					score: goodFaithData.score,
-					label: goodFaithData.label,
-					analysis: data // Save the complete analysis response
-				});
+				const { error: saveError } = await nhost.graphql.request(
+					UPDATE_DISCUSSION_VERSION_GOOD_FAITH,
+					{
+						versionId: draft.id,
+						score: goodFaithData.score,
+						label: goodFaithData.label,
+						analysis: data // Save the complete analysis response
+					}
+				);
 
 				if (saveError) {
 					console.error('Failed to save good faith analysis to database:', saveError);
@@ -901,10 +905,7 @@
 		<div class="error">
 			<h2>Error</h2>
 			<p>{error}</p>
-			<Button
-				variant="secondary"
-				onclick={() => goto(`/discussions/${discussionId}`)}
-			>
+			<Button variant="secondary" onclick={() => goto(`/discussions/${discussionId}`)}>
 				Back to Discussion
 			</Button>
 		</div>
@@ -922,17 +923,13 @@
 				<div class="header-actions">
 					<!-- Button 1: Continue Editing (shown only when form is disabled) -->
 					{#if !analysisResultsDismissed && isAnalyzing}
-						<Button variant="secondary" onclick={continueEditing}>
-							Continue Editing
-						</Button>
+						<Button variant="secondary" onclick={continueEditing}>Continue Editing</Button>
 					{/if}
 
 					<!-- Button 2: Analysis/Publish -->
 					{#if isPublishedVersion}
 						<!-- State: Already Published -->
-						<Button variant="secondary" disabled>
-							Published Version
-						</Button>
+						<Button variant="secondary" disabled>Published Version</Button>
 					{:else if !canPublish}
 						<!-- State A: Need Analysis -->
 						{#if !hasCredits}
@@ -967,20 +964,12 @@
 						</Button>
 					{:else if analysisPassedCriteria}
 						<!-- State C: Analysis Passed - Can Publish -->
-						<Button
-							type="button"
-							variant="accent"
-							onclick={publishDraft}
-							disabled={saving}
-						>
+						<Button type="button" variant="accent" onclick={publishDraft} disabled={saving}>
 							<span class="check-icon">✓</span> Publish
 						</Button>
 					{:else}
 						<!-- State D: Analysis Failed - Return to Forge -->
-						<Button
-							variant="secondary"
-							onclick={continueEditing}
-						>
+						<Button variant="secondary" onclick={continueEditing}>
 							<span class="x-icon">✗</span> Return to the Forge
 						</Button>
 					{/if}
@@ -1013,7 +1002,9 @@
 					<div class="analysis-header">
 						<div class="analysis-summary">
 							<div class="analysis-badge {goodFaithResult.good_faith_label}">
-								<span class="analysis-score">{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span>
+								<span class="analysis-score"
+									>{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span
+								>
 								<span class="analysis-label">{goodFaithResult.good_faith_label}</span>
 							</div>
 							{#if analysisIsOutdated}
@@ -1053,7 +1044,10 @@
 													<span class="fallacies">Fallacies: {arg.fallacies.join(', ')}</span>
 												{/if}
 												{#if arg.improvements}
-													<div class="improvements"><strong>Improvements:</strong> {arg.improvements}</div>
+													<div class="improvements">
+														<strong>Improvements:</strong>
+														{arg.improvements}
+													</div>
 												{/if}
 											</div>
 										{/each}
@@ -1163,7 +1157,10 @@
 						</div>
 					{:else}
 						<div class="no-citations">
-							<p>No citations added yet. Citations help support your arguments and improve credibility.</p>
+							<p>
+								No citations added yet. Citations help support your arguments and improve
+								credibility.
+							</p>
 						</div>
 					{/if}
 				</div>
@@ -1226,7 +1223,12 @@
 	.draft-editor-container {
 		min-height: 100vh;
 		background: var(--color-surface-alt);
-		font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		font-family:
+			'Inter',
+			-apple-system,
+			BlinkMacSystemFont,
+			'Segoe UI',
+			sans-serif;
 		font-size: 15px;
 		line-height: 1.6;
 		color: var(--color-text-primary);
@@ -1351,7 +1353,9 @@
 		font-family: inherit;
 		font-size: 15px;
 		line-height: 1.5;
-		transition: border-color 0.15s ease, box-shadow 0.15s ease;
+		transition:
+			border-color 0.15s ease,
+			box-shadow 0.15s ease;
 	}
 
 	input:focus,

@@ -34,8 +34,8 @@
 			<section>
 				<h2>3. User Accounts</h2>
 				<p>
-					To access certain features of the Service, you must create an account. You are
-					responsible for:
+					To access certain features of the Service, you must create an account. You are responsible
+					for:
 				</p>
 				<ul>
 					<li>Maintaining the confidentiality of your account credentials</li>
@@ -52,7 +52,11 @@
 					<li>Provide accurate citations for all claims and sources</li>
 					<li>Engage in good-faith discourse and avoid hostile or inflammatory language</li>
 					<li>Respect intellectual property rights and properly attribute sources</li>
-					<li>Not post content that violates our <a href="/resources/community-guidelines">Community Guidelines</a></li>
+					<li>
+						Not post content that violates our <a href="/resources/community-guidelines"
+							>Community Guidelines</a
+						>
+					</li>
 					<li>Not use the Service for spam, harassment, or malicious purposes</li>
 				</ul>
 			</section>
@@ -110,18 +114,17 @@
 			<section>
 				<h2>9. Disclaimer of Warranties</h2>
 				<p>
-					ReasonSmith is provided "as is" without warranties of any kind, either express or
-					implied. We do not guarantee that the Service will be uninterrupted, secure, or
-					error-free.
+					ReasonSmith is provided "as is" without warranties of any kind, either express or implied.
+					We do not guarantee that the Service will be uninterrupted, secure, or error-free.
 				</p>
 			</section>
 
 			<section>
 				<h2>10. Limitation of Liability</h2>
 				<p>
-					To the maximum extent permitted by law, ReasonSmith shall not be liable for any
-					indirect, incidental, special, consequential, or punitive damages arising from your use
-					of the Service.
+					To the maximum extent permitted by law, ReasonSmith shall not be liable for any indirect,
+					incidental, special, consequential, or punitive damages arising from your use of the
+					Service.
 				</p>
 			</section>
 
@@ -137,17 +140,17 @@
 			<section>
 				<h2>12. Termination</h2>
 				<p>
-					We may terminate or suspend your account at any time for violation of these Terms. You
-					may terminate your account at any time by contacting us. Upon termination, your right to
-					use the Service will immediately cease.
+					We may terminate or suspend your account at any time for violation of these Terms. You may
+					terminate your account at any time by contacting us. Upon termination, your right to use
+					the Service will immediately cease.
 				</p>
 			</section>
 
 			<section>
 				<h2>13. Governing Law</h2>
 				<p>
-					These Terms shall be governed by and construed in accordance with applicable laws,
-					without regard to conflict of law principles.
+					These Terms shall be governed by and construed in accordance with applicable laws, without
+					regard to conflict of law principles.
 				</p>
 			</section>
 

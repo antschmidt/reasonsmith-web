@@ -5,14 +5,17 @@
 To complete the PWA setup, you need to generate the following icon sizes from your `static/logo-only.png`:
 
 ### Standard Icons
+
 - **icon-192.png** (192x192px) - Home screen icon for Android
 - **icon-512.png** (512x512px) - Splash screen and high-res displays
 
 ### Maskable Icons (Android Adaptive)
+
 - **icon-192-maskable.png** (192x192px) - With safe zone padding
 - **icon-512-maskable.png** (512x512px) - With safe zone padding
 
 ### Apple Touch Icon
+
 - **apple-touch-icon.png** (180x180px) - iOS home screen icon
 
 ## Option 1: Use Online Tool (Easiest)
@@ -56,44 +59,43 @@ const inputFile = 'static/logo-only.png';
 const outputDir = 'static';
 
 const sizes = [
-  { name: 'icon-192.png', size: 192, maskable: false },
-  { name: 'icon-512.png', size: 512, maskable: false },
-  { name: 'icon-192-maskable.png', size: 192, maskable: true },
-  { name: 'icon-512-maskable.png', size: 512, maskable: true },
-  { name: 'apple-touch-icon.png', size: 180, maskable: false }
+	{ name: 'icon-192.png', size: 192, maskable: false },
+	{ name: 'icon-512.png', size: 512, maskable: false },
+	{ name: 'icon-192-maskable.png', size: 192, maskable: true },
+	{ name: 'icon-512-maskable.png', size: 512, maskable: true },
+	{ name: 'apple-touch-icon.png', size: 180, maskable: false }
 ];
 
 async function generateIcons() {
-  for (const { name, size, maskable } of sizes) {
-    const outputPath = path.join(outputDir, name);
+	for (const { name, size, maskable } of sizes) {
+		const outputPath = path.join(outputDir, name);
 
-    if (maskable) {
-      // Add 20% padding for maskable icons
-      const innerSize = Math.floor(size * 0.8);
-      await sharp(inputFile)
-        .resize(innerSize, innerSize)
-        .extend({
-          top: Math.floor((size - innerSize) / 2),
-          bottom: Math.floor((size - innerSize) / 2),
-          left: Math.floor((size - innerSize) / 2),
-          right: Math.floor((size - innerSize) / 2),
-          background: { r: 0, g: 0, b: 0, alpha: 0 }
-        })
-        .toFile(outputPath);
-    } else {
-      await sharp(inputFile)
-        .resize(size, size)
-        .toFile(outputPath);
-    }
+		if (maskable) {
+			// Add 20% padding for maskable icons
+			const innerSize = Math.floor(size * 0.8);
+			await sharp(inputFile)
+				.resize(innerSize, innerSize)
+				.extend({
+					top: Math.floor((size - innerSize) / 2),
+					bottom: Math.floor((size - innerSize) / 2),
+					left: Math.floor((size - innerSize) / 2),
+					right: Math.floor((size - innerSize) / 2),
+					background: { r: 0, g: 0, b: 0, alpha: 0 }
+				})
+				.toFile(outputPath);
+		} else {
+			await sharp(inputFile).resize(size, size).toFile(outputPath);
+		}
 
-    console.log(`Generated ${name}`);
-  }
+		console.log(`Generated ${name}`);
+	}
 }
 
 generateIcons().then(() => console.log('All icons generated!'));
 ```
 
 Run with:
+
 ```bash
 pnpm add -D sharp
 node scripts/generate-icons.js

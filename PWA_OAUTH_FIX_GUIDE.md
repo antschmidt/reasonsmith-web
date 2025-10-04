@@ -60,6 +60,7 @@
 ### Test 1: PWA OAuth Login (The Fix)
 
 1. **Install PWA**
+
    ```bash
    # Deploy latest code
    git push
@@ -136,7 +137,7 @@ The fix uses `?pwa=1` query parameter to track auth flow context:
 
 ```typescript
 // When initiating OAuth from PWA
-redirectTo: getOAuthRedirectURL('/auth/callback', true)
+redirectTo: getOAuthRedirectURL('/auth/callback', true);
 // Results in: https://yoursite.com/auth/callback?pwa=1
 ```
 
@@ -144,21 +145,23 @@ redirectTo: getOAuthRedirectURL('/auth/callback', true)
 
 ```typescript
 // In callback page
-const standalone = isStandalone();  // Are we in PWA?
-const fromPWA = isFromPWA();        // Did auth start from PWA?
+const standalone = isStandalone(); // Are we in PWA?
+const fromPWA = isFromPWA(); // Did auth start from PWA?
 
 if (!standalone && fromPWA) {
-  // Show "Return to App" button
+	// Show "Return to App" button
 }
 ```
 
 ### Session Persistence
 
 Auth session is stored by Nhost in:
+
 - localStorage (refresh token)
 - Memory (access token)
 
 Both are shared between browser and PWA on same device, so:
+
 - Login in browser → session available to PWA
 - Login via OAuth → session persists when returning to PWA
 
@@ -170,13 +173,14 @@ Open DevTools console in your app:
 
 ```javascript
 // Check if running in PWA
-navigator.standalone  // iOS
-window.matchMedia('(display-mode: standalone)').matches  // Android/Desktop
+navigator.standalone; // iOS
+window.matchMedia('(display-mode: standalone)').matches; // Android/Desktop
 ```
 
 ### Check Redirect URL
 
 When OAuth redirects back, check URL:
+
 - Has `?pwa=1` → Auth came from PWA
 - No parameter → Auth came from browser
 
@@ -184,7 +188,7 @@ When OAuth redirects back, check URL:
 
 ```javascript
 // In console
-nhost.auth.getUser()  // Should return user object if logged in
+nhost.auth.getUser(); // Should return user object if logged in
 ```
 
 ## Known Limitations
@@ -196,6 +200,7 @@ iOS doesn't support `display-mode: standalone` media query perfectly. The fix us
 ### Cross-Browser Sessions
 
 If user:
+
 1. Logs in via browser
 2. Opens PWA
 3. **Expected:** May need to refresh PWA to see login state

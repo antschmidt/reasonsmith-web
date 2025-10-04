@@ -439,9 +439,12 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 					if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
 						// Determine which credit type to use
 						const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
-						const shouldUseMonthlyCredit = monthlyRemaining > 0 || ['admin', 'slartibartfast'].includes(contributor.role);
+						const shouldUseMonthlyCredit =
+							monthlyRemaining > 0 || ['admin', 'slartibartfast'].includes(contributor.role);
 
-						const mutation = shouldUseMonthlyCredit ? INCREMENT_ANALYSIS_USAGE : INCREMENT_PURCHASED_CREDITS_USED;
+						const mutation = shouldUseMonthlyCredit
+							? INCREMENT_ANALYSIS_USAGE
+							: INCREMENT_PURCHASED_CREDITS_USED;
 
 						await fetch(HASURA_GRAPHQL_ENDPOINT, {
 							method: 'POST',

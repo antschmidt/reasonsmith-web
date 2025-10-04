@@ -11,21 +11,23 @@
 
 	let { userId } = $props<{ userId: string }>();
 
-	let notifications = $state<Array<{
-		id: string;
-		type: string;
-		discussion_id: string;
-		post_id: string | null;
-		actor_id: string | null;
-		read: boolean;
-		created_at: string;
-		discussion: {
-			discussion_versions: Array<{ title: string }>;
-		};
-		post: {
-			content: string;
-		} | null;
-	}>>([]);
+	let notifications = $state<
+		Array<{
+			id: string;
+			type: string;
+			discussion_id: string;
+			post_id: string | null;
+			actor_id: string | null;
+			read: boolean;
+			created_at: string;
+			discussion: {
+				discussion_versions: Array<{ title: string }>;
+			};
+			post: {
+				content: string;
+			} | null;
+		}>
+	>([]);
 
 	let unreadCount = $state(0);
 	let loading = $state(true);
@@ -91,7 +93,7 @@
 		}
 	}
 
-	function getNotificationMessage(notification: typeof notifications[0]): string {
+	function getNotificationMessage(notification: (typeof notifications)[0]): string {
 		const discussionTitle =
 			notification.discussion?.discussion_versions?.[0]?.title || 'a discussion';
 
@@ -119,7 +121,7 @@
 		return date.toLocaleDateString();
 	}
 
-	async function handleNotificationClick(notification: typeof notifications[0]) {
+	async function handleNotificationClick(notification: (typeof notifications)[0]) {
 		if (!notification.read) {
 			markAsRead(notification.id);
 		}

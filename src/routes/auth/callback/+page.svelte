@@ -64,9 +64,7 @@
 					<button type="button" class="return-button" onclick={handleReturnToApp}>
 						Return to App
 					</button>
-					<p class="auto-redirect-note">
-						Redirecting automatically in a few seconds...
-					</p>
+					<p class="auto-redirect-note">Redirecting automatically in a few seconds...</p>
 				{:else}
 					<h1>Signing you in…</h1>
 					<p>We are finalizing your session. This will only take a moment.</p>

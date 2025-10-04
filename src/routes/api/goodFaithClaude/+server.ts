@@ -180,7 +180,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 				accessToken = authHeader.substring(7);
 			}
 		}
-	console.log('Access token found:', !!accessToken);
+		console.log('Access token found:', !!accessToken);
 		let contributorId: string | null = null;
 		let contributor: any = null;
 
@@ -200,7 +200,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 				try {
 					// Decode JWT token to get user ID
 					const tokenPayload = JSON.parse(atob(accessToken.split('.')[1]));
-					const userId = tokenPayload.sub || tokenPayload['https://hasura.io/jwt/claims']?.['x-hasura-user-id'];
+					const userId =
+						tokenPayload.sub || tokenPayload['https://hasura.io/jwt/claims']?.['x-hasura-user-id'];
 					console.log('[DEBUG] JWT payload:', tokenPayload);
 					console.log('[DEBUG] JWT payload user ID:', userId);
 
@@ -312,11 +313,16 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			const scored = await analyzeWithClaude(content);
 
 			// Increment appropriate credit type only if Claude was actually used (not heuristic fallback)
-			console.log('Checking credit consumption:', { contributorId: !!contributorId, contributor: !!contributor, usedClaude: scored.usedClaude });
-		if (contributorId && contributor && scored.usedClaude) {
+			console.log('Checking credit consumption:', {
+				contributorId: !!contributorId,
+				contributor: !!contributor,
+				usedClaude: scored.usedClaude
+			});
+			if (contributorId && contributor && scored.usedClaude) {
 				try {
 					// Use the working endpoint URL that was discovered during contributor lookup
-					let CREDIT_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
+					let CREDIT_ENDPOINT =
+						process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
 					const alternativeEndpoint = CREDIT_ENDPOINT.replace('.graphql.', '.hasura.');
 
 					// Test which endpoint works for credit operations
@@ -342,9 +348,12 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 					if (CREDIT_ENDPOINT && HASURA_ADMIN_SECRET) {
 						// Determine which credit type to use\n\t\t\t\t\t\tconsole.log('Contributor for credit check:', contributor);
 						const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
-						const shouldUseMonthlyCredit = monthlyRemaining > 0 || ['admin', 'slartibartfast'].includes(contributor.role);
+						const shouldUseMonthlyCredit =
+							monthlyRemaining > 0 || ['admin', 'slartibartfast'].includes(contributor.role);
 
-						const mutation = shouldUseMonthlyCredit ? INCREMENT_ANALYSIS_USAGE : INCREMENT_PURCHASED_CREDITS_USED;
+						const mutation = shouldUseMonthlyCredit
+							? INCREMENT_ANALYSIS_USAGE
+							: INCREMENT_PURCHASED_CREDITS_USED;
 
 						console.log('[DEBUG] Executing credit mutation...');
 						const creditResponse = await fetch(CREDIT_ENDPOINT, {

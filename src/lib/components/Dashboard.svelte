@@ -7,23 +7,24 @@
 
 	let { user } = $props<{ user: User }>();
 
-
 	// Focus on active work only
 
-	let drafts = $state<Array<{
-		id: string;
-		draft_content?: string | null;
-		discussion_id?: string | null;
-		updated_at?: string | null;
-		discussion_title?: string | null;
-		status?: string | null;
-		type?: string;
-		original_discussion_id?: string;
-		good_faith_score?: number | null;
-		good_faith_label?: string | null;
-		good_faith_last_evaluated?: string | null;
-		good_faith_analysis?: any;
-	}>>([]);
+	let drafts = $state<
+		Array<{
+			id: string;
+			draft_content?: string | null;
+			discussion_id?: string | null;
+			updated_at?: string | null;
+			discussion_title?: string | null;
+			status?: string | null;
+			type?: string;
+			original_discussion_id?: string;
+			good_faith_score?: number | null;
+			good_faith_label?: string | null;
+			good_faith_last_evaluated?: string | null;
+			good_faith_analysis?: any;
+		}>
+	>([]);
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -200,7 +201,6 @@
 			drafts = drafts.filter((dr) => dr.id !== d.id);
 		}
 	}
-
 </script>
 
 <div class="dashboard-container">
@@ -214,10 +214,7 @@
 			<!-- Single Action: New Discussion -->
 			<section class="card quick-discussion">
 				<a href="/discussions/new" class="btn btn-secondary btn-sm">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 20 20"
-						fill="currentColor"
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
 						><path
 							fill-rule="evenodd"
 							d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
@@ -239,12 +236,17 @@
 				<p style="color: var(--color-accent)">{error}</p>
 			{:else if drafts.length === 0}
 				<div class="card" style="margin-bottom: 1rem;">
-					<p>No active drafts. <a href="/discussions/new">Start a new discussion</a> or join an existing conversation.</p>
+					<p>
+						No active drafts. <a href="/discussions/new">Start a new discussion</a> or join an existing
+						conversation.
+					</p>
 				</div>
 			{:else}
 				<div class="drafts-focus">
 					<h3 class="subsection-title">Continue Working</h3>
-					<p class="section-description">Pick up where you left off on your drafts and active discussions.</p>
+					<p class="section-description">
+						Pick up where you left off on your drafts and active discussions.
+					</p>
 				</div>
 
 				<!-- Drafts List -->
@@ -282,7 +284,8 @@
 								{#if draft.good_faith_score !== null && draft.good_faith_score !== undefined}
 									<div class="draft-score">
 										<span class="score-pill {draft.good_faith_label || 'neutral'}">
-											{(draft.good_faith_score * 100).toFixed(0)}% {draft.good_faith_label || 'unrated'}
+											{(draft.good_faith_score * 100).toFixed(0)}% {draft.good_faith_label ||
+												'unrated'}
 										</span>
 									</div>
 								{/if}

@@ -120,7 +120,12 @@
 		<div class="nav-spacer">
 			{#if isProfilePage}
 				<div class="profile-nav-controls">
-					<button type="button" onclick={toggleTheme} aria-label="Toggle theme" class="theme-toggle">
+					<button
+						type="button"
+						onclick={toggleTheme}
+						aria-label="Toggle theme"
+						class="theme-toggle"
+					>
 						{currentTheme === 'light' ? '🌙' : '☀️'}
 					</button>
 					<span class="user-email-nav">{user.email}</span>
@@ -260,7 +265,7 @@
 		margin-left: auto;
 		display: flex;
 		align-items: center;
-		width:100%;
+		width: 100%;
 	}
 	.profile-nav-controls {
 		display: flex;

@@ -17,8 +17,8 @@
 		<h1>You're offline</h1>
 
 		<p class="offline-description">
-			It looks like you've lost your internet connection. ReasonSmith needs an active connection
-			to load new content and sync your work.
+			It looks like you've lost your internet connection. ReasonSmith needs an active connection to
+			load new content and sync your work.
 		</p>
 
 		<div class="offline-actions">

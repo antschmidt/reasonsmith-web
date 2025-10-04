@@ -638,7 +638,8 @@ export const CREATE_POST_DRAFT_WITH_STYLE = gql`
 		$authorId: uuid!
 		$draftContent: String!
 		$postType: post_type_enum = response
-		$parentPostId: uuid\n\t\t$contextVersionId: uuid
+		$parentPostId: uuid
+		$contextVersionId: uuid
 		$writingStyle: writing_style_type = quick_point
 		$styleMetadata: jsonb = {}
 	) {
@@ -648,7 +649,8 @@ export const CREATE_POST_DRAFT_WITH_STYLE = gql`
 				author_id: $authorId
 				draft_content: $draftContent
 				post_type: $postType
-				parent_post_id: $parentPostId\n\t\t\t\tcontext_version_id: $contextVersionId
+				parent_post_id: $parentPostId
+				context_version_id: $contextVersionId
 				status: "draft"
 				writing_style: $writingStyle
 				style_metadata: $styleMetadata
@@ -1140,13 +1142,14 @@ export const INCREMENT_PURCHASED_CREDITS_USED = gql`
 
 // Mutation to update subscription tier
 export const UPDATE_SUBSCRIPTION_TIER = gql`
-	mutation UpdateSubscriptionTier($contributorId: uuid!, $tier: subscription_tier_enum!, $analysisLimit: Int!) {
+	mutation UpdateSubscriptionTier(
+		$contributorId: uuid!
+		$tier: subscription_tier_enum!
+		$analysisLimit: Int!
+	) {
 		update_contributor_by_pk(
 			pk_columns: { id: $contributorId }
-			_set: {
-				subscription_tier: $tier,
-				analysis_limit: $analysisLimit
-			}
+			_set: { subscription_tier: $tier, analysis_limit: $analysisLimit }
 		) {
 			...ContributorFields
 		}
@@ -1157,10 +1160,7 @@ export const UPDATE_SUBSCRIPTION_TIER = gql`
 // Mutation to update analysis limit based on subscription tier
 export const UPDATE_ANALYSIS_LIMIT_BY_TIER = gql`
 	mutation UpdateAnalysisLimitByTier($contributorId: uuid!, $limit: Int) {
-		update_contributor_by_pk(
-			pk_columns: { id: $contributorId }
-			_set: { analysis_limit: $limit }
-		) {
+		update_contributor_by_pk(pk_columns: { id: $contributorId }, _set: { analysis_limit: $limit }) {
 			...ContributorFields
 		}
 	}
