@@ -9,12 +9,17 @@
 	let isSignedIn = $state(false);
 
 	onMount(() => {
+		let unsubscribe: Function | undefined;
+
 		// Check if we're in browser context but auth came from PWA
 		const standalone = isStandalone();
 		const fromPWA = isFromPWA();
 
-		const unsubscribe = nhost.auth.onAuthStateChanged((event) => {
-			if (event === 'SIGNED_IN') {
+		// Check if already signed in (in case the event already fired)
+		const checkAuthAndRedirect = async () => {
+			const isAuthenticated = await nhost.auth.isAuthenticatedAsync();
+
+			if (isAuthenticated) {
 				isSignedIn = true;
 
 				// If we're in browser but came from PWA, show "Return to App" button
@@ -28,11 +33,32 @@
 					// Normal flow: redirect immediately
 					goto('/');
 				}
+				return true;
 			}
-		});
+			return false;
+		};
+
+		// Initialize the auth check
+		const initAuth = async () => {
+			// First, check if already authenticated
+			const alreadyAuthenticated = await checkAuthAndRedirect();
+
+			// If not already handled, listen for auth state changes
+			if (!alreadyAuthenticated) {
+				unsubscribe = nhost.auth.onAuthStateChanged(async (event) => {
+					if (event === 'SIGNED_IN') {
+						await checkAuthAndRedirect();
+					}
+				});
+			}
+		};
+
+		initAuth();
 
 		return () => {
-			unsubscribe();
+			if (unsubscribe) {
+				unsubscribe();
+			}
 		};
 	});
 
