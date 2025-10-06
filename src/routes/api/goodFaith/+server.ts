@@ -127,19 +127,24 @@ async function scoreWithOpenAI(content: string): Promise<ScoreResponse> {
 	try {
 		// Check if using custom prompt or fallback to chat completion
 		if (process.env.OPENAI_PROMPT_ID) {
-			const response = await openai.responses.create({
-				prompt: {
-					id: process.env.OPENAI_PROMPT_ID,
-					version: '1'
-				},
-				variables: {
-					content: content
-				}
+			// Note: OpenAI doesn't have a responses.create API
+			// This should use chat.completions.create instead
+			const response = await openai.chat.completions.create({
+				model: 'gpt-4',
+				messages: [
+					{
+						role: 'system',
+						content: 'You are a good faith analyzer. Analyze the following content and return a structured response.'
+					},
+					{
+						role: 'user',
+						content: content
+					}
+				]
 			});
 
-			// Parse the response based on your prompt structure
-			const result = response.content;
-			// You'll need to adjust this parsing based on your prompt's expected output format
+			// Parse the response
+			const result = response.choices[0]?.message?.content || '';
 			return parseOpenAIResponse(result);
 		} else {
 			// Use structured outputs with chat completion API

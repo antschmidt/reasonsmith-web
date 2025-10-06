@@ -183,6 +183,7 @@
 								bind:value={password}
 								placeholder="Password"
 								class="auth-input"
+								maxlength="50"
 							/>
 							<button
 								type="button"

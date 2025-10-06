@@ -1010,6 +1010,7 @@
 							id
 							title
 							description
+							citations
 							good_faith_score
 							good_faith_label
 							good_faith_last_evaluated
@@ -1666,11 +1667,11 @@
 						url: legacyCitation.url,
 						author: legacyCitation.author || null,
 						publisher: legacyCitation.publisher || null,
-						publish_date: legacyCitation.publishDate || null,
-						accessed_date: legacyCitation.accessed || null,
-						page_number: legacyCitation.pageNumber || null,
-						point_supported: legacyCitation.pointSupported,
-						relevant_quote: legacyCitation.relevantQuote
+						publish_date: legacyCitation.publish_date || null,
+						accessed_date: legacyCitation.accessed_date || null,
+						page_number: legacyCitation.page_number || null,
+						point_supported: legacyCitation.point_supported,
+						relevant_quote: legacyCitation.relevant_quote
 					};
 
 					try {
@@ -2194,7 +2195,7 @@
 		}
 
 		// Check post deletion status for user's posts
-		const userPosts = discussion.posts.filter((post) => post.contributor.id === user.id);
+		const userPosts = discussion.posts.filter((post: any) => post.contributor.id === user?.id);
 		const statusChecks: Record<string, { canDelete: boolean; reason?: string }> = {};
 
 		for (const post of userPosts) {
@@ -2234,7 +2235,7 @@
 
 			// Update the post in the local state to reflect the change
 			if (discussion) {
-				discussion.posts = discussion.posts.map((p) =>
+				discussion.posts = discussion.posts.map((p: any) =>
 					p.id === post.id ? { ...p, is_anonymous: true } : p
 				);
 			}
@@ -2289,7 +2290,7 @@
 
 			// Update the post in the local state to reflect the change
 			if (discussion) {
-				discussion.posts = discussion.posts.map((p) =>
+				discussion.posts = discussion.posts.map((p: any) =>
 					p.id === post.id ? { ...p, is_anonymous: false } : p
 				);
 			}
@@ -3138,11 +3139,11 @@
 											{#if citation.author}<div class="source-author">
 													Author: {citation.author}
 												</div>{/if}
-											{#if citation.publishDate}<div class="source-date">
-													Published: {citation.publishDate}
+											{#if citation.publish_date}<div class="source-date">
+													Published: {citation.publish_date}
 												</div>{/if}
-											{#if citation.accessed}<div class="source-accessed">
-													Accessed: {citation.accessed}
+											{#if citation.accessed_date}<div class="source-accessed">
+													Accessed: {citation.accessed_date}
 												</div>{/if}
 											<details class="citation-details">
 												<summary>
@@ -3152,10 +3153,10 @@
 												<div class="citation-context">
 													<div class="citation-point">
 														<strong>Supports:</strong>
-														{citation.pointSupported}
+														{citation.point_supported}
 													</div>
 													<div class="citation-quote">
-														<strong>Quote:</strong> "{citation.relevantQuote}"
+														<strong>Quote:</strong> "{citation.relevant_quote}"
 													</div>
 												</div>
 											</details>
@@ -3331,7 +3332,8 @@
 				{@const extraction = extractCitationData(getDiscussionDescription())}
 				{@const jsonCitations = extraction.citationData?.style_metadata?.citations || []}
 				{@const tableCitations = discussion?.current_version?.[0]?.citationsFromTable || []}
-				{@const allCitations = [...tableCitations, ...jsonCitations]}
+				{@const versionCitations = discussion?.current_version?.[0]?.citations || []}
+				{@const allCitations = [...tableCitations, ...versionCitations, ...jsonCitations]}
 				{@const processedContent = processCitationReferences(extraction.cleanContent, allCitations)}
 				<div class="discussion-description">{@html processedContent.replace(/\n/g, '<br>')}</div>
 
@@ -3355,10 +3357,10 @@
 											<div class="citation-context">
 												<div class="citation-point">
 													<strong>Supports:</strong>
-													{item.pointSupported}
+													{item.point_supported || item.pointSupported}
 												</div>
 												<div class="citation-quote">
-													<strong>Quote:</strong> "{item.relevantQuote}"
+													<strong>Quote:</strong> "{item.relevant_quote || item.relevantQuote}"
 												</div>
 											</div>
 										</details>
@@ -3382,7 +3384,7 @@
 					>
 						<span class="icon-symbol">ℹ</span>
 						<span class="good-faith-pill {getDiscussionGoodFaithLabel()}">
-							{(getDiscussionGoodFaithScore() * 100).toFixed(0)}%
+							{((getDiscussionGoodFaithScore() ?? 0) * 100).toFixed(0)}%
 						</span>
 					</button>
 				{/if}
@@ -3500,10 +3502,10 @@
 													<div class="citation-context">
 														<div class="citation-point">
 															<strong>Supports:</strong>
-															{item.pointSupported}
+															{item.point_supported}
 														</div>
 														<div class="citation-quote">
-															<strong>Quote:</strong> "{item.relevantQuote}"
+															<strong>Quote:</strong> "{item.relevant_quote}"
 														</div>
 													</div>
 												</details>
@@ -4127,9 +4129,21 @@
 						analysis: getDiscussionGoodFaithAnalysis(),
 						lastEvaluated: getDiscussionGoodFaithLastEvaluated()
 					}
-				: discussion?.posts?.find((p) => p.id === showGoodFaithAnalysisFor)}
-		<div class="good-faith-modal-overlay" onclick={() => (showGoodFaithAnalysisFor = null)}>
-			<div class="good-faith-modal" onclick={(e) => e.stopPropagation()}>
+				: discussion?.posts?.find((p: any) => p.id === showGoodFaithAnalysisFor)}
+		<div
+			class="good-faith-modal-overlay"
+			onclick={() => (showGoodFaithAnalysisFor = null)}
+			onkeydown={(e) => e.key === 'Escape' && (showGoodFaithAnalysisFor = null)}
+			role="presentation"
+		>
+			<div
+				class="good-faith-modal"
+				onclick={(e) => e.stopPropagation()}
+				onkeydown={(e) => e.stopPropagation()}
+				role="dialog"
+				aria-modal="true"
+				tabindex="-1"
+			>
 				{#if analysisData}
 					<div class="modal-header">
 						<h3>Good Faith Analysis</h3>
@@ -4412,18 +4426,6 @@
 		word-wrap: break-word;
 		margin-bottom: 2rem;
 		font-family: var(--font-family-sans);
-	}
-
-	/* Editorial-style paragraph formatting for descriptions */
-	.discussion-description p {
-		margin-bottom: 1.5rem;
-	}
-
-	.discussion-description p:first-child {
-		font-size: 1.25rem;
-		line-height: var(--line-height-normal);
-		margin-bottom: 2rem;
-		color: var(--color-text-secondary);
 	}
 
 	.discussion-metadata {
@@ -4952,23 +4954,12 @@
 		border-radius: var(--border-radius-sm);
 		background: color-mix(in srgb, #dc2626 5%, var(--color-surface-alt));
 	}
-	.cultish-phrases ul {
-		margin: 0.5rem 0 0 0;
-		padding-left: 1.5rem;
-	}
 	.fallacy-warning {
 		margin: 0.75rem 0;
 		padding: 0.5rem;
 		border-radius: var(--border-radius-sm);
 		background: color-mix(in srgb, #f59e0b 10%, var(--color-surface-alt));
 		border-left: 3px solid #f59e0b;
-	}
-	.improvements ul {
-		margin: 0.25rem 0 0 0;
-		padding-left: 1.5rem;
-	}
-	.improvements li {
-		margin: 0.125rem 0;
 	}
 
 	.cache-indicator {
@@ -5290,10 +5281,6 @@
 		margin-bottom: 1rem;
 	}
 
-	.post-type-selected .post-type-label {
-		font-weight: 500;
-		color: var(--color-text-primary);
-	}
 
 	.toggle-advanced-btn.compact {
 		font-size: 0.85rem;
@@ -5680,10 +5667,6 @@
 		gap: 1rem;
 	}
 
-	.historical-header strong {
-		color: var(--color-accent);
-		font-size: 1.1rem;
-	}
 
 	.return-current-btn {
 		background: var(--color-primary);
@@ -6269,10 +6252,6 @@
 		gap: 0.5rem;
 	}
 
-	.good-faith-score-inline .score-value {
-		font-weight: 600;
-		color: var(--color-text-primary);
-	}
 
 	.good-faith-score-inline .score-label {
 		padding: 0.2rem 0.5rem;
@@ -6422,17 +6401,6 @@
 		color: #b45309;
 	}
 
-	.citation-reminder .btn-add-citation-inline {
-		margin-left: auto;
-	}
-
-	@media (max-width: 640px) {
-		.citation-reminder .btn-add-citation-inline {
-			margin-left: 0;
-			width: 100%;
-			justify-content: center;
-		}
-	}
 
 	/* Citation Section Inline Styles */
 	.citation-section-inline {

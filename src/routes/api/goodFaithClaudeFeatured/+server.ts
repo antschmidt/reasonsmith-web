@@ -243,8 +243,8 @@ ${content}`
 
 	const responseBlocks = message.content ?? [];
 	const textResponse = responseBlocks
-		.filter((block): block is { type: 'text'; text: string } => block.type === 'text')
-		.map((block) => block.text)
+		.filter((block) => block.type === 'text')
+		.map((block) => (block as any).text)
 		.join('')
 		.trim();
 

@@ -21,6 +21,7 @@ interface ScoreResponse {
 	goodFaithScore: number; // 0-100
 	cultishPhrases: string[];
 	summary: string;
+	tags?: string[]; // Topic tags extracted from claims
 
 	// Legacy fields for backward compatibility
 	good_faith_score?: number;
@@ -109,13 +110,21 @@ const goodFaithSchema = {
 			},
 			description: 'List of cultish or manipulative phrases found throughout the text'
 		},
+		tags: {
+			type: 'array',
+			items: {
+				type: 'string'
+			},
+			description:
+				'Array of 3-5 topic tags extracted from the claims and content (e.g., "politics", "economics", "healthcare", "education", "environment", "technology", "foreign-policy", "social-issues"). Use lowercase, hyphenated format. Focus on the primary subject areas discussed.'
+		},
 		summary: {
 			type: 'string',
 			description:
 				'Comprehensive textual summary of the analysis including patterns found and recommendations'
 		}
 	},
-	required: ['claims', 'fallacyOverload', 'goodFaithScore', 'cultishPhrases', 'summary'],
+	required: ['claims', 'fallacyOverload', 'goodFaithScore', 'cultishPhrases', 'tags', 'summary'],
 	additionalProperties: false
 };
 
@@ -152,6 +161,7 @@ async function scoreWithOpenAI(content: string): Promise<ScoreResponse> {
 3. **List specific fallacies by name** - Use precise logical fallacy terminology
 4. **Extract manipulative language** - Quote specific phrases that use emotional manipulation
 5. **Provide detailed suggestions** - Concrete, actionable improvements for each argument
+6. **Generate topic tags** - Extract 3-5 topic tags from the content that represent the primary subject areas (e.g., "politics", "economics", "healthcare", "education", "environment", "technology", "foreign-policy", "social-issues", "ethics", "science", "philosophy", "culture", "history"). Use lowercase, hyphenated format.
 
 **Analysis Format:**
 
