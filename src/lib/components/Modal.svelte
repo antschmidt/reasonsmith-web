@@ -32,10 +32,20 @@
 </script>
 
 {#if show}
-	<div class="modal-overlay" onclick={handleOverlayClick} transition:fade={{ duration: 200 }}>
+	<div
+		class="modal-overlay"
+		onclick={handleOverlayClick}
+		onkeydown={(e) => e.key === 'Escape' && onClose()}
+		role="presentation"
+		transition:fade={{ duration: 200 }}
+	>
 		<div
 			class="modal-content modal-{size}"
 			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
 			transition:scale={{ duration: 200, start: 0.9 }}
 		>
 			<div class="modal-header">
@@ -44,10 +54,7 @@
 				{:else if title}
 					<h3 class="modal-title">{title}</h3>
 				{/if}
-				<button type="button"
-				class="modal-close-btn"
-				onclick={onClose}
-				aria-label="Close modal">
+				<button type="button" class="modal-close-btn" onclick={onClose} aria-label="Close modal">
 					×
 				</button>
 			</div>

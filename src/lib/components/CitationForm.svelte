@@ -27,14 +27,14 @@
 		if (editingItem) {
 			title = editingItem.title || '';
 			url = editingItem.url || '';
-			publishDate = editingItem.publishDate || '';
-			pointSupported = editingItem.pointSupported || '';
-			relevantQuote = editingItem.relevantQuote || '';
+			publishDate = editingItem.publish_date || '';
+			pointSupported = editingItem.point_supported || '';
+			relevantQuote = editingItem.relevant_quote || '';
 			author = editingItem.author || '';
 
-			pageNumber = editingItem.pageNumber || '';
+			pageNumber = editingItem.page_number || '';
 			publisher = editingItem.publisher || '';
-			accessed = editingItem.accessed || '';
+			accessed = editingItem.accessed_date || '';
 		}
 	});
 
@@ -65,17 +65,17 @@
 			id: editingItem?.id || generateId(), // Use existing ID if editing
 			title: title.trim(),
 			url: url.trim(),
-			publishDate: publishDate.trim() || undefined,
-			pointSupported: pointSupported.trim(),
-			relevantQuote: relevantQuote.trim(),
+			publish_date: publishDate.trim() || undefined,
+			point_supported: pointSupported.trim(),
+			relevant_quote: relevantQuote.trim(),
 			author: author.trim() || undefined
 		};
 
 		const citation: Citation = {
 			...baseData,
-			pageNumber: pageNumber.trim() || undefined,
+			page_number: pageNumber.trim() || undefined,
 			publisher: publisher.trim() || undefined,
-			accessed: accessed.trim() || undefined // Include accessed date for journalistic sources
+			accessed_date: accessed.trim() || undefined // Include accessed date for journalistic sources
 		};
 		onAdd(citation);
 

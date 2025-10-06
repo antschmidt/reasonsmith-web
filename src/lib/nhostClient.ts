@@ -142,13 +142,10 @@ function applyInitialGraphqlRoleHeader() {
 async function upgradeRoleHeaders() {
 	const user = nhost.auth.getUser();
 	if (!user) {
-		console.log('[Role Debug] No user found, skipping upgrade');
 		return;
 	}
 
 	try {
-		console.log('[Role Debug] Attempting to get role for user:', user.id);
-
 		// Get user's role from database (using 'me' role initially)
 		const result = await nhost.graphql.request(
 			`
@@ -161,10 +158,7 @@ async function upgradeRoleHeaders() {
 			{ userId: user.id }
 		);
 
-		console.log('[Role Debug] Database query result:', result);
-
 		const userRole = result.data?.contributor_by_pk?.role || 'user';
-		console.log('[Role Debug] User role from database:', userRole);
 
 		// Map database roles to Hasura roles
 		// NOTE: Until Nhost Auth is configured with admin/slartibartfast roles,
@@ -186,17 +180,13 @@ async function upgradeRoleHeaders() {
 			window.sessionStorage.setItem('userActualRole', userRole);
 		}
 
-		console.log('[Role Debug] Mapped to Hasura role:', hasuraRole);
-
 		// Update headers with correct role
 		nhost.graphql.setHeaders({
 			'x-hasura-role': hasuraRole,
 			'X-Hasura-User-Id': user.id
 		});
-
-		console.log('[Role Debug] Headers updated successfully');
 	} catch (err) {
-		console.error('[Role Debug] Failed to upgrade user role, staying as me:', err);
+		console.error('Failed to upgrade user role, staying as me:', err);
 		// Keep existing 'me' role if upgrade fails
 	}
 }
@@ -215,8 +205,7 @@ export function debugAdminRequest(operation: string) {
 	console.log(`[Admin Debug] ${operation}:`, {
 		userId: user?.id,
 		email: user?.email,
-		actualRole,
-		headers: nhost.graphql.requestHeaders
+		actualRole
 	});
 }
 

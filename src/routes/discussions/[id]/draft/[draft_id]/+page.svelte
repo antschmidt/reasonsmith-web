@@ -162,6 +162,7 @@
 							id
 							title
 							description
+							citations
 							created_by
 							version_type
 							discussion_id
@@ -180,11 +181,17 @@
 				nhost.graphql.request(
 					`
 					query GetContributor($userId: uuid!) {
-						contributor(where: { user_id: { _eq: $userId } }, limit: 1) {
+						contributor_by_pk(id: $userId) {
 							id
-							user_id
+							role
+							analysis_enabled
+							analysis_limit
+							analysis_count_used
+							analysis_count_reset_at
 							monthly_credits_remaining
 							purchased_credits_remaining
+							purchased_credits_total
+							purchased_credits_used
 							monthly_credits_reset_at
 							account_disabled
 						}
@@ -206,7 +213,7 @@
 
 			discussion = discussionResult.data?.discussion_by_pk;
 			draft = draftResult.data?.discussion_version_by_pk;
-			contributor = contributorResult.data?.contributor?.[0] || null;
+			contributor = contributorResult.data?.contributor_by_pk || null;
 
 			if (!discussion) {
 				throw new Error('Discussion not found');
@@ -218,7 +225,11 @@
 
 			// Check and reset monthly credits if needed
 			if (contributor) {
-				await checkAndResetMonthlyCredits(nhost, contributor);
+				await checkAndResetMonthlyCredits(
+					contributor,
+					nhost.graphql.getUrl(),
+					nhost.auth.getAccessToken() || undefined
+				);
 			}
 
 			// Check permissions
@@ -233,6 +244,11 @@
 			// Initialize form
 			title = draft.title || '';
 			description = draft.description || '';
+
+			// Load citations from draft
+			if (draft.citations && Array.isArray(draft.citations)) {
+				styleMetadata.citations = draft.citations;
+			}
 
 			// Load existing good faith analysis if available
 			if (draft.good_faith_score !== null && draft.good_faith_label) {
@@ -364,20 +380,24 @@
 			saving = true;
 			error = null;
 
+			const citationsToSave = styleMetadata.citations || [];
+
 			const result = await nhost.graphql.request(
 				`
-				mutation UpdateDraft($draftId: uuid!, $title: String!, $description: String!, $editedAt: timestamptz!) {
+				mutation UpdateDraft($draftId: uuid!, $title: String!, $description: String!, $citations: jsonb!, $editedAt: timestamptz!) {
 					update_discussion_version_by_pk(
 						pk_columns: { id: $draftId }
 						_set: {
 							title: $title
 							description: $description
+							citations: $citations
 							edited_at: $editedAt
 						}
 					) {
 						id
 						title
 						description
+						citations
 						edited_at
 					}
 				}
@@ -386,6 +406,7 @@
 					draftId: draft.id,
 					title: title.trim(),
 					description: description.trim(),
+					citations: citationsToSave,
 					editedAt: new Date().toISOString()
 				}
 			);
@@ -397,6 +418,7 @@
 			// Update local state
 			draft.title = title.trim();
 			draft.description = description.trim();
+			draft.citations = styleMetadata.citations || [];
 			draft.edited_at = new Date().toISOString();
 		} catch (err: any) {
 			console.error('Error saving draft:', err);
@@ -539,10 +561,14 @@
 	function addCitation(item: Citation) {
 		styleMetadata.citations = [...(styleMetadata.citations || []), item];
 		showCitationForm = false;
+		// Trigger immediate save after adding citation
+		saveDraft();
 	}
 
 	function removeCitation(id: string) {
 		styleMetadata.citations = styleMetadata.citations?.filter((c) => c.id !== id) || [];
+		// Trigger immediate save after removing citation
+		saveDraft();
 	}
 
 	function startEditCitation(id: string) {
@@ -560,6 +586,8 @@
 		}
 		showCitationForm = false;
 		editingCitation = null;
+		// Trigger immediate save after updating citation
+		saveDraft();
 	}
 
 	function insertCitationReference(citationId: string) {
@@ -567,7 +595,7 @@
 		if (!textarea) return;
 
 		const cursorPos = textarea.selectionStart;
-		const citationNumber = styleMetadata.citations?.findIndex((c) => c.id === citationId) + 1 || 1;
+		const citationNumber = (styleMetadata.citations || []).findIndex((c) => c.id === citationId) + 1 || 1;
 
 		const beforeText = description.slice(0, cursorPos);
 		const afterText = description.slice(cursorPos);
@@ -589,7 +617,8 @@
 			error = null;
 
 			// Save current changes only if there are unsaved changes
-			const hasUnsavedChanges = title !== (draft.title ?? '') || description !== (draft.description ?? '');
+			const hasUnsavedChanges =
+				title !== (draft.title ?? '') || description !== (draft.description ?? '');
 			if (hasUnsavedChanges) {
 				await saveDraft();
 			}
@@ -874,10 +903,11 @@
 		if (draft && !loading) {
 			// Set up auto-save
 			autoSaveInterval = setInterval(() => {
+				const citationsChanged = JSON.stringify(styleMetadata.citations || []) !== JSON.stringify(draft.citations || []);
 				if (
 					!saving &&
 					!publishing &&
-					(title !== draft.title || description !== draft.description)
+					(title !== draft.title || description !== draft.description || citationsChanged)
 				) {
 					saveDraft();
 				}

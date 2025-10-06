@@ -61,7 +61,7 @@
 			const { fileMetadata, error: uploadError } = await nhost.storage.upload({
 				file,
 				bucketId: 'default',
-				fileName: `avatars/${contributorId}-${Date.now()}-${file.name}`
+				name: `avatars/${contributorId}-${Date.now()}-${file.name}`
 			});
 
 			if (uploadError) {

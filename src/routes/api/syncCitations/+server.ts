@@ -49,9 +49,9 @@ function citationToCitationNode(citation: Citation): CitationNode {
 		id: citation.id,
 		title: citation.title,
 		url: citation.url,
-		author: citation.author,
-		publisher: citation.publisher,
-		publishDate: citation.publishDate,
+		author: citation.author || undefined,
+		publisher: citation.publisher || undefined,
+		publishDate: citation.publish_date || undefined,
 		type: determineCitationType(citation.url)
 	};
 }
