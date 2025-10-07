@@ -1,14 +1,18 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	let {
 		title = $bindable(''),
 		description = $bindable(''),
 		disabled = false,
-		onSubmit
+		onSubmit,
+		children
 	} = $props<{
 		title: string;
 		description: string;
 		disabled?: boolean;
 		onSubmit?: (e: SubmitEvent) => void;
+		children?: Snippet;
 	}>();
 </script>
 
@@ -39,11 +43,9 @@
 			placeholder="Describe your discussion..."
 			rows="20"
 			required
-			{disabled}
 		></textarea>
+		{@render children?.()}
 	</div>
-
-	<slot />
 </form>
 
 <style>
@@ -75,6 +77,7 @@
 	input,
 	textarea {
 		padding: 0.875rem 1rem;
+		width: 95%;
 		border: 1px solid var(--color-border);
 		border-radius: 3px;
 		background: var(--color-input-bg);
@@ -96,6 +99,7 @@
 
 	textarea {
 		font-family: 'Crimson Text', Georgia, serif;
+		width: 95%;
 		font-size: 16px;
 		line-height: 1.7;
 		resize: vertical;
