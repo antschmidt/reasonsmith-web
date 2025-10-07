@@ -496,7 +496,7 @@
 		<button
 			class="btn-primary"
 			type="submit"
-			disabled={publishLoading || !hasUnsavedChanges || !heuristicPassed}
+			disabled={publishLoading || !hasUnsavedChanges || (!heuristicPassed && contributor?.role !== 'slartibartfast' && contributor?.role !== 'admin')}
 		>
 			{publishLoading ? 'Publishing…' : 'Publish Changes'}
 		</button>

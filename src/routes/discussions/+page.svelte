@@ -3,14 +3,19 @@
 	import { nhost } from '$lib/nhostClient';
 	import { goto } from '$app/navigation';
 	import FeaturedAnalysesCarousel from '$lib/components/FeaturedAnalysesCarousel.svelte';
+	import EditorsDeskCarousel from '$lib/components/EditorsDeskCarousel.svelte';
+	import EditorsDeskPicker from '$lib/components/EditorsDeskPicker.svelte';
 	import {
 		LIST_PUBLISHED_DISCUSSIONS,
 		SEARCH_PUBLISHED_DISCUSSIONS,
 		SEARCH_DISCUSSIONS_BY_TAGS,
 		GET_DISCUSSION_TAGS,
-		ADVANCED_SEARCH_DISCUSSIONS
+		ADVANCED_SEARCH_DISCUSSIONS,
+		GET_EDITORS_DESK_PICKS,
+		GET_CONTRIBUTOR
 	} from '$lib/graphql/queries';
 	import { COMMON_DISCUSSION_TAGS, normalizeTag } from '$lib/types/writingStyle';
+	import { canCurateEditorsDesk } from '$lib/utils/editorsDeskUtils';
 	import type { PageData } from './$types';
 
 	let loading = $state(true);
@@ -65,6 +70,20 @@
 	$effect(() => {
 		showcaseItems = props.data?.showcaseItems ?? [];
 		showcaseError = props.data?.showcaseError ?? null;
+	});
+
+	// Editors' Desk state
+	let editorsDeskPicks = $state<any[]>([]);
+	let editorsDeskLoading = $state(false);
+	let editorsDeskError = $state<string | null>(null);
+	let pickerOpen = $state(false);
+	let selectedDiscussion = $state<DiscussionSummary | null>(null);
+	let user = $state(nhost.auth.getUser());
+	let contributor = $state<any>(null);
+	let canCurate = $derived(canCurateEditorsDesk(contributor));
+
+	nhost.auth.onAuthStateChanged(() => {
+		user = nhost.auth.getUser();
 	});
 
 	// Tag filtering functions
@@ -210,9 +229,53 @@
 		// headers are managed globally by nhostClient
 	}
 
+	async function fetchEditorsDeskPicks() {
+		editorsDeskLoading = true;
+		editorsDeskError = null;
+		try {
+			const { data, error: gqlError } = await nhost.graphql.request(GET_EDITORS_DESK_PICKS, {
+				publishedOnly: true
+			});
+			if (gqlError) {
+				throw Array.isArray(gqlError)
+					? new Error(gqlError.map((e: any) => e.message).join('; '))
+					: gqlError;
+			}
+			editorsDeskPicks = (data as any)?.editors_desk_pick ?? [];
+		} catch (e: any) {
+			editorsDeskError = e.message ?? 'Failed to load Editors\' Desk picks';
+		} finally {
+			editorsDeskLoading = false;
+		}
+	}
+
+	async function fetchContributor() {
+		if (!user?.id) return;
+		try {
+			const { data } = await nhost.graphql.request(GET_CONTRIBUTOR, { userId: user.id });
+			contributor = (data as any)?.contributor_by_pk;
+		} catch (e) {
+			// Silently fail, user just won't see curator features
+		}
+	}
+
+	function openPicker(discussion: DiscussionSummary) {
+		selectedDiscussion = discussion;
+		pickerOpen = true;
+	}
+
+	function closePicker() {
+		pickerOpen = false;
+		selectedDiscussion = null;
+		// Refresh picks after creating one
+		fetchEditorsDeskPicks();
+	}
+
 	onMount(async () => {
 		await ensureAuthReadyAndHeaders();
 		await fetchAll(true);
+		await fetchEditorsDeskPicks();
+		await fetchContributor();
 	});
 
 	import { onDestroy } from 'svelte';
@@ -342,6 +405,134 @@
 	</header>
 
 	{#if !q.trim()}
+		<!-- Editors' Desk Section -->
+		<section class="analysis-section editors-desk-section">
+			<header class="analysis-header">
+				<span class="editorial-kicker">Editors' Desk</span>
+				<h2>Featured by our curators</h2>
+				<p>
+					Exceptional contributions selected by our editorial team for their insight, clarity, and
+					constructive engagement.
+				</p>
+			</header>
+			{#if editorsDeskLoading}
+				<p class="status-message">Loading featured picks…</p>
+			{:else if editorsDeskError}
+				<p class="status-message error">{editorsDeskError}</p>
+			{:else if editorsDeskPicks.length === 0}
+				<p class="status-message">Featured picks will appear here as they are published.</p>
+			{:else}
+				<EditorsDeskCarousel items={editorsDeskPicks} />
+			{/if}
+		</section>
+	{/if}
+
+	{#if user}
+		<main class="discussions-main">
+			{#if error}
+				<div class="error-message">{error}</div>
+			{/if}
+
+			{#if loading && (!discussions || discussions.length === 0)}
+				<p class="loading-message">Loading discussions...</p>
+			{:else if filtered && filtered.length > 0}
+				<div class="article-list">
+					{#each filtered as d}
+						<div class="discussion-card-wrapper">
+							<div
+								class="discussion-card"
+								role="button"
+								tabindex="0"
+								onclick={() => goto(`/discussions/${d.id}`)}
+								onkeydown={(e) => e.key === 'Enter' && goto(`/discussions/${d.id}`)}
+							>
+								<header class="discussion-header">
+									{#if d.current_version?.[0]}
+										<h2>{@html highlight(d.current_version[0].title, q)}</h2>
+									{:else}
+										<h2>Discussion</h2>
+									{/if}
+									{#if d.current_version?.[0]?.description}
+										<p class="deck">
+											{@html highlight(createSummary(d.current_version[0].description, 180), q)}
+										</p>
+									{/if}
+									{#if d.current_version?.[0]?.tags && d.current_version[0].tags.length > 0}
+										<div class="discussion-tags">
+											{#each d.current_version[0].tags as tag}
+												<span class="tag">{tag}</span>
+											{/each}
+										</div>
+									{/if}
+								</header>
+								<footer class="card-byline">
+									{#if d.is_anonymous}
+										<span>Anonymous contributor</span>
+									{:else if d.contributor?.display_name}
+										<span
+											>By
+											<a href={`/u/${d.contributor.handle || d.contributor.id}`}
+												>{@html highlight(displayName(d.contributor.display_name), q)}</a
+											></span
+										>
+									{:else}
+										<span>Unknown author</span>
+									{/if}
+									<time
+										>{new Date(d.created_at).toLocaleDateString('en-US', {
+											year: 'numeric',
+											month: 'long',
+											day: 'numeric'
+										})}</time
+									>
+								</footer>
+							</div>
+							{#if canCurate}
+								<button
+									class="editors-desk-button"
+									onclick={(e) => {
+										e.stopPropagation();
+										openPicker(d);
+									}}
+									title="Add to Editors' Desk"
+									aria-label="Add to Editors' Desk"
+								>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									>
+										<path d="M12 5v14M5 12h14"></path>
+									</svg>
+									<span>Add to Editors' Desk</span>
+								</button>
+							{/if}
+						</div>
+					{/each}
+				</div>
+				{#if !q.trim() && hasMoreDiscussions}
+					<div class="load-more">
+						<button class="load-more-button" onclick={() => fetchAll(false)} disabled={loading}
+							>Load More Discussions</button
+						>
+					</div>
+				{/if}
+			{:else if q.trim().length > 0 && !loading}
+				<p class="empty-state">No discussions match your search.</p>
+			{:else if !loading}
+				<p class="empty-state">No discussions yet.</p>
+			{/if}
+		</main>
+	{/if}
+
+	{#if !q.trim()}
+		<!-- Curated Analyses Section -->
 		<section class="analysis-section">
 			<header class="analysis-header">
 				<span class="editorial-kicker">Curated Analyses</span>
@@ -362,81 +553,17 @@
 			{/if}
 		</section>
 	{/if}
-
-	<main class="discussions-main">
-		{#if error}
-			<div class="error-message">{error}</div>
-		{/if}
-
-		{#if loading && (!discussions || discussions.length === 0)}
-			<p class="loading-message">Loading discussions...</p>
-		{:else if filtered && filtered.length > 0}
-			<div class="article-list">
-				{#each filtered as d}
-					<div
-						class="discussion-card"
-						role="button"
-						tabindex="0"
-						onclick={() => goto(`/discussions/${d.id}`)}
-						onkeydown={(e) => e.key === 'Enter' && goto(`/discussions/${d.id}`)}
-					>
-						<header class="discussion-header">
-							{#if d.current_version?.[0]}
-								<h2>{@html highlight(d.current_version[0].title, q)}</h2>
-							{:else}
-								<h2>Discussion</h2>
-							{/if}
-							{#if d.current_version?.[0]?.description}
-								<p class="deck">
-									{@html highlight(createSummary(d.current_version[0].description, 180), q)}
-								</p>
-							{/if}
-							{#if d.current_version?.[0]?.tags && d.current_version[0].tags.length > 0}
-								<div class="discussion-tags">
-									{#each d.current_version[0].tags as tag}
-										<span class="tag">{tag}</span>
-									{/each}
-								</div>
-							{/if}
-						</header>
-						<footer class="card-byline">
-							{#if d.is_anonymous}
-								<span>Anonymous contributor</span>
-							{:else if d.contributor?.display_name}
-								<span
-									>By
-									<a href={`/u/${d.contributor.handle || d.contributor.id}`}
-										>{@html highlight(displayName(d.contributor.display_name), q)}</a
-									></span
-								>
-							{:else}
-								<span>Unknown author</span>
-							{/if}
-							<time
-								>{new Date(d.created_at).toLocaleDateString('en-US', {
-									year: 'numeric',
-									month: 'long',
-									day: 'numeric'
-								})}</time
-							>
-						</footer>
-					</div>
-				{/each}
-			</div>
-			{#if !q.trim() && hasMoreDiscussions}
-				<div class="load-more">
-					<button class="load-more-button" onclick={() => fetchAll(false)} disabled={loading}
-						>Load More Discussions</button
-					>
-				</div>
-			{/if}
-		{:else if q.trim().length > 0 && !loading}
-			<p class="empty-state">No discussions match your search.</p>
-		{:else if !loading}
-			<p class="empty-state">No discussions yet.</p>
-		{/if}
-	</main>
 </div>
+
+<!-- EditorsDeskPicker Dialog -->
+<EditorsDeskPicker
+	isOpen={pickerOpen}
+	onClose={closePicker}
+	discussionId={selectedDiscussion?.id}
+	discussionTitle={selectedDiscussion?.current_version?.[0]?.title}
+	discussionDescription={selectedDiscussion?.current_version?.[0]?.description}
+	discussionAuthorId={selectedDiscussion?.contributor?.id}
+/>
 
 <style>
 	.page-container {
@@ -757,6 +884,66 @@
 	@media (max-width: 960px) {
 		.page-hero {
 			grid-template-columns: 1fr;
+		}
+	}
+
+	/* Editors' Desk specific styles */
+	.editors-desk-section {
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--color-accent) 3%, var(--color-surface-alt)),
+			color-mix(in srgb, var(--color-primary) 3%, var(--color-surface-alt))
+		);
+	}
+
+	.discussion-card-wrapper {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.editors-desk-button {
+		background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
+		color: white;
+		border: none;
+		padding: 0.65rem 1.25rem;
+		border-radius: var(--border-radius-lg);
+		font-size: 0.85rem;
+		font-weight: 600;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		cursor: pointer;
+		transition: all 0.25s ease;
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-accent) 15%, transparent);
+	}
+
+	.editors-desk-button:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 8px 20px color-mix(in srgb, var(--color-accent) 25%, transparent);
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--color-accent) 90%, black),
+			color-mix(in srgb, var(--color-primary) 90%, black)
+		);
+	}
+
+	.editors-desk-button svg {
+		flex-shrink: 0;
+	}
+
+	@media (max-width: 640px) {
+		.editors-desk-button span {
+			display: none;
+		}
+
+		.editors-desk-button {
+			width: 2.5rem;
+			height: 2.5rem;
+			padding: 0;
+			justify-content: center;
+			border-radius: 50%;
 		}
 	}
 </style>

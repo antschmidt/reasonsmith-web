@@ -1,5 +1,9 @@
 <script lang="ts">
-	import TopPostsCarousel from '../TopPostsCarousel.svelte';
+	import EditorsDeskCarousel from '../EditorsDeskCarousel.svelte';
+
+	let { editorsDeskPicks = [] } = $props<{
+		editorsDeskPicks?: any[];
+	}>();
 </script>
 
 <section class="landing-hero hero-grid">
@@ -25,7 +29,9 @@
 			<span class="editorial-kicker">Spotlight</span>
 			<h2>Editors' desk picks</h2>
 		</div>
-		<TopPostsCarousel />
+		{#if editorsDeskPicks.length > 0}
+			<EditorsDeskCarousel items={editorsDeskPicks} />
+		{/if}
 	</aside>
 </section>
 

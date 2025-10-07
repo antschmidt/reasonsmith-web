@@ -101,6 +101,10 @@
 	});
 
 	let analysisPassedCriteria = $derived.by(() => {
+		// Bypass analysis requirement for slartibartfast and admin
+		if (contributor?.role === 'slartibartfast' || contributor?.role === 'admin') {
+			return true;
+		}
 		if (!draft?.good_faith_label) return false;
 		// Pass criteria: constructive, exemplary, or neutral (score >= 0.4)
 		return ['constructive', 'exemplary', 'neutral'].includes(draft.good_faith_label);
@@ -850,6 +854,38 @@
 				throw new Error(`Failed to publish draft: ${JSON.stringify(result.error)}`);
 			}
 
+			// Step 6: Update the discussion's current_version_id
+			const updateDiscussionResult = await nhost.graphql.request(
+				`
+				mutation UpdateDiscussionCurrentVersion($discussionId: uuid!, $versionId: uuid!) {
+					update_discussion(
+						where: { id: { _eq: $discussionId } }
+						_set: { current_version_id: $versionId, status: "published" }
+					) {
+						returning {
+							id
+							current_version_id
+							status
+						}
+					}
+				}
+			`,
+				{
+					discussionId: discussion.id,
+					versionId: draft.id
+				}
+			);
+
+			if (updateDiscussionResult.error) {
+				console.error('Update discussion GraphQL error:', updateDiscussionResult.error);
+				throw new Error(`Failed to update discussion current_version_id: ${JSON.stringify(updateDiscussionResult.error)}`);
+			}
+
+			if (!updateDiscussionResult.data?.update_discussion?.returning?.[0]) {
+				console.error('No data returned from update_discussion mutation');
+				throw new Error('Failed to update discussion current_version_id - no data returned');
+			}
+
 			// Redirect to the published discussion
 			await goto(`/discussions/${discussionId}`);
 		} catch (err: any) {
@@ -1376,6 +1412,7 @@
 	input,
 	textarea {
 		padding: 0.875rem 1rem;
+		width: calc(100% - 2rem);
 		border: 1px solid var(--color-border);
 		border-radius: 3px;
 		background: var(--color-input-bg);

@@ -14,7 +14,8 @@
 		ANONYMIZE_POST,
 		ANONYMIZE_DISCUSSION,
 		UNANONYMIZE_POST,
-		UNANONYMIZE_DISCUSSION
+		UNANONYMIZE_DISCUSSION,
+		GET_MY_PENDING_EDITORS_DESK_APPROVALS
 	} from '$lib/graphql/queries';
 	import { createDraftAutosaver, type DraftAutosaver } from '$lib';
 	import {
@@ -53,6 +54,7 @@
 	import CommentComposer from '$lib/components/posts/CommentComposer.svelte';
 	import DiscussionEditForm from '$lib/components/discussion/DiscussionEditForm.svelte';
 	import GoodFaithModal from '$lib/components/ui/GoodFaithModal.svelte';
+	import EditorsDeskApprovalCard from '$lib/components/EditorsDeskApprovalCard.svelte';
 	import {
 		canUseAnalysis,
 		getMonthlyCreditsRemaining,
@@ -74,6 +76,12 @@
 	let error = $state<Error | null>(null);
 	let authReady = $state(false);
 	let contributor = $state<any>(null);
+
+	// Editors' Desk approval state
+	let editorsDeskApprovals = $state<any[]>([]);
+	let pendingApprovalForThisDiscussion = $derived(
+		editorsDeskApprovals.find(pick => pick.discussion_id === discussion?.id)
+	);
 
 	// New comment form state
 	let newComment = $state('');
@@ -917,6 +925,33 @@
 		}
 	}
 
+	async function loadEditorsDeskApprovals() {
+		if (!user?.id) {
+			editorsDeskApprovals = [];
+			return;
+		}
+
+		try {
+			const result = await nhost.graphql.request(GET_MY_PENDING_EDITORS_DESK_APPROVALS, {
+				authorId: user.id
+			});
+
+			if ((result as any).error) {
+				console.error('Error loading editors desk approvals:', (result as any).error);
+				return;
+			}
+
+			editorsDeskApprovals = (result as any).data?.editors_desk_pick || [];
+		} catch (err) {
+			console.error('Failed to load editors desk approvals:', err);
+		}
+	}
+
+	function handleApprovalStatusChange() {
+		// Reload approvals to reflect the updated status
+		loadEditorsDeskApprovals();
+	}
+
 	async function loadContributor() {
 		if (!user?.id) {
 			contributor = null;
@@ -1022,6 +1057,13 @@
 	$effect(() => {
 		if (user) {
 			loadContributor();
+		}
+	});
+
+	// Load editors desk approvals when user and discussion are loaded
+	$effect(() => {
+		if (user && discussion) {
+			loadEditorsDeskApprovals();
 		}
 	});
 
@@ -1477,7 +1519,16 @@
 				}
 			);
 
-			if ((updated as any).error) throw (updated as any).error;
+			if ((updated as any).error) {
+				console.error('Error updating draft version to published:', (updated as any).error);
+				throw (updated as any).error;
+			}
+
+			if (!(updated as any).data?.update_discussion_version_by_pk) {
+				console.error('No data returned from draft version update:', updated);
+				throw new Error('Failed to update draft version to published - no data returned');
+			}
+
 			const versionId = draftVersion.id;
 
 			// Update the discussion status and current version
@@ -1485,7 +1536,16 @@
 				discussionId,
 				versionId
 			});
-			if ((upd as any).error) throw (upd as any).error;
+
+			if ((upd as any).error) {
+				console.error('Error updating discussion current_version_id:', (upd as any).error);
+				throw (upd as any).error;
+			}
+
+			if (!(upd as any).data?.update_discussion?.returning?.[0]) {
+				console.error('No data returned from update_discussion mutation:', upd);
+				throw new Error('Failed to update discussion current_version_id - no data returned');
+			}
 
 			// Handle citations - create and link them to the discussion version
 			if (editStyleMetadata.citations?.length) {
@@ -2530,6 +2590,14 @@
 				onAnonymize={handleAnonymizeDiscussion}
 				onRevealIdentity={handleUnanonymizeDiscussion}
 			/>
+
+			{#if pendingApprovalForThisDiscussion}
+				<EditorsDeskApprovalCard
+					pick={pendingApprovalForThisDiscussion}
+					onResponse={handleApprovalStatusChange}
+				/>
+			{/if}
+
 			{#if editing}
 				<DiscussionEditForm
 					bind:title={editTitle}
