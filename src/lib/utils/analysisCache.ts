@@ -9,9 +9,24 @@ export interface CachedAnalysis {
 }
 
 /**
- * Simple hash function for content
+ * Hash content using Web Crypto API for collision resistance
+ * Falls back to simple hash if crypto.subtle is not available
  */
-export function hashContent(content: string): string {
+export async function hashContent(content: string): Promise<string> {
+	// Use crypto.subtle if available (browser environment)
+	if (typeof crypto !== 'undefined' && crypto.subtle) {
+		try {
+			const encoder = new TextEncoder();
+			const data = encoder.encode(content);
+			const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+			const hashArray = Array.from(new Uint8Array(hashBuffer));
+			return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+		} catch (e) {
+			console.warn('crypto.subtle.digest failed, falling back to simple hash:', e);
+		}
+	}
+
+	// Fallback to simple hash for non-browser environments or if crypto fails
 	let hash = 0;
 	for (let i = 0; i < content.length; i++) {
 		const char = content.charCodeAt(i);
@@ -28,11 +43,11 @@ export function hashContent(content: string): string {
  * @param type - The analysis provider type
  * @returns Cached analysis result or null
  */
-export function getCachedAnalysis(
+export async function getCachedAnalysis(
 	discussionId: string | null,
 	content: string,
 	type: 'openai' | 'claude'
-): any | null {
+): Promise<any | null> {
 	if (!discussionId) return null;
 
 	const cacheKey = `analysis_cache:${discussionId}`;
@@ -41,7 +56,7 @@ export function getCachedAnalysis(
 		if (!cached) return null;
 
 		const cache: CachedAnalysis = JSON.parse(cached);
-		const currentHash = hashContent(content.trim());
+		const currentHash = await hashContent(content.trim());
 
 		// Check if content matches and cache is not too old (24 hours)
 		const isExpired = Date.now() - cache.timestamp > 24 * 60 * 60 * 1000;
@@ -61,16 +76,16 @@ export function getCachedAnalysis(
  * @param type - The analysis provider type
  * @param result - The analysis result to cache
  */
-export function cacheAnalysis(
+export async function cacheAnalysis(
 	discussionId: string | null,
 	content: string,
 	type: 'openai' | 'claude',
 	result: any
-): void {
+): Promise<void> {
 	if (!discussionId) return;
 
 	const cacheKey = `analysis_cache:${discussionId}`;
-	const contentHash = hashContent(content.trim());
+	const contentHash = await hashContent(content.trim());
 
 	try {
 		// Get existing cache or create new one

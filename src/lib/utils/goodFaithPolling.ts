@@ -8,7 +8,7 @@ export type PollingOptions = {
 	maxPolls?: number; // Maximum number of polls before timeout (default: 60)
 	onProgress?: (pollCount: number, maxPolls: number) => void;
 	onTimeout?: () => void;
-	onError?: (error: any) => void;
+	onError?: (error: unknown) => void;
 };
 
 export type AnalysisStatus = {

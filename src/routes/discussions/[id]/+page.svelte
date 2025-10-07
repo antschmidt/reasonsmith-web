@@ -2174,7 +2174,7 @@
 		}
 
 		// Check cache first
-		const cachedResult = getCachedAnalysis(discussion?.id || null, editDescription, 'openai');
+		const cachedResult = await getCachedAnalysis(discussion?.id || null, editDescription, 'openai');
 		if (cachedResult) {
 			goodFaithResult = { ...cachedResult, fromCache: true };
 			return;
@@ -2219,7 +2219,7 @@
 			};
 
 			// Cache the result
-			cacheAnalysis(discussion?.id || null, editDescription, 'openai', goodFaithResult);
+			await cacheAnalysis(discussion?.id || null, editDescription, 'openai', goodFaithResult);
 
 			// Consume the appropriate credit (monthly or purchased)
 			await consumeAnalysisCredit();
@@ -2247,7 +2247,7 @@
 		}
 
 		// Check cache first
-		const cachedResult = getCachedAnalysis(discussion?.id || null, editDescription, 'claude');
+		const cachedResult = await getCachedAnalysis(discussion?.id || null, editDescription, 'claude');
 		if (cachedResult) {
 			claudeGoodFaithResult = { ...cachedResult, fromCache: true };
 			return;
@@ -2291,7 +2291,7 @@
 			};
 
 			// Cache the result
-			cacheAnalysis(discussion?.id || null, editDescription, 'claude', claudeGoodFaithResult);
+			await cacheAnalysis(discussion?.id || null, editDescription, 'claude', claudeGoodFaithResult);
 
 			// Consume the appropriate credit (monthly or purchased)
 			await consumeAnalysisCredit();

@@ -184,7 +184,15 @@
 		error = null;
 		try {
 			// Check if user is authenticated
-			const isAuthenticated = await nhost.auth.isAuthenticatedAsync();
+			let isAuthenticated = false;
+			try {
+				isAuthenticated = await nhost.auth.isAuthenticatedAsync();
+			} catch (authError) {
+				console.warn('Authentication check failed:', authError);
+				// Fall back to checking current user state
+				isAuthenticated = !!nhost.auth.getUser();
+			}
+
 			if (!isAuthenticated) {
 				// Redirect to login page if not authenticated
 				if (typeof window !== 'undefined') {
