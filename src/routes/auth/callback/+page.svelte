@@ -17,7 +17,14 @@
 
 		// Check if already signed in (in case the event already fired)
 		const checkAuthAndRedirect = async () => {
-			const isAuthenticated = await nhost.auth.isAuthenticatedAsync();
+			let isAuthenticated = false;
+			try {
+				isAuthenticated = await nhost.auth.isAuthenticatedAsync();
+			} catch (authError) {
+				console.warn('Authentication check failed:', authError);
+				// Fall back to checking current user state
+				isAuthenticated = !!nhost.auth.getUser();
+			}
 
 			if (isAuthenticated) {
 				isSignedIn = true;

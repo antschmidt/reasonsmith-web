@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { nhost } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
-	import AnimatedLogo from '$lib/components/AnimatedLogo.svelte';
+	import AnimatedLogo from '$lib/components/ui/AnimatedLogo.svelte';
 	import { UPDATE_DISCUSSION_VERSION_GOOD_FAITH } from '$lib/graphql/queries';
 	import {
 		formatChicagoCitation,
@@ -13,9 +13,10 @@
 		type Citation,
 		getPostTypeConfig
 	} from '$lib/types/writingStyle';
-	import CitationForm from '$lib/components/CitationForm.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import OutOfCreditsModal from '$lib/components/OutOfCreditsModal.svelte';
+	import CitationForm from '$lib/components/citations/CitationForm.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import OutOfCreditsModal from '$lib/components/ui/OutOfCreditsModal.svelte';
+	import GoodFaithAnalysisDisplay from '$lib/components/ui/GoodFaithAnalysisDisplay.svelte';
 	import {
 		canUseAnalysis,
 		getMonthlyCreditsRemaining,
@@ -1374,7 +1375,6 @@
 
 	input,
 	textarea {
-		width: 100%;
 		padding: 0.875rem 1rem;
 		border: 1px solid var(--color-border);
 		border-radius: 3px;

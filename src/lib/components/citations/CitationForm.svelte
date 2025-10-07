@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Citation } from '$lib/types/writingStyle';
-	import Button from './Button.svelte';
+	import Button from '../ui/Button.svelte';
 
 	interface Props {
 		onAdd: (item: Citation) => void;

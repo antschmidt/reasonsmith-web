@@ -612,6 +612,7 @@
 						<label class="field">
 							<span>Short Bio</span>
 							<textarea
+								id="bio"
 								rows="8"
 								bind:value={bio}
 								placeholder="Tell others a bit about you (optional)"

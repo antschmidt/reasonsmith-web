@@ -14,3 +14,4 @@ nhost/metadata/
 .vite
 .env.local
 .claude
+.temp

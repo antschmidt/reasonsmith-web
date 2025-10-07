@@ -183,10 +183,23 @@
 		statsLoading = true;
 		error = null;
 		try {
-			// Ensure auth is initialized so role header is applied if signed in
+			// Check if user is authenticated
+			let isAuthenticated = false;
 			try {
-				await nhost.auth.isAuthenticatedAsync();
-			} catch {}
+				isAuthenticated = await nhost.auth.isAuthenticatedAsync();
+			} catch (authError) {
+				console.warn('Authentication check failed:', authError);
+				// Fall back to checking current user state
+				isAuthenticated = !!nhost.auth.getUser();
+			}
+
+			if (!isAuthenticated) {
+				// Redirect to login page if not authenticated
+				if (typeof window !== 'undefined') {
+					window.location.href = '/login';
+				}
+				return;
+			}
 			let resolved = userId;
 			if (byHandle) {
 				const RESOLVE = `query ($handle: String!) { contributor(where:{ handle:{ _eq: $handle } }, limit:1){ id display_name handle bio website social_links avatar_url } }`;

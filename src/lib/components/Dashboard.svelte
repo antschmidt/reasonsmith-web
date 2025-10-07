@@ -3,7 +3,7 @@
 	// Avoid importing gql to prevent type resolution issues; use plain strings
 	import { nhost } from '$lib/nhostClient';
 	import { GET_DASHBOARD_DATA } from '$lib/graphql/queries';
-	import Notifications from './Notifications.svelte';
+	import Notifications from './ui/Notifications.svelte';
 
 	let { user } = $props<{ user: User }>();
 

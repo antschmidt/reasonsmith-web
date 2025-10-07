@@ -1,16 +1,16 @@
-<script>
+<script lang="ts">
 	import '../app.css';
 	import { nhost } from '$lib/nhostClient';
 	import { theme, toggleTheme } from '$lib/themeStore';
 	import { dev } from '$app/environment';
 	import { injectAnalytics } from '@vercel/analytics/sveltekit';
 	import { page } from '$app/stores';
-	import InstallPrompt from '$lib/components/InstallPrompt.svelte';
+	import InstallPrompt from '$lib/components/ui/InstallPrompt.svelte';
 
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = nhost.auth.getUser();
 	let hasAdminAccess = false;
-	let contributor = null;
+	let contributor: { role: string; avatar_url?: string; display_name?: string; handle?: string } | null = null;
 
 	function collectRoles(u) {
 		if (!u) return [];
@@ -271,7 +271,7 @@
 		display: flex;
 		width: 100%;
 		align-items: center;
-		justify-content: space-evenly;
+		justify-content: space-between;
 		gap: 1rem;
 	}
 	.theme-toggle {
