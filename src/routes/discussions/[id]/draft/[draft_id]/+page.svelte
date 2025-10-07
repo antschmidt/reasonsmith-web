@@ -1412,7 +1412,7 @@
 	input,
 	textarea {
 		padding: 0.875rem 1rem;
-		width: 95%;
+		width: calc(100% - 2rem);
 		border: 1px solid var(--color-border);
 		border-radius: 3px;
 		background: var(--color-input-bg);
