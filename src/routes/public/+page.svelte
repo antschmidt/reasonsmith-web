@@ -10,7 +10,7 @@
 		UPDATE_PUBLIC_SHOWCASE_ITEM,
 		DELETE_PUBLIC_SHOWCASE_ITEM
 	} from '$lib/graphql/queries';
-	import AnimatedLogo from '$lib/components/AnimatedLogo.svelte';
+	import AnimatedLogo from '$lib/components/ui/AnimatedLogo.svelte';
 
 	type ShowcaseItem = {
 		id: string;
@@ -627,6 +627,7 @@
 							</p>
 						</div>
 						<textarea
+							id="analysis-input"
 							rows="30"
 							bind:value={rawContent}
 							placeholder="Paste transcript excerpts, statements, or notes to analyze…"
@@ -700,6 +701,7 @@
 					<label>
 						<span>Highlights</span>
 						<textarea
+							id="highlights"
 							rows="3"
 							bind:value={form.summary}
 							placeholder="Short context for the source material."
@@ -709,6 +711,7 @@
 					<label>
 						<span>Analysis</span>
 						<textarea
+							id="analysis"
 							rows="6"
 							bind:value={form.analysis}
 							placeholder="Key findings from the good-faith analysis."
@@ -741,7 +744,6 @@
 
 <style>
 	.page-container {
-		max-width: 1100px;
 		margin: 2rem auto;
 		padding: 0 1.5rem 3rem;
 	}
@@ -946,7 +948,6 @@
 	input[type='number'],
 	input[type='date'],
 	textarea {
-		width: 100%;
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
 		border-radius: 12px;
 		padding: 0.75rem 1rem;

@@ -14,8 +14,8 @@
 		validateTags,
 		normalizeTag
 	} from '$lib/types/writingStyle';
-	import CitationForm from '$lib/components/CitationForm.svelte';
-	import AnimatedLogo from '$lib/components/AnimatedLogo.svelte';
+	import CitationForm from '$lib/components/citations/CitationForm.svelte';
+	import AnimatedLogo from '$lib/components/ui/AnimatedLogo.svelte';
 	import {
 		CREATE_DISCUSSION_WITH_VERSION,
 		UPDATE_DISCUSSION_VERSION,
