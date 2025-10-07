@@ -1,5 +1,5 @@
 .nhost
-.secrets
+.secret*
 .env
 .svelte-kit/*
 .project/*
@@ -15,3 +15,4 @@ nhost/metadata/
 .env.local
 .claude
 .temp
+scripts/*

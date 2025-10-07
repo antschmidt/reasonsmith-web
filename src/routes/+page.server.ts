@@ -3,7 +3,7 @@ import { env as privateEnv } from '$env/dynamic/private';
 import { print } from 'graphql';
 import { GET_PUBLIC_SHOWCASE_PUBLISHED } from '$lib/graphql/queries';
 
-const HASURA_GRAPHQL_ENDPOINT = privateEnv.HASURA_GRAPHQL_ENDPOINT || privateEnv.GRAPHQL_URL || '';
+const HASURA_GRAPHQL_ENDPOINT = privateEnv.GRAPHQL_URL || privateEnv.HASURA_GRAPHQL_ENDPOINT || '';
 const HASURA_ADMIN_SECRET = privateEnv.HASURA_ADMIN_SECRET || '';
 
 export const load: PageServerLoad = async ({ fetch }) => {
@@ -14,6 +14,7 @@ export const load: PageServerLoad = async ({ fetch }) => {
 		showcaseError = 'Showcase temporarily unavailable.';
 	} else {
 		try {
+			const queryString = print(GET_PUBLIC_SHOWCASE_PUBLISHED);
 			const response = await fetch(HASURA_GRAPHQL_ENDPOINT, {
 				method: 'POST',
 				headers: {
@@ -21,17 +22,16 @@ export const load: PageServerLoad = async ({ fetch }) => {
 					'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
 					'x-hasura-role': 'anonymous'
 				},
-				body: JSON.stringify({ query: print(GET_PUBLIC_SHOWCASE_PUBLISHED) })
+				body: JSON.stringify({ query: queryString })
 			});
 			const json = await response.json();
-			console.log('GraphQL response:', json);
 			if (json.errors) {
 				showcaseError = json.errors[0]?.message || 'Failed to load showcase.';
 			} else {
 				showcaseItems = json.data?.public_showcase_item ?? [];
-				console.log('Showcase items loaded:', showcaseItems.length);
 			}
 		} catch (error: any) {
+			console.error('Showcase load error:', error);
 			showcaseError = error?.message || 'Failed to load showcase.';
 		}
 	}

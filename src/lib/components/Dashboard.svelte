@@ -2,8 +2,9 @@
 	import type { User } from '@nhost/nhost-js';
 	// Avoid importing gql to prevent type resolution issues; use plain strings
 	import { nhost } from '$lib/nhostClient';
-	import { GET_DASHBOARD_DATA } from '$lib/graphql/queries';
+	import { GET_DASHBOARD_DATA, GET_EDITORS_DESK_PICKS } from '$lib/graphql/queries';
 	import Notifications from './ui/Notifications.svelte';
+	import EditorsDeskCarousel from './EditorsDeskCarousel.svelte';
 
 	let { user } = $props<{ user: User }>();
 
@@ -28,6 +29,28 @@
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+
+	// Editors' Desk state
+	let editorsDeskPicks = $state<any[]>([]);
+	let editorsDeskLoading = $state(false);
+
+	async function fetchEditorsDeskPicks() {
+		editorsDeskLoading = true;
+		try {
+			const { data, error: gqlError } = await nhost.graphql.request(GET_EDITORS_DESK_PICKS, {
+				publishedOnly: true
+			});
+			if (gqlError) {
+				console.error('Error loading editors desk picks:', gqlError);
+			} else {
+				editorsDeskPicks = (data as any)?.editors_desk_pick ?? [];
+			}
+		} catch (e: any) {
+			console.error('Failed to load Editors\' Desk picks:', e);
+		} finally {
+			editorsDeskLoading = false;
+		}
+	}
 
 	async function loadData() {
 		loading = true;
@@ -97,6 +120,7 @@
 
 	$effect(() => {
 		loadData();
+		fetchEditorsDeskPicks();
 	});
 
 	function getDraftHref(d: {
@@ -230,6 +254,13 @@
 		</aside>
 		<!-- Main Content (Left Column) -->
 		<main class="main-content">
+			{#if editorsDeskPicks.length > 0}
+				<section class="editors-desk-section">
+					<h3 class="subsection-title">Editors' Desk</h3>
+					<EditorsDeskCarousel items={editorsDeskPicks} />
+				</section>
+			{/if}
+
 			{#if loading}
 				<p>Loading…</p>
 			{:else if error}
@@ -759,5 +790,19 @@
 			align-items: flex-start;
 			gap: 0.25rem;
 		}
+	}
+
+	/* Editors' Desk Section */
+	.editors-desk-section {
+		margin-bottom: 2rem;
+		padding: 1.5rem;
+		background: var(--color-surface);
+		border-radius: 8px;
+		border: 1px solid var(--color-border);
+	}
+
+	.editors-desk-section .subsection-title {
+		margin-top: 0;
+		margin-bottom: 1rem;
 	}
 </style>
