@@ -75,6 +75,7 @@
 	input,
 	textarea {
 		padding: 0.875rem 1rem;
+		width: 95%;
 		border: 1px solid var(--color-border);
 		border-radius: 3px;
 		background: var(--color-input-bg);
@@ -96,6 +97,7 @@
 
 	textarea {
 		font-family: 'Crimson Text', Georgia, serif;
+		width: 95%;
 		font-size: 16px;
 		line-height: 1.7;
 		resize: vertical;
