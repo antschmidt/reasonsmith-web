@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { nhost } from '$lib/nhostClient';
 	import { getOAuthRedirectURL, isStandalone } from '$lib/utils/pwa';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
 
 	let error: Error | null = null;
 	let email = '';
@@ -11,6 +14,12 @@
 	let magicLinkSent = false;
 	let activeTab: 'signin' | 'signup' = 'signin';
 	const currentYear = new Date().getFullYear();
+
+	// Get redirect URL from query params
+	let redirectTo = '';
+	onMount(() => {
+		redirectTo = $page.url.searchParams.get('redirectTo') || '/dashboard';
+	});
 
 	const handleGitHubSignIn = async () => {
 		try {
@@ -66,6 +75,9 @@
 			});
 			if (signInError) {
 				error = signInError;
+			} else {
+				// Redirect after successful sign-in
+				goto(redirectTo);
 			}
 		} catch (err) {
 			error = err as Error;
@@ -81,6 +93,9 @@
 			});
 			if (signUpError) {
 				error = signUpError;
+			} else {
+				// Redirect after successful sign-up
+				goto(redirectTo);
 			}
 		} catch (err) {
 			error = err as Error;

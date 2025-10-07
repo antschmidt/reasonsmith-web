@@ -3,6 +3,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { nhost } from '$lib/nhostClient';
 
 	export type EditorsDeskPick = {
 		id: string;
@@ -68,6 +69,18 @@
 		return '/';
 	};
 
+	const handleCardClick = (pick: EditorsDeskPick) => {
+		const user = nhost.auth.getUser();
+		const targetUrl = getContentLink(pick);
+
+		if (!user) {
+			// Redirect to login with return URL
+			goto(`/login?redirectTo=${encodeURIComponent(targetUrl)}`);
+		} else {
+			goto(targetUrl);
+		}
+	};
+
 	const updateScrollState = () => {
 		if (!viewport) return;
 		const { scrollLeft, scrollWidth, clientWidth } = viewport;
@@ -107,7 +120,7 @@
 				<div role="listitem" class="carousel-card">
 					<button
 						class="card-link"
-						onclick={() => goto(getContentLink(item))}
+						onclick={() => handleCardClick(item)}
 						type="button"
 					>
 						<header class="card-header">

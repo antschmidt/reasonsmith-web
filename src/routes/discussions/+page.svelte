@@ -425,7 +425,113 @@
 				<EditorsDeskCarousel items={editorsDeskPicks} />
 			{/if}
 		</section>
+	{/if}
 
+	{#if user}
+		<main class="discussions-main">
+			{#if error}
+				<div class="error-message">{error}</div>
+			{/if}
+
+			{#if loading && (!discussions || discussions.length === 0)}
+				<p class="loading-message">Loading discussions...</p>
+			{:else if filtered && filtered.length > 0}
+				<div class="article-list">
+					{#each filtered as d}
+						<div class="discussion-card-wrapper">
+							<div
+								class="discussion-card"
+								role="button"
+								tabindex="0"
+								onclick={() => goto(`/discussions/${d.id}`)}
+								onkeydown={(e) => e.key === 'Enter' && goto(`/discussions/${d.id}`)}
+							>
+								<header class="discussion-header">
+									{#if d.current_version?.[0]}
+										<h2>{@html highlight(d.current_version[0].title, q)}</h2>
+									{:else}
+										<h2>Discussion</h2>
+									{/if}
+									{#if d.current_version?.[0]?.description}
+										<p class="deck">
+											{@html highlight(createSummary(d.current_version[0].description, 180), q)}
+										</p>
+									{/if}
+									{#if d.current_version?.[0]?.tags && d.current_version[0].tags.length > 0}
+										<div class="discussion-tags">
+											{#each d.current_version[0].tags as tag}
+												<span class="tag">{tag}</span>
+											{/each}
+										</div>
+									{/if}
+								</header>
+								<footer class="card-byline">
+									{#if d.is_anonymous}
+										<span>Anonymous contributor</span>
+									{:else if d.contributor?.display_name}
+										<span
+											>By
+											<a href={`/u/${d.contributor.handle || d.contributor.id}`}
+												>{@html highlight(displayName(d.contributor.display_name), q)}</a
+											></span
+										>
+									{:else}
+										<span>Unknown author</span>
+									{/if}
+									<time
+										>{new Date(d.created_at).toLocaleDateString('en-US', {
+											year: 'numeric',
+											month: 'long',
+											day: 'numeric'
+										})}</time
+									>
+								</footer>
+							</div>
+							{#if canCurate}
+								<button
+									class="editors-desk-button"
+									onclick={(e) => {
+										e.stopPropagation();
+										openPicker(d);
+									}}
+									title="Add to Editors' Desk"
+									aria-label="Add to Editors' Desk"
+								>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									>
+										<path d="M12 5v14M5 12h14"></path>
+									</svg>
+									<span>Add to Editors' Desk</span>
+								</button>
+							{/if}
+						</div>
+					{/each}
+				</div>
+				{#if !q.trim() && hasMoreDiscussions}
+					<div class="load-more">
+						<button class="load-more-button" onclick={() => fetchAll(false)} disabled={loading}
+							>Load More Discussions</button
+						>
+					</div>
+				{/if}
+			{:else if q.trim().length > 0 && !loading}
+				<p class="empty-state">No discussions match your search.</p>
+			{:else if !loading}
+				<p class="empty-state">No discussions yet.</p>
+			{/if}
+		</main>
+	{/if}
+
+	{#if !q.trim()}
 		<!-- Curated Analyses Section -->
 		<section class="analysis-section">
 			<header class="analysis-header">
@@ -447,108 +553,6 @@
 			{/if}
 		</section>
 	{/if}
-
-	<main class="discussions-main">
-		{#if error}
-			<div class="error-message">{error}</div>
-		{/if}
-
-		{#if loading && (!discussions || discussions.length === 0)}
-			<p class="loading-message">Loading discussions...</p>
-		{:else if filtered && filtered.length > 0}
-			<div class="article-list">
-				{#each filtered as d}
-					<div class="discussion-card-wrapper">
-						<div
-							class="discussion-card"
-							role="button"
-							tabindex="0"
-							onclick={() => goto(`/discussions/${d.id}`)}
-							onkeydown={(e) => e.key === 'Enter' && goto(`/discussions/${d.id}`)}
-						>
-							<header class="discussion-header">
-								{#if d.current_version?.[0]}
-									<h2>{@html highlight(d.current_version[0].title, q)}</h2>
-								{:else}
-									<h2>Discussion</h2>
-								{/if}
-								{#if d.current_version?.[0]?.description}
-									<p class="deck">
-										{@html highlight(createSummary(d.current_version[0].description, 180), q)}
-									</p>
-								{/if}
-								{#if d.current_version?.[0]?.tags && d.current_version[0].tags.length > 0}
-									<div class="discussion-tags">
-										{#each d.current_version[0].tags as tag}
-											<span class="tag">{tag}</span>
-										{/each}
-									</div>
-								{/if}
-							</header>
-							<footer class="card-byline">
-								{#if d.is_anonymous}
-									<span>Anonymous contributor</span>
-								{:else if d.contributor?.display_name}
-									<span
-										>By
-										<a href={`/u/${d.contributor.handle || d.contributor.id}`}
-											>{@html highlight(displayName(d.contributor.display_name), q)}</a
-										></span
-									>
-								{:else}
-									<span>Unknown author</span>
-								{/if}
-								<time
-									>{new Date(d.created_at).toLocaleDateString('en-US', {
-										year: 'numeric',
-										month: 'long',
-										day: 'numeric'
-									})}</time
-								>
-							</footer>
-						</div>
-						{#if canCurate}
-							<button
-								class="editors-desk-button"
-								onclick={(e) => {
-									e.stopPropagation();
-									openPicker(d);
-								}}
-								title="Add to Editors' Desk"
-								aria-label="Add to Editors' Desk"
-							>
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									width="16"
-									height="16"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								>
-									<path d="M12 5v14M5 12h14"></path>
-								</svg>
-								<span>Add to Editors' Desk</span>
-							</button>
-						{/if}
-					</div>
-				{/each}
-			</div>
-			{#if !q.trim() && hasMoreDiscussions}
-				<div class="load-more">
-					<button class="load-more-button" onclick={() => fetchAll(false)} disabled={loading}
-						>Load More Discussions</button
-					>
-				</div>
-			{/if}
-		{:else if q.trim().length > 0 && !loading}
-			<p class="empty-state">No discussions match your search.</p>
-		{:else if !loading}
-			<p class="empty-state">No discussions yet.</p>
-		{/if}
-	</main>
 </div>
 
 <!-- EditorsDeskPicker Dialog -->

@@ -3,7 +3,7 @@ import { env as privateEnv } from '$env/dynamic/private';
 import { print } from 'graphql';
 import { GET_PUBLIC_SHOWCASE_PUBLISHED } from '$lib/graphql/queries';
 
-const HASURA_GRAPHQL_ENDPOINT = privateEnv.HASURA_GRAPHQL_ENDPOINT || privateEnv.GRAPHQL_URL || '';
+const HASURA_GRAPHQL_ENDPOINT = privateEnv.GRAPHQL_URL || privateEnv.HASURA_GRAPHQL_ENDPOINT || '';
 const HASURA_ADMIN_SECRET = privateEnv.HASURA_ADMIN_SECRET || '';
 
 export const load: PageServerLoad = async ({ fetch }) => {
@@ -18,7 +18,8 @@ export const load: PageServerLoad = async ({ fetch }) => {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					'x-hasura-admin-secret': HASURA_ADMIN_SECRET
+					'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+					'x-hasura-role': 'anonymous'
 				},
 				body: JSON.stringify({ query: print(GET_PUBLIC_SHOWCASE_PUBLISHED) })
 			});

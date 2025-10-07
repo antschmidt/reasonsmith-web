@@ -4,7 +4,7 @@ import { env as privateEnv } from '$env/dynamic/private';
 import { print } from 'graphql';
 import { GET_PUBLIC_SHOWCASE_ITEM } from '$lib/graphql/queries';
 
-const HASURA_GRAPHQL_ENDPOINT = privateEnv.HASURA_GRAPHQL_ENDPOINT || privateEnv.GRAPHQL_URL || '';
+const HASURA_GRAPHQL_ENDPOINT = privateEnv.GRAPHQL_URL || privateEnv.HASURA_GRAPHQL_ENDPOINT || '';
 const HASURA_ADMIN_SECRET = privateEnv.HASURA_ADMIN_SECRET || '';
 
 export const load: PageServerLoad = async ({ fetch, params }) => {
