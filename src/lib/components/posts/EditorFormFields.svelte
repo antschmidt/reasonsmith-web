@@ -1,14 +1,18 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	let {
 		title = $bindable(''),
 		description = $bindable(''),
 		disabled = false,
-		onSubmit
+		onSubmit,
+		children
 	} = $props<{
 		title: string;
 		description: string;
 		disabled?: boolean;
 		onSubmit?: (e: SubmitEvent) => void;
+		children?: Snippet;
 	}>();
 </script>
 
@@ -39,11 +43,9 @@
 			placeholder="Describe your discussion..."
 			rows="20"
 			required
-			{disabled}
 		></textarea>
+		{@render children?.()}
 	</div>
-
-	<slot />
 </form>
 
 <style>
