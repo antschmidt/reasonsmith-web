@@ -1168,64 +1168,51 @@ export const UPDATE_ANALYSIS_LIMIT_BY_TIER = gql`
 `;
 
 // Public showcase content surfaced on landing/discussions pages
+const PUBLIC_SHOWCASE_ITEM_FIELDS = gql`
+	fragment PublicShowcaseItemFields on public_showcase_item {
+		id
+		title
+		subtitle
+		media_type
+		creator
+		source_url
+		summary
+		analysis
+		tags
+		display_order
+		published
+		created_at
+	}
+`;
+
 export const GET_PUBLIC_SHOWCASE_PUBLISHED = gql`
 	query GetPublicShowcasePublished {
 		public_showcase_item(
 			where: { published: { _eq: true } }
 			order_by: [{ display_order: desc }, { created_at: desc }]
 		) {
-			id
-			title
-			subtitle
-			media_type
-			creator
-			source_url
-			summary
-			analysis
-			tags
-			display_order
-			published
-			created_at
+			...PublicShowcaseItemFields
 		}
 	}
+	${PUBLIC_SHOWCASE_ITEM_FIELDS}
 `;
 
 export const GET_PUBLIC_SHOWCASE_ITEM = gql`
 	query GetPublicShowcaseItem($id: uuid!) {
 		public_showcase_item_by_pk(id: $id) {
-			id
-			title
-			subtitle
-			media_type
-			creator
-			source_url
-			summary
-			analysis
-			tags
-			display_order
-			published
-			created_at
+			...PublicShowcaseItemFields
 		}
 	}
+	${PUBLIC_SHOWCASE_ITEM_FIELDS}
 `;
 
 export const GET_PUBLIC_SHOWCASE_ADMIN = gql`
 	query GetPublicShowcaseAdmin {
 		public_showcase_item(order_by: [{ display_order: desc }, { created_at: desc }]) {
-			id
-			title
-			subtitle
-			media_type
-			creator
-			source_url
-			summary
-			analysis
-			tags
-			display_order
-			published
-			created_at
+			...PublicShowcaseItemFields
 		}
 	}
+	${PUBLIC_SHOWCASE_ITEM_FIELDS}
 `;
 
 export const CREATE_PUBLIC_SHOWCASE_ITEM = gql`

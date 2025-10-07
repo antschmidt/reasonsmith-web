@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { nhost } from '$lib/nhostClient';
+	import DOMPurify from 'isomorphic-dompurify';
 
 	export type EditorsDeskPick = {
 		id: string;
@@ -44,13 +45,12 @@
 
 	const sanitizeMultiline = (value?: string | null) => {
 		if (!value) return '';
-		const escaped = value
-			.replaceAll('&', '&amp;')
-			.replaceAll('<', '&lt;')
-			.replaceAll('>', '&gt;')
-			.replaceAll('"', '&quot;')
-			.replaceAll("'", '&#39;');
-		return escaped.replace(/(?:\r\n|\r|\n)/g, '<br />');
+		// Replace newlines with <br /> tags, then sanitize
+		const withBreaks = value.replace(/(?:\r\n|\r|\n)/g, '<br />');
+		return DOMPurify.sanitize(withBreaks, {
+			ALLOWED_TAGS: ['br'],
+			ALLOWED_ATTR: []
+		});
 	};
 
 	const getCuratorName = (pick: EditorsDeskPick): string => {

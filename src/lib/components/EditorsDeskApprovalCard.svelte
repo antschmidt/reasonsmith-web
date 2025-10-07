@@ -111,6 +111,7 @@
 				class="button-approve"
 				onclick={() => handleResponse(true)}
 				disabled={responding}
+				aria-label="Approve editors desk pick"
 			>
 				{responding ? 'Approving...' : 'Approve'}
 			</button>
@@ -118,6 +119,7 @@
 				class="button-decline"
 				onclick={() => handleResponse(false)}
 				disabled={responding}
+				aria-label="Decline editors desk pick"
 			>
 				{responding ? 'Declining...' : 'Decline'}
 			</button>
