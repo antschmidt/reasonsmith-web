@@ -758,8 +758,8 @@
 		font-size: 0.75rem;
 		padding: 0.5rem 0.875rem;
 		border-radius: 999px;
-		background: transparent; var(--color-surface);
-		border: 0px solid var(--color-border);
+		background: var(--color-surface);
+		/* border removed as 0px width makes it invisible */
 		color: var(--color-text-secondary);
 		/* box-shadow:
 			0 1px 3px rgba(15, 23, 42, 0.08),
