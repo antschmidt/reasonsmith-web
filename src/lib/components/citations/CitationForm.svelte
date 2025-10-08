@@ -22,19 +22,35 @@
 
 	let errors = $state<Record<string, string>>({});
 
+	// Track the ID of the citation being edited to prevent re-initialization
+	let currentEditingId = $state<string | null>(null);
+
 	// Initialize form fields if editing
 	$effect(() => {
-		if (editingItem) {
-			title = editingItem.title || '';
-			url = editingItem.url || '';
-			publishDate = editingItem.publish_date || '';
-			pointSupported = editingItem.point_supported || '';
-			relevantQuote = editingItem.relevant_quote || '';
-			author = editingItem.author || '';
+		console.log('[CitationForm] $effect triggered, editingItem:', editingItem);
+		const editingId = editingItem?.id || null;
 
-			pageNumber = editingItem.page_number || '';
-			publisher = editingItem.publisher || '';
-			accessed = editingItem.accessed_date || '';
+		// Only reinitialize if we're editing a different citation or switching between add/edit modes
+		if (editingId !== currentEditingId) {
+			currentEditingId = editingId;
+
+			if (editingItem) {
+				console.log('[CitationForm] Initializing form with editingItem data');
+				title = editingItem.title || '';
+				url = editingItem.url || '';
+				publishDate = editingItem.publish_date || '';
+				pointSupported = editingItem.point_supported || '';
+				relevantQuote = editingItem.relevant_quote || '';
+				author = editingItem.author || '';
+
+				pageNumber = editingItem.page_number || '';
+				publisher = editingItem.publisher || '';
+				accessed = editingItem.accessed_date || '';
+			} else {
+				console.log('[CitationForm] Resetting form (no editingItem)');
+				// Reset form when not editing
+				resetForm();
+			}
 		}
 	});
 
@@ -55,10 +71,29 @@
 	}
 
 	function generateId() {
-		return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+		// Generate a UUID v4
+		return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+			const r = Math.random() * 16 | 0;
+			const v = c == 'x' ? r : (r & 0x3 | 0x8);
+			return v.toString(16);
+		});
 	}
 
 	function handleSubmit() {
+		console.log('[CitationForm] handleSubmit called');
+		console.log('[CitationForm] editingItem:', editingItem);
+		console.log('[CitationForm] Current form values:', {
+			title,
+			url,
+			publishDate,
+			pointSupported,
+			relevantQuote,
+			author,
+			pageNumber,
+			publisher,
+			accessed
+		});
+
 		if (!validateForm()) return;
 
 		const baseData = {
@@ -77,6 +112,8 @@
 			publisher: publisher.trim() || undefined,
 			accessed_date: accessed.trim() || undefined // Include accessed date for journalistic sources
 		};
+
+		console.log('[CitationForm] Submitting citation:', citation);
 		onAdd(citation);
 
 		// Reset form only if not editing (editing form will be closed by parent)
@@ -102,19 +139,19 @@
 <div class="citation-form">
 	<h4>{editingItem ? 'Edit' : 'Add'} Citation</h4>
 
-	<div class="form-grid">
-		<div class="form-field">
-			<label for="title">Title *</label>
-			<input
-				id="title"
-				type="text"
-				bind:value={title}
-				placeholder="Enter the title of the source"
-				class:error={errors.title}
-			/>
-			{#if errors.title}<div class="error-text">{errors.title}</div>{/if}
-		</div>
+	<div class="form-field full-width">
+		<label for="title">Title *</label>
+		<input
+			id="title"
+			type="text"
+			bind:value={title}
+			placeholder="Enter the title of the source"
+			class:error={errors.title}
+		/>
+		{#if errors.title}<div class="error-text">{errors.title}</div>{/if}
+	</div>
 
+	<div class="form-grid">
 		<div class="form-field">
 			<label for="url">URL *</label>
 			<input
@@ -228,6 +265,10 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
+	}
+
+	.form-field.full-width {
+		margin-bottom: 1rem;
 	}
 
 	.form-field:last-of-type {

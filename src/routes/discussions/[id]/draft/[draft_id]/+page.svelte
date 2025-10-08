@@ -4,7 +4,15 @@
 	import { nhost } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
 	import AnimatedLogo from '$lib/components/ui/AnimatedLogo.svelte';
-	import { UPDATE_DISCUSSION_VERSION_GOOD_FAITH } from '$lib/graphql/queries';
+	import {
+		UPDATE_DISCUSSION_VERSION_GOOD_FAITH,
+		CREATE_CITATION,
+		UPDATE_CITATION,
+		LINK_CITATION_TO_DISCUSSION,
+		UPDATE_DISCUSSION_VERSION_CITATION,
+		GET_DISCUSSION_CITATIONS,
+		REMOVE_CITATION_FROM_DISCUSSION
+	} from '$lib/graphql/queries';
 	import {
 		formatChicagoCitation,
 		processCitationReferences,
@@ -167,7 +175,6 @@
 							id
 							title
 							description
-							citations
 							created_by
 							version_type
 							discussion_id
@@ -250,10 +257,38 @@
 			title = draft.title || '';
 			description = draft.description || '';
 
-			// Load citations from draft
-			if (draft.citations && Array.isArray(draft.citations)) {
-				styleMetadata.citations = draft.citations;
+			// Initialize autosave tracking
+			lastSavedTitle = title;
+			lastSavedDescription = description;
+
+			// Load citations from citation table
+			const citationsResult = await nhost.graphql.request(
+				GET_DISCUSSION_CITATIONS,
+				{ discussion_version_id: draft.id }
+			);
+
+			if (!citationsResult.error && citationsResult.data?.discussion_version_citation) {
+				// Convert database citations to local format
+				styleMetadata.citations = citationsResult.data.discussion_version_citation
+					.sort((a: any, b: any) => a.citation_order - b.citation_order)
+					.map((dc: any) => ({
+						id: dc.citation.id,
+						title: dc.citation.title,
+						url: dc.citation.url,
+						author: dc.citation.author,
+						publisher: dc.citation.publisher,
+						publish_date: dc.citation.publish_date,
+						accessed_date: dc.citation.accessed_date,
+						page_number: dc.citation.page_number,
+						point_supported: dc.custom_point_supported || dc.citation.point_supported,
+						relevant_quote: dc.custom_relevant_quote || dc.citation.relevant_quote
+					}));
+			} else {
+				styleMetadata.citations = [];
 			}
+
+			// Initialize citation tracking for autosave
+			lastSavedCitations = JSON.parse(JSON.stringify(styleMetadata.citations || []));
 
 			// Load existing good faith analysis if available
 			if (draft.good_faith_score !== null && draft.good_faith_label) {
@@ -385,24 +420,21 @@
 			saving = true;
 			error = null;
 
-			const citationsToSave = styleMetadata.citations || [];
-
+			// First, update the draft title and description
 			const result = await nhost.graphql.request(
 				`
-				mutation UpdateDraft($draftId: uuid!, $title: String!, $description: String!, $citations: jsonb!, $editedAt: timestamptz!) {
+				mutation UpdateDraft($draftId: uuid!, $title: String!, $description: String!, $editedAt: timestamptz!) {
 					update_discussion_version_by_pk(
 						pk_columns: { id: $draftId }
 						_set: {
 							title: $title
 							description: $description
-							citations: $citations
 							edited_at: $editedAt
 						}
 					) {
 						id
 						title
 						description
-						citations
 						edited_at
 					}
 				}
@@ -411,7 +443,6 @@
 					draftId: draft.id,
 					title: title.trim(),
 					description: description.trim(),
-					citations: citationsToSave,
 					editedAt: new Date().toISOString()
 				}
 			);
@@ -420,11 +451,120 @@
 				throw new Error('Failed to save draft');
 			}
 
+			// Now save citations to the citation table
+			const citationsToSave = styleMetadata.citations || [];
+
+			// Get existing citations for this draft
+			const existingCitationsResult = await nhost.graphql.request(
+				GET_DISCUSSION_CITATIONS,
+				{ discussion_version_id: draft.id }
+			);
+
+			const existingCitations = existingCitationsResult.data?.discussion_version_citation || [];
+			const existingCitationIds = new Set(existingCitations.map((c: any) => c.citation.id));
+			const newCitationIds = new Set(citationsToSave.map((c: Citation) => c.id));
+
+			// Remove citations that are no longer in the list
+			for (const existing of existingCitations) {
+				if (!newCitationIds.has(existing.citation.id)) {
+					await nhost.graphql.request(
+						REMOVE_CITATION_FROM_DISCUSSION,
+						{
+							discussion_version_id: draft.id,
+							citation_id: existing.citation.id
+						}
+					);
+				}
+			}
+
+			// Add or update citations
+			for (let i = 0; i < citationsToSave.length; i++) {
+				const citation = citationsToSave[i];
+
+				if (!existingCitationIds.has(citation.id)) {
+					// Create new citation
+					const createResult = await nhost.graphql.request(
+						CREATE_CITATION,
+						{
+							id: citation.id,
+							title: citation.title,
+							url: citation.url,
+							author: citation.author || null,
+							publisher: citation.publisher || null,
+							publish_date: citation.publish_date || null,
+							accessed_date: citation.accessed_date || null,
+							page_number: citation.page_number || null,
+							point_supported: citation.point_supported,
+							relevant_quote: citation.relevant_quote,
+							created_by: user.id
+						}
+					);
+
+					if (!createResult.error) {
+						// Link citation to discussion version
+						await nhost.graphql.request(
+							LINK_CITATION_TO_DISCUSSION,
+							{
+								discussion_version_id: draft.id,
+								citation_id: citation.id,
+								citation_order: i,
+								custom_point_supported: citation.point_supported,
+								custom_relevant_quote: citation.relevant_quote
+							}
+						);
+					}
+				} else {
+					// Update existing citation in citation table
+					console.log('Updating existing citation:', citation.id, citation);
+					const updateResult = await nhost.graphql.request(
+						UPDATE_CITATION,
+						{
+							id: citation.id,
+							title: citation.title,
+							url: citation.url,
+							author: citation.author || null,
+							publisher: citation.publisher || null,
+							publish_date: citation.publish_date || null,
+							accessed_date: citation.accessed_date || null,
+							page_number: citation.page_number || null,
+							point_supported: citation.point_supported,
+							relevant_quote: citation.relevant_quote
+						}
+					);
+					console.log('Update result:', updateResult);
+
+					if (updateResult.error) {
+						console.error('Failed to update citation:', updateResult.error);
+						throw new Error(`Failed to update citation: ${updateResult.error.message}`);
+					}
+
+					// Also update the join table's custom fields
+					const joinUpdateResult = await nhost.graphql.request(
+						UPDATE_DISCUSSION_VERSION_CITATION,
+						{
+							discussion_version_id: draft.id,
+							citation_id: citation.id,
+							custom_point_supported: citation.point_supported,
+							custom_relevant_quote: citation.relevant_quote
+						}
+					);
+
+					if (joinUpdateResult.error) {
+						console.error('Failed to update join table:', joinUpdateResult.error);
+						throw new Error(`Failed to update citation link: ${joinUpdateResult.error.message}`);
+					}
+				}
+			}
+
 			// Update local state
 			draft.title = title.trim();
 			draft.description = description.trim();
-			draft.citations = styleMetadata.citations || [];
 			draft.edited_at = new Date().toISOString();
+
+			// Update autosave tracking variables
+			lastSavedTitle = title;
+			lastSavedDescription = description;
+			lastSavedCitations = JSON.parse(JSON.stringify(styleMetadata.citations || []));
 		} catch (err: any) {
 			console.error('Error saving draft:', err);
 			error = err.message || 'Failed to save draft';
@@ -585,9 +725,12 @@
 	}
 
 	function updateCitation(updatedItem: Citation) {
-		const index = styleMetadata.citations?.findIndex((c) => c.id === updatedItem.id) || -1;
-		if (index !== -1) {
-			styleMetadata.citations![index] = updatedItem;
+		console.log('updateCitation called with:', updatedItem);
+		const index = styleMetadata.citations?.findIndex((c) => c.id === updatedItem.id) ?? -1;
+		console.log('Found citation at index:', index);
+		if (index !== -1 && styleMetadata.citations) {
+			styleMetadata.citations[index] = updatedItem;
+			console.log('Updated citations array:', styleMetadata.citations);
 		}
 		showCitationForm = false;
 		editingCitation = null;
@@ -935,27 +1078,30 @@
 
 	// Auto-save every 10 seconds
 	let autoSaveInterval: ReturnType<typeof setInterval> | null = null;
+	let lastSavedTitle = $state('');
+	let lastSavedDescription = $state('');
+	let lastSavedCitations = $state<Citation[]>([]);
 
-	$effect(() => {
-		if (draft && !loading) {
-			// Set up auto-save
-			autoSaveInterval = setInterval(() => {
-				const citationsChanged = JSON.stringify(styleMetadata.citations || []) !== JSON.stringify(draft.citations || []);
-				if (
-					!saving &&
-					!publishing &&
-					(title !== draft.title || description !== draft.description || citationsChanged)
-				) {
-					saveDraft();
-				}
-			}, 10000);
+	onMount(() => {
+		// Set up auto-save interval once on mount
+		autoSaveInterval = setInterval(() => {
+			if (!draft || loading || saving || publishing) return;
 
-			return () => {
-				if (autoSaveInterval) {
-					clearInterval(autoSaveInterval);
-				}
-			};
-		}
+			const citationsChanged = JSON.stringify(styleMetadata.citations || []) !== JSON.stringify(lastSavedCitations);
+			if (
+				title !== lastSavedTitle ||
+				description !== lastSavedDescription ||
+				citationsChanged
+			) {
+				saveDraft();
+			}
+		}, 10000);
+
+		return () => {
+			if (autoSaveInterval) {
+				clearInterval(autoSaveInterval);
+			}
+		};
 	});
 </script>
 
@@ -1251,9 +1397,8 @@
 							</Button>
 						</div>
 						<CitationForm
-							citation={editingCitation}
-							onAdd={addCitation}
-							onUpdate={updateCitation}
+							editingItem={editingCitation}
+							onAdd={editingCitation ? updateCitation : addCitation}
 							onCancel={() => {
 								showCitationForm = false;
 								editingCitation = null;

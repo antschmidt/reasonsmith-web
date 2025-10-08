@@ -5,36 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { nhost } from '$lib/nhostClient';
 	import DOMPurify from 'isomorphic-dompurify';
-
-	export type EditorsDeskPick = {
-		id: string;
-		title: string;
-		excerpt?: string | null;
-		editor_note?: string | null;
-		created_at: string;
-		post_id?: string | null;
-		discussion_id?: string | null;
-		userByCuratorId?: {
-			displayName?: string | null;
-			display_name?: string | null;
-		} | null;
-		curator?: {
-			displayName?: string | null;
-			display_name?: string | null;
-		} | null;
-		post?: {
-			contributor?: {
-				display_name?: string | null;
-				handle?: string | null;
-			} | null;
-		} | null;
-		discussion?: {
-			discussion_versions?: Array<{
-				title?: string | null;
-				description?: string | null;
-			}> | null;
-		} | null;
-	};
+	import { getCuratorName, type EditorsDeskPick } from '$lib/utils/editorsDeskUtils';
 
 	const props = $props<{ items?: EditorsDeskPick[] }>();
 	const items = $derived(props.items ?? []);
@@ -51,11 +22,6 @@
 			ALLOWED_TAGS: ['br'],
 			ALLOWED_ATTR: []
 		});
-	};
-
-	const getCuratorName = (pick: EditorsDeskPick): string => {
-		const curator = pick.userByCuratorId || pick.curator;
-		return curator?.displayName || curator?.display_name || 'Editors';
 	};
 
 	const getContentLink = (pick: EditorsDeskPick): string => {
@@ -126,7 +92,7 @@
 						<header class="card-header">
 							<div class="meta-tags">
 								<span class="editors-badge">Editors' Desk</span>
-								<span>{getCuratorName(item)}</span>
+								<span>{getCuratorName(item.userByCuratorId || item.curator)}</span>
 								<span>{new Date(item.created_at).toLocaleDateString()}</span>
 							</div>
 							<h3>{item.title}</h3>

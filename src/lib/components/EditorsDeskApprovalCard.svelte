@@ -3,6 +3,7 @@
 <script lang="ts">
 	import { nhost } from '$lib/nhostClient';
 	import { UPDATE_EDITORS_DESK_PICK_STATUS } from '$lib/graphql/queries';
+	import { getCuratorName as getCurator } from '$lib/utils/editorsDeskUtils';
 
 	const props = $props<{
 		pick: {
@@ -29,11 +30,8 @@
 
 	const getCuratorName = () => {
 		const curator = props.pick.userByCuratorId || props.pick.curator;
-		return (
-			curator?.displayName ||
-			curator?.display_name ||
-			'An editor'
-		);
+		const name = getCurator(curator);
+		return name === 'Editors' ? 'An editor' : name;
 	};
 
 	async function handleResponse(approved: boolean) {
