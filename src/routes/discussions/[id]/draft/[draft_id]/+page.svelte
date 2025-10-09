@@ -519,7 +519,6 @@
 					}
 				} else {
 					// Update existing citation in citation table
-					console.log('Updating existing citation:', citation.id, citation);
 					const updateResult = await nhost.graphql.request(
 						UPDATE_CITATION,
 						{
