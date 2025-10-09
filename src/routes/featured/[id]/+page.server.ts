@@ -34,7 +34,9 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 				structuredAnalysis = parsed;
 			}
 		} catch (parseError) {
-			// Silent fail - analysis field is optional
+			// Parsing failed: the 'analysis' field may be missing or contain invalid JSON.
+			// This is expected for some items, and it's safe to proceed without structured analysis.
+			// Silent failure is acceptable because the absence of valid analysis does not prevent page rendering.
 		}
 	}
 
