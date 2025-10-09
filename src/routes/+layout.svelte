@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { nhost } from '$lib/nhostClient';
-	import { hasAdminAccess as checkAdminAccess } from '$lib/permissions';
+	import { hasAdminAccess as hasAdminAccessUtil } from '$lib/permissions';
 	import { theme, toggleTheme } from '$lib/themeStore';
 	import { dev } from '$app/environment';
 	import { injectAnalytics } from '@vercel/analytics/sveltekit';
@@ -68,7 +68,7 @@
 			const contributorData = result.data?.contributor_by_pk;
 			if (contributorData) {
 				contributor = contributorData;
-				hasAdminAccess = checkAdminAccess(contributorData);
+				hasAdminAccess = hasAdminAccessUtil(contributorData);
 			} else {
 				contributor = null;
 				hasAdminAccess = false;

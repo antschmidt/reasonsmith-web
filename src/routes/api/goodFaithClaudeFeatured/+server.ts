@@ -6,11 +6,11 @@ import { print } from 'graphql';
 import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
 
 const anthropic = new Anthropic({
-	apiKey: process.env.ANTHROPIC_API_KEY
+	apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-build'
 });
 
 const openai = new OpenAI({
-	apiKey: process.env.OPENAI_API_KEY
+	apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-build'
 });
 
 const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-20250514';

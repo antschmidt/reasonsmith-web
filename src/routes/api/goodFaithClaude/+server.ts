@@ -6,7 +6,7 @@ import { INCREMENT_ANALYSIS_USAGE, INCREMENT_PURCHASED_CREDITS_USED } from '$lib
 import { checkAndResetMonthlyCredits, getMonthlyCreditsRemaining } from '$lib/creditUtils';
 
 const anthropic = new Anthropic({
-	apiKey: process.env.ANTHROPIC_API_KEY
+	apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-build'
 });
 
 interface ClaudeClaimArgument {
