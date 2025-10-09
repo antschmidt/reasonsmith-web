@@ -1,0 +1,125 @@
+name: Security Check
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  secret-scan:
+    name: Scan for Hardcoded Secrets
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for hardcoded secrets
+        run: |
+          #!/bin/bash
+          set -e
+
+          echo "🔍 Scanning for hardcoded secrets and passwords..."
+
+          # Define patterns to search for
+          PATTERNS=(
+            # Passwords and secrets
+            '(password|passwd|pwd)\s*=\s*["\x27][^"\x27]{8,}'
+            'secret\s*=\s*["\x27][^"\x27]{8,}'
+            'api[_-]?key\s*=\s*["\x27][^"\x27]{8,}'
+            'access[_-]?token\s*=\s*["\x27][^"\x27]{8,}'
+
+            # AWS credentials
+            'AKIA[0-9A-Z]{16}'
+            'aws[_-]?access[_-]?key'
+            'aws[_-]?secret[_-]?key'
+
+            # Generic secrets patterns (long random strings)
+            '["\x27][a-zA-Z0-9+/]{40,}["\x27]'
+
+            # Database connection strings with embedded credentials
+            '(mongodb|mysql|postgres|postgresql)://[^:]+:[^@]+@'
+
+            # Private keys
+            '-----BEGIN (RSA |OPENSSH |DSA |EC |PGP )?PRIVATE KEY'
+
+            # Hardcoded JWT tokens
+            'eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}'
+
+            # Common secret variable assignments with suspicious values
+            'HASURA_ADMIN_SECRET.*=.*["\x27]:[^"\x27]{10,}'
+            'HASURA_GRAPHQL_ADMIN_SECRET.*=.*["\x27]:[^"\x27]{10,}'
+          )
+
+          # Files/directories to exclude
+          EXCLUDE_PATTERNS=(
+            "node_modules"
+            ".git"
+            "package-lock.json"
+            "pnpm-lock.yaml"
+            ".svelte-kit"
+            "build"
+            "dist"
+            ".env.example"
+            "README.md"
+            "CLAUDE.md"
+            ".github/workflows"
+          )
+
+          # Build exclude arguments
+          EXCLUDE_ARGS=""
+          for pattern in "${EXCLUDE_PATTERNS[@]}"; do
+            EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude-dir=$pattern"
+          done
+
+          FOUND_SECRETS=0
+
+          for pattern in "${PATTERNS[@]}"; do
+            # Search for the pattern
+            if grep -rniE $EXCLUDE_ARGS "$pattern" . --color=never 2>/dev/null; then
+              echo "❌ Found potential secret matching pattern: $pattern"
+              FOUND_SECRETS=1
+            fi
+          done
+
+          # Additional check for specific hardcoded secret we found
+          if grep -rn ":u5\*t(oj)\*" . --exclude-dir=node_modules --exclude-dir=.git 2>/dev/null; then
+            echo "❌ Found the specific hardcoded admin secret that should be removed"
+            FOUND_SECRETS=1
+          fi
+
+          if [ $FOUND_SECRETS -eq 1 ]; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "⚠️  SECURITY ALERT: Potential secrets detected!"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "Hardcoded secrets pose a significant security risk."
+            echo "Please use environment variables instead."
+            echo ""
+            echo "How to fix:"
+            echo "1. Remove the hardcoded value"
+            echo "2. Use process.env.VARIABLE_NAME or env.VARIABLE_NAME"
+            echo "3. Add proper error handling if the env var is missing"
+            echo "4. Add the variable to .env.example (without the actual value)"
+            echo ""
+            exit 1
+          else
+            echo "✅ No hardcoded secrets detected!"
+          fi
+
+      - name: Check for TODO/FIXME security notes
+        run: |
+          #!/bin/bash
+
+          echo "🔍 Checking for security-related TODOs..."
+
+          if grep -rniE "(TODO|FIXME).*(security|secret|password|credential|auth)" src --color=always; then
+            echo "⚠️  Found security-related TODO/FIXME comments. Please address before merging."
+            # Don't fail on TODOs, just warn
+          else
+            echo "✅ No security-related TODOs found"
+          fi

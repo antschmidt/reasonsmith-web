@@ -187,8 +187,13 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
 		if (accessToken) {
 			let HASURA_GRAPHQL_ENDPOINT =
-				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
-			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET;
+
+			if (!HASURA_ADMIN_SECRET) {
+				console.error('HASURA_ADMIN_SECRET environment variable is not set');
+				return json({ error: 'Server configuration error' }, { status: 500 });
+			}
 
 			// Try alternative endpoint URL if the first one doesn't work
 			const alternativeEndpoint = HASURA_GRAPHQL_ENDPOINT.replace('.graphql.', '.hasura.');
@@ -331,7 +336,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
-							'x-hasura-admin-secret': process.env.HASURA_ADMIN_SECRET || '',
+							'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
 							'x-hasura-role': 'admin'
 						},
 						body: JSON.stringify({ query: `query { contributor(limit: 1) { id } }` })
@@ -343,10 +348,14 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						CREDIT_ENDPOINT = alternativeEndpoint;
 					}
 
-					const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+					const HASURA_ADMIN_SECRET_CREDIT = process.env.HASURA_ADMIN_SECRET;
 					console.log('[DEBUG] Credit endpoint:', CREDIT_ENDPOINT);
 
-					if (CREDIT_ENDPOINT && HASURA_ADMIN_SECRET) {
+					if (!HASURA_ADMIN_SECRET_CREDIT) {
+						console.error('HASURA_ADMIN_SECRET environment variable is not set');
+						// Don't fail the analysis, just log the error
+						console.warn('Skipping usage tracking due to missing admin secret');
+					} else if (CREDIT_ENDPOINT && HASURA_ADMIN_SECRET_CREDIT) {
 						// Determine which credit type to use\n\t\t\t\t\t\tconsole.log('Contributor for credit check:', contributor);
 						const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
 						const shouldUseMonthlyCredit =
@@ -361,7 +370,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+								'x-hasura-admin-secret': HASURA_ADMIN_SECRET_CREDIT,
 								'x-hasura-role': 'admin'
 							},
 							body: JSON.stringify({

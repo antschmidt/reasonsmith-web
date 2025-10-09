@@ -326,8 +326,13 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
 		if (accessToken) {
 			const HASURA_GRAPHQL_ENDPOINT =
-				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
-			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET;
+
+			if (!HASURA_ADMIN_SECRET) {
+				console.error('HASURA_ADMIN_SECRET environment variable is not set');
+				return json({ error: 'Server configuration error' }, { status: 500 });
+			}
 
 			if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
 				try {
@@ -434,10 +439,14 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			if (contributorId) {
 				try {
 					const HASURA_GRAPHQL_ENDPOINT =
-						process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
-					const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+						process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+					const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET;
 
-					if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
+					if (!HASURA_ADMIN_SECRET) {
+						console.error('HASURA_ADMIN_SECRET environment variable is not set');
+						// Don't fail the analysis, just log the error
+						console.warn('Skipping usage tracking due to missing admin secret');
+					} else if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
 						await fetch(HASURA_GRAPHQL_ENDPOINT, {
 							method: 'POST',
 							headers: {

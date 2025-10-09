@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	// Avoid importing gql to prevent type resolution issues; use plain string
 	import { nhost } from '$lib/nhostClient';
+	import { hasAdminAccess } from '$lib/permissions';
 	import { onMount } from 'svelte';
 	import {
 		CREATE_POST_DRAFT_WITH_STYLE,
@@ -1089,7 +1090,7 @@
 	function getAnalysisLimitText(): string {
 		if (!contributor) return '';
 		if (!contributor.analysis_enabled) return 'Analysis disabled';
-		if (['admin', 'slartibartfast'].includes(contributor.role)) return 'Unlimited analysis';
+		if (hasAdminAccess(contributor)) return 'Unlimited analysis';
 
 		const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
 		const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
@@ -2410,7 +2411,7 @@
 			console.log('Discussion owner ID:', discussion?.contributor?.id);
 			console.log('User owns discussion:', user?.id === discussion?.contributor?.id);
 			console.log('User role:', contributor?.role);
-			console.log('Has admin access:', ['admin', 'slartibartfast'].includes(contributor?.role));
+			console.log('Has admin access:', hasAdminAccess(contributor));
 
 			const result = await nhost.graphql.request(UPDATE_DISCUSSION_VERSION_AUDIO, {
 				versionId,
@@ -2923,9 +2924,9 @@
 
 				<!-- Audio Player and Upload (Admin Only) -->
 				{@const audioUrl = discussion?.current_version?.[0]?.audio_url}
-				{@const hasAdminAccess = contributor && ['admin', 'slartibartfast'].includes(contributor.role)}
+				{@const hasAudioManagementAccess = hasAdminAccess(contributor)}
 
-				{#if hasAdminAccess && !editing}
+				{#if hasAudioManagementAccess && !editing}
 					<div class="audio-admin-section">
 						<h3>Audio Management</h3>
 

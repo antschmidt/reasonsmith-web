@@ -10,7 +10,12 @@ export async function GET({ params, request }) {
 		}
 
 		// Use admin secret for server-side authentication
-		const adminSecret = env.HASURA_ADMIN_SECRET || ":u5*t(oj)*'47nsYsEUrjl!3_nL&#M0E";
+		const adminSecret = env.HASURA_ADMIN_SECRET;
+
+		if (!adminSecret) {
+			console.error('HASURA_ADMIN_SECRET environment variable is not set');
+			throw error(500, 'Server configuration error');
+		}
 
 		console.log('Fetching file:', fileId);
 

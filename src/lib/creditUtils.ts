@@ -1,5 +1,6 @@
 import { print } from 'graphql';
 import { RESET_ANALYSIS_USAGE } from '$lib/graphql/queries';
+import { hasAdminAccess } from '$lib/permissions';
 
 /**
  * Checks if a contributor's monthly credits need to be reset.
@@ -99,7 +100,7 @@ export function getMonthlyCreditsRemaining(contributor: {
 	role?: string;
 }): number {
 	// Check for unlimited access
-	if (contributor.role && ['admin', 'slartibartfast'].includes(contributor.role)) {
+	if (hasAdminAccess(contributor)) {
 		return Infinity;
 	}
 
@@ -167,7 +168,7 @@ export function canUseAnalysis(contributor: {
 	}
 
 	// Admin and slartibartfast roles have unlimited access
-	if (['admin', 'slartibartfast'].includes(contributor.role)) {
+	if (hasAdminAccess(contributor)) {
 		return true;
 	}
 
@@ -195,7 +196,7 @@ export function willUsePurchasedCredit(contributor: {
 	purchased_credits_used?: number;
 }): boolean {
 	// Admin and slartibartfast roles don't use any credits
-	if (['admin', 'slartibartfast'].includes(contributor.role)) {
+	if (hasAdminAccess(contributor)) {
 		return false;
 	}
 

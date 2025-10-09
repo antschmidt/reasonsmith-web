@@ -2,6 +2,8 @@
  * Utility functions for Editors' Desk picks feature
  */
 
+import { hasAdminAccess } from '$lib/permissions';
+
 export type EditorsDeskPickStatus = 'pending_author_approval' | 'approved' | 'rejected';
 
 export interface Contributor {
@@ -60,7 +62,7 @@ export function canCurateEditorsDesk(contributor: Contributor | null): boolean {
 	if (!contributor || !contributor.role) {
 		return false;
 	}
-	return ['admin', 'slartibartfast'].includes(contributor.role);
+	return hasAdminAccess(contributor as any);
 }
 
 /**
