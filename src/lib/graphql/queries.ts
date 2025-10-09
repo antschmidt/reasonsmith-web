@@ -172,6 +172,7 @@ export const GET_DISCUSSION_DETAILS = gql`
 				id
 				title
 				description
+				audio_url
 				good_faith_score
 				good_faith_label
 				good_faith_last_evaluated
@@ -210,6 +211,7 @@ const DISCUSSION_VERSION_FIELDS = gql`
 		sections
 		claims
 		citations
+		audio_url
 		version_number
 		version_type
 		good_faith_score
@@ -602,6 +604,19 @@ export const UPDATE_DISCUSSION_VERSION_GOOD_FAITH = gql`
 				good_faith_last_evaluated: "now()"
 				good_faith_analysis: $analysis
 			}
+		) {
+			...DiscussionVersionFields
+		}
+	}
+	${DISCUSSION_VERSION_FIELDS}
+`;
+
+// Update audio URL for a discussion version
+export const UPDATE_DISCUSSION_VERSION_AUDIO = gql`
+	mutation UpdateDiscussionVersionAudio($versionId: uuid!, $audioUrl: String) {
+		update_discussion_version_by_pk(
+			pk_columns: { id: $versionId }
+			_set: { audio_url: $audioUrl }
 		) {
 			...DiscussionVersionFields
 		}
@@ -1259,6 +1274,7 @@ export const CITATION_FIELDS = gql`
 
 export const CREATE_CITATION = gql`
 	mutation CreateCitation(
+		$id: uuid!
 		$title: String!
 		$url: String!
 		$author: String
@@ -1272,6 +1288,7 @@ export const CREATE_CITATION = gql`
 	) {
 		insert_citation_one(
 			object: {
+				id: $id
 				title: $title
 				url: $url
 				author: $author
@@ -1319,6 +1336,28 @@ export const LINK_CITATION_TO_DISCUSSION = gql`
 	${CITATION_FIELDS}
 `;
 
+export const UPDATE_DISCUSSION_VERSION_CITATION = gql`
+	mutation UpdateDiscussionVersionCitation(
+		$discussion_version_id: uuid!
+		$citation_id: uuid!
+		$custom_point_supported: String
+		$custom_relevant_quote: String
+	) {
+		update_discussion_version_citation(
+			where: {
+				discussion_version_id: { _eq: $discussion_version_id }
+				citation_id: { _eq: $citation_id }
+			}
+			_set: {
+				custom_point_supported: $custom_point_supported
+				custom_relevant_quote: $custom_relevant_quote
+			}
+		) {
+			affected_rows
+		}
+	}
+`;
+
 export const GET_DISCUSSION_CITATIONS = gql`
 	query GetDiscussionCitations($discussion_version_id: uuid!) {
 		discussion_version_citation(
@@ -1332,6 +1371,39 @@ export const GET_DISCUSSION_CITATIONS = gql`
 			citation {
 				...CitationFields
 			}
+		}
+	}
+	${CITATION_FIELDS}
+`;
+
+export const UPDATE_CITATION = gql`
+	mutation UpdateCitation(
+		$id: uuid!
+		$title: String!
+		$url: String!
+		$author: String
+		$publisher: String
+		$publish_date: date
+		$accessed_date: date
+		$page_number: String
+		$point_supported: String!
+		$relevant_quote: String!
+	) {
+		update_citation_by_pk(
+			pk_columns: { id: $id }
+			_set: {
+				title: $title
+				url: $url
+				author: $author
+				publisher: $publisher
+				publish_date: $publish_date
+				accessed_date: $accessed_date
+				page_number: $page_number
+				point_supported: $point_supported
+				relevant_quote: $relevant_quote
+			}
+		) {
+			...CitationFields
 		}
 	}
 	${CITATION_FIELDS}

@@ -4,9 +4,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { print } from 'graphql';
 import { INCREMENT_ANALYSIS_USAGE, INCREMENT_PURCHASED_CREDITS_USED } from '$lib/graphql/queries';
 import { checkAndResetMonthlyCredits, getMonthlyCreditsRemaining } from '$lib/creditUtils';
+import { logger } from '$lib/logger';
 
 const anthropic = new Anthropic({
-	apiKey: process.env.ANTHROPIC_API_KEY
+	apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-build'
 });
 
 interface ClaudeClaimArgument {
@@ -48,7 +49,7 @@ function getLabel(score: number): string {
 
 async function analyzeWithClaude(content: string): Promise<ClaudeScoreResponse> {
 	try {
-		console.log('Starting Claude API call...');
+		logger.info('Starting Claude API call...');
 
 		if (!process.env.ANTHROPIC_API_KEY) {
 			throw new Error('ANTHROPIC_API_KEY not set');
@@ -68,7 +69,7 @@ async function analyzeWithClaude(content: string): Promise<ClaudeScoreResponse> 
 			]
 		});
 
-		console.log('Claude API response received');
+		logger.info('Claude API response received');
 
 		const responseText = msg.content[0]?.type === 'text' ? msg.content[0].text : '';
 
@@ -91,12 +92,12 @@ async function analyzeWithClaude(content: string): Promise<ClaudeScoreResponse> 
 			cleanedResponse = jsonMatch[0];
 		}
 
-		console.log('Claude cleaned response length:', cleanedResponse.length);
-		console.log('Claude response preview:', cleanedResponse.substring(0, 200));
+		logger.info('Claude cleaned response length:', cleanedResponse.length);
+		logger.info('Claude response preview:', cleanedResponse.substring(0, 200));
 
 		// Parse the JSON response
 		const result: ClaudeScoreResponse = JSON.parse(cleanedResponse);
-		console.log('Claude parsed result successfully');
+		logger.info('Claude parsed result successfully');
 
 		// Add backward compatibility fields
 		result.good_faith_score = result.goodFaithScore / 100; // Convert 0-100 to 0-1
@@ -106,8 +107,8 @@ async function analyzeWithClaude(content: string): Promise<ClaudeScoreResponse> 
 
 		return result;
 	} catch (error: any) {
-		console.error('Claude API error:', error);
-		console.error('Error details:', error.message, error.stack);
+		logger.error('Claude API error:', error);
+		logger.error('Error details:', error.message, error.stack);
 		// Fallback to heuristic scoring if Claude fails
 		return heuristicScore(content);
 	}
@@ -158,7 +159,7 @@ function heuristicScore(content: string): ClaudeScoreResponse {
 }
 
 export const POST: RequestHandler = async ({ request, cookies }) => {
-	console.log('=== Claude API endpoint called ===');
+	logger.info('=== Claude API endpoint called ===');
 	try {
 		const body = await request.json();
 		const { postId, content } = body as {
@@ -172,39 +173,44 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
 		// Get user from session to track usage
 		let accessToken = cookies.get('nhost.accessToken');
-		console.log('[DEBUG] Cookie access token:', !!accessToken);
+		logger.debug('[DEBUG] Cookie access token:', !!accessToken);
 		// Also check Authorization header if cookie not found
 		if (!accessToken) {
 			const authHeader = request.headers.get('authorization');
-			console.log('[DEBUG] Authorization header:', authHeader?.substring(0, 30) + '...');
+			logger.debug('[DEBUG] Authorization header:', authHeader?.substring(0, 30) + '...');
 			if (authHeader && authHeader.startsWith('Bearer ')) {
 				accessToken = authHeader.substring(7);
 			}
 		}
-		console.log('Access token found:', !!accessToken);
+		logger.info('Access token found:', !!accessToken);
 		let contributorId: string | null = null;
 		let contributor: any = null;
 
 		if (accessToken) {
 			let HASURA_GRAPHQL_ENDPOINT =
-				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
-			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET;
+
+			if (!HASURA_ADMIN_SECRET) {
+				logger.error('HASURA_ADMIN_SECRET environment variable is not set');
+				return json({ error: 'Server configuration error' }, { status: 500 });
+			}
 
 			// Try alternative endpoint URL if the first one doesn't work
 			const alternativeEndpoint = HASURA_GRAPHQL_ENDPOINT.replace('.graphql.', '.hasura.');
-			console.log('[DEBUG] Primary endpoint:', HASURA_GRAPHQL_ENDPOINT);
-			console.log('[DEBUG] Alternative endpoint:', alternativeEndpoint);
-			console.log('[DEBUG] Admin secret present:', !!HASURA_ADMIN_SECRET);
+			logger.debug('[DEBUG] Primary endpoint:', HASURA_GRAPHQL_ENDPOINT);
+			logger.debug('[DEBUG] Alternative endpoint:', alternativeEndpoint);
+			logger.debug('[DEBUG] Admin secret present:', !!HASURA_ADMIN_SECRET);
 
 			if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
-				console.log('[DEBUG] Starting contributor lookup...');
+				logger.debug('[DEBUG] Starting contributor lookup...');
 				try {
 					// Decode JWT token to get user ID
 					const tokenPayload = JSON.parse(atob(accessToken.split('.')[1]));
 					const userId =
 						tokenPayload.sub || tokenPayload['https://hasura.io/jwt/claims']?.['x-hasura-user-id'];
-					console.log('[DEBUG] JWT payload:', tokenPayload);
-					console.log('[DEBUG] JWT payload user ID:', userId);
+					logger.debug('[DEBUG] JWT payload:', tokenPayload);
+					logger.debug('[DEBUG] JWT payload user ID:', userId);
 
 					// Test admin access first with primary endpoint
 					let testResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
@@ -219,11 +225,11 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						})
 					});
 					let testResult = await testResponse.json();
-					console.log('[DEBUG] Primary endpoint test:', testResult);
+					logger.debug('[DEBUG] Primary endpoint test:', testResult);
 
 					// If primary fails, try alternative endpoint
 					if (testResult.error) {
-						console.log('[DEBUG] Trying alternative endpoint...');
+						logger.debug('[DEBUG] Trying alternative endpoint...');
 						HASURA_GRAPHQL_ENDPOINT = alternativeEndpoint;
 						testResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
 							method: 'POST',
@@ -237,7 +243,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							})
 						});
 						testResult = await testResponse.json();
-						console.log('[DEBUG] Alternative endpoint test:', testResult);
+						logger.debug('[DEBUG] Alternative endpoint test:', testResult);
 					}
 
 					if (userId) {
@@ -266,10 +272,10 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						});
 
 						const contributorResult = await contributorResponse.json();
-						console.log('[DEBUG] Contributor lookup result:', contributorResult);
+						logger.debug('[DEBUG] Contributor lookup result:', contributorResult);
 						contributor = contributorResult.data?.contributor_by_pk;
 						contributorId = contributor?.id;
-						console.log('[DEBUG] Found contributor:', !!contributor, contributorId);
+						logger.debug('[DEBUG] Found contributor:', !!contributor, contributorId);
 
 						// Check permissions only if we found a contributor
 						if (contributor) {
@@ -300,21 +306,21 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						}
 					}
 				} catch (dbError) {
-					console.error('Database check failed:', dbError);
+					logger.error('Database check failed:', dbError);
 					// Continue with analysis but log the error
 				}
 			}
 		}
 
 		try {
-			console.log('Claude API key present:', !!process.env.ANTHROPIC_API_KEY);
-			console.log('Processing request for content length:', content.length);
+			logger.info('Claude API key present:', !!process.env.ANTHROPIC_API_KEY);
+			logger.info('Processing request for content length:', content.length);
 
 			// Use Claude analysis
 			const scored = await analyzeWithClaude(content);
 
 			// Increment appropriate credit type only if Claude was actually used (not heuristic fallback)
-			console.log('Checking credit consumption:', {
+			logger.info('Checking credit consumption:', {
 				contributorId: !!contributorId,
 				contributor: !!contributor,
 				usedClaude: scored.usedClaude
@@ -331,7 +337,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
-							'x-hasura-admin-secret': process.env.HASURA_ADMIN_SECRET || '',
+							'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
 							'x-hasura-role': 'admin'
 						},
 						body: JSON.stringify({ query: `query { contributor(limit: 1) { id } }` })
@@ -339,15 +345,19 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 					const testResult = await testResponse.json();
 
 					if (testResult.error) {
-						console.log('[DEBUG] Using alternative endpoint for credits');
+						logger.debug('[DEBUG] Using alternative endpoint for credits');
 						CREDIT_ENDPOINT = alternativeEndpoint;
 					}
 
-					const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
-					console.log('[DEBUG] Credit endpoint:', CREDIT_ENDPOINT);
+					const HASURA_ADMIN_SECRET_CREDIT = process.env.HASURA_ADMIN_SECRET;
+					logger.debug('[DEBUG] Credit endpoint:', CREDIT_ENDPOINT);
 
-					if (CREDIT_ENDPOINT && HASURA_ADMIN_SECRET) {
-						// Determine which credit type to use\n\t\t\t\t\t\tconsole.log('Contributor for credit check:', contributor);
+					if (!HASURA_ADMIN_SECRET_CREDIT) {
+						logger.error('HASURA_ADMIN_SECRET environment variable is not set');
+						// Don't fail the analysis, just log the error
+						logger.warn('Skipping usage tracking due to missing admin secret');
+					} else if (CREDIT_ENDPOINT && HASURA_ADMIN_SECRET_CREDIT) {
+						// Determine which credit type to use\n\t\t\t\t\t\tlogger.info('Contributor for credit check:', contributor);
 						const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
 						const shouldUseMonthlyCredit =
 							monthlyRemaining > 0 || ['admin', 'slartibartfast'].includes(contributor.role);
@@ -356,12 +366,12 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							? INCREMENT_ANALYSIS_USAGE
 							: INCREMENT_PURCHASED_CREDITS_USED;
 
-						console.log('[DEBUG] Executing credit mutation...');
+						logger.debug('[DEBUG] Executing credit mutation...');
 						const creditResponse = await fetch(CREDIT_ENDPOINT, {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+								'x-hasura-admin-secret': HASURA_ADMIN_SECRET_CREDIT,
 								'x-hasura-role': 'admin'
 							},
 							body: JSON.stringify({
@@ -371,23 +381,23 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						});
 
 						const creditResult = await creditResponse.json();
-						console.log('[DEBUG] Credit mutation result:', creditResult);
+						logger.debug('[DEBUG] Credit mutation result:', creditResult);
 
 						if (creditResult.errors) {
-							console.error('[DEBUG] Credit mutation failed:', creditResult.errors);
+							logger.error('[DEBUG] Credit mutation failed:', creditResult.errors);
 						} else {
-							console.log('[DEBUG] Credit mutation successful');
+							logger.debug('[DEBUG] Credit mutation successful');
 						}
 					}
 				} catch (usageError) {
-					console.error('Failed to increment usage count:', usageError);
+					logger.error('Failed to increment usage count:', usageError);
 					// Don't fail the request if usage tracking fails
 				}
 			}
 
 			return json({ ...scored, postId: postId || null });
 		} catch (error) {
-			console.error('Good faith analysis failed:', error);
+			logger.error('Good faith analysis failed:', error);
 			const message = error instanceof Error ? error.message : 'Analysis request failed';
 			return json({ error: message }, { status: 502 });
 		}

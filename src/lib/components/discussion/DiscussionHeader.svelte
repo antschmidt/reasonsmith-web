@@ -16,6 +16,7 @@
 		discussion,
 		title,
 		tags = [],
+		audioUrl,
 		isOwner = false,
 		canDelete = true,
 		onEdit,
@@ -26,6 +27,7 @@
 		discussion: Discussion;
 		title: string;
 		tags?: string[];
+		audioUrl?: string | null;
 		isOwner?: boolean;
 		canDelete?: boolean;
 		onEdit?: () => void;
@@ -33,6 +35,19 @@
 		onAnonymize?: () => void;
 		onRevealIdentity?: () => void;
 	}>();
+
+	let audioExpanded = $state(false);
+	let audioElement: HTMLAudioElement | null = null;
+
+	function toggleAudioPlayer() {
+		if (!audioExpanded) {
+			audioExpanded = true;
+			// Auto-play when expanding
+			setTimeout(() => {
+				audioElement?.play();
+			}, 100);
+		}
+	}
 
 	function displayName(name: string | null | undefined): string {
 		if (!name) return 'User';
@@ -49,7 +64,7 @@
 			{/each}
 		</div>
 	{/if}
-	<p class="discussion-meta">
+	<div class="discussion-meta">
 		<span class="byline">
 			Started by {#if discussion.is_anonymous}
 				<span class="anonymous-author">Anonymous</span>
@@ -132,7 +147,36 @@
 				{/if}
 			</span>
 		{/if}
-	</p>
+	</div>
+
+	{#if audioUrl}
+		<div class="audio-player-container">
+			{#if !audioExpanded}
+				<button class="play-button" onclick={toggleAudioPlayer} title="Listen to this discussion">
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="currentColor"
+						stroke="none"
+					>
+						<path d="M8 5v14l11-7z" />
+					</svg>
+					<span>Listen</span>
+				</button>
+			{:else}
+				<audio
+					bind:this={audioElement}
+					controls
+					src={audioUrl}
+					preload="metadata"
+					class="audio-player"
+				>
+					Your browser does not support the audio element.
+				</audio>
+			{/if}
+		</div>
+	{/if}
 </header>
 
 <style>
@@ -245,6 +289,48 @@
 		background: color-mix(in srgb, var(--color-primary) 15%, transparent);
 	}
 
+	.audio-player-container {
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.play-button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 1rem;
+		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+		color: var(--color-primary);
+		border: 1px solid var(--color-primary);
+		border-radius: var(--border-radius-sm);
+		cursor: pointer;
+		font-size: 0.9rem;
+		font-weight: 500;
+		font-family: inherit;
+		transition: all 0.2s ease;
+	}
+
+	.play-button:hover {
+		background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+		transform: translateY(-1px);
+	}
+
+	.play-button svg {
+		flex-shrink: 0;
+	}
+
+	.audio-player {
+		width: 100%;
+		max-width: 600px;
+		height: 40px;
+		outline: none;
+	}
+
+	.audio-player::-webkit-media-controls-panel {
+		background-color: color-mix(in srgb, var(--color-primary) 5%, transparent);
+	}
+
 	@media (max-width: 768px) {
 		.discussion-header {
 			padding: 1.5rem 0;
@@ -253,6 +339,10 @@
 		.discussion-meta {
 			flex-direction: column;
 			align-items: flex-start;
+		}
+
+		.audio-player {
+			max-width: 100%;
 		}
 	}
 </style>

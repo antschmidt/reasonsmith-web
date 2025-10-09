@@ -20,6 +20,11 @@
 	--color-link: #546e7a;
 	--color-link-hover: #37474f;
 
+	/* Status colors */
+	--color-error: #ef4444;
+	--color-success: #10b981;
+	--color-warning: #f59e0b;
+
 	/* Editorial spacing and sizing */
 	--border-radius-sm: 4px; /* Small elements: badges, pills */
 	--border-radius-md: 12px; /* Buttons, inputs, small cards */
@@ -68,6 +73,11 @@
 	--color-cta: var(--color-primary);
 	--color-link: #90a4ae;
 	--color-link-hover: #b0bec5;
+
+	/* Status colors - dark mode */
+	--color-error: #f87171;
+	--color-success: #34d399;
+	--color-warning: #fbbf24;
 }
 
 body {

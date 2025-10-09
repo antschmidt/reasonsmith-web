@@ -2,6 +2,8 @@
  * Utility functions for Editors' Desk picks feature
  */
 
+import { hasAdminAccess } from '$lib/permissions';
+
 export type EditorsDeskPickStatus = 'pending_author_approval' | 'approved' | 'rejected';
 
 export interface Contributor {
@@ -9,6 +11,47 @@ export interface Contributor {
 	role?: string;
 	display_name?: string;
 	handle?: string;
+}
+
+export interface CuratorInfo {
+	displayName?: string | null;
+	display_name?: string | null;
+}
+
+/**
+ * Type definition for Editors' Desk picks used in UI components
+ */
+export interface EditorsDeskPick {
+	id: string;
+	title: string;
+	excerpt?: string | null;
+	editor_note?: string | null;
+	created_at: string;
+	post_id?: string | null;
+	discussion_id?: string | null;
+	userByCuratorId?: CuratorInfo | null;
+	curator?: CuratorInfo | null;
+	post?: {
+		contributor?: {
+			display_name?: string | null;
+			handle?: string | null;
+		} | null;
+	} | null;
+	discussion?: {
+		discussion_versions?: Array<{
+			title?: string | null;
+			description?: string | null;
+		}> | null;
+	} | null;
+}
+
+/**
+ * Get the curator's display name with fallback
+ * @param curator - Curator object with displayName or display_name fields
+ * @returns Display name or default fallback
+ */
+export function getCuratorName(curator?: CuratorInfo | null): string {
+	return curator?.displayName || curator?.display_name || 'Editors';
 }
 
 /**
@@ -19,7 +62,7 @@ export function canCurateEditorsDesk(contributor: Contributor | null): boolean {
 	if (!contributor || !contributor.role) {
 		return false;
 	}
-	return ['admin', 'slartibartfast'].includes(contributor.role);
+	return hasAdminAccess(contributor as any);
 }
 
 /**

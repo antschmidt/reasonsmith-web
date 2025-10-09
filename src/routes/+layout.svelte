@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { nhost } from '$lib/nhostClient';
+	import { hasAdminAccess as hasAdminAccessUtil } from '$lib/permissions';
 	import { theme, toggleTheme } from '$lib/themeStore';
 	import { dev } from '$app/environment';
 	import { injectAnalytics } from '@vercel/analytics/sveltekit';
@@ -10,7 +11,12 @@
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = nhost.auth.getUser();
 	let hasAdminAccess = false;
-	let contributor: { role: string; avatar_url?: string; display_name?: string; handle?: string } | null = null;
+	let contributor: {
+		role: string;
+		avatar_url?: string;
+		display_name?: string;
+		handle?: string;
+	} | null = null;
 
 	function collectRoles(u) {
 		if (!u) return [];
@@ -62,7 +68,7 @@
 			const contributorData = result.data?.contributor_by_pk;
 			if (contributorData) {
 				contributor = contributorData;
-				hasAdminAccess = ['admin', 'slartibartfast'].includes(contributorData.role || 'user');
+				hasAdminAccess = hasAdminAccessUtil(contributorData);
 			} else {
 				contributor = null;
 				hasAdminAccess = false;
@@ -117,6 +123,13 @@
 			</span>
 			<span class="sr-only">Dashboard</span>
 		</a>
+		<a href="/discussions" class="nav-icon" aria-label="Browse all discussions">
+			<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"
+				><path
+					d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l4.25 4.25c.41.41 1.07.41 1.48 0s.41-1.07 0-1.48L15.5 14Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.505 4.505 0 0 1 9.5 14Z"
+				/></svg
+			>
+		</a>
 		<div class="nav-spacer">
 			{#if isProfilePage}
 				<div class="profile-nav-controls">
@@ -148,13 +161,6 @@
 					</svg>
 				</a>
 			{/if}
-			<a href="/discussions" class="nav-icon" aria-label="Browse all discussions">
-				<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"
-					><path
-						d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l4.25 4.25c.41.41 1.07.41 1.48 0s.41-1.07 0-1.48L15.5 14Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.505 4.505 0 0 1 9.5 14Z"
-					/></svg
-				>
-			</a>
 			<a href="/profile" class="nav-profile" aria-label="Profile">
 				{#if contributor?.avatar_url}
 					<img

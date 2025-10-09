@@ -14,7 +14,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 				"style-src 'self' 'unsafe-inline'", // Allow inline styles
 				"img-src 'self' data: https:", // Allow images from self, data URLs, and HTTPS
 				"font-src 'self' https:", // Allow fonts from self and HTTPS
-				"connect-src 'self' https://*.nhost.run https://graphql.reasonsmith.com https://auth.reasonsmith.com https://storage.reasonsmith.com https://functions.reasonsmith.com https://api.vercel.com", // API connections (Nhost subdomain + custom domains)
+				"media-src 'self' https://*.nhost.run https://storage.reasonsmith.com", // Allow audio/video from Nhost storage
+				"connect-src 'self' https://*.nhost.run https://hasura.reasonsmith.com https://auth.reasonsmith.com https://storage.reasonsmith.com https://functions.reasonsmith.com https://api.vercel.com", // API connections (Nhost subdomain + custom domains)
 				"frame-src 'none'", // No frames
 				"object-src 'none'" // No objects
 			].join('; ')
@@ -29,6 +30,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 				"style-src 'self' 'unsafe-inline'",
 				"img-src 'self' data: https: blob:",
 				"font-src 'self' https: data:",
+				"media-src 'self' https: blob:", // Allow audio/video in development
 				"connect-src 'self' ws: wss: https: http:", // Allow WebSocket for HMR
 				"frame-src 'none'",
 				"object-src 'none'"

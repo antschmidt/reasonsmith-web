@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { print } from 'graphql';
 import { INCREMENT_ANALYSIS_USAGE, INCREMENT_PURCHASED_CREDITS_USED } from '$lib/graphql/queries';
 import { checkAndResetMonthlyCredits, getMonthlyCreditsRemaining } from '$lib/creditUtils';
+import { logger } from '$lib/logger';
 
 // Import the same function from the Vercel function
 // We'll copy the logic here for local development
@@ -33,7 +34,7 @@ interface ScoreResponse {
 }
 
 const openai = new OpenAI({
-	apiKey: process.env.OPENAI_API_KEY
+	apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-build'
 });
 
 // Define the JSON schema for structured output
@@ -241,7 +242,7 @@ Text: "The liberal media is destroying our country with their constant lies and 
 			return result;
 		}
 	} catch (error: any) {
-		console.error('OpenAI API error:', error);
+		logger.error('OpenAI API error:', error);
 		// Fallback to heuristic scoring if OpenAI fails
 		return heuristicScore(content);
 	}
@@ -328,8 +329,13 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
 		if (accessToken) {
 			const HASURA_GRAPHQL_ENDPOINT =
-				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
-			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET;
+
+			if (!HASURA_ADMIN_SECRET) {
+				logger.error('HASURA_ADMIN_SECRET environment variable is not set');
+				return json({ error: 'Server configuration error' }, { status: 500 });
+			}
 
 			if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
 				try {
@@ -424,7 +430,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						}
 					}
 				} catch (dbError) {
-					console.error('Database check failed:', dbError);
+					logger.error('Database check failed:', dbError);
 					// Continue with analysis but log the error
 				}
 			}
@@ -438,10 +444,14 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			if (contributorId && contributor) {
 				try {
 					const HASURA_GRAPHQL_ENDPOINT =
-						process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
-					const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET || '';
+						process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+					const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET;
 
-					if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
+					if (!HASURA_ADMIN_SECRET) {
+						logger.error('HASURA_ADMIN_SECRET environment variable is not set');
+						// Don't fail the analysis, just log the error
+						logger.warn('Skipping usage tracking due to missing admin secret');
+					} else if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
 						// Determine which credit type to use
 						const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
 						const shouldUseMonthlyCredit =
@@ -465,14 +475,14 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						});
 					}
 				} catch (usageError) {
-					console.error('Failed to increment usage count:', usageError);
+					logger.error('Failed to increment usage count:', usageError);
 					// Don't fail the request if usage tracking fails
 				}
 			}
 
 			return json({ ...scored, postId: postId || null });
 		} catch (error) {
-			console.error('Good faith analysis failed:', error);
+			logger.error('Good faith analysis failed:', error);
 			const message = error instanceof Error ? error.message : 'Analysis request failed';
 			return json({ error: message }, { status: 502 });
 		}

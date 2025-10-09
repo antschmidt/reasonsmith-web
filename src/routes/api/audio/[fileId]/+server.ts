@@ -18,7 +18,7 @@ export async function GET({ params, request }) {
 			throw error(500, 'Server configuration error');
 		}
 
-		logger.info('Fetching file:', fileId);
+		logger.info('Fetching audio file:', fileId);
 
 		// Get the file using admin authentication
 		const response = await fetch(
@@ -35,25 +35,26 @@ export async function GET({ params, request }) {
 		if (!response.ok) {
 			const errorText = await response.text();
 			logger.error('Storage API error:', response.status, errorText);
-			throw error(response.status, `Failed to fetch image: ${errorText}`);
+			throw error(response.status, `Failed to fetch audio: ${errorText}`);
 		}
 
-		// Get the image data and content type
-		const imageBuffer = await response.arrayBuffer();
-		const contentType = response.headers.get('content-type') || 'image/jpeg';
+		// Get the audio data and content type
+		const audioBuffer = await response.arrayBuffer();
+		const contentType = response.headers.get('content-type') || 'audio/mpeg';
 
-		logger.info('Successfully fetched image, size:', imageBuffer.byteLength, 'type:', contentType);
+		logger.info('Successfully fetched audio, size:', audioBuffer.byteLength, 'type:', contentType);
 
-		// Return the image with proper headers
-		return new Response(imageBuffer, {
+		// Return the audio with proper headers
+		return new Response(audioBuffer, {
 			headers: {
 				'Content-Type': contentType,
 				'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
-				'Content-Length': imageBuffer.byteLength.toString()
+				'Content-Length': audioBuffer.byteLength.toString(),
+				'Accept-Ranges': 'bytes' // Enable seeking in audio player
 			}
 		});
 	} catch (err) {
-		logger.error('Image proxy error:', err);
-		throw error(500, 'Failed to load image');
+		logger.error('Audio proxy error:', err);
+		throw error(500, 'Failed to load audio');
 	}
 }

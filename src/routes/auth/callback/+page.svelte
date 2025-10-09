@@ -10,37 +10,49 @@
 
 	onMount(() => {
 		let unsubscribe: Function | undefined;
+		let redirectTimeout: ReturnType<typeof setTimeout> | undefined;
 
 		// Check if we're in browser context but auth came from PWA
 		const standalone = isStandalone();
 		const fromPWA = isFromPWA();
 
+		console.log('[Auth Callback] Component mounted', { standalone, fromPWA });
+
 		// Check if already signed in (in case the event already fired)
 		const checkAuthAndRedirect = async () => {
 			let isAuthenticated = false;
 			try {
+				console.log('[Auth Callback] Checking authentication status...');
 				isAuthenticated = await nhost.auth.isAuthenticatedAsync();
+				console.log('[Auth Callback] Authentication status:', isAuthenticated);
 			} catch (authError) {
-				console.warn('Authentication check failed:', authError);
+				console.warn('[Auth Callback] Authentication check failed:', authError);
 				// Fall back to checking current user state
 				isAuthenticated = !!nhost.auth.getUser();
+				console.log('[Auth Callback] Fallback authentication status:', isAuthenticated);
 			}
 
 			if (isAuthenticated) {
 				isSignedIn = true;
+				const user = nhost.auth.getUser();
+				console.log('[Auth Callback] User authenticated:', user?.email);
 
 				// If we're in browser but came from PWA, show "Return to App" button
 				if (!standalone && fromPWA) {
+					console.log('[Auth Callback] PWA flow - showing return button');
 					showReturnButton = true;
 					// Auto-redirect after 3 seconds as fallback
-					setTimeout(() => {
+					redirectTimeout = setTimeout(() => {
 						returnToPWA('/');
 					}, 3000);
 				} else {
-					// Normal flow: redirect immediately
+					// Normal flow: redirect to home page (shows dashboard for authenticated users)
+					console.log('[Auth Callback] Normal flow - redirecting to home');
 					goto('/');
 				}
 				return true;
+			} else {
+				console.log('[Auth Callback] User not authenticated yet, waiting for auth event...');
 			}
 			return false;
 		};
@@ -65,6 +77,9 @@
 		return () => {
 			if (unsubscribe) {
 				unsubscribe();
+			}
+			if (redirectTimeout) {
+				clearTimeout(redirectTimeout);
 			}
 		};
 	});
