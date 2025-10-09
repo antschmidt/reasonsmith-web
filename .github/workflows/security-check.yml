@@ -54,25 +54,33 @@ jobs:
             'HASURA_GRAPHQL_ADMIN_SECRET.*=.*["\x27]:[^"\x27]{10,}'
           )
 
-          # Files/directories to exclude
-          EXCLUDE_PATTERNS=(
+          # Directories to exclude
+          EXCLUDE_DIRS=(
             "node_modules"
             ".git"
-            "package-lock.json"
-            "pnpm-lock.yaml"
             ".svelte-kit"
             "build"
             "dist"
+            ".github/workflows"
+          )
+
+          # Files to exclude
+          EXCLUDE_FILES=(
+            "package-lock.json"
+            "pnpm-lock.yaml"
+            "*.lock"
             ".env.example"
             "README.md"
             "CLAUDE.md"
-            ".github/workflows"
           )
 
           # Build exclude arguments
           EXCLUDE_ARGS=""
-          for pattern in "${EXCLUDE_PATTERNS[@]}"; do
+          for pattern in "${EXCLUDE_DIRS[@]}"; do
             EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude-dir=$pattern"
+          done
+          for pattern in "${EXCLUDE_FILES[@]}"; do
+            EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude=$pattern"
           done
 
           FOUND_SECRETS=0
