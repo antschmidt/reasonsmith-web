@@ -161,18 +161,16 @@ async function upgradeRoleHeaders() {
 		const userRole = result.data?.contributor_by_pk?.role || 'user';
 
 		// Map database roles to Hasura roles
-		// NOTE: Until Nhost Auth is configured with admin/slartibartfast roles,
-		// we use 'me' for everyone but store the actual role for app logic
 		let hasuraRole;
 		switch (userRole) {
 			case 'admin':
-				hasuraRole = 'slartibartfast'; // Use slartibartfast for full permissions
+				hasuraRole = 'admin'; // Root admin with complete system control
 				break;
 			case 'slartibartfast':
-				hasuraRole = 'slartibartfast'; // Use slartibartfast for full permissions
+				hasuraRole = 'slartibartfast'; // Site manager (featured content, disputes)
 				break;
 			default:
-				hasuraRole = 'me';
+				hasuraRole = 'me'; // Regular authenticated user
 		}
 
 		// Store the actual role for frontend logic
