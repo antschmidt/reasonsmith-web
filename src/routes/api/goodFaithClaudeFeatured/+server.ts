@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { print } from 'graphql';
 import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
+import { logger } from '$lib/logger';
 
 const anthropic = new Anthropic({
 	apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-build'
@@ -330,7 +331,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET;
 
 			if (!HASURA_ADMIN_SECRET) {
-				console.error('HASURA_ADMIN_SECRET environment variable is not set');
+				logger.error('HASURA_ADMIN_SECRET environment variable is not set');
 				return json({ error: 'Server configuration error' }, { status: 500 });
 			}
 
@@ -417,7 +418,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						}
 					}
 				} catch (dbError) {
-					console.error('Database check failed:', dbError);
+					logger.error('Database check failed:', dbError);
 					// Continue with analysis but log the error
 				}
 			}
@@ -443,9 +444,9 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 					const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET;
 
 					if (!HASURA_ADMIN_SECRET) {
-						console.error('HASURA_ADMIN_SECRET environment variable is not set');
+						logger.error('HASURA_ADMIN_SECRET environment variable is not set');
 						// Don't fail the analysis, just log the error
-						console.warn('Skipping usage tracking due to missing admin secret');
+						logger.warn('Skipping usage tracking due to missing admin secret');
 					} else if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
 						await fetch(HASURA_GRAPHQL_ENDPOINT, {
 							method: 'POST',
@@ -461,19 +462,19 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						});
 					}
 				} catch (usageError) {
-					console.error('Failed to increment usage count:', usageError);
+					logger.error('Failed to increment usage count:', usageError);
 					// Don't fail the request if usage tracking fails
 				}
 			}
 
 			return json(analysis);
 		} catch (error) {
-			console.error('Featured analysis generation failed.', error);
+			logger.error('Featured analysis generation failed.', error);
 			const message = error instanceof Error ? error.message : 'Analysis request failed';
 			return json({ error: message }, { status: 502 });
 		}
 	} catch (error: any) {
-		console.error('Featured analysis endpoint error:', error);
+		logger.error('Featured analysis endpoint error:', error);
 		return json({ error: error?.message || 'Internal error' }, { status: 500 });
 	}
 };

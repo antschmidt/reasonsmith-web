@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import { logger } from '$lib/logger';
 
 export async function GET({ params, request }) {
 	try {
@@ -13,11 +14,11 @@ export async function GET({ params, request }) {
 		const adminSecret = env.HASURA_ADMIN_SECRET;
 
 		if (!adminSecret) {
-			console.error('HASURA_ADMIN_SECRET environment variable is not set');
+			logger.error('HASURA_ADMIN_SECRET environment variable is not set');
 			throw error(500, 'Server configuration error');
 		}
 
-		console.log('Fetching file:', fileId);
+		logger.info('Fetching file:', fileId);
 
 		// Get the file using admin authentication
 		const response = await fetch(
@@ -29,11 +30,11 @@ export async function GET({ params, request }) {
 			}
 		);
 
-		console.log('Storage response status:', response.status);
+		logger.info('Storage response status:', response.status);
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			console.error('Storage API error:', response.status, errorText);
+			logger.error('Storage API error:', response.status, errorText);
 			throw error(response.status, `Failed to fetch image: ${errorText}`);
 		}
 
@@ -41,7 +42,7 @@ export async function GET({ params, request }) {
 		const imageBuffer = await response.arrayBuffer();
 		const contentType = response.headers.get('content-type') || 'image/jpeg';
 
-		console.log('Successfully fetched image, size:', imageBuffer.byteLength, 'type:', contentType);
+		logger.info('Successfully fetched image, size:', imageBuffer.byteLength, 'type:', contentType);
 
 		// Return the image with proper headers
 		return new Response(imageBuffer, {
@@ -52,7 +53,7 @@ export async function GET({ params, request }) {
 			}
 		});
 	} catch (err) {
-		console.error('Image proxy error:', err);
+		logger.error('Image proxy error:', err);
 		throw error(500, 'Failed to load image');
 	}
 }

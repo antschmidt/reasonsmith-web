@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { CitationGraphService, type CitationNode, type DiscussionNode } from '$lib/neo4jClient';
 import type { Citation } from '$lib/types/writingStyle';
+import { logger } from '$lib/logger';
 
 // Helper function to determine citation type from URL
 function determineCitationType(
@@ -97,15 +98,15 @@ export const POST: RequestHandler = async ({ request }) => {
 							createdAt: new Date().toISOString()
 						});
 
-						console.log(`[Neo4j Sync] Synced citation: ${citation.title}`);
+						logger.info(`[Neo4j Sync] Synced citation: ${citation.title}`);
 					} catch (citationError) {
-						console.error(`[Neo4j Sync] Failed to sync citation ${citation.id}:`, citationError);
+						logger.error(`[Neo4j Sync] Failed to sync citation ${citation.id}:`, citationError);
 						// Continue with other citations even if one fails
 					}
 				}
 			}
 
-			console.log(`[Neo4j Sync] Successfully synced discussion: ${discussionId}`);
+			logger.info(`[Neo4j Sync] Successfully synced discussion: ${discussionId}`);
 
 			return json({
 				success: true,
@@ -116,7 +117,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			await citationService.close();
 		}
 	} catch (error: any) {
-		console.error('[Neo4j Sync] Error syncing citations:', error);
+		logger.error('[Neo4j Sync] Error syncing citations:', error);
 		return json(
 			{
 				error: 'Failed to sync citations to graph database',
@@ -147,7 +148,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			discussionId
 		});
 	} catch (error: any) {
-		console.error('[Neo4j Query] Error retrieving citations:', error);
+		logger.error('[Neo4j Query] Error retrieving citations:', error);
 		return json(
 			{
 				error: 'Failed to retrieve citation data',
