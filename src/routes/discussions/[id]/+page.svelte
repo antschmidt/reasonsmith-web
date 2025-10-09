@@ -17,7 +17,8 @@
 		UNANONYMIZE_DISCUSSION,
 		GET_MY_PENDING_EDITORS_DESK_APPROVALS,
 		GET_DISCUSSION_CITATIONS,
-		LINK_CITATION_TO_DISCUSSION
+		LINK_CITATION_TO_DISCUSSION,
+		UPDATE_DISCUSSION_VERSION_AUDIO
 	} from '$lib/graphql/queries';
 	import { createDraftAutosaver, type DraftAutosaver } from '$lib';
 	import {
@@ -101,6 +102,11 @@
 		user = nhost.auth.getUser();
 		authReady = true;
 	});
+
+	// Audio upload state
+	let audioUploading = $state(false);
+	let audioUploadProgress = $state(0);
+	let audioUploadError = $state<string | null>(null);
 
 	let draftPostId = $state<string | null>(null);
 	let draftAutosaver = $state<DraftAutosaver | null>(null);
@@ -852,6 +858,7 @@
 							title
 							description
 							citations
+							audio_url
 							good_faith_score
 							good_faith_label
 							good_faith_last_evaluated
@@ -2333,6 +2340,156 @@
 		}
 	}
 
+	// Audio upload handler
+	async function handleAudioUpload(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+
+		if (!file) return;
+
+		// Validate file type
+		const allowedTypes = ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/x-wav'];
+		if (!allowedTypes.includes(file.type) && !file.name.match(/\.(mp3|m4a|wav)$/i)) {
+			audioUploadError = 'Please upload an audio file (MP3, M4A, or WAV)';
+			return;
+		}
+
+		// Validate file size (max 50MB)
+		const maxSize = 50 * 1024 * 1024; // 50MB
+		if (file.size > maxSize) {
+			audioUploadError = 'Audio file must be less than 50MB';
+			return;
+		}
+
+		audioUploading = true;
+		audioUploadError = null;
+		audioUploadProgress = 0;
+
+		try {
+			const versionId = discussion?.current_version?.[0]?.id;
+			if (!versionId) {
+				throw new Error('No discussion version found');
+			}
+
+			// Upload to Nhost Storage
+			const { fileMetadata, error: uploadError } = await nhost.storage.upload({
+				file,
+				bucketId: 'audio'
+			});
+
+			if (uploadError) {
+				throw new Error(uploadError.message || 'Failed to upload audio file');
+			}
+
+			if (!fileMetadata) {
+				throw new Error('No file metadata returned');
+			}
+
+			// Store the file ID to use with our API proxy
+			const audioUrl = `/api/audio/${fileMetadata.id}`;
+
+			// Save the audio URL to the database
+			console.log('About to save audio URL:', { versionId, audioUrl });
+
+			// First, verify we can read this version
+			const checkResult = await nhost.graphql.request(
+				`query CheckVersion($versionId: uuid!) {
+					discussion_version_by_pk(id: $versionId) {
+						id
+						title
+						created_by
+						version_type
+					}
+				}`,
+				{ versionId }
+			);
+			console.log('Version check result:', checkResult);
+			console.log('Current user ID:', user?.id);
+			console.log('Version created_by:', checkResult.data?.discussion_version_by_pk?.created_by);
+			console.log('IDs match:', user?.id === checkResult.data?.discussion_version_by_pk?.created_by);
+			console.log('Discussion owner ID:', discussion?.contributor?.id);
+			console.log('User owns discussion:', user?.id === discussion?.contributor?.id);
+			console.log('User role:', contributor?.role);
+			console.log('Has admin access:', ['admin', 'slartibartfast'].includes(contributor?.role));
+
+			const result = await nhost.graphql.request(UPDATE_DISCUSSION_VERSION_AUDIO, {
+				versionId,
+				audioUrl
+			});
+
+			console.log('GraphQL result:', result);
+
+			if (result.error) {
+				console.error('Audio URL update error:', result.error);
+				console.error('Version ID:', versionId);
+				console.error('Audio URL:', audioUrl);
+				throw new Error(result.error.message || 'Failed to update discussion with audio URL');
+			}
+
+			if (!result.data?.update_discussion_version_by_pk) {
+				console.error('No data returned from mutation');
+				throw new Error('Failed to update discussion with audio URL - no data returned');
+			}
+
+			console.log('Successfully saved audio URL to database');
+
+			// Update local discussion state
+			if (discussion.current_version?.[0]) {
+				discussion.current_version[0].audio_url = audioUrl;
+			}
+
+			audioUploadProgress = 100;
+
+			// Clear file input
+			input.value = '';
+
+		} catch (err: any) {
+			console.error('Error uploading audio:', err);
+			audioUploadError = err.message || 'Failed to upload audio file';
+		} finally {
+			audioUploading = false;
+			setTimeout(() => {
+				audioUploadProgress = 0;
+			}, 2000);
+		}
+	}
+
+	// Remove audio from discussion
+	async function handleRemoveAudio() {
+		if (!confirm('Remove the audio from this discussion?')) return;
+
+		audioUploading = true;
+		audioUploadError = null;
+
+		try {
+			const versionId = discussion?.current_version?.[0]?.id;
+			if (!versionId) {
+				throw new Error('No discussion version found');
+			}
+
+			// Remove audio URL from database
+			const result = await nhost.graphql.request(UPDATE_DISCUSSION_VERSION_AUDIO, {
+				versionId,
+				audioUrl: null
+			});
+
+			if (result.error) {
+				throw new Error(result.error.message || 'Failed to remove audio');
+			}
+
+			// Update local discussion state
+			if (discussion.current_version?.[0]) {
+				discussion.current_version[0].audio_url = null;
+			}
+
+		} catch (err: any) {
+			console.error('Error removing audio:', err);
+			audioUploadError = err.message || 'Failed to remove audio';
+		} finally {
+			audioUploading = false;
+		}
+	}
+
 	// Ensure all citations and sources have IDs
 	// Good faith testing function (OpenAI)
 	async function testGoodFaith() {
@@ -2697,6 +2854,7 @@
 				}}
 				title={getDiscussionTitle(discussion)}
 				tags={getDiscussionTags(discussion)}
+				audioUrl={discussion?.current_version?.[0]?.audio_url}
 				isOwner={user ? discussion.contributor.id === user.id : false}
 				canDelete={discussionCanDelete}
 				onEdit={startEdit}
@@ -2762,6 +2920,53 @@
 				<div class="discussion-description">{@html processedContent.replace(/\n/g, '<br>')}</div>
 
 				<DiscussionReferencesDisplay citations={allCitations} {formatChicagoCitation} />
+
+				<!-- Audio Player and Upload (Admin Only) -->
+				{@const audioUrl = discussion?.current_version?.[0]?.audio_url}
+				{@const hasAdminAccess = contributor && ['admin', 'slartibartfast'].includes(contributor.role)}
+
+				{#if hasAdminAccess && !editing}
+					<div class="audio-admin-section">
+						<h3>Audio Management</h3>
+
+						{#if audioUrl}
+							<button
+								type="button"
+								class="remove-audio-button"
+								onclick={handleRemoveAudio}
+								disabled={audioUploading}
+							>
+								Remove Audio
+							</button>
+						{:else}
+							<label class="audio-upload-label">
+								<input
+									type="file"
+									accept="audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/wav"
+									onchange={handleAudioUpload}
+									disabled={audioUploading}
+									class="audio-file-input"
+								/>
+								<span class="audio-upload-button">
+									{audioUploading ? 'Uploading...' : 'Upload Audio Reading'}
+								</span>
+							</label>
+
+							{#if audioUploading && audioUploadProgress > 0}
+								<div class="audio-upload-progress">
+									<div class="progress-bar">
+										<div class="progress-fill" style="width: {audioUploadProgress}%"></div>
+									</div>
+									<span class="progress-text">{audioUploadProgress}%</span>
+								</div>
+							{/if}
+
+							{#if audioUploadError}
+								<p class="audio-error">{audioUploadError}</p>
+							{/if}
+						{/if}
+					</div>
+				{/if}
 
 				{#if !editing}
 					<DiscussionGoodFaithBadge
@@ -2979,6 +3184,136 @@
 		to {
 			transform: rotate(360deg);
 		}
+	}
+
+	/* Audio Upload & Player Styles */
+	.audio-section {
+		margin-top: 2rem;
+		padding: 1.5rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-lg);
+	}
+
+	.audio-admin-section {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		padding: 1.5rem;
+		background: var(--color-surface-alt);
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-md);
+		margin: 2rem 0;
+	}
+
+	.audio-admin-section h3 {
+		font-size: 1.125rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 0;
+	}
+
+	.remove-audio-button {
+		align-self: flex-start;
+		padding: 0.5rem 1rem;
+		background: transparent;
+		color: var(--color-error);
+		border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
+		border-radius: var(--border-radius-sm);
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all var(--transition-speed) ease;
+	}
+
+	.remove-audio-button:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--color-error) 10%, transparent);
+		border-color: var(--color-error);
+		transform: translateY(-1px);
+	}
+
+	.remove-audio-button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.audio-upload-hint {
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		margin: 0;
+	}
+
+	.audio-upload-label {
+		display: inline-block;
+		cursor: pointer;
+	}
+
+	.audio-file-input {
+		display: none;
+	}
+
+	.audio-upload-button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1.5rem;
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		color: var(--color-primary);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+		border-radius: var(--border-radius-sm);
+		font-size: 0.9rem;
+		font-weight: 500;
+		transition: all var(--transition-speed) ease;
+	}
+
+	.audio-upload-label:hover .audio-upload-button {
+		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+		transform: translateY(-1px);
+	}
+
+	.audio-upload-label:has(input:disabled) {
+		cursor: not-allowed;
+		opacity: 0.6;
+	}
+
+	.audio-upload-progress {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.progress-bar {
+		flex: 1;
+		height: 8px;
+		background: var(--color-surface-alt);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.progress-fill {
+		height: 100%;
+		background: var(--color-primary);
+		border-radius: 4px;
+		transition: width 0.3s ease;
+	}
+
+	.progress-text {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
+		min-width: 3rem;
+		text-align: right;
+	}
+
+	.audio-error {
+		color: var(--color-error);
+		font-size: 0.875rem;
+		margin: 0;
+		padding: 0.5rem;
+		background: color-mix(in srgb, var(--color-error) 10%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
+		border-radius: var(--border-radius-sm);
 	}
 
 </style>

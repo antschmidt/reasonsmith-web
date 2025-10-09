@@ -166,10 +166,10 @@ async function upgradeRoleHeaders() {
 		let hasuraRole;
 		switch (userRole) {
 			case 'admin':
-				hasuraRole = 'me'; // Use 'me' until Nhost Auth allows 'admin'
+				hasuraRole = 'slartibartfast'; // Use slartibartfast for full permissions
 				break;
 			case 'slartibartfast':
-				hasuraRole = 'me'; // Use 'me' until Nhost Auth allows 'slartibartfast'
+				hasuraRole = 'slartibartfast'; // Use slartibartfast for full permissions
 				break;
 			default:
 				hasuraRole = 'me';

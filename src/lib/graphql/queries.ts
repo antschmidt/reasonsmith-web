@@ -172,6 +172,7 @@ export const GET_DISCUSSION_DETAILS = gql`
 				id
 				title
 				description
+				audio_url
 				good_faith_score
 				good_faith_label
 				good_faith_last_evaluated
@@ -210,6 +211,7 @@ const DISCUSSION_VERSION_FIELDS = gql`
 		sections
 		claims
 		citations
+		audio_url
 		version_number
 		version_type
 		good_faith_score
@@ -602,6 +604,19 @@ export const UPDATE_DISCUSSION_VERSION_GOOD_FAITH = gql`
 				good_faith_last_evaluated: "now()"
 				good_faith_analysis: $analysis
 			}
+		) {
+			...DiscussionVersionFields
+		}
+	}
+	${DISCUSSION_VERSION_FIELDS}
+`;
+
+// Update audio URL for a discussion version
+export const UPDATE_DISCUSSION_VERSION_AUDIO = gql`
+	mutation UpdateDiscussionVersionAudio($versionId: uuid!, $audioUrl: String) {
+		update_discussion_version_by_pk(
+			pk_columns: { id: $versionId }
+			_set: { audio_url: $audioUrl }
 		) {
 			...DiscussionVersionFields
 		}
