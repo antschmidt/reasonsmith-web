@@ -67,6 +67,7 @@
 	});
 	let showCitationForm = $state(false);
 	let editingCitation = $state<Citation | null>(null);
+	let expandedCitationIds = $state<Set<string>>(new Set());
 
 	// User
 	let user = $state(nhost.auth.getUser());
@@ -262,12 +263,15 @@
 			lastSavedDescription = description;
 
 			// Load citations from citation table
+			console.log('[loadDraft] Loading citations for draft version:', draft.id);
 			const citationsResult = await nhost.graphql.request(
 				GET_DISCUSSION_CITATIONS,
 				{ discussion_version_id: draft.id }
 			);
+			console.log('[loadDraft] Citations query result:', citationsResult);
 
 			if (!citationsResult.error && citationsResult.data?.discussion_version_citation) {
+				console.log('[loadDraft] Found citations:', citationsResult.data.discussion_version_citation.length);
 				// Convert database citations to local format
 				styleMetadata.citations = citationsResult.data.discussion_version_citation
 					.sort((a: any, b: any) => a.citation_order - b.citation_order)
@@ -599,7 +603,20 @@
 			let goodFaithData;
 
 			try {
-				const content = `${title.trim()}\n\n${description.trim()}`.trim();
+				// Build content with title and description
+				let content = `${title.trim()}\n\n${description.trim()}`.trim();
+
+				// Add citation information if present
+				if (styleMetadata.citations && styleMetadata.citations.length > 0) {
+					content += '\n\n--- CITATIONS ---\n';
+					styleMetadata.citations.forEach((citation, index) => {
+						content += `\n[${index + 1}] ${formatChicagoCitation(citation)}\n`;
+						content += `   Point Supported: ${citation.point_supported}\n`;
+						if (citation.relevant_quote) {
+							content += `   Relevant Quote: "${citation.relevant_quote}"\n`;
+						}
+					});
+				}
 
 				// Get the access token for authentication
 				const accessToken = nhost.auth.getAccessToken();
@@ -722,6 +739,16 @@
 			editingCitation = itemToEdit;
 			showCitationForm = true;
 		}
+	}
+
+	function toggleCitationExpand(citationId: string) {
+		if (expandedCitationIds.has(citationId)) {
+			expandedCitationIds.delete(citationId);
+		} else {
+			expandedCitationIds.add(citationId);
+		}
+		// Trigger reactivity
+		expandedCitationIds = new Set(expandedCitationIds);
 	}
 
 	function updateCitation(updatedItem: Citation) {
@@ -1323,48 +1350,98 @@
 					{#if styleMetadata.citations && styleMetadata.citations.length > 0}
 						<div class="citations-list">
 							{#each styleMetadata.citations as citation, index}
-								<div class="citation-item">
-									<div class="citation-content">
+								{@const isExpanded = expandedCitationIds.has(citation.id)}
+								<div class="citation-item" class:expanded={isExpanded}>
+									<div class="citation-header" onclick={() => toggleCitationExpand(citation.id)}>
 										<div class="citation-number">[{index + 1}]</div>
-										<div class="citation-details">
-											<div class="citation-title">{citation.title}</div>
-											<div class="citation-formatted">
-												{@html formatChicagoCitation(citation)}
-											</div>
+										<div class="citation-chicago">
+											{@html formatChicagoCitation(citation)}
+										</div>
+										<button class="expand-toggle" aria-label={isExpanded ? 'Collapse' : 'Expand'}>
+											<svg
+												width="16"
+												height="16"
+												viewBox="0 0 16 16"
+												fill="none"
+												style="transform: rotate({isExpanded ? 180 : 0}deg); transition: transform 0.2s;"
+											>
+												<path
+													d="M4 6L8 10L12 6"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+												/>
+											</svg>
+										</button>
+									</div>
+
+									{#if isExpanded}
+										<div class="citation-expanded">
 											<div class="citation-meta">
-												<span class="point-supported">Point: {citation.point_supported}</span>
+												<div class="meta-section">
+													<strong>Point Supported:</strong>
+													<p>{citation.point_supported}</p>
+												</div>
 												{#if citation.relevant_quote}
-													<span class="relevant-quote">Quote: "{citation.relevant_quote}"</span>
+													<div class="meta-section">
+														<strong>Relevant Quote:</strong>
+														<blockquote>"{citation.relevant_quote}"</blockquote>
+													</div>
+												{/if}
+												{#if citation.author}
+													<div class="meta-row">
+														<strong>Author:</strong> {citation.author}
+													</div>
+												{/if}
+												{#if citation.publisher}
+													<div class="meta-row">
+														<strong>Publisher:</strong> {citation.publisher}
+													</div>
+												{/if}
+												{#if citation.page_number}
+													<div class="meta-row">
+														<strong>Page:</strong> {citation.page_number}
+													</div>
 												{/if}
 											</div>
+											<div class="citation-actions">
+												<Button
+													variant="ghost"
+													size="sm"
+													onclick={(e) => {
+														e.stopPropagation();
+														insertCitationReference(citation.id);
+													}}
+													title="Insert citation reference"
+												>
+													Insert [{ index + 1}]
+												</Button>
+												<Button
+													variant="ghost"
+													size="sm"
+													onclick={(e) => {
+														e.stopPropagation();
+														startEditCitation(citation.id);
+													}}
+													title="Edit citation"
+												>
+													Edit
+												</Button>
+												<Button
+													variant="danger"
+													size="sm"
+													onclick={(e) => {
+														e.stopPropagation();
+														removeCitation(citation.id);
+													}}
+													title="Remove citation"
+												>
+													Remove
+												</Button>
+											</div>
 										</div>
-									</div>
-									<div class="citation-actions">
-										<Button
-											variant="ghost"
-											size="sm"
-											onclick={() => insertCitationReference(citation.id)}
-											title="Insert citation reference"
-										>
-											Insert
-										</Button>
-										<Button
-											variant="ghost"
-											size="sm"
-											onclick={() => startEditCitation(citation.id)}
-											title="Edit citation"
-										>
-											Edit
-										</Button>
-										<Button
-											variant="ghost"
-											size="sm"
-											onclick={() => removeCitation(citation.id)}
-											title="Remove citation"
-										>
-											Remove
-										</Button>
-									</div>
+									{/if}
 								</div>
 							{/each}
 						</div>
@@ -1861,95 +1938,142 @@
 	}
 
 	.citations-list {
-		border: 1px solid var(--color-border);
-		border-radius: var(--border-radius);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: var(--border-radius-lg);
 		background: var(--color-surface);
 	}
 
 	.citation-item {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		padding: 1rem;
-		border-bottom: 1px solid var(--color-border);
+		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		transition: background 0.2s ease;
 	}
 
 	.citation-item:last-child {
 		border-bottom: none;
 	}
 
-	.citation-content {
+	.citation-item.expanded {
+		background: color-mix(in srgb, var(--color-primary) 3%, transparent);
+	}
+
+	.citation-header {
 		display: flex;
-		gap: 1rem;
-		flex: 1;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.75rem 1rem;
+		cursor: pointer;
+		transition: background 0.2s ease;
+	}
+
+	.citation-header:hover {
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
 	}
 
 	.citation-number {
 		font-weight: 600;
 		color: var(--color-primary);
-		min-width: 2rem;
+		font-size: 0.875rem;
+		flex-shrink: 0;
 	}
 
-	.citation-details {
+	.citation-chicago {
 		flex: 1;
-	}
-
-	.citation-title {
-		font-weight: 600;
-		margin-bottom: 0.5rem;
-		color: var(--color-text-primary);
-	}
-
-	.citation-formatted {
-		font-size: 0.9rem;
+		font-size: 0.875rem;
+		line-height: 1.5;
 		color: var(--color-text-secondary);
-		margin-bottom: 0.5rem;
-		line-height: 1.4;
+		font-style: italic;
+	}
+
+	.expand-toggle {
+		background: none;
+		border: none;
+		padding: 0.25rem;
+		cursor: pointer;
+		color: var(--color-text-secondary);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		transition: color 0.2s ease;
+	}
+
+	.expand-toggle:hover {
+		color: var(--color-primary);
+	}
+
+	.citation-expanded {
+		padding: 0 1rem 1rem 1rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+		animation: slideDown 0.2s ease;
+	}
+
+	@keyframes slideDown {
+		from {
+			opacity: 0;
+			transform: translateY(-8px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 
 	.citation-meta {
+		margin-top: 1rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
-		font-size: 0.85rem;
-		color: var(--color-text-secondary);
+		gap: 1rem;
+		font-size: 0.875rem;
 	}
 
-	.point-supported {
-		font-style: italic;
+	.meta-section {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
 	}
 
-	.relevant-quote {
-		font-style: italic;
+	.meta-section strong {
 		color: var(--color-text-primary);
+		font-size: 0.8125rem;
+		text-transform: uppercase;
+		letter-spacing: 0.025em;
+	}
+
+	.meta-section p {
+		margin: 0;
+		color: var(--color-text-secondary);
+		line-height: 1.6;
+	}
+
+	.meta-section blockquote {
+		margin: 0;
+		padding: 0.75rem 1rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+		border-left: 3px solid var(--color-primary);
+		border-radius: 0 var(--border-radius-sm) var(--border-radius-sm) 0;
+		color: var(--color-text-primary);
+		font-style: italic;
+		line-height: 1.6;
+	}
+
+	.meta-row {
+		display: flex;
+		gap: 0.5rem;
+		color: var(--color-text-secondary);
+		font-size: 0.875rem;
+	}
+
+	.meta-row strong {
+		color: var(--color-text-primary);
+		min-width: 80px;
 	}
 
 	.citation-actions {
 		display: flex;
 		gap: 0.5rem;
-		flex-shrink: 0;
-	}
-
-	.action-btn {
-		padding: 0.25rem 0.75rem;
-		font-size: 0.8rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface);
-		color: var(--color-text-primary);
-		border-radius: var(--border-radius-sm);
-		cursor: pointer;
-		transition: all 0.2s ease;
-	}
-
-	.action-btn:hover {
-		background: var(--color-surface-alt);
-		border-color: var(--color-primary);
-	}
-
-	.action-btn.danger:hover {
-		background: var(--color-error);
-		color: white;
-		border-color: var(--color-error);
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
 	}
 
 	.no-citations {

@@ -15,7 +15,9 @@
 		ANONYMIZE_DISCUSSION,
 		UNANONYMIZE_POST,
 		UNANONYMIZE_DISCUSSION,
-		GET_MY_PENDING_EDITORS_DESK_APPROVALS
+		GET_MY_PENDING_EDITORS_DESK_APPROVALS,
+		GET_DISCUSSION_CITATIONS,
+		LINK_CITATION_TO_DISCUSSION
 	} from '$lib/graphql/queries';
 	import { createDraftAutosaver, type DraftAutosaver } from '$lib';
 	import {
@@ -1200,6 +1202,46 @@
 
 				const updatedDraft = updateResult.data?.update_discussion_version_by_pk;
 				if (updatedDraft) {
+					// Check if draft already has citations
+					const existingCitationsResult = await nhost.graphql.request(
+						GET_DISCUSSION_CITATIONS,
+						{ discussion_version_id: existingDraft.id }
+					);
+
+					// If draft has no citations, copy from published version
+					if (!existingCitationsResult.data?.discussion_version_citation?.length) {
+						const publishedVersion = discussion.current_version?.[0];
+						if (publishedVersion) {
+							console.log('Draft has no citations, copying from published version:', publishedVersion.id);
+
+							// Get citations from published version
+							const citationsResult = await nhost.graphql.request(
+								GET_DISCUSSION_CITATIONS,
+								{ discussion_version_id: publishedVersion.id }
+							);
+
+							if (citationsResult.data?.discussion_version_citation) {
+								const citations = citationsResult.data.discussion_version_citation;
+								console.log('Found', citations.length, 'citations to copy to existing draft');
+
+								// Copy each citation link to the draft version
+								for (const dc of citations) {
+									await nhost.graphql.request(
+										LINK_CITATION_TO_DISCUSSION,
+										{
+											discussion_version_id: existingDraft.id,
+											citation_id: dc.citation.id,
+											citation_order: dc.citation_order,
+											custom_point_supported: dc.custom_point_supported,
+											custom_relevant_quote: dc.custom_relevant_quote
+										}
+									);
+								}
+								console.log('Copied citations to existing draft');
+							}
+						}
+					}
+
 					// Add the updated draft to the discussion object
 					if (!discussion.draft_version) {
 						discussion.draft_version = [];
@@ -1277,6 +1319,38 @@
 
 			const newDraft = (result as any).data?.insert_discussion_version_one;
 			if (newDraft) {
+				// Copy citations from the published version to the new draft
+				const publishedVersion = discussion.current_version?.[0];
+				if (publishedVersion) {
+					console.log('Copying citations from published version:', publishedVersion.id);
+
+					// Get citations from published version
+					const citationsResult = await nhost.graphql.request(
+						GET_DISCUSSION_CITATIONS,
+						{ discussion_version_id: publishedVersion.id }
+					);
+
+					if (citationsResult.data?.discussion_version_citation) {
+						const citations = citationsResult.data.discussion_version_citation;
+						console.log('Found', citations.length, 'citations to copy');
+
+						// Copy each citation link to the draft version
+						for (const dc of citations) {
+							await nhost.graphql.request(
+								LINK_CITATION_TO_DISCUSSION,
+								{
+									discussion_version_id: newDraft.id,
+									citation_id: dc.citation.id,
+									citation_order: dc.citation_order,
+									custom_point_supported: dc.custom_point_supported,
+									custom_relevant_quote: dc.custom_relevant_quote
+								}
+							);
+						}
+						console.log('Copied citations to draft');
+					}
+				}
+
 				// Add the new draft to the discussion object
 				if (!discussion.draft_version) {
 					discussion.draft_version = [];
@@ -1300,7 +1374,47 @@
 			const draftVersion = discussion?.draft_version?.[0];
 
 			if (draftVersion) {
-				// Draft already exists, navigate to it
+				// Draft already exists, check if it needs citations copied
+				const existingCitationsResult = await nhost.graphql.request(
+					GET_DISCUSSION_CITATIONS,
+					{ discussion_version_id: draftVersion.id }
+				);
+
+				// If draft has no citations, copy from published version before navigating
+				if (!existingCitationsResult.data?.discussion_version_citation?.length) {
+					const publishedVersion = discussion.current_version?.[0];
+					if (publishedVersion) {
+						console.log('[startEdit] Draft has no citations, copying from published version:', publishedVersion.id);
+
+						// Get citations from published version
+						const citationsResult = await nhost.graphql.request(
+							GET_DISCUSSION_CITATIONS,
+							{ discussion_version_id: publishedVersion.id }
+						);
+
+						if (citationsResult.data?.discussion_version_citation) {
+							const citations = citationsResult.data.discussion_version_citation;
+							console.log('[startEdit] Found', citations.length, 'citations to copy to draft');
+
+							// Copy each citation link to the draft version
+							for (const dc of citations) {
+								await nhost.graphql.request(
+									LINK_CITATION_TO_DISCUSSION,
+									{
+										discussion_version_id: draftVersion.id,
+										citation_id: dc.citation.id,
+										citation_order: dc.citation_order,
+										custom_point_supported: dc.custom_point_supported,
+										custom_relevant_quote: dc.custom_relevant_quote
+									}
+								);
+							}
+							console.log('[startEdit] Copied citations to draft');
+						}
+					}
+				}
+
+				// Navigate to the draft (with or without newly copied citations)
 				goto(`/discussions/${discussion.id}/draft/${draftVersion.id}`);
 				return;
 			}

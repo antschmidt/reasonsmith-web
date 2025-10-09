@@ -241,15 +241,16 @@
 <style>
 	.citation-form {
 		background: var(--color-surface);
-		border: 2px solid var(--color-primary);
-		border-radius: var(--border-radius-md);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: var(--border-radius-lg);
 		padding: 1.5rem;
 		margin: 1rem 0;
+		box-shadow: 0 4px 16px color-mix(in srgb, var(--color-primary) 10%, transparent);
 	}
 
 	.citation-form h4 {
 		margin: 0 0 1rem 0;
-		color: var(--color-primary);
+		color: var(--color-text-primary);
 		font-size: 1rem;
 		font-weight: 600;
 	}
@@ -283,80 +284,49 @@
 
 	.form-field input,
 	.form-field textarea {
-		padding: 0.5rem;
-		border: 1px solid var(--color-border);
-		border-radius: var(--border-radius-sm);
+		padding: 0.875rem 1rem;
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: 16px;
 		font: inherit;
-		background: var(--color-surface);
+		background: color-mix(in srgb, var(--color-input-bg) 60%, transparent);
 		color: var(--color-text-primary);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
 	.form-field input:focus,
 	.form-field textarea:focus {
 		outline: none;
 		border-color: var(--color-primary);
-		box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+		background: color-mix(in srgb, var(--color-input-bg) 80%, transparent);
+		box-shadow:
+			0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent),
+			0 4px 12px color-mix(in srgb, var(--color-primary) 8%, transparent);
+		transform: translateY(-1px);
 	}
 
 	.form-field input.error,
 	.form-field textarea.error {
-		border-color: #ef4444;
+		border-color: var(--color-error);
 	}
 
 	.field-help {
 		font-size: 0.75rem;
 		color: var(--color-text-secondary);
-		font-style: italic;
 	}
 
 	.error-text {
 		font-size: 0.75rem;
-		color: #ef4444;
+		color: var(--color-error);
 		margin-top: 0.25rem;
 	}
 
 	.form-actions {
 		display: flex;
-		gap: 0.75rem;
+		gap: 1rem;
 		margin-top: 1.5rem;
 	}
 
-	.btn-primary {
-		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-		color: var(--color-primary);
-		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
-		padding: 0.75rem 1.5rem;
-		border-radius: 8px;
-		font-size: 0.875rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: all 0.2s ease;
-	}
-
-	.btn-primary:hover {
-		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
-		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
-	}
-
-	.btn-secondary {
-		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-		backdrop-filter: blur(10px);
-		color: var(--color-text-primary);
-		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		padding: 0.75rem 1.5rem;
-		border-radius: 8px;
-		font-size: 0.875rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: all 0.2s ease;
-	}
-
-	.btn-secondary:hover {
-		border-color: var(--color-primary);
-		background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
-	}
-
-	@media (max-width: 640px) {
+	@media (max-width: 768px) {
 		.form-grid {
 			grid-template-columns: 1fr;
 		}
