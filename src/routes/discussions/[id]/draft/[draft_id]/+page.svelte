@@ -534,7 +534,6 @@
 							relevant_quote: citation.relevant_quote
 						}
 					);
-					console.log('Update result:', updateResult);
 
 					if (updateResult.error) {
 						console.error('Failed to update citation:', updateResult.error);
