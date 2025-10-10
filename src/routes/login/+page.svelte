@@ -424,7 +424,7 @@
 
 	.auth-tab.active {
 		background: var(--color-primary);
-		color: white;
+		color: rgb(0, 0, 0);
 	}
 
 	.auth-tab:not(.active):hover {

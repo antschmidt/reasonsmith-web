@@ -1489,6 +1489,22 @@ export const MARK_ALL_NOTIFICATIONS_AS_READ = gql`
 	}
 `;
 
+export const DELETE_NOTIFICATION = gql`
+	mutation DeleteNotification($notificationId: uuid!) {
+		delete_notification_by_pk(id: $notificationId) {
+			id
+		}
+	}
+`;
+
+export const DELETE_ALL_NOTIFICATIONS = gql`
+	mutation DeleteAllNotifications($userId: uuid!) {
+		delete_notification(where: { recipient_id: { _eq: $userId } }) {
+			affected_rows
+		}
+	}
+`;
+
 // Editors' Desk Pick queries and mutations
 // Basic fragment for anonymous/public users - no relationships
 const EDITORS_DESK_PICK_FIELDS = gql`

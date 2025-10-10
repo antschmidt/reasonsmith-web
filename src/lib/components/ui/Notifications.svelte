@@ -4,7 +4,9 @@
 		GET_NOTIFICATIONS,
 		GET_UNREAD_NOTIFICATION_COUNT,
 		MARK_NOTIFICATION_AS_READ,
-		MARK_ALL_NOTIFICATIONS_AS_READ
+		MARK_ALL_NOTIFICATIONS_AS_READ,
+		DELETE_NOTIFICATION,
+		DELETE_ALL_NOTIFICATIONS
 	} from '$lib/graphql/queries';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -121,6 +123,48 @@
 		return date.toLocaleDateString();
 	}
 
+	async function deleteNotification(notificationId: string, event: Event) {
+		event.stopPropagation(); // Prevent notification click navigation
+
+		try {
+			// Check if the notification was unread before deleting
+			const wasUnread = notifications.find((n) => n.id === notificationId && !n.read);
+
+			const result = await nhost.graphql.request(DELETE_NOTIFICATION, {
+				notificationId
+			});
+
+			if (!result.error) {
+				// Remove from local state
+				notifications = notifications.filter((n) => n.id !== notificationId);
+				// Update unread count if the deleted notification was unread
+				if (wasUnread) {
+					unreadCount = Math.max(0, unreadCount - 1);
+				}
+			}
+		} catch (err) {
+			console.error('Error deleting notification:', err);
+		}
+	}
+
+	async function deleteAllNotifications() {
+		if (!confirm('Are you sure you want to delete all notifications? This cannot be undone.')) {
+			return;
+		}
+
+		try {
+			const result = await nhost.graphql.request(DELETE_ALL_NOTIFICATIONS, { userId });
+
+			if (!result.error) {
+				// Clear local state
+				notifications = [];
+				unreadCount = 0;
+			}
+		} catch (err) {
+			console.error('Error deleting all notifications:', err);
+		}
+	}
+
 	async function handleNotificationClick(notification: (typeof notifications)[0]) {
 		if (!notification.read) {
 			markAsRead(notification.id);
@@ -149,10 +193,17 @@
 				<span class="unread-badge">{unreadCount}</span>
 			{/if}
 		</h3>
-		{#if notifications.length > 0 && unreadCount > 0}
-			<button type="button" class="mark-all-read-btn" onclick={markAllAsRead}>
-				Mark all as read
-			</button>
+		{#if notifications.length > 0}
+			<div class="header-actions">
+				{#if unreadCount > 0}
+					<button type="button" class="action-btn" onclick={markAllAsRead}>
+						Mark all as read
+					</button>
+				{/if}
+				<button type="button" class="action-btn delete-all-btn" onclick={deleteAllNotifications}>
+					Delete all
+				</button>
+			</div>
 		{/if}
 	</div>
 
@@ -165,19 +216,44 @@
 	{:else}
 		<div class="notifications-list">
 			{#each notifications as notification}
-				<button
-					type="button"
-					class="notification-item {notification.read ? 'read' : 'unread'}"
-					onclick={() => handleNotificationClick(notification)}
-				>
-					<div class="notification-content">
-						<p class="notification-message">{getNotificationMessage(notification)}</p>
-						<span class="notification-time">{formatTimeAgo(notification.created_at)}</span>
-					</div>
-					{#if !notification.read}
-						<span class="unread-indicator" aria-label="Unread"></span>
-					{/if}
-				</button>
+				<div class="notification-wrapper">
+					<button
+						type="button"
+						class="notification-item {notification.read ? 'read' : 'unread'}"
+						onclick={() => handleNotificationClick(notification)}
+					>
+						<div class="notification-content">
+							<p class="notification-message">{getNotificationMessage(notification)}</p>
+							<span class="notification-time">{formatTimeAgo(notification.created_at)}</span>
+						</div>
+						{#if !notification.read}
+							<span class="unread-indicator" aria-label="Unread"></span>
+						{/if}
+					</button>
+					<button
+						type="button"
+						class="delete-btn"
+						onclick={(e) => deleteNotification(notification.id, e)}
+						aria-label="Delete notification"
+						title="Delete notification"
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
+							fill="none"
+							xmlns="http://www.w3.org/2000/svg"
+						>
+							<path
+								d="M6 2h4M2 4h12M13 4l-.5 8.5a1 1 0 01-1 .9h-7a1 1 0 01-1-.9L3 4M6.5 7v4M9.5 7v4"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+					</button>
+				</div>
 			{/each}
 		</div>
 	{/if}
@@ -221,7 +297,12 @@
 		text-align: center;
 	}
 
-	.mark-all-read-btn {
+	.header-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.action-btn {
 		background: transparent;
 		border: 1px solid var(--color-border);
 		border-radius: var(--border-radius-sm);
@@ -230,12 +311,19 @@
 		color: var(--color-text-secondary);
 		cursor: pointer;
 		transition: all 0.2s ease;
+		white-space: nowrap;
 	}
 
-	.mark-all-read-btn:hover {
+	.action-btn:hover {
 		border-color: var(--color-primary);
 		color: var(--color-primary);
 		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+	}
+
+	.delete-all-btn:hover {
+		border-color: var(--color-accent);
+		color: var(--color-accent);
+		background: color-mix(in srgb, var(--color-accent) 5%, transparent);
 	}
 
 	.notifications-message,
@@ -256,19 +344,28 @@
 		gap: 0;
 	}
 
+	.notification-wrapper {
+		display: flex;
+		align-items: stretch;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+	}
+
+	.notification-wrapper:last-child {
+		border-bottom: none;
+	}
+
 	.notification-item {
+		flex: 1;
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-md);
 		padding: var(--space-md);
 		border: none;
-		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 		background: transparent;
 		cursor: pointer;
 		transition: all 0.2s ease;
 		text-align: left;
-		width: 100%;
 	}
 
 	.notification-item:hover {
@@ -312,7 +409,34 @@
 		flex-shrink: 0;
 	}
 
+	.delete-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: var(--space-md);
+		border: none;
+		background: transparent;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		transition: all 0.2s ease;
+		opacity: 0;
+		flex-shrink: 0;
+	}
+
+	.notification-wrapper:hover .delete-btn {
+		opacity: 1;
+	}
+
+	.delete-btn:hover {
+		color: var(--color-accent);
+		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+	}
+
 	@media (max-width: 768px) {
+		.delete-btn {
+			opacity: 1; /* Always visible on mobile */
+			padding: var(--space-sm);
+		}
 		.notifications-container {
 			padding: var(--space-md);
 		}
@@ -321,7 +445,7 @@
 			padding: var(--space-sm) var(--space-md);
 		}
 
-		.mark-all-read-btn {
+		.action-btn {
 			font-size: 0.75rem;
 			padding: 0.25rem 0.5rem;
 		}

@@ -179,7 +179,6 @@
 		position: relative;
 		border-radius: var(--border-radius-xl);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		/* background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent); */
 		backdrop-filter: blur(20px) saturate(1.2);
 		box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 8%, transparent);
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -193,17 +192,6 @@
 		padding: 2rem;
 		color: inherit;
 		text-decoration: none;
-	}
-
-	.carousel-card::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		height: 3px;
-		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-		border-radius: var(--border-radius-xl) var(--border-radius-xl) 0 0;
 	}
 
 	.carousel-card:hover {
@@ -221,7 +209,6 @@
 	.card-header {
 		display: flex;
 		flex-direction: column;
-		/* gap: 0.15rem; */
 	}
 
 	.card-header h3 {
@@ -247,7 +234,7 @@
 	}
 
 	.analysis-summary {
-		margin: 0;
+		margin: 0 -1rem;
 		text-align: left;
 		font-size: 0.9rem;
 		min-height: 8rem;

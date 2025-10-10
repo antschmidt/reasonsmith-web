@@ -210,10 +210,17 @@ export function debugAdminRequest(operation: string) {
 // Correct constraint name (user_pkey) per contributor_constraint enum
 // Important: do NOT overwrite an existing display_name on conflict.
 // Only update the email; keep display_name as user-configured value.
+// Set analysis_limit to 10 for new users (database trigger handles signup bonus)
 const UPSERT_CONTRIBUTOR = `
   mutation UpsertContributor($id: uuid!, $display_name: String, $email: String) {
     insert_contributor_one(
-      object: { id: $id, display_name: $display_name, email: $email },
+      object: {
+        id: $id,
+        display_name: $display_name,
+        email: $email,
+        analysis_limit: 10,
+        analysis_enabled: true
+      },
       on_conflict: { constraint: user_pkey, update_columns: [email] }
     ) { id }
   }

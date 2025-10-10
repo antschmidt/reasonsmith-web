@@ -241,13 +241,6 @@
 					<p class="section-empty">No fact-checkable claims were highlighted.</p>
 				{/if}
 			</section>
-
-			{#if item.analysis}
-				<details class="raw-analysis">
-					<summary>View raw analysis JSON</summary>
-					<pre><code>{item.analysis}</code></pre>
-				</details>
-			{/if}
 		{:else if item.analysis}
 			<section class="section">
 				<h2>Analysis</h2>
@@ -737,38 +730,6 @@
 
 	.fact-card.verdict-unverified:hover {
 		box-shadow: 0 20px 50px color-mix(in srgb, var(--color-primary) 15%, transparent);
-	}
-
-	.raw-analysis {
-		margin-top: 3rem;
-		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
-		backdrop-filter: blur(10px);
-		border-radius: 20px;
-		padding: 1.5rem;
-		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-	}
-
-	.raw-analysis summary {
-		cursor: pointer;
-		font-weight: 600;
-		color: var(--color-primary);
-		font-size: 1.1rem;
-		transition: color 0.2s ease;
-	}
-
-	.raw-analysis summary:hover {
-		color: var(--color-accent);
-	}
-
-	.raw-analysis pre {
-		margin-top: 1.5rem;
-		padding: 1.5rem;
-		background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
-		border-radius: 16px;
-		overflow-x: auto;
-		font-size: 0.9rem;
-		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		box-shadow: inset 0 2px 8px color-mix(in srgb, var(--color-primary) 5%, transparent);
 	}
 
 	.section-body :global(br) {

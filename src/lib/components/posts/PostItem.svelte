@@ -759,11 +759,6 @@
 		padding: 0.5rem 0.875rem;
 		border-radius: 999px;
 		background: var(--color-surface);
-		/* border removed as 0px width makes it invisible */
-		color: var(--color-text-secondary);
-		/* box-shadow:
-			0 1px 3px rgba(15, 23, 42, 0.08),
-			0 0 0 1px color-mix(in srgb, var(--color-border) 50%, transparent); */
 		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
