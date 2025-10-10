@@ -306,7 +306,6 @@ input::placeholder {
 	background: color-mix(in srgb, var(--color-surface) 80%, transparent);
 	border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
 	border-radius: 24px;
-	/* padding: clamp(1rem, 4vw, 2rem); */
 	box-shadow: 0 12px 35px color-mix(in srgb, var(--color-primary) 10%, transparent);
 	backdrop-filter: blur(16px) saturate(1.15);
 	position: relative;

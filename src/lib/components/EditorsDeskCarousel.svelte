@@ -88,7 +88,6 @@
 						<header class="card-header">
 							<div class="meta-tags">
 								<span class="editors-badge">Editors' Desk</span>
-								<!-- <span>{getCuratorName(item.userByCuratorId || item.curator)}</span> -->
 								<span>{new Date(item.created_at).toLocaleDateString()}</span>
 							</div>
 							<h3>{item.title}</h3>
@@ -193,17 +192,6 @@
 		width: 100%;
 		cursor: pointer;
 	}
-
-	/* .carousel-card::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		height: 0px;
-		background: linear-gradient(90deg, var(--color-accent), var(--color-primary));
-		border-radius: var(--border-radius-xl) var(--border-radius-xl) 0 0;
-	} */
 
 	.carousel-card:hover {
 		transform: translateY(-8px);
