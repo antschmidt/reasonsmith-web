@@ -234,7 +234,7 @@
 	}
 
 	.analysis-summary {
-		margin: 0 -1rem 0 -1rem;
+		margin: 0 -1rem;
 		text-align: left;
 		font-size: 0.9rem;
 		min-height: 8rem;
