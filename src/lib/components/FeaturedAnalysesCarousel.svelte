@@ -195,7 +195,7 @@
 		text-decoration: none;
 	}
 
-	.carousel-card::before {
+	/* .carousel-card::before {
 		content: '';
 		position: absolute;
 		top: 0;
@@ -204,7 +204,7 @@
 		height: 3px;
 		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
 		border-radius: var(--border-radius-xl) var(--border-radius-xl) 0 0;
-	}
+	} */
 
 	.carousel-card:hover {
 		transform: translateY(-8px);
@@ -247,7 +247,7 @@
 	}
 
 	.analysis-summary {
-		margin: 0;
+		margin: 0 -1rem 0 -1rem;
 		text-align: left;
 		font-size: 0.9rem;
 		min-height: 8rem;

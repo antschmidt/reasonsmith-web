@@ -84,15 +84,11 @@
 		<div class="carousel-viewport" bind:this={viewport} role="list" onscroll={updateScrollState}>
 			{#each items as item (item.id)}
 				<div role="listitem" class="carousel-card">
-					<button
-						class="card-link"
-						onclick={() => handleCardClick(item)}
-						type="button"
-					>
+					<button class="card-link" onclick={() => handleCardClick(item)} type="button">
 						<header class="card-header">
 							<div class="meta-tags">
 								<span class="editors-badge">Editors' Desk</span>
-								<span>{getCuratorName(item.userByCuratorId || item.curator)}</span>
+								<!-- <span>{getCuratorName(item.userByCuratorId || item.curator)}</span> -->
 								<span>{new Date(item.created_at).toLocaleDateString()}</span>
 							</div>
 							<h3>{item.title}</h3>
@@ -188,7 +184,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
-		padding: 2rem;
+		padding: 1rem;
 		color: inherit;
 		text-decoration: none;
 		background: transparent;
@@ -198,16 +194,16 @@
 		cursor: pointer;
 	}
 
-	.carousel-card::before {
+	/* .carousel-card::before {
 		content: '';
 		position: absolute;
 		top: 0;
 		left: 0;
 		right: 0;
-		height: 4px;
+		height: 0px;
 		background: linear-gradient(90deg, var(--color-accent), var(--color-primary));
 		border-radius: var(--border-radius-xl) var(--border-radius-xl) 0 0;
-	}
+	} */
 
 	.carousel-card:hover {
 		transform: translateY(-8px);
@@ -290,8 +286,8 @@
 	}
 
 	.editors-badge {
-		background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
-		color: white;
+		background: linear-gradient(135deg, #575858, var(--color-primary));
+		color: #000000;
 		padding: 0.25rem 0.6rem;
 		border-radius: var(--border-radius-sm);
 		font-size: 0.7rem;
