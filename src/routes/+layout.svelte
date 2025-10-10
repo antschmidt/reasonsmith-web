@@ -113,6 +113,8 @@
 
 	// Check if we're on the profile page
 	$: isProfilePage = $page.url.pathname === '/profile';
+	// Check if we're on the login page
+	$: isLoginPage = $page.url.pathname === '/login';
 </script>
 
 {#if user}
@@ -187,9 +189,11 @@
 			<span class="sr-only">Home</span>
 		</a>
 		<div class="nav-spacer"></div>
-		<div class="nav-actions">
-			<a href="/login" class="login-button">Login</a>
-		</div>
+		{#if !isLoginPage}
+			<div class="nav-actions">
+				<a href="/login" class="login-button">Login</a>
+			</div>
+		{/if}
 	</nav>
 {/if}
 
