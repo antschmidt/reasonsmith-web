@@ -10,7 +10,7 @@ import { print, type DocumentNode } from 'graphql';
  */
 const getHasuraConfig = () => {
 	const endpoint = privateEnv.GRAPHQL_URL || privateEnv.HASURA_GRAPHQL_ENDPOINT || '';
-	const adminSecret = privateEnv.HASURA_ADMIN_SECRET || '';
+	const adminSecret = privateEnv.HASURA_GRAPHQL_ADMIN_SECRET || '';
 	return { endpoint, adminSecret };
 };
 

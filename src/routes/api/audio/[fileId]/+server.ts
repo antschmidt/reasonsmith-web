@@ -11,10 +11,10 @@ export async function GET({ params, request }) {
 		}
 
 		// Use admin secret for server-side authentication
-		const adminSecret = env.HASURA_ADMIN_SECRET;
+		const adminSecret = env.HASURA_GRAPHQL_ADMIN_SECRET;
 
 		if (!adminSecret) {
-			logger.error('HASURA_ADMIN_SECRET environment variable is not set');
+			logger.error('HASURA_GRAPHQL_ADMIN_SECRET environment variable is not set');
 			throw error(500, 'Server configuration error');
 		}
 

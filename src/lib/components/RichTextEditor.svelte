@@ -283,7 +283,7 @@
 					onclick={toggleCodeBlock}
 					title="Code Block"
 				>
-					{ }
+					{"{ }"}
 				</button>
 			</div>
 
