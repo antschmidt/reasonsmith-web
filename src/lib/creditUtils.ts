@@ -1,6 +1,7 @@
 import { print } from 'graphql';
 import { RESET_ANALYSIS_USAGE } from '$lib/graphql/queries';
-import { hasAdminAccess } from '$lib/permissions';
+import { hasAdminAccess, type UserRole } from '$lib/permissions';
+import { logger } from '$lib/logger';
 
 /**
  * Checks if a contributor's monthly credits need to be reset.
@@ -40,7 +41,7 @@ export async function resetMonthlyCredits(
 		} else if (accessToken) {
 			headers['Authorization'] = `Bearer ${accessToken}`;
 		} else {
-			console.error('No authentication method provided for reset');
+			logger.error('No authentication method provided for reset');
 			return false;
 		}
 
@@ -56,14 +57,14 @@ export async function resetMonthlyCredits(
 		const result = await response.json();
 
 		if (result.errors) {
-			console.error('Failed to reset monthly credits:', result.errors);
+			logger.error('Failed to reset monthly credits:', result.errors);
 			return false;
 		}
 
-		console.log(`Monthly credits reset for contributor ${contributorId}`);
+		logger.info(`Monthly credits reset for contributor ${contributorId}`);
 		return true;
 	} catch (error) {
-		console.error('Error resetting monthly credits:', error);
+		logger.error('Error resetting monthly credits:', error);
 		return false;
 	}
 }
@@ -92,12 +93,13 @@ export async function checkAndResetMonthlyCredits(
  * Takes into account whether a reset is needed.
  */
 export function getMonthlyCreditsRemaining(contributor: {
+	id?: string;
 	analysis_limit?: number | null;
 	monthly_credits_remaining?: number | null;
 	analysis_count_used?: number;
 	analysis_count_reset_at?: string | null;
 	monthly_credits_reset_at?: string | null;
-	role?: string;
+	role?: UserRole;
 }): number {
 	// Check for unlimited access
 	if (hasAdminAccess(contributor)) {
@@ -155,8 +157,9 @@ export function getPurchasedCreditsRemaining(contributor: {
  * Also considers whether monthly credits need to be reset.
  */
 export function canUseAnalysis(contributor: {
+	id?: string;
 	analysis_enabled: boolean;
-	role: string;
+	role: UserRole;
 	analysis_limit: number | null;
 	analysis_count_used: number;
 	analysis_count_reset_at: string | null;
@@ -188,7 +191,8 @@ export function canUseAnalysis(contributor: {
  * Returns true if monthly credits are exhausted and purchased credits will be used.
  */
 export function willUsePurchasedCredit(contributor: {
-	role: string;
+	id?: string;
+	role: UserRole;
 	analysis_limit: number | null;
 	analysis_count_used: number;
 	analysis_count_reset_at: string | null;

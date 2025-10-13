@@ -13,8 +13,8 @@ export type Contributor = {
 /**
  * Check if a user has admin-level access (admin or slartibartfast)
  */
-export function hasAdminAccess(contributor: Contributor | null | undefined): boolean {
-	if (!contributor) return false;
+export function hasAdminAccess(contributor: Partial<Contributor> | null | undefined): boolean {
+	if (!contributor || !contributor.role) return false;
 	return ['admin', 'slartibartfast'].includes(contributor.role);
 }
 

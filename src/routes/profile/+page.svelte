@@ -32,6 +32,7 @@
 		if (user && !fetching) {
 			profilePath = `/u/${user.id}`;
 			await loadProfile();
+			await loadAuthProviders();
 		}
 	});
 	let loading = false;
@@ -48,6 +49,37 @@
 	let password = '';
 	let authError: string | null = null;
 	let magicLinkSent = false;
+
+	// Security settings state
+	let showAddPassword = false;
+	let showChangePassword = false;
+	let hasPasswordAuth = false;
+	let newPassword = '';
+	let confirmPassword = '';
+	let currentPassword = '';
+	let newPasswordEmail = '';
+	let passwordError: string | null = null;
+	let passwordSuccess: string | null = null;
+	let addingPassword = false;
+	let changingPassword = false;
+	let authProviders: string[] = [];
+	let loadingProviders = false;
+
+	// WebAuthn state
+	let showAddSecurityKey = false;
+	let securityKeyName = '';
+	let securityKeyError: string | null = null;
+	let securityKeySuccess: string | null = null;
+	let addingSecurityKey = false;
+	let securityKeys: any[] = [];
+
+	// Email change state
+	let showChangeEmail = false;
+	let newEmail = '';
+	let emailChangeError: string | null = null;
+	let emailChangeSuccess: string | null = null;
+	let changingEmail = false;
+	let emailVerificationSent = false;
 
 	let editing = false;
 
@@ -98,6 +130,7 @@
         purchased_credits_used
         subscription_tier
         avatar_url
+        has_password_auth
       }
       discussion(where: { created_by: { _eq: $id } }, order_by: { created_at: desc }) {
         id
@@ -125,6 +158,67 @@
         status
         post_type
         draft_content
+      }
+    }
+  `;
+
+	// Fallback query without has_password_auth for when schema cache hasn't updated
+	const GET_FULL_PROFILE_FALLBACK = `
+    query GetFullProfile($id: uuid!) {
+      contributor_by_pk(id: $id) {
+        id
+        auth_email
+        display_name
+        handle
+        bio
+        website
+        social_links
+        role
+        analysis_enabled
+        analysis_limit
+        analysis_count_used
+        analysis_count_reset_at
+        purchased_credits_total
+        purchased_credits_used
+        subscription_tier
+        avatar_url
+      }
+      discussion(where: { created_by: { _eq: $id } }, order_by: { created_at: desc }) {
+        id
+        created_at
+        current_version: discussion_versions(
+          where: { version_type: { _eq: "published" } }
+          order_by: { version_number: desc }
+          limit: 1
+        ) {
+          title
+        }
+        draft_version: discussion_versions(
+          where: { version_type: { _eq: "draft" } }
+          order_by: { created_at: desc }
+          limit: 1
+        ) {
+          title
+        }
+      }
+      post(where: { author_id: { _eq: $id }, status: { _in: ["approved", "draft"] } }, order_by: { status: asc, created_at: desc }) {
+        id
+        discussion_id
+        created_at
+        content
+        status
+        post_type
+        draft_content
+      }
+    }
+  `;
+
+	// Separate query to fetch just has_password_auth - used when main query fails due to schema cache
+	const GET_PASSWORD_AUTH_STATUS = `
+    query GetPasswordAuthStatus($id: uuid!) {
+      contributor_by_pk(id: $id) {
+        id
+        has_password_auth
       }
     }
   `;
@@ -301,13 +395,29 @@
 		statsLoading = true;
 		error = null;
 		try {
-			const [profileResult, statsResult] = await Promise.all([
+			let profileResult;
+			let statsResult;
+
+			// Try with the full query first
+			[profileResult, statsResult] = await Promise.all([
 				nhost.graphql.request(GET_FULL_PROFILE, { id: user.id }),
 				nhost.graphql.request(GET_USER_STATS, { userId: user.id })
 			]);
 
+			// If there's an error about has_password_auth, retry with fallback query
 			if (profileResult.error) {
-				throw new Error(extractGqlError(profileResult.error));
+				const errorMsg = extractGqlError(profileResult.error);
+				if (errorMsg.includes('has_password_auth')) {
+					console.warn('has_password_auth field not available, using fallback query');
+					hasPasswordAuth = false;
+					// Retry with fallback query that doesn't include has_password_auth
+					profileResult = await nhost.graphql.request(GET_FULL_PROFILE_FALLBACK, { id: user.id });
+					if (profileResult.error) {
+						throw new Error(extractGqlError(profileResult.error));
+					}
+				} else {
+					throw new Error(errorMsg);
+				}
 			}
 
 			const data = profileResult.data as any;
@@ -325,7 +435,15 @@
 				await ensureContributor();
 				const retry = await nhost.graphql.request(GET_FULL_PROFILE, { id: user.id });
 				if (retry.error) {
-					throw new Error(extractGqlError(retry.error));
+					const retryErrorMsg = extractGqlError(retry.error);
+					// If the error is about has_password_auth field, it's a schema cache issue
+					if (retryErrorMsg.includes('has_password_auth')) {
+						console.warn('has_password_auth field not available on retry, defaulting to false');
+						hasPasswordAuth = false;
+						// Continue without throwing
+					} else {
+						throw new Error(retryErrorMsg);
+					}
 				}
 				const retryData = retry.data as any;
 				contributor = retryData?.contributor_by_pk ?? null;
@@ -341,6 +459,24 @@
 
 			syncFormFields();
 
+			// Set password auth status from contributor data
+			hasPasswordAuth = contributor?.has_password_auth || false;
+
+			// If has_password_auth wasn't in the data (due to schema cache), try fetching it separately
+			// Check if field is missing (undefined) or if we know we used the fallback query
+			const hasPasswordAuthMissing = contributor && !('has_password_auth' in contributor);
+			console.log('Checking has_password_auth presence:', {
+				hasField: 'has_password_auth' in (contributor || {}),
+				value: contributor?.has_password_auth,
+				willFetchSeparately: hasPasswordAuthMissing
+			});
+
+			if (hasPasswordAuthMissing) {
+				console.log('has_password_auth field missing due to schema cache - will show correct value after page refresh');
+				// Schema cache issue - the field will appear correctly after a page reload
+				// when the GraphQL schema cache has been updated
+			}
+
 			if (statsResult.error) {
 				console.warn('Failed to load user stats:', statsResult.error);
 			} else if (statsResult.data) {
@@ -353,6 +489,36 @@
 			statsLoading = false;
 			if (!authEmail) authEmail = user?.email || '';
 		}
+	}
+
+	async function loadAuthProviders() {
+		if (!user) return;
+		loadingProviders = true;
+		try {
+			const response = await fetch(`/api/checkAuthMethods?userId=${user.id}`);
+			if (response.ok) {
+				const data = await response.json();
+				authProviders = data.providers || [];
+			}
+		} catch (e) {
+			console.error('Failed to load auth providers:', e);
+		} finally {
+			loadingProviders = false;
+		}
+	}
+
+	function getProviderInfo(providerId: string): { name: string; icon: string } {
+		const providers: Record<string, { name: string; icon: string }> = {
+			'email': { name: 'Email/Password', icon: '🔐' },
+			'email-password': { name: 'Email/Password', icon: '🔐' },
+			'github': { name: 'GitHub', icon: '🐙' },
+			'google': { name: 'Google', icon: '🔵' },
+			'apple': { name: 'Apple', icon: '🍎' },
+			'facebook': { name: 'Facebook', icon: '📘' },
+			'linkedin': { name: 'LinkedIn', icon: '💼' },
+			'twitter': { name: 'Twitter', icon: '🐦' }
+		};
+		return providers[providerId] || { name: providerId, icon: '🔑' };
 	}
 
 	function normUrl(u: string) {
@@ -538,6 +704,349 @@
 			}
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function handleAddPassword() {
+		passwordError = null;
+		passwordSuccess = null;
+
+		// Validation
+		if (!newPassword || !confirmPassword) {
+			passwordError = 'Please fill in all password fields.';
+			return;
+		}
+
+		if (newPassword.length < 8) {
+			passwordError = 'Password must be at least 8 characters long.';
+			return;
+		}
+
+		if (newPassword !== confirmPassword) {
+			passwordError = 'Passwords do not match.';
+			return;
+		}
+
+		addingPassword = true;
+
+		try {
+			// Use the email from the user object or the entered email
+			const emailToUse = user?.email || newPasswordEmail;
+
+			if (!emailToUse) {
+				passwordError = 'Email is required to set up password authentication.';
+				return;
+			}
+
+			// Nhost approach: Use the changePassword method if available, or create a GraphQL mutation
+			// Since we're adding a password to an OAuth account, we'll use a GraphQL mutation
+			const SET_PASSWORD_MUTATION = `
+				mutation SetPassword($userId: uuid!, $passwordHash: String!) {
+					update_auth_users_by_pk(
+						pk_columns: { id: $userId }
+						_set: { password_hash: $passwordHash }
+					) {
+						id
+					}
+				}
+			`;
+
+			// For Nhost, we can use the auth API to change password
+			// This requires the user to be authenticated
+			const result = await nhost.auth.changePassword({
+				newPassword: newPassword
+			});
+
+			if (result.error) {
+				throw new Error(result.error.message || 'Failed to add password');
+			}
+
+			passwordSuccess = 'Password authentication added successfully! You can now sign in with email and password.';
+
+			// Re-check password auth status to update UI
+			await checkPasswordAuth();
+			// Reload auth providers to show the updated list
+			await loadAuthProviders();
+
+			// Clear form
+			newPassword = '';
+			confirmPassword = '';
+
+			// Hide form after success
+			setTimeout(() => {
+				showAddPassword = false;
+				passwordSuccess = null;
+			}, 3000);
+
+		} catch (err: any) {
+			console.error('Error adding password:', err);
+			passwordError = err?.message || 'Failed to add password. Please try again.';
+		} finally {
+			addingPassword = false;
+		}
+	}
+
+	async function handleChangePassword() {
+		passwordError = null;
+		passwordSuccess = null;
+
+		// Validation
+		if (!currentPassword || !newPassword || !confirmPassword) {
+			passwordError = 'Please fill in all password fields.';
+			return;
+		}
+
+		if (newPassword.length < 8) {
+			passwordError = 'New password must be at least 8 characters long.';
+			return;
+		}
+
+		if (newPassword !== confirmPassword) {
+			passwordError = 'New passwords do not match.';
+			return;
+		}
+
+		if (currentPassword === newPassword) {
+			passwordError = 'New password must be different from current password.';
+			return;
+		}
+
+		changingPassword = true;
+
+		try {
+			// Use Nhost's changePassword API
+			const result = await nhost.auth.changePassword({
+				newPassword: newPassword
+			});
+
+			if (result.error) {
+				throw new Error(result.error.message || 'Failed to change password');
+			}
+
+			passwordSuccess = 'Password changed successfully!';
+
+			// Clear form
+			currentPassword = '';
+			newPassword = '';
+			confirmPassword = '';
+
+			// Hide form after success
+			setTimeout(() => {
+				showChangePassword = false;
+				passwordSuccess = null;
+			}, 3000);
+
+		} catch (err: any) {
+			console.error('Error changing password:', err);
+			passwordError = err?.message || 'Failed to change password. Please try again.';
+		} finally {
+			changingPassword = false;
+		}
+	}
+
+	// Check if user has password authentication enabled
+	// This is now handled by loadProfile() which gets has_password_auth from contributor table
+	async function checkPasswordAuth() {
+		if (!user || !contributor) return;
+
+		// Simply reload the profile to get updated has_password_auth status
+		await loadProfile();
+	}
+
+	// WebAuthn: Add security key
+	async function handleAddSecurityKey() {
+		securityKeyError = null;
+		securityKeySuccess = null;
+
+		if (!securityKeyName || securityKeyName.trim().length === 0) {
+			securityKeyError = 'Please enter a name for your security key.';
+			return;
+		}
+
+		addingSecurityKey = true;
+
+		try {
+			// Check for WebAuthn support
+			if (!window.PublicKeyCredential) {
+				throw new Error('Your browser does not support WebAuthn/FIDO2 security keys.');
+			}
+
+			if (!window.isSecureContext) {
+				throw new Error('WebAuthn requires HTTPS. Please access the site via https:// or localhost.');
+			}
+
+			if (!navigator.credentials || !navigator.credentials.create) {
+				throw new Error('WebAuthn Credentials API is not available in this browser.');
+			}
+
+			// Step 1: Request WebAuthn registration challenge from Nhost
+			const accessToken = await nhost.auth.getAccessToken();
+			if (!accessToken) {
+				throw new Error('You must be logged in to add a security key');
+			}
+
+			// Construct Nhost auth URL
+			const subdomain = publicEnv.PUBLIC_NHOST_SUBDOMAIN;
+			const region = publicEnv.PUBLIC_NHOST_REGION;
+			if (!subdomain || !region) {
+				throw new Error('Nhost configuration is missing');
+			}
+			const nhostAuthUrl = `https://${subdomain}.auth.${region}.nhost.run`;
+
+			const challengeResponse = await fetch(
+				`${nhostAuthUrl}/v1/user/webauthn/add`,
+				{
+					method: 'POST',
+					headers: {
+						'Authorization': `Bearer ${accessToken}`,
+						'Content-Type': 'application/json'
+					}
+				}
+			);
+
+			if (!challengeResponse.ok) {
+				throw new Error('Failed to start security key registration');
+			}
+
+			const challenge = await challengeResponse.json();
+
+			// Helper to convert base64url to Uint8Array
+			const base64urlToUint8Array = (base64url: string) => {
+				const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+				const binary = atob(base64);
+				return Uint8Array.from(binary, c => c.charCodeAt(0));
+			};
+
+			// Step 2: Create WebAuthn credential using browser API
+			// Convert the challenge and user.id from base64url strings to Uint8Array
+			const publicKeyOptions = {
+				...challenge,
+				challenge: base64urlToUint8Array(challenge.challenge),
+				user: {
+					...challenge.user,
+					id: base64urlToUint8Array(challenge.user.id)
+				}
+				// Note: Using Nhost's rp.id as-is, which means you need to access the site
+				// via the domain that matches what Nhost expects (see console log above)
+			};
+
+			const publicKeyCredential = await navigator.credentials.create({
+				publicKey: publicKeyOptions
+			}) as PublicKeyCredential;
+
+			if (!publicKeyCredential) {
+				throw new Error('Failed to create security key credential');
+			}
+
+			// Step 3: Verify the credential with Nhost
+			const credential = publicKeyCredential.response as AuthenticatorAttestationResponse;
+			const verifyResponse = await fetch(
+				`${nhostAuthUrl}/v1/user/webauthn/verify`,
+				{
+					method: 'POST',
+					headers: {
+						'Authorization': `Bearer ${accessToken}`,
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						credential: {
+							id: publicKeyCredential.id,
+							rawId: btoa(String.fromCharCode(...new Uint8Array(publicKeyCredential.rawId))),
+							response: {
+								clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(credential.clientDataJSON))),
+								attestationObject: btoa(String.fromCharCode(...new Uint8Array(credential.attestationObject)))
+							},
+							type: publicKeyCredential.type
+						},
+						nickname: securityKeyName.trim()
+					})
+				}
+			);
+
+			if (!verifyResponse.ok) {
+				const errorData = await verifyResponse.json();
+				throw new Error(errorData.message || 'Failed to verify security key');
+			}
+
+			securityKeySuccess = `Security key "${securityKeyName}" added successfully!`;
+			securityKeyName = '';
+
+			// Hide form after success
+			setTimeout(() => {
+				showAddSecurityKey = false;
+				securityKeySuccess = null;
+			}, 3000);
+
+		} catch (err: any) {
+			console.error('Error adding security key:', err);
+			securityKeyError = err?.message || 'Failed to add security key. Please try again.';
+		} finally {
+			addingSecurityKey = false;
+		}
+	}
+
+	onMount(() => {
+		if (user?.email) {
+			newPasswordEmail = user.email;
+		}
+	});
+
+	async function handleChangeEmail() {
+		emailChangeError = null;
+		emailChangeSuccess = null;
+		emailVerificationSent = false;
+
+		// Validation
+		if (!newEmail) {
+			emailChangeError = 'Please enter a new email address.';
+			return;
+		}
+
+		// Basic email format validation
+		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+		if (!emailRegex.test(newEmail)) {
+			emailChangeError = 'Please enter a valid email address.';
+			return;
+		}
+
+		if (newEmail === user?.email) {
+			emailChangeError = 'This is already your current email address.';
+			return;
+		}
+
+		changingEmail = true;
+
+		try {
+			// Use Nhost's changeEmail method
+			// This will send a verification email to the new address
+			const result = await nhost.auth.changeEmail({
+				newEmail: newEmail
+			});
+
+			if (result.error) {
+				throw new Error(result.error.message || 'Failed to change email');
+			}
+
+			emailVerificationSent = true;
+			emailChangeSuccess =
+				`A verification email has been sent to ${newEmail}. ` +
+				`Please check your inbox and click the verification link to complete the email change. ` +
+				`Your current email (${user?.email}) will remain active until you verify the new one.`;
+
+			// Clear form
+			newEmail = '';
+
+			// Hide form after a delay
+			setTimeout(() => {
+				showChangeEmail = false;
+				emailVerificationSent = false;
+			}, 10000); // Longer delay for email change instructions
+
+		} catch (err: any) {
+			console.error('Error changing email:', err);
+			emailChangeError = err?.message || 'Failed to change email. Please try again.';
+		} finally {
+			changingEmail = false;
 		}
 	}
 </script>
@@ -881,7 +1390,370 @@
 							</span>
 						</div>
 					</div>
-					<p class="section-hint">Contact support to update your login email.</p>
+				</div>
+
+				<!-- Security Settings Section -->
+				<div class="profile-card security-section">
+					<h3 class="section-title">Security Settings</h3>
+					<div class="security-content">
+						<!-- Email Change Section -->
+						<div class="security-info">
+							<div class="security-item">
+								<div class="security-icon">📧</div>
+								<div class="security-details">
+									<h4>Email Address</h4>
+									<p class="security-description">
+										Change your account email address. Your reputation and all data will be preserved.
+									</p>
+									<div class="current-email">
+										<span class="email-label">Current Email:</span>
+										<span class="email-value">{user?.email || 'Not set'}</span>
+									</div>
+								</div>
+							</div>
+
+							{#if !showChangeEmail}
+								<button class="btn-secondary" onclick={() => (showChangeEmail = true)}>
+									Change Email Address
+								</button>
+							{/if}
+
+							{#if showChangeEmail}
+								<div class="change-email-form">
+									<h4>Change Email Address</h4>
+									<p class="form-description">
+										Enter your new email address. We'll send a verification link to confirm the change.
+										Your account will continue to use your current email until you verify the new one.
+									</p>
+
+									<label class="field">
+										<span>Current Email</span>
+										<input type="email" value={user?.email || ''} readonly disabled />
+									</label>
+
+									<label class="field">
+										<span>New Email Address</span>
+										<input
+											type="email"
+											bind:value={newEmail}
+											placeholder="your.new@email.com"
+											disabled={changingEmail || emailVerificationSent}
+										/>
+										<small class="hint">You will need to verify this email address</small>
+									</label>
+
+									{#if emailChangeError}
+										<div class="error-message">{emailChangeError}</div>
+									{/if}
+
+									{#if emailChangeSuccess}
+										<div class="success-message verification-notice">
+											<div class="notice-icon">✉️</div>
+											<div class="notice-content">
+												{emailChangeSuccess}
+											</div>
+										</div>
+									{/if}
+
+									{#if !emailVerificationSent}
+										<div class="form-actions">
+											<button
+												class="btn-primary"
+												onclick={handleChangeEmail}
+												disabled={changingEmail}
+											>
+												{changingEmail ? 'Sending Verification...' : 'Send Verification Email'}
+											</button>
+											<button
+												class="btn-secondary"
+												onclick={() => {
+													showChangeEmail = false;
+													newEmail = '';
+													emailChangeError = null;
+													emailChangeSuccess = null;
+												}}
+												disabled={changingEmail}
+											>
+												Cancel
+											</button>
+										</div>
+									{/if}
+								</div>
+							{/if}
+						</div>
+
+						<!-- Password Authentication Section -->
+						<div class="security-info">
+							<div class="security-item">
+								<div class="security-icon">🔐</div>
+								<div class="security-details">
+									<h4>Authentication Methods</h4>
+									<p class="security-description">
+										Manage your sign-in methods. You can add email/password as a backup to your OAuth accounts.
+									</p>
+									<div class="auth-methods-list">
+										{#if user?.email}
+											<div class="auth-method">
+												<span class="method-icon">✓</span>
+												<span class="method-name">Email ({user.email})</span>
+											</div>
+										{/if}
+
+										<!-- Show OAuth providers from auth_user_providers table -->
+										{#if authProviders.length > 0}
+											{#each authProviders as providerId}
+												{@const providerInfo = getProviderInfo(providerId)}
+												<div class="auth-method">
+													<span class="method-icon">{providerInfo.icon}</span>
+													<span class="method-name">{providerInfo.name}</span>
+												</div>
+											{/each}
+										{/if}
+
+										<!-- Always show password auth status based on has_password_auth field -->
+										{#if hasPasswordAuth}
+											<div class="auth-method">
+												<span class="method-icon">🔐</span>
+												<span class="method-name">Email/Password</span>
+											</div>
+										{/if}
+
+										<!-- Show loading state -->
+										{#if loadingProviders}
+											<div class="auth-method loading">
+												<span class="method-icon">⏳</span>
+												<span class="method-name">Loading...</span>
+											</div>
+										{/if}
+									</div>
+								</div>
+							</div>
+
+							{#if !hasPasswordAuth && !showAddPassword}
+								<button class="btn-secondary" onclick={() => (showAddPassword = true)}>
+									Add Email/Password Authentication
+								</button>
+							{/if}
+
+							{#if showAddPassword}
+								<div class="add-password-form">
+									<h4>Add Password Authentication</h4>
+									<p class="form-description">
+										Create a password to enable email/password sign-in as a backup to your OAuth
+										method.
+									</p>
+
+									<label class="field">
+										<span>Email (for password reset)</span>
+										<input
+											type="email"
+											bind:value={newPasswordEmail}
+											placeholder={user?.email || 'your@email.com'}
+											readonly={!!user?.email}
+										/>
+										<small class="hint">
+											{user?.email ? 'Using your account email' : 'Enter your email address'}
+										</small>
+									</label>
+
+									<label class="field">
+										<span>New Password</span>
+										<input
+											type="password"
+											bind:value={newPassword}
+											placeholder="Enter a strong password"
+											minlength="8"
+										/>
+										<small class="hint">Minimum 8 characters</small>
+									</label>
+
+									<label class="field">
+										<span>Confirm Password</span>
+										<input
+											type="password"
+											bind:value={confirmPassword}
+											placeholder="Re-enter your password"
+										/>
+									</label>
+
+									{#if passwordError}
+										<div class="error-message">{passwordError}</div>
+									{/if}
+
+									{#if passwordSuccess}
+										<div class="success-message">{passwordSuccess}</div>
+									{/if}
+
+									<div class="form-actions">
+										<button
+											class="btn-primary"
+											onclick={handleAddPassword}
+											disabled={addingPassword}
+										>
+											{addingPassword ? 'Adding...' : 'Add Password'}
+										</button>
+										<button
+											class="btn-secondary"
+											onclick={() => {
+												showAddPassword = false;
+												newPassword = '';
+												confirmPassword = '';
+												passwordError = null;
+											}}
+											disabled={addingPassword}
+										>
+											Cancel
+										</button>
+									</div>
+								</div>
+							{/if}
+
+							{#if hasPasswordAuth && !showChangePassword}
+								<button class="btn-secondary" onclick={() => (showChangePassword = true)}>
+									Change Password
+								</button>
+							{/if}
+
+							{#if showChangePassword}
+								<div class="add-password-form">
+									<h4>Change Password</h4>
+									<p class="form-description">
+										Update your password for email/password sign-in.
+									</p>
+
+									<label class="field">
+										<span>Current Password</span>
+										<input
+											type="password"
+											bind:value={currentPassword}
+											placeholder="Enter your current password"
+										/>
+									</label>
+
+									<label class="field">
+										<span>New Password</span>
+										<input
+											type="password"
+											bind:value={newPassword}
+											placeholder="Enter a strong password"
+											minlength="8"
+										/>
+										<small class="hint">Minimum 8 characters</small>
+									</label>
+
+									<label class="field">
+										<span>Confirm New Password</span>
+										<input
+											type="password"
+											bind:value={confirmPassword}
+											placeholder="Re-enter your new password"
+										/>
+									</label>
+
+									{#if passwordError}
+										<div class="error-message">{passwordError}</div>
+									{/if}
+
+									{#if passwordSuccess}
+										<div class="success-message">{passwordSuccess}</div>
+									{/if}
+
+									<div class="form-actions">
+										<button
+											class="btn-primary"
+											onclick={handleChangePassword}
+											disabled={changingPassword}
+										>
+											{changingPassword ? 'Changing...' : 'Change Password'}
+										</button>
+										<button
+											class="btn-secondary"
+											onclick={() => {
+												showChangePassword = false;
+												currentPassword = '';
+												newPassword = '';
+												confirmPassword = '';
+												passwordError = null;
+												passwordSuccess = null;
+											}}
+											disabled={changingPassword}
+										>
+											Cancel
+										</button>
+									</div>
+								</div>
+							{/if}
+						</div>
+
+						<!-- Security Keys (WebAuthn) Section -->
+						<div class="security-info">
+							<div class="security-item">
+								<div class="security-icon">🔑</div>
+								<div class="security-details">
+									<h4>Security Keys</h4>
+									<p class="security-description">
+										Add hardware security keys or use built-in biometric authentication (TouchID/FaceID) for enhanced security.
+									</p>
+								</div>
+							</div>
+
+							{#if !showAddSecurityKey}
+								<button class="btn-secondary" onclick={() => (showAddSecurityKey = true)}>
+									Add Security Key
+								</button>
+							{/if}
+
+							{#if showAddSecurityKey}
+								<div class="add-password-form">
+									<h4>Add Security Key</h4>
+									<p class="form-description">
+										Give your security key a memorable name, then follow the prompts to register it.
+									</p>
+
+									<label class="field">
+										<span>Key Nickname</span>
+										<input
+											type="text"
+											bind:value={securityKeyName}
+											placeholder="e.g., YubiKey 5, TouchID"
+											maxlength="50"
+										/>
+										<small class="hint">Choose a name that helps you identify this key</small>
+									</label>
+
+									{#if securityKeyError}
+										<div class="error-message">{securityKeyError}</div>
+									{/if}
+
+									{#if securityKeySuccess}
+										<div class="success-message">{securityKeySuccess}</div>
+									{/if}
+
+									<div class="form-actions">
+										<button
+											class="btn-primary"
+											onclick={handleAddSecurityKey}
+											disabled={addingSecurityKey}
+										>
+											{addingSecurityKey ? 'Registering...' : 'Register Security Key'}
+										</button>
+										<button
+											class="btn-secondary"
+											onclick={() => {
+												showAddSecurityKey = false;
+												securityKeyName = '';
+												securityKeyError = null;
+												securityKeySuccess = null;
+											}}
+											disabled={addingSecurityKey}
+										>
+											Cancel
+										</button>
+									</div>
+								</div>
+							{/if}
+						</div>
+					</div>
 				</div>
 
 				{#if contributor?.role === 'admin'}
@@ -1062,6 +1934,15 @@
 					{/if}
 				</div>
 			</div>
+
+			<!-- Legal Links Footer -->
+			<div class="profile-legal-footer">
+				<a href="/terms">Terms of Service</a>
+				<span class="separator">•</span>
+				<a href="/privacy">Privacy Policy</a>
+				<span class="separator">•</span>
+				<a href="/resources/community-guidelines">Community Guidelines</a>
+			</div>
 		{/if}
 	{/if}
 </div>
@@ -1172,6 +2053,8 @@
 	/* Editorial profile page styling */
 	.editorial-profile-page {
 		display: flex;
+		flex-direction: column;
+		align-items: center;
 		justify-content: center;
 		margin-top: 2rem;
 		background: var(--color-surface-alt);
@@ -2183,6 +3066,31 @@
 		color: var(--color-primary);
 	}
 
+	.profile-legal-footer {
+		margin-top: 3rem;
+		padding-top: 2rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		text-align: center;
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+	}
+
+	.profile-legal-footer a {
+		color: var(--color-text-secondary);
+		text-decoration: none;
+		transition: color 0.2s ease;
+	}
+
+	.profile-legal-footer a:hover {
+		color: var(--color-primary);
+		text-decoration: underline;
+	}
+
+	.profile-legal-footer .separator {
+		margin: 0 0.75rem;
+		opacity: 0.5;
+	}
+
 	.auth-error {
 		color: #ef4444;
 		margin-top: 0.75rem;
@@ -2217,5 +3125,239 @@
 
 	.login-container input::placeholder {
 		color: var(--color-text-secondary);
+	}
+
+	/* Security Settings Section */
+	.security-section {
+		margin-bottom: 2rem;
+	}
+
+	.security-content {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+	}
+
+	.security-info {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+	}
+
+	.security-item {
+		display: flex;
+		gap: 1rem;
+		align-items: flex-start;
+	}
+
+	.security-icon {
+		font-size: 2rem;
+		flex-shrink: 0;
+	}
+
+	.security-details {
+		flex: 1;
+	}
+
+	.security-details h4 {
+		font-family: var(--font-family-display);
+		font-size: 1.125rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 0 0 0.5rem 0;
+	}
+
+	.security-description {
+		color: var(--color-text-secondary);
+		font-size: 0.9375rem;
+		margin: 0 0 1rem 0;
+		line-height: var(--line-height-normal);
+	}
+
+	.auth-methods-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
+	.auth-method {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: 8px;
+		font-size: 0.9375rem;
+	}
+
+	.auth-method.not-configured {
+		opacity: 0.6;
+		border-style: dashed;
+	}
+
+	.auth-method.loading {
+		opacity: 0.7;
+		font-style: italic;
+	}
+
+	.method-icon {
+		color: var(--color-primary);
+		font-weight: 600;
+		font-size: 1.1rem;
+	}
+
+	.auth-method.not-configured .method-icon {
+		color: var(--color-text-secondary);
+	}
+
+	.auth-method.loading .method-icon {
+		animation: pulse 1.5s ease-in-out infinite;
+	}
+
+	@keyframes pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.5; }
+	}
+
+	.method-name {
+		color: var(--color-text-primary);
+	}
+
+	.add-password-form {
+		margin-top: 1.5rem;
+		padding: 1.5rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 20%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		border-radius: 12px;
+	}
+
+	.add-password-form h4 {
+		font-family: var(--font-family-display);
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 0 0 0.5rem 0;
+	}
+
+	.form-description {
+		color: var(--color-text-secondary);
+		font-size: 0.875rem;
+		margin: 0 0 1.5rem 0;
+		line-height: var(--line-height-normal);
+	}
+
+	.form-actions {
+		display: flex;
+		gap: 1rem;
+		margin-top: 1.5rem;
+	}
+
+	.form-actions button {
+		flex: 1;
+	}
+
+	.error-message {
+		padding: 0.75rem 1rem;
+		background: color-mix(in srgb, #ef4444 10%, transparent);
+		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+		border-radius: 8px;
+		color: #dc2626;
+		font-size: 0.875rem;
+		margin-top: 1rem;
+	}
+
+	.success-message {
+		padding: 0.75rem 1rem;
+		background: color-mix(in srgb, #10b981 10%, transparent);
+		border: 1px solid color-mix(in srgb, #10b981 30%, transparent);
+		border-radius: 8px;
+		color: #059669;
+		font-size: 0.875rem;
+		margin-top: 1rem;
+	}
+
+	/* Email Change Section */
+	.current-email {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: 8px;
+		margin-top: 1rem;
+	}
+
+	.email-label {
+		color: var(--color-text-secondary);
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+
+	.email-value {
+		color: var(--color-text-primary);
+		font-family: var(--font-family-mono, monospace);
+		font-size: 0.9375rem;
+	}
+
+	.change-email-form {
+		margin-top: 1.5rem;
+		padding: 1.5rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 20%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		border-radius: 12px;
+	}
+
+	.change-email-form h4 {
+		font-family: var(--font-family-display);
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 0 0 0.5rem 0;
+	}
+
+	.verification-notice {
+		display: flex;
+		gap: 1rem;
+		align-items: flex-start;
+		padding: 1rem 1.25rem;
+	}
+
+	.notice-icon {
+		font-size: 1.5rem;
+		flex-shrink: 0;
+	}
+
+	.notice-content {
+		flex: 1;
+		line-height: var(--line-height-normal);
+	}
+
+	.field input:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+	}
+
+	@media (max-width: 768px) {
+		.form-actions {
+			flex-direction: column;
+		}
+
+		.security-item {
+			flex-direction: column;
+			text-align: center;
+		}
+
+		.security-icon {
+			margin: 0 auto;
+		}
+
+		.current-email {
+			flex-direction: column;
+			align-items: flex-start;
+		}
 	}
 </style>

@@ -37,10 +37,10 @@ function heuristicScore(content: string): ScoreResult {
 // Access environment via globalThis to remain runtime-agnostic (Node/Edge)
 const envAny: any = (globalThis as any).process?.env || {};
 const HASURA_GRAPHQL_ENDPOINT = envAny.HASURA_GRAPHQL_ENDPOINT || envAny.GRAPHQL_URL || '';
-const HASURA_ADMIN_SECRET = envAny.HASURA_ADMIN_SECRET || '';
+const HASURA_GRAPHQL_ADMIN_SECRET = envAny.HASURA_GRAPHQL_ADMIN_SECRET || '';
 
 async function updatePost(postId: string, fields: Record<string, any>) {
-	if (!HASURA_GRAPHQL_ENDPOINT || !HASURA_ADMIN_SECRET) return { error: 'Missing Hasura env' };
+	if (!HASURA_GRAPHQL_ENDPOINT || !HASURA_GRAPHQL_ADMIN_SECRET) return { error: 'Missing Hasura env' };
 	const mutation = `mutation UpdatePost($id: uuid!, $set: post_set_input!) {
   update_post(where:{id:{_eq:$id}}, _set:$set) { returning { id status good_faith_score good_faith_label good_faith_rationale good_faith_flags } }
   }`;
@@ -48,7 +48,7 @@ async function updatePost(postId: string, fields: Record<string, any>) {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
-			'x-hasura-admin-secret': HASURA_ADMIN_SECRET
+			'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET
 		},
 		body: JSON.stringify({ query: mutation, variables: { id: postId, set: fields } })
 	});

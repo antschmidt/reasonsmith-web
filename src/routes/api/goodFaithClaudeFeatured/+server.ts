@@ -212,7 +212,7 @@ Analyze the following text, thoroughly, according to four categories:
 
 async function analyzeWithClaude(content: string): Promise<FeaturedClaudeResponse> {
 	if (!process.env.ANTHROPIC_API_KEY) {
-		throw new Error('ANTHROPIC_API_KEY not set');
+		throw new Error('AI analysis is temporarily unavailable');
 	}
 
 	const message = await anthropic.messages.create({
@@ -328,14 +328,14 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		if (accessToken) {
 			const HASURA_GRAPHQL_ENDPOINT =
 				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET;
+			const HASURA_GRAPHQL_ADMIN_SECRET = process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_GRAPHQL_ADMIN_SECRET;
 
-			if (!HASURA_ADMIN_SECRET) {
-				logger.error('HASURA_ADMIN_SECRET environment variable is not set');
+			if (!HASURA_GRAPHQL_ADMIN_SECRET) {
+				logger.error('HASURA_GRAPHQL_ADMIN_SECRET environment variable is not set');
 				return json({ error: 'Server configuration error' }, { status: 500 });
 			}
 
-			if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
+			if (HASURA_GRAPHQL_ENDPOINT && HASURA_GRAPHQL_ADMIN_SECRET) {
 				try {
 					// Get user info from access token
 					const userResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
@@ -366,7 +366,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET,
 								'x-hasura-role': 'admin'
 							},
 							body: JSON.stringify({
@@ -441,18 +441,18 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 				try {
 					const HASURA_GRAPHQL_ENDPOINT =
 						process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-					const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET;
+					const HASURA_GRAPHQL_ADMIN_SECRET = process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_GRAPHQL_ADMIN_SECRET;
 
-					if (!HASURA_ADMIN_SECRET) {
-						logger.error('HASURA_ADMIN_SECRET environment variable is not set');
+					if (!HASURA_GRAPHQL_ADMIN_SECRET) {
+						logger.error('HASURA_GRAPHQL_ADMIN_SECRET environment variable is not set');
 						// Don't fail the analysis, just log the error
 						logger.warn('Skipping usage tracking due to missing admin secret');
-					} else if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
+					} else if (HASURA_GRAPHQL_ENDPOINT && HASURA_GRAPHQL_ADMIN_SECRET) {
 						await fetch(HASURA_GRAPHQL_ENDPOINT, {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET,
 								'x-hasura-role': 'admin'
 							},
 							body: JSON.stringify({

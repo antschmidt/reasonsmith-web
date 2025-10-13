@@ -543,7 +543,7 @@
 			draftAutosaver?.handleChange(newComment);
 
 			// Good-faith analysis gate
-			commentGoodFaithTesting = true;
+			goodFaithTesting = true;
 			try {
 				const user = nhost.auth.getUser();
 				const accessToken = nhost.auth.getAccessToken();
@@ -567,6 +567,12 @@
 					throw new Error(`Analysis failed with status ${response.status}`);
 				}
 				const data = await response.json();
+
+				// Check if this was a real Claude analysis or heuristic fallback
+				if (data.usedClaude === false) {
+					throw new Error('Claude API is not available. Heuristic scoring cannot be used for publishing.');
+				}
+
 				const score01 =
 					typeof data.good_faith_score === 'number'
 						? data.good_faith_score
@@ -610,7 +616,7 @@
 				submitError = 'Could not verify good-faith score. Comment saved as draft.';
 				return; // Don't publish when analysis fails
 			} finally {
-				commentGoodFaithTesting = false;
+				goodFaithTesting = false;
 			}
 
 			// Prepare content with citations included (until database migration is applied)
@@ -2424,7 +2430,10 @@
 				console.error('Audio URL update error:', result.error);
 				console.error('Version ID:', versionId);
 				console.error('Audio URL:', audioUrl);
-				throw new Error(result.error.message || 'Failed to update discussion with audio URL');
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'Failed to update discussion with audio URL'
+					: result.error.message || 'Failed to update discussion with audio URL';
+				throw new Error(errorMessage);
 			}
 
 			if (!result.data?.update_discussion_version_by_pk) {
@@ -2475,7 +2484,10 @@
 			});
 
 			if (result.error) {
-				throw new Error(result.error.message || 'Failed to remove audio');
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'Failed to remove audio'
+					: result.error.message || 'Failed to remove audio';
+				throw new Error(errorMessage);
 			}
 
 			// Update local discussion state
@@ -2609,6 +2621,12 @@
 			}
 
 			const data = await response.json();
+
+			// Check if this was a real Claude analysis or heuristic fallback
+			if (data.usedClaude === false) {
+				throw new Error('Claude API is not available. Heuristic scoring cannot be used for publishing.');
+			}
+
 
 			if (data.error) {
 				throw new Error(data.error);

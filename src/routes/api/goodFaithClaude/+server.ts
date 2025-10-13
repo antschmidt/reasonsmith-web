@@ -7,7 +7,7 @@ import { checkAndResetMonthlyCredits, getMonthlyCreditsRemaining } from '$lib/cr
 import { logger } from '$lib/logger';
 
 const anthropic = new Anthropic({
-	apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-build'
+	apiKey: process.env.ANTHROPIC_API_KEY
 });
 
 interface ClaudeClaimArgument {
@@ -52,7 +52,7 @@ async function analyzeWithClaude(content: string): Promise<ClaudeScoreResponse> 
 		logger.info('Starting Claude API call...');
 
 		if (!process.env.ANTHROPIC_API_KEY) {
-			throw new Error('ANTHROPIC_API_KEY not set');
+			throw new Error('AI analysis is temporarily unavailable');
 		}
 
 		const msg = await anthropic.messages.create({
@@ -189,20 +189,20 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		if (accessToken) {
 			let HASURA_GRAPHQL_ENDPOINT =
 				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-			const HASURA_ADMIN_SECRET = process.env.HASURA_ADMIN_SECRET;
+			const HASURA_GRAPHQL_ADMIN_SECRET = process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
 
-			if (!HASURA_ADMIN_SECRET) {
-				logger.error('HASURA_ADMIN_SECRET environment variable is not set');
+			if (!HASURA_GRAPHQL_ADMIN_SECRET) {
+				logger.error('HASURA_GRAPHQL_ADMIN_SECRET environment variable is not set');
 				return json({ error: 'Server configuration error' }, { status: 500 });
 			}
 
 			// Try alternative endpoint URL if the first one doesn't work
-			const alternativeEndpoint = HASURA_GRAPHQL_ENDPOINT.replace('.graphql.', '.hasura.');
+			const alternativeEndpoint = HASURA_GRAPHQL_ENDPOINT?.replace('.graphql.', '.hasura.') || '';
 			logger.debug('[DEBUG] Primary endpoint:', HASURA_GRAPHQL_ENDPOINT);
 			logger.debug('[DEBUG] Alternative endpoint:', alternativeEndpoint);
-			logger.debug('[DEBUG] Admin secret present:', !!HASURA_ADMIN_SECRET);
+			logger.debug('[DEBUG] Admin secret present:', !!HASURA_GRAPHQL_ADMIN_SECRET);
 
-			if (HASURA_GRAPHQL_ENDPOINT && HASURA_ADMIN_SECRET) {
+			if (HASURA_GRAPHQL_ENDPOINT && HASURA_GRAPHQL_ADMIN_SECRET) {
 				logger.debug('[DEBUG] Starting contributor lookup...');
 				try {
 					// Decode JWT token to get user ID
@@ -217,7 +217,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
-							'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+							'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET || '',
 							'x-hasura-role': 'admin'
 						},
 						body: JSON.stringify({
@@ -235,7 +235,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET || '',
 								'x-hasura-role': 'admin'
 							},
 							body: JSON.stringify({
@@ -252,7 +252,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET || '',
 								'x-hasura-role': 'admin'
 							},
 							body: JSON.stringify({
@@ -332,12 +332,14 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
 					const alternativeEndpoint = CREDIT_ENDPOINT.replace('.graphql.', '.hasura.');
 
+					const HASURA_GRAPHQL_ADMIN_SECRET_CREDIT = process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+
 					// Test which endpoint works for credit operations
 					const testResponse = await fetch(CREDIT_ENDPOINT, {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
-							'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+							'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET_CREDIT || '',
 							'x-hasura-role': 'admin'
 						},
 						body: JSON.stringify({ query: `query { contributor(limit: 1) { id } }` })
@@ -349,14 +351,13 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						CREDIT_ENDPOINT = alternativeEndpoint;
 					}
 
-					const HASURA_ADMIN_SECRET_CREDIT = process.env.HASURA_ADMIN_SECRET;
 					logger.debug('[DEBUG] Credit endpoint:', CREDIT_ENDPOINT);
 
-					if (!HASURA_ADMIN_SECRET_CREDIT) {
-						logger.error('HASURA_ADMIN_SECRET environment variable is not set');
+					if (!HASURA_GRAPHQL_ADMIN_SECRET_CREDIT) {
+						logger.error('HASURA_GRAPHQL_ADMIN_SECRET environment variable is not set');
 						// Don't fail the analysis, just log the error
 						logger.warn('Skipping usage tracking due to missing admin secret');
-					} else if (CREDIT_ENDPOINT && HASURA_ADMIN_SECRET_CREDIT) {
+					} else if (CREDIT_ENDPOINT && HASURA_GRAPHQL_ADMIN_SECRET_CREDIT) {
 						// Determine which credit type to use\n\t\t\t\t\t\tlogger.info('Contributor for credit check:', contributor);
 						const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
 						const shouldUseMonthlyCredit =
@@ -371,7 +372,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_ADMIN_SECRET_CREDIT,
+								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET_CREDIT || '',
 								'x-hasura-role': 'admin'
 							},
 							body: JSON.stringify({

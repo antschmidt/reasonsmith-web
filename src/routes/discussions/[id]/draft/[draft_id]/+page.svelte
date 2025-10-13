@@ -32,10 +32,21 @@
 		checkAndResetMonthlyCredits
 	} from '$lib/creditUtils';
 	import { INCREMENT_PURCHASED_CREDITS_USED } from '$lib/graphql/queries';
+	import RichTextEditor from '$lib/components/RichTextEditor.svelte';
+
 
 	// Get parameters
 	const discussionId = $page.params.id;
 	const draftId = $page.params.draft_id;
+
+	// Helper function to determine label from score
+	function getLabel(score: number): string {
+		if (score >= 0.8) return 'exemplary';
+		if (score >= 0.6) return 'constructive';
+		if (score >= 0.4) return 'neutral';
+		if (score >= 0.2) return 'questionable';
+		return 'hostile';
+	}
 
 	// State
 	let loading = $state(true);
@@ -537,7 +548,10 @@
 
 					if (updateResult.error) {
 						console.error('Failed to update citation:', updateResult.error);
-						throw new Error(`Failed to update citation: ${updateResult.error.message}`);
+						const errorMessage = Array.isArray(updateResult.error)
+							? updateResult.error[0]?.message || 'Unknown error'
+							: updateResult.error.message || 'Unknown error';
+						throw new Error(`Failed to update citation: ${errorMessage}`);
 					}
 
 					// Also update the join table's custom fields
@@ -553,7 +567,10 @@
 
 					if (joinUpdateResult.error) {
 						console.error('Failed to update join table:', joinUpdateResult.error);
-						throw new Error(`Failed to update citation link: ${joinUpdateResult.error.message}`);
+						const errorMessage = Array.isArray(joinUpdateResult.error)
+							? joinUpdateResult.error[0]?.message || 'Unknown error'
+							: joinUpdateResult.error.message || 'Unknown error';
+						throw new Error(`Failed to update citation link: ${errorMessage}`);
 					}
 				}
 			}
@@ -633,6 +650,14 @@
 
 				const data = await response.json();
 
+
+				// Check if this was a real Claude analysis or heuristic fallback
+				if (data.usedClaude === false) {
+					goodFaithError = 'AI analysis is temporarily unavailable. Please try again later or contact support if the issue persists.';
+					goodFaithTesting = false;
+					return null;
+				}
+
 				// Convert score to 0-1 range if needed
 				const score01 =
 					typeof data.good_faith_score === 'number'
@@ -641,19 +666,23 @@
 							? data.goodFaithScore / 100
 							: 0.5;
 
+				// Ensure label is present, fallback to generating from score
+				const label = data.good_faith_label || getLabel(score01);
+
 				goodFaithData = {
 					score: score01,
 					analysis: data.good_faith_analysis,
-					label: data.good_faith_label
+					label: label
 				};
 
 				// Store result for UI display
 				goodFaithResult = {
 					good_faith_score: score01,
-					good_faith_label: data.good_faith_label,
+					good_faith_label: label,
 					rationale: data.rationale,
 					claims: data.claims,
-					provider: data.provider
+					provider: data.provider,
+					usedClaude: data.usedClaude
 				};
 
 				// Save to database
@@ -832,19 +861,15 @@
 						id
 						version_number
 					}
-					post_aggregate(
+					post(
 						where: {
 							discussion_id: { _eq: $discussionId }
 							context_version_id: { _is_null: false }
 						}
 					) {
-						aggregate {
-							count
-						}
-						nodes {
-							context_version_id
-						}
-					}
+						id
+						context_version_id
+				}
 				}
 			`,
 				{
@@ -858,7 +883,7 @@
 			}
 
 			const currentPublished = commentsCheck.data?.discussion_version?.[0];
-			const allPosts = commentsCheck.data?.post_aggregate?.nodes || [];
+			const allPosts = commentsCheck.data?.post || [];
 
 			console.log('Comments check result:', {
 				currentPublished,
@@ -868,7 +893,7 @@
 
 			// Check if current published version has comments on it specifically
 			const commentsOnCurrentVersion = allPosts.filter(
-				(post) => post.context_version_id === currentPublished?.id
+				(post: any) => post.context_version_id === currentPublished?.id
 			).length;
 
 			console.log('Publishing analysis:', {
@@ -876,7 +901,7 @@
 				commentsOnCurrentVersion,
 				hasComments: commentsOnCurrentVersion > 0,
 				action: commentsOnCurrentVersion > 0 ? 'archive' : 'archive',
-				commentsData: allPosts.map((p) => ({ id: p.context_version_id }))
+				commentsData: allPosts.map((p: any) => ({ id: p.context_version_id }))
 			});
 
 			// Step 3: Handle existing published version
@@ -989,7 +1014,7 @@
 			console.log('Verification before publish:', {
 				remainingPublished,
 				shouldBeEmpty: remainingPublished.length === 0,
-				detailedVersions: remainingPublished.map((v) => ({
+				detailedVersions: remainingPublished.map((v: any) => ({
 					id: v.id,
 					version_number: v.version_number,
 					version_type: v.version_type,
@@ -1318,14 +1343,12 @@
 
 				<div class="form-group">
 					<label for="draft-description">Description</label>
-					<textarea
-						id="draft-description"
-						bind:value={description}
+					<RichTextEditor
+						bind:content={description}
 						placeholder="Describe your discussion..."
-						rows="20"
-						required
-						disabled={isAnalyzing || goodFaithTesting}
-					></textarea>
+						minHeight="400px"
+						showToolbar={!(isAnalyzing || goodFaithTesting)}
+					/>
 				</div>
 
 				<!-- Citations Section -->
@@ -1629,8 +1652,7 @@
 		letter-spacing: 0.025em;
 	}
 
-	input,
-	textarea {
+	input {
 		padding: 0.875rem 1rem;
 		width: calc(100% - 2rem);
 		border: 1px solid var(--color-border);
@@ -1645,22 +1667,15 @@
 			box-shadow 0.15s ease;
 	}
 
-	input:focus,
-	textarea:focus {
+	input:focus {
 		outline: none;
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 10%, transparent);
 	}
 
-	textarea {
-		font-family: 'Crimson Text', Georgia, serif;
-		font-size: 16px;
-		line-height: 1.7;
-		resize: vertical;
-		min-height: 200px;
-	}
+	/* Removed textarea styles - now using RichTextEditor component */
 
-	textarea {
+	input[type='text'] {
 		resize: vertical;
 		line-height: 1.6;
 	}
