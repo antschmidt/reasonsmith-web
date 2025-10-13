@@ -58,13 +58,18 @@
 		magicLinkSent = false;
 		try {
 			const isPWA = isStandalone();
-			await nhost.auth.signIn({
+			const { error: signInError } = await nhost.auth.signIn({
 				email: magicLinkEmail,
 				options: {
 					redirectTo: getOAuthRedirectURL('/auth/callback', isPWA)
 				}
 			});
-			magicLinkSent = true;
+
+			if (signInError) {
+				error = new Error(signInError.message || 'Failed to send magic link');
+			} else {
+				magicLinkSent = true;
+			}
 		} catch (err) {
 			error = err as Error;
 		}
