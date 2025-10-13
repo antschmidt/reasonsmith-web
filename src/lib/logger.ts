@@ -16,43 +16,33 @@ class Logger {
 	/**
 	 * Log debug information (only in development)
 	 */
-	debug(message: string, context?: LogContext): void {
+	debug(message: string, ...args: any[]): void {
 		if (this.isDev) {
-			console.log(`[DEBUG] ${message}`, context ? context : '');
+			console.log(`[DEBUG] ${message}`, ...args);
 		}
 	}
 
 	/**
 	 * Log informational messages (only in development)
 	 */
-	info(message: string, context?: LogContext): void {
+	info(message: string, ...args: any[]): void {
 		if (this.isDev) {
-			console.log(`[INFO] ${message}`, context ? context : '');
+			console.log(`[INFO] ${message}`, ...args);
 		}
 	}
 
 	/**
 	 * Log warnings (always logged)
 	 */
-	warn(message: string, context?: LogContext): void {
-		console.warn(`[WARN] ${message}`, context ? context : '');
+	warn(message: string, ...args: any[]): void {
+		console.warn(`[WARN] ${message}`, ...args);
 	}
 
 	/**
 	 * Log errors (always logged)
 	 */
-	error(message: string, error?: Error | unknown, context?: LogContext): void {
-		if (error instanceof Error) {
-			console.error(`[ERROR] ${message}`, {
-				error: error.message,
-				stack: error.stack,
-				...context
-			});
-		} else if (error) {
-			console.error(`[ERROR] ${message}`, { error, ...context });
-		} else {
-			console.error(`[ERROR] ${message}`, context ? context : '');
-		}
+	error(message: string, ...args: any[]): void {
+		console.error(`[ERROR] ${message}`, ...args);
 	}
 }
 

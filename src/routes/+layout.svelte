@@ -18,26 +18,26 @@
 		handle?: string;
 	} | null = null;
 
-	function collectRoles(u) {
+	function collectRoles(u: any): string[] {
 		if (!u) return [];
-		const roles = new Set();
-		if (Array.isArray(u?.roles)) u.roles.forEach((r) => typeof r === 'string' && roles.add(r));
+		const roles = new Set<string>();
+		if (Array.isArray(u?.roles)) u.roles.forEach((r: any) => typeof r === 'string' && roles.add(r));
 		const defaultRole = u?.defaultRole ?? u?.default_role;
 		if (typeof defaultRole === 'string') roles.add(defaultRole);
 		if (Array.isArray(u?.metadata?.roles))
-			u.metadata.roles.forEach((r) => typeof r === 'string' && roles.add(r));
+			u.metadata.roles.forEach((r: any) => typeof r === 'string' && roles.add(r));
 		if (Array.isArray(u?.app_metadata?.roles))
-			u.app_metadata.roles.forEach((r) => typeof r === 'string' && roles.add(r));
+			u.app_metadata.roles.forEach((r: any) => typeof r === 'string' && roles.add(r));
 		if (typeof u?.role === 'string') roles.add(u.role);
 		return Array.from(roles);
 	}
 
-	function getNavInitials(name) {
+	function getNavInitials(name: string | undefined): string {
 		if (!name) return '?';
 		return name
 			.trim()
 			.split(' ')
-			.map((n) => n[0])
+			.map((n: string) => n[0])
 			.join('')
 			.slice(0, 2)
 			.toUpperCase();
@@ -97,7 +97,7 @@
 	}
 
 	// Initialize theme immediately on page load
-	let currentTheme;
+	let currentTheme: string = 'dark';
 	theme.subscribe((value) => {
 		currentTheme = value;
 		if (typeof window !== 'undefined') {

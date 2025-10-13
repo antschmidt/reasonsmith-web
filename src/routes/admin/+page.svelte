@@ -114,7 +114,10 @@
 			const result = await nhost.graphql.request(GET_ALL_CONTRIBUTORS);
 
 			if (result.error) {
-				throw new Error(result.error.message);
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'Failed to load contributors'
+					: result.error.message || 'Failed to load contributors';
+				throw new Error(errorMessage);
 			}
 
 			contributors = result.data?.contributor || [];
@@ -146,7 +149,10 @@
 			});
 
 			if (result.error) {
-				throw new Error(result.error.message);
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'Failed to load contributors'
+					: result.error.message || 'Failed to load contributors';
+				throw new Error(errorMessage);
 			}
 
 			// Update local state
@@ -177,7 +183,10 @@
 			});
 
 			if (result.error) {
-				throw new Error(result.error.message);
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'Failed to load contributors'
+					: result.error.message || 'Failed to load contributors';
+				throw new Error(errorMessage);
 			}
 
 			// Update local state
@@ -223,7 +232,10 @@
 			});
 
 			if (result.error) {
-				throw new Error(result.error.message);
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'Failed to load contributors'
+					: result.error.message || 'Failed to load contributors';
+				throw new Error(errorMessage);
 			}
 
 			// If we changed our own role, refresh the role headers

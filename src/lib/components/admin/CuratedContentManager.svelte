@@ -46,7 +46,10 @@
 			const result = await nhost.graphql.request(GET_PUBLIC_SHOWCASE_ADMIN);
 
 			if (result.error) {
-				throw new Error(result.error.message);
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'GraphQL operation failed'
+					: result.error.message || 'GraphQL operation failed';
+				throw new Error(errorMessage);
 			}
 
 			items = result.data?.public_showcase_item || [];
@@ -76,7 +79,10 @@
 			const result = await nhost.graphql.request(CREATE_PUBLIC_SHOWCASE_ITEM, itemData);
 
 			if (result.error) {
-				throw new Error(result.error.message);
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'GraphQL operation failed'
+					: result.error.message || 'GraphQL operation failed';
+				throw new Error(errorMessage);
 			}
 
 			await loadItems(); // Reload to get updated data
@@ -103,7 +109,10 @@
 			});
 
 			if (result.error) {
-				throw new Error(result.error.message);
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'GraphQL operation failed'
+					: result.error.message || 'GraphQL operation failed';
+				throw new Error(errorMessage);
 			}
 
 			await loadItems(); // Reload to get updated data
@@ -131,7 +140,10 @@
 			const result = await nhost.graphql.request(DELETE_PUBLIC_SHOWCASE_ITEM, { id });
 
 			if (result.error) {
-				throw new Error(result.error.message);
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'GraphQL operation failed'
+					: result.error.message || 'GraphQL operation failed';
+				throw new Error(errorMessage);
 			}
 
 			await loadItems(); // Reload to get updated data
@@ -200,7 +212,7 @@
 			<h3>Edit Showcase Item</h3>
 			<ShowcaseItemForm
 				item={editingItem}
-				on:submit={(e) => updateItem(editingItem.id, e.detail)}
+				on:submit={(e) => updateItem(editingItem!.id, e.detail)}
 				on:cancel={cancelEdit}
 				{saving}
 			/>
