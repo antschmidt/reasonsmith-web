@@ -1,9 +1,12 @@
 <script lang="ts">
-	export let size: string = '100px';
+	export let size: string | number = '100px';
 	export let isAnimating: boolean = true;
+
+	// Normalize size to always be a string with units
+	$: normalizedSize = typeof size === 'number' ? `${size}px` : size;
 </script>
 
-<div class="animated-logo" class:animating={isAnimating} style="width: {size}; height: {size};">
+<div class="animated-logo" class:animating={isAnimating} style="width: {normalizedSize}; height: {normalizedSize};">
 	<svg id="animated-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 342.75 351">
 		<defs>
 			<style>
