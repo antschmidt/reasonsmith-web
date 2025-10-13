@@ -653,7 +653,7 @@
 
 				// Check if this was a real Claude analysis or heuristic fallback
 				if (data.usedClaude === false) {
-					goodFaithError = 'Claude API is not available. Please configure ANTHROPIC_API_KEY or contact support. Heuristic scoring cannot be used for publishing.';
+					goodFaithError = 'AI analysis is temporarily unavailable. Please try again later or contact support if the issue persists.';
 					goodFaithTesting = false;
 					return null;
 				}

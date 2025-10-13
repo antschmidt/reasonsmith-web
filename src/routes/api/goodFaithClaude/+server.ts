@@ -52,7 +52,7 @@ async function analyzeWithClaude(content: string): Promise<ClaudeScoreResponse> 
 		logger.info('Starting Claude API call...');
 
 		if (!process.env.ANTHROPIC_API_KEY) {
-			throw new Error('ANTHROPIC_API_KEY not set');
+			throw new Error('AI analysis is temporarily unavailable');
 		}
 
 		const msg = await anthropic.messages.create({

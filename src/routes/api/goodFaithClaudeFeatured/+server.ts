@@ -212,7 +212,7 @@ Analyze the following text, thoroughly, according to four categories:
 
 async function analyzeWithClaude(content: string): Promise<FeaturedClaudeResponse> {
 	if (!process.env.ANTHROPIC_API_KEY) {
-		throw new Error('ANTHROPIC_API_KEY not set');
+		throw new Error('AI analysis is temporarily unavailable');
 	}
 
 	const message = await anthropic.messages.create({
