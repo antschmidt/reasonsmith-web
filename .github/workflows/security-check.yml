@@ -51,7 +51,6 @@ jobs:
 
             # Common secret variable assignments with suspicious values
             'HASURA_GRAPHQL_ADMIN_SECRET.*=.*["\x27]:[^"\x27]{10,}'
-            'HASURA_GRAPHQL_ADMIN_SECRET.*=.*["\x27]:[^"\x27]{10,}'
           )
 
           # Directories to exclude

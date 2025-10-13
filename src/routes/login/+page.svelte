@@ -18,7 +18,7 @@
 	// Get redirect URL from query params
 	let redirectTo = '';
 	onMount(() => {
-		redirectTo = $page.url.searchParams.get('redirectTo') || '/dashboard';
+		redirectTo = $page.url.searchParams.get('redirectTo') || '/';
 	});
 
 	const handleGitHubSignIn = async () => {

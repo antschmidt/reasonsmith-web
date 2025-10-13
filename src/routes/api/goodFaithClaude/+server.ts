@@ -332,14 +332,14 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
 					const alternativeEndpoint = CREDIT_ENDPOINT.replace('.graphql.', '.hasura.');
 
-					const HASURA_ADMIN_SECRET_CREDIT = process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+					const HASURA_GRAPHQL_ADMIN_SECRET_CREDIT = process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
 
 					// Test which endpoint works for credit operations
 					const testResponse = await fetch(CREDIT_ENDPOINT, {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
-							'x-hasura-admin-secret': HASURA_ADMIN_SECRET_CREDIT || '',
+							'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET_CREDIT || '',
 							'x-hasura-role': 'admin'
 						},
 						body: JSON.stringify({ query: `query { contributor(limit: 1) { id } }` })
@@ -353,11 +353,11 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
 					logger.debug('[DEBUG] Credit endpoint:', CREDIT_ENDPOINT);
 
-					if (!HASURA_ADMIN_SECRET_CREDIT) {
+					if (!HASURA_GRAPHQL_ADMIN_SECRET_CREDIT) {
 						logger.error('HASURA_GRAPHQL_ADMIN_SECRET environment variable is not set');
 						// Don't fail the analysis, just log the error
 						logger.warn('Skipping usage tracking due to missing admin secret');
-					} else if (CREDIT_ENDPOINT && HASURA_ADMIN_SECRET_CREDIT) {
+					} else if (CREDIT_ENDPOINT && HASURA_GRAPHQL_ADMIN_SECRET_CREDIT) {
 						// Determine which credit type to use\n\t\t\t\t\t\tlogger.info('Contributor for credit check:', contributor);
 						const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
 						const shouldUseMonthlyCredit =
@@ -372,7 +372,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_ADMIN_SECRET_CREDIT || '',
+								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET_CREDIT || '',
 								'x-hasura-role': 'admin'
 							},
 							body: JSON.stringify({
