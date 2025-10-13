@@ -567,6 +567,12 @@
 					throw new Error(`Analysis failed with status ${response.status}`);
 				}
 				const data = await response.json();
+
+				// Check if this was a real Claude analysis or heuristic fallback
+				if (data.usedClaude === false) {
+					throw new Error('Claude API is not available. Heuristic scoring cannot be used for publishing.');
+				}
+
 				const score01 =
 					typeof data.good_faith_score === 'number'
 						? data.good_faith_score
@@ -2609,6 +2615,12 @@
 			}
 
 			const data = await response.json();
+
+			// Check if this was a real Claude analysis or heuristic fallback
+			if (data.usedClaude === false) {
+				throw new Error('Claude API is not available. Heuristic scoring cannot be used for publishing.');
+			}
+
 
 			if (data.error) {
 				throw new Error(data.error);

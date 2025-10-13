@@ -3,6 +3,7 @@
 	import PostTypeSelector from './PostTypeSelector.svelte';
 	import CitationForm from '../citations/CitationForm.svelte';
 	import Button from '../ui/Button.svelte';
+	import RichTextEditor from '../RichTextEditor.svelte';
 
 	type Citation = {
 		id: string;
@@ -247,16 +248,16 @@
 				</div>
 			{/if}
 
-			<!-- Main Textarea -->
-			<textarea
-				id="comment"
-				bind:value={comment}
-				oninput={onInput}
-				onfocus={onFocus}
-				rows="25"
+			<!-- Rich Text Editor -->
+			<RichTextEditor
+				bind:content={comment}
+				onUpdate={(html) => {
+					comment = html;
+					if (onInput) onInput();
+				}}
 				placeholder="Add your comment... (Style will be automatically determined by length)"
-				aria-label="New comment"
-			></textarea>
+				minHeight="300px"
+			/>
 
 			{#if showAdvancedFeatures}
 				<!-- Insert Citation Reference Button -->
@@ -710,24 +711,6 @@
 		margin: 0;
 		font-size: 1rem;
 		color: var(--color-text-primary);
-	}
-
-	textarea {
-		padding: 1rem;
-		border: 1px solid var(--color-border);
-		border-radius: var(--border-radius-md);
-		background: var(--color-input-bg);
-		color: var(--color-text-primary);
-		font-family: inherit;
-		font-size: 1rem;
-		resize: vertical;
-		min-height: 200px;
-	}
-
-	textarea:focus {
-		outline: none;
-		border-color: var(--color-primary);
-		box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
 	}
 
 	.insert-citation-btn {
