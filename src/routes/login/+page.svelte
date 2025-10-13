@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
+	import { env } from '$env/dynamic/public';
 
 	let error: Error | null = null;
 	let email = '';
@@ -11,7 +12,10 @@
 	let magicLinkEmail = '';
 	let showMagicLink = false;
 	let showEmailPassword = false;
+	let showWebAuthn = false;
 	let magicLinkSent = false;
+	let webAuthnEmail = '';
+	let signingInWithWebAuthn = false;
 	let activeTab: 'signin' | 'signup' = 'signin';
 	const currentYear = new Date().getFullYear();
 
@@ -99,6 +103,131 @@
 			}
 		} catch (err) {
 			error = err as Error;
+		}
+	};
+
+	const handleWebAuthnSignIn = async () => {
+		error = null;
+		signingInWithWebAuthn = true;
+
+		try {
+			if (!webAuthnEmail || webAuthnEmail.trim().length === 0) {
+				error = new Error('Please enter your email address');
+				return;
+			}
+
+			// Check for WebAuthn support
+			if (!window.PublicKeyCredential || !navigator.credentials || !navigator.credentials.get) {
+				error = new Error('Your browser does not support security keys. Please use a modern browser like Chrome, Firefox, Safari, or Edge.');
+				return;
+			}
+
+			// Construct Nhost auth URL
+			const subdomain = env.PUBLIC_NHOST_SUBDOMAIN;
+			const region = env.PUBLIC_NHOST_REGION;
+			if (!subdomain || !region) {
+				error = new Error('Nhost configuration is missing');
+				return;
+			}
+			const nhostAuthUrl = `https://${subdomain}.auth.${region}.nhost.run`;
+
+			// Step 1: Request WebAuthn challenge from Nhost
+			const challengeResponse = await fetch(
+				`${nhostAuthUrl}/v1/signin/webauthn`,
+				{
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						email: webAuthnEmail.trim()
+					})
+				}
+			);
+
+			if (!challengeResponse.ok) {
+				const errorData = await challengeResponse.json();
+				throw new Error(errorData.message || 'Failed to start security key sign-in');
+			}
+
+			const challenge = await challengeResponse.json();
+
+			// Helper to convert base64url to Uint8Array
+			const base64urlToUint8Array = (base64url: string) => {
+				const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+				const binary = atob(base64);
+				return Uint8Array.from(binary, c => c.charCodeAt(0));
+			};
+
+			// Step 2: Get WebAuthn credential using browser API
+			// Convert the challenge and allowCredentials IDs from base64url strings to Uint8Array
+			const publicKeyOptions = {
+				...challenge,
+				challenge: base64urlToUint8Array(challenge.challenge),
+				...(challenge.allowCredentials && {
+					allowCredentials: challenge.allowCredentials.map((cred: any) => ({
+						...cred,
+						id: base64urlToUint8Array(cred.id)
+					}))
+				}),
+				// Override rpId for development - use current domain
+				rpId: window.location.hostname
+			};
+
+			const publicKeyCredential = await navigator.credentials.get({
+				publicKey: publicKeyOptions
+			}) as PublicKeyCredential;
+
+			if (!publicKeyCredential) {
+				throw new Error('Failed to get security key credential');
+			}
+
+			// Step 3: Verify the credential with Nhost
+			const assertion = publicKeyCredential.response as AuthenticatorAssertionResponse;
+			const verifyResponse = await fetch(
+				`${nhostAuthUrl}/v1/signin/webauthn/verify`,
+				{
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						credential: {
+							id: publicKeyCredential.id,
+							rawId: btoa(String.fromCharCode(...new Uint8Array(publicKeyCredential.rawId))),
+							response: {
+								clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(assertion.clientDataJSON))),
+								authenticatorData: btoa(String.fromCharCode(...new Uint8Array(assertion.authenticatorData))),
+								signature: btoa(String.fromCharCode(...new Uint8Array(assertion.signature))),
+								userHandle: assertion.userHandle ? btoa(String.fromCharCode(...new Uint8Array(assertion.userHandle))) : null
+							},
+							type: publicKeyCredential.type
+						}
+					})
+				}
+			);
+
+			if (!verifyResponse.ok) {
+				const errorData = await verifyResponse.json();
+				throw new Error(errorData.message || 'Failed to verify security key');
+			}
+
+			const authResult = await verifyResponse.json();
+
+			// The response should contain session tokens - need to set them in Nhost
+			if (authResult.session) {
+				// Manually set session in Nhost client
+				await nhost.auth.refreshSession(authResult.session.refreshToken);
+			}
+
+			// Redirect after successful sign-in
+			goto(redirectTo);
+
+		} catch (err: any) {
+			console.error('Error signing in with WebAuthn:', err);
+			error = err as Error;
+		} finally {
+			signingInWithWebAuthn = false;
 		}
 	};
 </script>
@@ -252,6 +381,44 @@
 								{activeTab === 'signin' ? 'Sign In' : 'Sign Up'}
 							</button>
 						</div>
+					{/if}
+
+					{#if activeTab === 'signin'}
+						<button
+							type="button"
+							class="auth-provider-button secondary"
+							onclick={() => (showWebAuthn = !showWebAuthn)}
+							aria-label="Sign in with Security Key"
+						>
+							<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+								<path
+									d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"
+								/>
+							</svg>
+							<span>Sign in with Security Key</span>
+						</button>
+
+						{#if showWebAuthn}
+							<div class="auth-form">
+								<input
+									type="email"
+									bind:value={webAuthnEmail}
+									placeholder="Enter your email"
+									class="auth-input"
+								/>
+								<button
+									type="button"
+									class="auth-submit-button"
+									onclick={handleWebAuthnSignIn}
+									disabled={!webAuthnEmail || signingInWithWebAuthn}
+								>
+									{signingInWithWebAuthn ? 'Authenticating...' : 'Sign In with Security Key'}
+								</button>
+								<p class="auth-hint">
+									You'll be prompted to use your security key or biometric authentication.
+								</p>
+							</div>
+						{/if}
 					{/if}
 				</div>
 				{#if error}
@@ -573,6 +740,14 @@
 		border-radius: 8px;
 		font-size: 0.875rem;
 		margin: 1rem 0 0 0;
+	}
+
+	.auth-hint {
+		color: var(--color-text-secondary);
+		font-size: 0.875rem;
+		margin: 0;
+		text-align: center;
+		line-height: var(--line-height-normal);
 	}
 
 	.auth-footer {

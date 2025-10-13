@@ -65,6 +65,14 @@
 	let authProviders: string[] = [];
 	let loadingProviders = false;
 
+	// WebAuthn state
+	let showAddSecurityKey = false;
+	let securityKeyName = '';
+	let securityKeyError: string | null = null;
+	let securityKeySuccess: string | null = null;
+	let addingSecurityKey = false;
+	let securityKeys: any[] = [];
+
 	// Email change state
 	let showChangeEmail = false;
 	let newEmail = '';
@@ -845,6 +853,138 @@
 		await loadProfile();
 	}
 
+	// WebAuthn: Add security key
+	async function handleAddSecurityKey() {
+		securityKeyError = null;
+		securityKeySuccess = null;
+
+		if (!securityKeyName || securityKeyName.trim().length === 0) {
+			securityKeyError = 'Please enter a name for your security key.';
+			return;
+		}
+
+		addingSecurityKey = true;
+
+		try {
+			// Check for WebAuthn support
+			if (!window.PublicKeyCredential) {
+				throw new Error('Your browser does not support WebAuthn/FIDO2 security keys.');
+			}
+
+			if (!window.isSecureContext) {
+				throw new Error('WebAuthn requires HTTPS. Please access the site via https:// or localhost.');
+			}
+
+			if (!navigator.credentials || !navigator.credentials.create) {
+				throw new Error('WebAuthn Credentials API is not available in this browser.');
+			}
+
+			// Step 1: Request WebAuthn registration challenge from Nhost
+			const accessToken = await nhost.auth.getAccessToken();
+			if (!accessToken) {
+				throw new Error('You must be logged in to add a security key');
+			}
+
+			// Construct Nhost auth URL
+			const subdomain = publicEnv.PUBLIC_NHOST_SUBDOMAIN;
+			const region = publicEnv.PUBLIC_NHOST_REGION;
+			if (!subdomain || !region) {
+				throw new Error('Nhost configuration is missing');
+			}
+			const nhostAuthUrl = `https://${subdomain}.auth.${region}.nhost.run`;
+
+			const challengeResponse = await fetch(
+				`${nhostAuthUrl}/v1/user/webauthn/add`,
+				{
+					method: 'POST',
+					headers: {
+						'Authorization': `Bearer ${accessToken}`,
+						'Content-Type': 'application/json'
+					}
+				}
+			);
+
+			if (!challengeResponse.ok) {
+				throw new Error('Failed to start security key registration');
+			}
+
+			const challenge = await challengeResponse.json();
+
+			// Helper to convert base64url to Uint8Array
+			const base64urlToUint8Array = (base64url: string) => {
+				const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+				const binary = atob(base64);
+				return Uint8Array.from(binary, c => c.charCodeAt(0));
+			};
+
+			// Step 2: Create WebAuthn credential using browser API
+			// Convert the challenge and user.id from base64url strings to Uint8Array
+			const publicKeyOptions = {
+				...challenge,
+				challenge: base64urlToUint8Array(challenge.challenge),
+				user: {
+					...challenge.user,
+					id: base64urlToUint8Array(challenge.user.id)
+				}
+				// Note: Using Nhost's rp.id as-is, which means you need to access the site
+				// via the domain that matches what Nhost expects (see console log above)
+			};
+
+			const publicKeyCredential = await navigator.credentials.create({
+				publicKey: publicKeyOptions
+			}) as PublicKeyCredential;
+
+			if (!publicKeyCredential) {
+				throw new Error('Failed to create security key credential');
+			}
+
+			// Step 3: Verify the credential with Nhost
+			const credential = publicKeyCredential.response as AuthenticatorAttestationResponse;
+			const verifyResponse = await fetch(
+				`${nhostAuthUrl}/v1/user/webauthn/verify`,
+				{
+					method: 'POST',
+					headers: {
+						'Authorization': `Bearer ${accessToken}`,
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						credential: {
+							id: publicKeyCredential.id,
+							rawId: btoa(String.fromCharCode(...new Uint8Array(publicKeyCredential.rawId))),
+							response: {
+								clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(credential.clientDataJSON))),
+								attestationObject: btoa(String.fromCharCode(...new Uint8Array(credential.attestationObject)))
+							},
+							type: publicKeyCredential.type
+						},
+						nickname: securityKeyName.trim()
+					})
+				}
+			);
+
+			if (!verifyResponse.ok) {
+				const errorData = await verifyResponse.json();
+				throw new Error(errorData.message || 'Failed to verify security key');
+			}
+
+			securityKeySuccess = `Security key "${securityKeyName}" added successfully!`;
+			securityKeyName = '';
+
+			// Hide form after success
+			setTimeout(() => {
+				showAddSecurityKey = false;
+				securityKeySuccess = null;
+			}, 3000);
+
+		} catch (err: any) {
+			console.error('Error adding security key:', err);
+			securityKeyError = err?.message || 'Failed to add security key. Please try again.';
+		} finally {
+			addingSecurityKey = false;
+		}
+	}
+
 	onMount(() => {
 		if (user?.email) {
 			newPasswordEmail = user.email;
@@ -1537,6 +1677,75 @@
 												passwordSuccess = null;
 											}}
 											disabled={changingPassword}
+										>
+											Cancel
+										</button>
+									</div>
+								</div>
+							{/if}
+						</div>
+
+						<!-- Security Keys (WebAuthn) Section -->
+						<div class="security-info">
+							<div class="security-item">
+								<div class="security-icon">🔑</div>
+								<div class="security-details">
+									<h4>Security Keys</h4>
+									<p class="security-description">
+										Add hardware security keys or use built-in biometric authentication (TouchID/FaceID) for enhanced security.
+									</p>
+								</div>
+							</div>
+
+							{#if !showAddSecurityKey}
+								<button class="btn-secondary" onclick={() => (showAddSecurityKey = true)}>
+									Add Security Key
+								</button>
+							{/if}
+
+							{#if showAddSecurityKey}
+								<div class="add-password-form">
+									<h4>Add Security Key</h4>
+									<p class="form-description">
+										Give your security key a memorable name, then follow the prompts to register it.
+									</p>
+
+									<label class="field">
+										<span>Key Nickname</span>
+										<input
+											type="text"
+											bind:value={securityKeyName}
+											placeholder="e.g., YubiKey 5, TouchID"
+											maxlength="50"
+										/>
+										<small class="hint">Choose a name that helps you identify this key</small>
+									</label>
+
+									{#if securityKeyError}
+										<div class="error-message">{securityKeyError}</div>
+									{/if}
+
+									{#if securityKeySuccess}
+										<div class="success-message">{securityKeySuccess}</div>
+									{/if}
+
+									<div class="form-actions">
+										<button
+											class="btn-primary"
+											onclick={handleAddSecurityKey}
+											disabled={addingSecurityKey}
+										>
+											{addingSecurityKey ? 'Registering...' : 'Register Security Key'}
+										</button>
+										<button
+											class="btn-secondary"
+											onclick={() => {
+												showAddSecurityKey = false;
+												securityKeyName = '';
+												securityKeyError = null;
+												securityKeySuccess = null;
+											}}
+											disabled={addingSecurityKey}
 										>
 											Cancel
 										</button>
