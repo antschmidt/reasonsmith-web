@@ -79,7 +79,10 @@
 			});
 
 			if (result.error) {
-				throw new Error(result.error.message);
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'Failed to update avatar'
+					: result.error.message || 'Failed to update avatar';
+				throw new Error(errorMessage);
 			}
 
 			// Clean up old preview
@@ -117,7 +120,10 @@
 			});
 
 			if (result.error) {
-				throw new Error(result.error.message);
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'Failed to update avatar'
+					: result.error.message || 'Failed to update avatar';
+				throw new Error(errorMessage);
 			}
 
 			// Clean up preview

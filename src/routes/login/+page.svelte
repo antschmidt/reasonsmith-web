@@ -74,7 +74,7 @@
 				password
 			});
 			if (signInError) {
-				error = signInError;
+				error = new Error(signInError.message || 'Sign in failed');
 			} else {
 				// Redirect after successful sign-in
 				goto(redirectTo);
@@ -92,7 +92,7 @@
 				password
 			});
 			if (signUpError) {
-				error = signUpError;
+				error = new Error(signUpError.message || 'Sign up failed');
 			} else {
 				// Redirect after successful sign-up
 				goto(redirectTo);

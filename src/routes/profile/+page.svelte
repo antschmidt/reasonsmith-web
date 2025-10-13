@@ -1062,6 +1062,15 @@
 					{/if}
 				</div>
 			</div>
+
+			<!-- Legal Links Footer -->
+			<div class="profile-legal-footer">
+				<a href="/terms">Terms of Service</a>
+				<span class="separator">•</span>
+				<a href="/privacy">Privacy Policy</a>
+				<span class="separator">•</span>
+				<a href="/resources/community-guidelines">Community Guidelines</a>
+			</div>
 		{/if}
 	{/if}
 </div>
@@ -1172,6 +1181,8 @@
 	/* Editorial profile page styling */
 	.editorial-profile-page {
 		display: flex;
+		flex-direction: column;
+		align-items: center;
 		justify-content: center;
 		margin-top: 2rem;
 		background: var(--color-surface-alt);
@@ -2181,6 +2192,31 @@
 	.legal-links a:hover {
 		text-decoration: underline;
 		color: var(--color-primary);
+	}
+
+	.profile-legal-footer {
+		margin-top: 3rem;
+		padding-top: 2rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		text-align: center;
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+	}
+
+	.profile-legal-footer a {
+		color: var(--color-text-secondary);
+		text-decoration: none;
+		transition: color 0.2s ease;
+	}
+
+	.profile-legal-footer a:hover {
+		color: var(--color-primary);
+		text-decoration: underline;
+	}
+
+	.profile-legal-footer .separator {
+		margin: 0 0.75rem;
+		opacity: 0.5;
 	}
 
 	.auth-error {

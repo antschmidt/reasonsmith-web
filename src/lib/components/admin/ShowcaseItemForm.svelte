@@ -149,7 +149,10 @@
 			`);
 
 			if (result.error) {
-				throw new Error(result.error.message);
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'Failed to load discussions'
+					: result.error.message || 'Failed to load discussions';
+				throw new Error(errorMessage);
 			}
 
 			discussions = result.data?.discussion || [];

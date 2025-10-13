@@ -57,7 +57,7 @@
 <div class="new-discussion-redirect">
 	{#if creating}
 		<div class="creating-message">
-			<AnimatedLogo size={64} />
+			<AnimatedLogo size="64px" />
 			<p>Creating your new discussion...</p>
 		</div>
 	{:else if error}

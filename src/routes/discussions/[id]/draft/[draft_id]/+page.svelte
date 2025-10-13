@@ -548,7 +548,10 @@
 
 					if (updateResult.error) {
 						console.error('Failed to update citation:', updateResult.error);
-						throw new Error(`Failed to update citation: ${updateResult.error.message}`);
+						const errorMessage = Array.isArray(updateResult.error)
+							? updateResult.error[0]?.message || 'Unknown error'
+							: updateResult.error.message || 'Unknown error';
+						throw new Error(`Failed to update citation: ${errorMessage}`);
 					}
 
 					// Also update the join table's custom fields
@@ -564,7 +567,10 @@
 
 					if (joinUpdateResult.error) {
 						console.error('Failed to update join table:', joinUpdateResult.error);
-						throw new Error(`Failed to update citation link: ${joinUpdateResult.error.message}`);
+						const errorMessage = Array.isArray(joinUpdateResult.error)
+							? joinUpdateResult.error[0]?.message || 'Unknown error'
+							: joinUpdateResult.error.message || 'Unknown error';
+						throw new Error(`Failed to update citation link: ${errorMessage}`);
 					}
 				}
 			}
@@ -887,7 +893,7 @@
 
 			// Check if current published version has comments on it specifically
 			const commentsOnCurrentVersion = allPosts.filter(
-				(post) => post.context_version_id === currentPublished?.id
+				(post: any) => post.context_version_id === currentPublished?.id
 			).length;
 
 			console.log('Publishing analysis:', {
@@ -895,7 +901,7 @@
 				commentsOnCurrentVersion,
 				hasComments: commentsOnCurrentVersion > 0,
 				action: commentsOnCurrentVersion > 0 ? 'archive' : 'archive',
-				commentsData: allPosts.map((p) => ({ id: p.context_version_id }))
+				commentsData: allPosts.map((p: any) => ({ id: p.context_version_id }))
 			});
 
 			// Step 3: Handle existing published version
@@ -1008,7 +1014,7 @@
 			console.log('Verification before publish:', {
 				remainingPublished,
 				shouldBeEmpty: remainingPublished.length === 0,
-				detailedVersions: remainingPublished.map((v) => ({
+				detailedVersions: remainingPublished.map((v: any) => ({
 					id: v.id,
 					version_number: v.version_number,
 					version_type: v.version_type,
