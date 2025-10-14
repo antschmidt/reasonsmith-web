@@ -331,6 +331,7 @@
 		profilePath = user ? `/u/${user.id}` : '';
 		if (!user) return;
 		await loadProfile();
+		await loadSecurityKeys();
 	});
 
 	$: profilePath = handle ? `/u/${handle}` : user ? `/u/${user.id}` : '';
@@ -992,6 +993,9 @@
 			securityKeySuccess = `Security key "${securityKeyName}" added successfully!`;
 			securityKeyName = '';
 
+			// Reload security keys list
+			await loadSecurityKeys();
+
 			// Hide form after success
 			setTimeout(() => {
 				showAddSecurityKey = false;
@@ -1003,6 +1007,77 @@
 			securityKeyError = err?.message || 'Failed to add security key. Please try again.';
 		} finally {
 			addingSecurityKey = false;
+		}
+	}
+
+	// Load list of security keys
+	async function loadSecurityKeys() {
+		try {
+			const accessToken = await nhost.auth.getAccessToken();
+			if (!accessToken) return;
+
+			const subdomain = publicEnv.PUBLIC_NHOST_SUBDOMAIN;
+			const region = publicEnv.PUBLIC_NHOST_REGION;
+			if (!subdomain || !region) return;
+
+			const nhostAuthUrl = `https://${subdomain}.auth.${region}.nhost.run`;
+
+			const response = await fetch(`${nhostAuthUrl}/v1/user/webauthn`, {
+				headers: {
+					'Authorization': `Bearer ${accessToken}`
+				}
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				securityKeys = data.authenticators || data || [];
+			}
+		} catch (err) {
+			console.error('Error loading security keys:', err);
+		}
+	}
+
+	// Remove a security key
+	async function removeSecurityKey(credentialId: string, nickname: string) {
+		if (!confirm(`Are you sure you want to remove "${nickname}"?`)) {
+			return;
+		}
+
+		try {
+			const accessToken = await nhost.auth.getAccessToken();
+			if (!accessToken) {
+				throw new Error('Not authenticated');
+			}
+
+			const subdomain = publicEnv.PUBLIC_NHOST_SUBDOMAIN;
+			const region = publicEnv.PUBLIC_NHOST_REGION;
+			if (!subdomain || !region) {
+				throw new Error('Nhost configuration missing');
+			}
+
+			const nhostAuthUrl = `https://${subdomain}.auth.${region}.nhost.run`;
+
+			const response = await fetch(`${nhostAuthUrl}/v1/user/webauthn/${credentialId}`, {
+				method: 'DELETE',
+				headers: {
+					'Authorization': `Bearer ${accessToken}`
+				}
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to remove security key');
+			}
+
+			securityKeySuccess = `Security key "${nickname}" removed successfully`;
+			await loadSecurityKeys();
+
+			setTimeout(() => {
+				securityKeySuccess = null;
+			}, 3000);
+
+		} catch (err: any) {
+			console.error('Error removing security key:', err);
+			securityKeyError = err?.message || 'Failed to remove security key';
 		}
 	}
 
@@ -1717,6 +1792,32 @@
 									</p>
 								</div>
 							</div>
+
+							<!-- List of existing security keys -->
+							{#if securityKeys.length > 0}
+								<div class="security-keys-list">
+									<h4>Registered Security Keys</h4>
+									<ul class="keys-list">
+										{#each securityKeys as key}
+											<li class="key-item">
+												<div class="key-info">
+													<span class="key-icon">🔐</span>
+													<div class="key-details">
+														<strong>{key.nickname || 'Unnamed Key'}</strong>
+														<small>Added {new Date(key.createdAt).toLocaleDateString()}</small>
+													</div>
+												</div>
+												<button
+													class="btn-danger-small"
+													onclick={() => removeSecurityKey(key.credentialID, key.nickname || 'Unnamed Key')}
+												>
+													Remove
+												</button>
+											</li>
+										{/each}
+									</ul>
+								</div>
+							{/if}
 
 							{#if !showAddSecurityKey}
 								<button class="btn-secondary" onclick={() => (showAddSecurityKey = true)}>
@@ -3380,5 +3481,90 @@
 			flex-direction: column;
 			align-items: flex-start;
 		}
+	}
+
+	/* Security Keys List Styles */
+	.security-keys-list {
+		margin: 1.5rem 0;
+		padding: 1rem;
+		background: var(--color-bg-secondary, #f8f9fa);
+		border-radius: 8px;
+	}
+
+	.security-keys-list h4 {
+		margin: 0 0 1rem 0;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--color-text, #1a1a1a);
+	}
+
+	.keys-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.key-item {
+		display: flex;
+		justify-space-between;
+		align-items: center;
+		padding: 0.75rem 1rem;
+		background: white;
+		border: 1px solid var(--color-border, #e5e7eb);
+		border-radius: 6px;
+		transition: border-color 0.2s;
+	}
+
+	.key-item:hover {
+		border-color: var(--color-primary, #3b82f6);
+	}
+
+	.key-info {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex: 1;
+	}
+
+	.key-icon {
+		font-size: 1.5rem;
+	}
+
+	.key-details {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.key-details strong {
+		font-size: 0.9rem;
+		color: var(--color-text, #1a1a1a);
+	}
+
+	.key-details small {
+		font-size: 0.8rem;
+		color: var(--color-text-secondary, #6b7280);
+	}
+
+	.btn-danger-small {
+		padding: 0.375rem 0.75rem;
+		font-size: 0.85rem;
+		background: #dc2626;
+		color: white;
+		border: none;
+		border-radius: 4px;
+		cursor: pointer;
+		transition: background-color 0.2s;
+	}
+
+	.btn-danger-small:hover {
+		background: #b91c1c;
+	}
+
+	.btn-danger-small:active {
+		background: #991b1b;
 	}
 </style>
