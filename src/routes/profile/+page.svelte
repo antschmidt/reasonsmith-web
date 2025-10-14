@@ -332,6 +332,7 @@
 		if (!user) return;
 		await loadProfile();
 		await loadSecurityKeys();
+		await loadSecurityKeys();
 	});
 
 	$: profilePath = handle ? `/u/${handle}` : user ? `/u/${user.id}` : '';
@@ -992,6 +993,9 @@
 
 			securityKeySuccess = `Security key "${securityKeyName}" added successfully!`;
 			securityKeyName = '';
+
+			// Reload security keys list
+			await loadSecurityKeys();
 
 			// Reload security keys list
 			await loadSecurityKeys();
