@@ -142,8 +142,11 @@ function applyInitialGraphqlRoleHeader() {
 async function upgradeRoleHeaders() {
 	const user = nhost.auth.getUser();
 	if (!user) {
+		console.log('upgradeRoleHeaders: No user found');
 		return;
 	}
+
+	console.log('upgradeRoleHeaders: Starting role upgrade for user', user.id);
 
 	try {
 		// Get user's role from database (using 'me' role initially)
@@ -181,12 +184,22 @@ async function upgradeRoleHeaders() {
 		}
 
 		// Update headers with correct role
+		console.log('upgradeRoleHeaders: Setting role', {
+			databaseRole: userRole,
+			hasuraRole: hasuraRole,
+			userId: user.id
+		});
 		nhost.graphql.setHeaders({
 			'x-hasura-role': hasuraRole,
 			'X-Hasura-User-Id': user.id
 		});
 	} catch (err) {
 		console.error('Failed to upgrade user role, staying as me:', err);
+		console.error('Error details:', {
+			message: err instanceof Error ? err.message : String(err),
+			user: user.id,
+			currentHeaders: nhost.graphql.getHeaders()
+		});
 		// Keep existing 'me' role if upgrade fails
 	}
 }
@@ -254,13 +267,18 @@ if (isBrowser) {
 		});
 	}
 	nhost.auth.onAuthStateChanged(async (event) => {
+		console.log('Auth state changed:', event);
 		if (event === 'SIGNED_IN') {
+			console.log('User signed in, applying initial role header');
 			applyInitialGraphqlRoleHeader();
+			console.log('Ensuring contributor exists');
 			await ensureContributor();
 			// After ensuring contributor exists, upgrade to proper role
+			console.log('Upgrading role headers');
 			await upgradeRoleHeaders();
 		}
 		if (event === 'SIGNED_OUT') {
+			console.log('User signed out, resetting to anonymous');
 			applyInitialGraphqlRoleHeader();
 		}
 	});
