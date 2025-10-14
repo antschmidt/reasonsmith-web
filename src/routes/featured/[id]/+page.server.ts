@@ -12,8 +12,7 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 
 	const result = await fetchHasura(fetch, {
 		query: GET_PUBLIC_SHOWCASE_ITEM,
-		variables: { id },
-		role: 'anonymous'
+		variables: { id }
 	});
 
 	if (result.error) {

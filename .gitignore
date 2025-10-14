@@ -16,3 +16,4 @@ nhost/metadata/
 .claude
 .temp
 scripts/*
+.secrets

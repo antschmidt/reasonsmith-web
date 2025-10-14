@@ -4,8 +4,7 @@ import { fetchHasura } from '$lib/utils/hasuraFetch';
 
 export const load: PageServerLoad = async ({ fetch }) => {
 	const result = await fetchHasura(fetch, {
-		query: GET_PUBLIC_SHOWCASE_PUBLISHED,
-		role: 'anonymous'
+		query: GET_PUBLIC_SHOWCASE_PUBLISHED
 	});
 
 	return {
