@@ -1712,3 +1712,31 @@ export const DELETE_EDITORS_DESK_PICK = gql`
 		}
 	}
 `;
+
+// Security Keys (WebAuthn) queries
+// Note: Based on nhost/metadata/databases/default/tables/auth_user_security_keys.yaml
+// Available fields: id, credentialId, userId, credentialPublicKey
+const SECURITY_KEY_FIELDS = gql`
+	fragment SecurityKeyFields on authUserSecurityKeys {
+		id
+		credentialId
+		userId
+	}
+`;
+
+export const GET_USER_SECURITY_KEYS = gql`
+	query GetUserSecurityKeys($userId: uuid!) {
+		authUserSecurityKeys(where: { userId: { _eq: $userId } }) {
+			...SecurityKeyFields
+		}
+	}
+	${SECURITY_KEY_FIELDS}
+`;
+
+export const DELETE_SECURITY_KEY = gql`
+	mutation DeleteSecurityKey($id: uuid!) {
+		deleteAuthUserSecurityKey(id: $id) {
+			id
+		}
+	}
+`;

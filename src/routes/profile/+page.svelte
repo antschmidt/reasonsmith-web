@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { nhost, ensureContributor } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
-	import { GET_USER_STATS, UPDATE_CONTRIBUTOR_AVATAR } from '$lib/graphql/queries';
+	import { GET_USER_STATS, UPDATE_CONTRIBUTOR_AVATAR, GET_USER_SECURITY_KEYS, DELETE_SECURITY_KEY } from '$lib/graphql/queries';
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
 	import { env as publicEnv } from '$env/dynamic/public';
 	import { getOAuthRedirectURL, isStandalone } from '$lib/utils/pwa';
@@ -1012,70 +1012,42 @@
 
 	// Load list of security keys
 	async function loadSecurityKeys() {
+		if (!user?.id) return;
+
 		try {
-			const accessToken = await nhost.auth.getAccessToken();
-			if (!accessToken) return;
-
-			const subdomain = publicEnv.PUBLIC_NHOST_SUBDOMAIN;
-			const region = publicEnv.PUBLIC_NHOST_REGION;
-			if (!subdomain || !region) return;
-
-			const nhostAuthUrl = `https://${subdomain}.auth.${region}.nhost.run`;
-
-			const response = await fetch(`${nhostAuthUrl}/v1/user/webauthn`, {
-				headers: {
-					'Authorization': `Bearer ${accessToken}`
-				}
+			const graphql = nhost.graphql;
+			const result = await graphql.request(GET_USER_SECURITY_KEYS, {
+				userId: user.id
 			});
 
-			if (response.ok) {
-				const data = await response.json();
-				if (Array.isArray(data)) {
-					securityKeys = data;
-				} else if (data && Array.isArray(data.authenticators)) {
-					securityKeys = data.authenticators;
-				} else {
-					console.warn('Unexpected response format for security keys:', data);
-					securityKeys = [];
-				}
+			if (result.data?.authUserSecurityKeys) {
+				securityKeys = result.data.authUserSecurityKeys;
+			} else {
+				securityKeys = [];
 			}
 		} catch (err) {
 			console.error('Error loading security keys:', err);
+			securityKeys = [];
 		}
 	}
 
 	// Remove a security key
-	async function removeSecurityKey(credentialId: string, nickname: string) {
-		if (!confirm(`Are you sure you want to remove "${nickname}"?`)) {
+	async function removeSecurityKey(keyId: string, credentialId: string) {
+		if (!confirm(`Are you sure you want to remove this security key (${credentialId.substring(0, 8)}...)?`)) {
 			return;
 		}
 
 		try {
-			const accessToken = await nhost.auth.getAccessToken();
-			if (!accessToken) {
-				throw new Error('Not authenticated');
-			}
-
-			const subdomain = publicEnv.PUBLIC_NHOST_SUBDOMAIN;
-			const region = publicEnv.PUBLIC_NHOST_REGION;
-			if (!subdomain || !region) {
-				throw new Error('Nhost configuration missing');
-			}
-
-			const nhostAuthUrl = `https://${subdomain}.auth.${region}.nhost.run`;
-
-			const response = await fetch(`${nhostAuthUrl}/v1/user/webauthn/${credentialId}`, {
-				method: 'DELETE',
-				headers: {
-					'Authorization': `Bearer ${accessToken}`
-				}
+			const graphql = nhost.graphql;
+			const result = await graphql.request(DELETE_SECURITY_KEY, {
+				id: keyId
 			});
 
-			if (!response.ok) {
-				throw new Error('Failed to remove security key');
+			if (result.error) {
+				throw new Error(result.error.message || 'Failed to remove security key');
 			}
 
-			securityKeySuccess = `Security key "${nickname}" removed successfully`;
+			securityKeySuccess = `Security key removed successfully`;
 			await loadSecurityKeys();
 
 			setTimeout(() => {
@@ -1810,13 +1782,13 @@
 												<div class="key-info">
 													<span class="key-icon">🔐</span>
 													<div class="key-details">
-														<strong>{key.nickname || 'Unnamed Key'}</strong>
-														<small>Added {new Date(key.createdAt).toLocaleDateString()}</small>
+														<strong>Security Key</strong>
+														<small class="credential-id">{key.credentialId?.substring(0, 16)}...</small>
 													</div>
 												</div>
 												<button
 													class="btn-danger-small"
-													onclick={() => removeSecurityKey(key.credentialID, key.nickname || 'Unnamed Key')}
+													onclick={() => removeSecurityKey(key.id, key.credentialId)}
 												>
 													Remove
 												</button>
