@@ -37,7 +37,7 @@ export async function resetMonthlyCredits(
 		// Use admin secret if available, otherwise use user access token
 		if (adminSecret) {
 			headers['x-hasura-admin-secret'] = adminSecret;
-			headers['x-hasura-role'] = 'admin';
+			// Admin secret provides full access - no role header needed
 		} else if (accessToken) {
 			headers['Authorization'] = `Bearer ${accessToken}`;
 		} else {

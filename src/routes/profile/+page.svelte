@@ -965,7 +965,12 @@
 
 			if (!verifyResponse.ok) {
 				const errorData = await verifyResponse.json();
-				throw new Error(errorData.message || 'Failed to verify security key');
+				console.error('WebAuthn verification failed:', {
+					status: verifyResponse.status,
+					statusText: verifyResponse.statusText,
+					errorData
+				});
+				throw new Error(errorData.message || errorData.error || 'Failed to verify security key');
 			}
 
 			securityKeySuccess = `Security key "${securityKeyName}" added successfully!`;
