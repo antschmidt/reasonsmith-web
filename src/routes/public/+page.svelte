@@ -3,7 +3,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { nhost } from '$lib/nhostClient';
+	import { nhost, waitForRoleReady } from '$lib/nhostClient';
 	import {
 		GET_PUBLIC_SHOWCASE_ADMIN,
 		CREATE_PUBLIC_SHOWCASE_ITEM,
@@ -98,6 +98,8 @@
 	async function ensureAuth() {
 		try {
 			await nhost.auth.isAuthenticatedAsync();
+			// Wait for role upgrade to complete before checking permissions
+			await waitForRoleReady();
 		} catch {}
 		user = nhost.auth.getUser();
 

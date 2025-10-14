@@ -165,11 +165,15 @@ function applyInitialGraphqlRoleHeader() {
 	}
 }
 
+// Track role upgrade completion
+let roleUpgradePromise: Promise<void> | null = null;
+
 // Upgrade role headers based on database role (call after initial auth)
 async function upgradeRoleHeaders() {
 	const user = nhost.auth.getUser();
 	if (!user) {
 		console.log('upgradeRoleHeaders: No user found');
+		roleUpgradePromise = Promise.resolve();
 		return;
 	}
 
@@ -235,6 +239,13 @@ export async function refreshUserRole() {
 	await upgradeRoleHeaders();
 }
 
+// Wait for role upgrade to complete before making GraphQL requests
+export async function waitForRoleReady(): Promise<void> {
+	if (roleUpgradePromise) {
+		await roleUpgradePromise;
+	}
+}
+
 // Debug function for admin requests
 export function debugAdminRequest(operation: string) {
 	const user = nhost.auth.getUser();
@@ -286,9 +297,9 @@ export async function ensureContributor() {
 if (isBrowser) {
 	if (nhost.auth.getUser()) {
 		applyInitialGraphqlRoleHeader();
-		ensureContributor().then(() => {
+		roleUpgradePromise = ensureContributor().then(() => {
 			// After ensuring contributor exists, upgrade to proper role
-			upgradeRoleHeaders();
+			return upgradeRoleHeaders();
 		});
 	}
 	nhost.auth.onAuthStateChanged(async (event) => {
@@ -300,7 +311,8 @@ if (isBrowser) {
 			await ensureContributor();
 			// After ensuring contributor exists, upgrade to proper role
 			console.log('Upgrading role headers');
-			await upgradeRoleHeaders();
+			roleUpgradePromise = upgradeRoleHeaders();
+			await roleUpgradePromise;
 		}
 		if (event === 'SIGNED_OUT') {
 			console.log('User signed out, resetting to anonymous');
