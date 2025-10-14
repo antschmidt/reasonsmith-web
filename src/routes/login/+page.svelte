@@ -152,11 +152,19 @@
 
 			if (!challengeResponse.ok) {
 				let errorMessage = 'Failed to start security key sign-in';
-				try {
-					const errorData = await challengeResponse.json();
-					errorMessage = errorData.message || errorData.error || errorMessage;
-				} catch (e) {
-					// Response is not JSON, use status text
+				const contentType = challengeResponse.headers.get('content-type');
+
+				if (contentType?.includes('application/json')) {
+					try {
+						const errorData = await challengeResponse.json();
+						errorMessage = errorData.message || errorData.error || errorMessage;
+					} catch (e) {
+						// JSON parsing failed despite content-type header
+						console.error('Failed to parse JSON error response:', e);
+						errorMessage = `${errorMessage} (${challengeResponse.status} ${challengeResponse.statusText})`;
+					}
+				} else {
+					// Response is not JSON
 					errorMessage = `${errorMessage} (${challengeResponse.status} ${challengeResponse.statusText})`;
 				}
 				throw new Error(errorMessage);
@@ -229,10 +237,19 @@
 
 			if (!verifyResponse.ok) {
 				let errorMessage = 'Failed to verify security key';
-				try {
-					const errorData = await verifyResponse.json();
-					errorMessage = errorData.message || errorData.error || errorMessage;
-				} catch (e) {
+				const contentType = verifyResponse.headers.get('content-type');
+
+				if (contentType?.includes('application/json')) {
+					try {
+						const errorData = await verifyResponse.json();
+						errorMessage = errorData.message || errorData.error || errorMessage;
+					} catch (e) {
+						// JSON parsing failed despite content-type header
+						console.error('Failed to parse JSON error response:', e);
+						errorMessage = `${errorMessage} (${verifyResponse.status} ${verifyResponse.statusText})`;
+					}
+				} else {
+					// Response is not JSON
 					errorMessage = `${errorMessage} (${verifyResponse.status} ${verifyResponse.statusText})`;
 				}
 				throw new Error(errorMessage);
