@@ -3516,7 +3516,7 @@
 
 	.key-item {
 		display: flex;
-		justify-space-between;
+		justify-content: space-between;
 		align-items: center;
 		padding: 0.75rem 1rem;
 		background: white;
