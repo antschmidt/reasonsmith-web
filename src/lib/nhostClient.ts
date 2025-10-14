@@ -161,10 +161,12 @@ async function upgradeRoleHeaders() {
 		const userRole = result.data?.contributor_by_pk?.role || 'user';
 
 		// Map database roles to Hasura roles
+		// Note: 'admin' users use 'slartibartfast' Hasura role since admin role
+		// is not configured in Hasura metadata. Backend checks actual role from contributor table.
 		let hasuraRole;
 		switch (userRole) {
 			case 'admin':
-				hasuraRole = 'admin'; // Root admin with complete system control
+				hasuraRole = 'slartibartfast'; // Use slartibartfast role for admins in Hasura
 				break;
 			case 'slartibartfast':
 				hasuraRole = 'slartibartfast'; // Site manager (featured content, disputes)
