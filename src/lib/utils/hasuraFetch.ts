@@ -17,7 +17,7 @@ const getHasuraConfig = () => {
 export interface HasuraFetchOptions {
 	query: DocumentNode;
 	variables?: Record<string, any>;
-	role?: string;
+	// Note: role option removed - admin secret provides full access without role headers
 }
 
 export interface HasuraFetchResult<T = any> {
@@ -47,8 +47,8 @@ export async function fetchHasura<T = any>(
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				'x-hasura-admin-secret': adminSecret,
-				...(options.role && { 'x-hasura-role': options.role })
+				'x-hasura-admin-secret': adminSecret
+				// Admin secret provides full access - no role header needed
 			},
 			body: JSON.stringify({
 				query: print(options.query),
