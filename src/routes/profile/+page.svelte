@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { nhost, ensureContributor } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
-	import { GET_USER_STATS, UPDATE_CONTRIBUTOR_AVATAR, GET_USER_SECURITY_KEYS, DELETE_SECURITY_KEY } from '$lib/graphql/queries';
+	import { GET_USER_STATS, UPDATE_CONTRIBUTOR_AVATAR, DELETE_SECURITY_KEY } from '$lib/graphql/queries';
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
 	import { env as publicEnv } from '$env/dynamic/public';
 	import { getOAuthRedirectURL, isStandalone } from '$lib/utils/pwa';
@@ -32,7 +32,7 @@
 		if (user && !fetching) {
 			profilePath = `/u/${user.id}`;
 			await loadProfile();
-			await loadAuthProviders();
+			// loadAuthProviders is now called inside loadProfile after contributor is set
 		}
 	});
 	let loading = false;
@@ -131,6 +131,8 @@
         subscription_tier
         avatar_url
         has_password_auth
+        login_providers
+        security_keys
       }
       discussion(where: { created_by: { _eq: $id } }, order_by: { created_at: desc }) {
         id
@@ -484,6 +486,11 @@
 			} else if (statsResult.data) {
 				stats = calculateUserStats(statsResult.data as any);
 			}
+
+			// Load auth providers after contributor is set
+			await loadAuthProviders();
+			// Load security keys after profile is loaded
+			await loadSecurityKeys();
 		} catch (e: any) {
 			error = e?.message || 'Failed to load profile.';
 		} finally {
@@ -494,18 +501,19 @@
 	}
 
 	async function loadAuthProviders() {
-		if (!user) return;
-		loadingProviders = true;
+		if (!contributor?.login_providers) {
+			authProviders = [];
+			return;
+		}
+
+		// Simply read from the login_providers field that's automatically synced by DB triggers
 		try {
-			const response = await fetch(`/api/checkAuthMethods?userId=${user.id}`);
-			if (response.ok) {
-				const data = await response.json();
-				authProviders = data.providers || [];
-			}
+			authProviders = Array.isArray(contributor.login_providers)
+				? contributor.login_providers
+				: [];
 		} catch (e) {
-			console.error('Failed to load auth providers:', e);
-		} finally {
-			loadingProviders = false;
+			console.error('Failed to parse login providers:', e);
+			authProviders = [];
 		}
 	}
 
@@ -1016,21 +1024,18 @@
 
 	// Load list of security keys
 	async function loadSecurityKeys() {
-		if (!user?.id) return;
+		if (!contributor?.security_keys) {
+			securityKeys = [];
+			return;
+		}
 
+		// Simply read from the security_keys field that's automatically synced by DB triggers
 		try {
-			const graphql = nhost.graphql;
-			const result = await graphql.request(GET_USER_SECURITY_KEYS, {
-				userId: user.id
-			});
-
-			if (result.data?.authUserSecurityKeys) {
-				securityKeys = result.data.authUserSecurityKeys;
-			} else {
-				securityKeys = [];
-			}
+			securityKeys = Array.isArray(contributor.security_keys)
+				? contributor.security_keys
+				: [];
 		} catch (err) {
-			console.error('Error loading security keys:', err);
+			console.error('Error parsing security keys:', err);
 			securityKeys = [];
 		}
 	}
@@ -1578,7 +1583,7 @@
 											</div>
 										{/if}
 
-										<!-- Show OAuth providers from auth_user_providers table -->
+										<!-- Show all auth providers (OAuth + email-password) from login_providers -->
 										{#if authProviders.length > 0}
 											{#each authProviders as providerId}
 												{@const providerInfo = getProviderInfo(providerId)}
@@ -1587,14 +1592,6 @@
 													<span class="method-name">{providerInfo.name}</span>
 												</div>
 											{/each}
-										{/if}
-
-										<!-- Always show password auth status based on has_password_auth field -->
-										{#if hasPasswordAuth}
-											<div class="auth-method">
-												<span class="method-icon">🔐</span>
-												<span class="method-name">Email/Password</span>
-											</div>
 										{/if}
 
 										<!-- Show loading state -->
@@ -1608,7 +1605,7 @@
 								</div>
 							</div>
 
-							{#if !hasPasswordAuth && !showAddPassword}
+							{#if !authProviders.includes('email-password') && !showAddPassword}
 								<button class="btn-secondary" onclick={() => (showAddPassword = true)}>
 									Add Email/Password Authentication
 								</button>
@@ -1687,7 +1684,7 @@
 								</div>
 							{/if}
 
-							{#if hasPasswordAuth && !showChangePassword}
+							{#if authProviders.includes('email-password') && !showChangePassword}
 								<button class="btn-secondary" onclick={() => (showChangePassword = true)}>
 									Change Password
 								</button>
@@ -1781,13 +1778,13 @@
 								<div class="security-keys-list">
 									<h4>Registered Security Keys</h4>
 									<ul class="keys-list">
-										{#each securityKeys as key}
+										{#each securityKeys as key, index}
 											<li class="key-item">
 												<div class="key-info">
 													<span class="key-icon">🔐</span>
 													<div class="key-details">
-														<strong>Security Key</strong>
-														<small class="credential-id">{key.credentialId?.substring(0, 16)}...</small>
+														<strong>{key.nickname || `Security Key #${index + 1}`}</strong>
+														<small class="credential-id">ID: ...{key.credentialId?.substring(key.credentialId.length - 8)}</small>
 													</div>
 												</div>
 												<button
@@ -3466,19 +3463,19 @@
 		}
 	}
 
-	/* Security Keys List Styles */
+	/* Security Keys List Styles - Match auth-methods styling */
 	.security-keys-list {
-		margin: 1.5rem 0;
-		padding: 1rem;
-		background: var(--color-bg-secondary, #f8f9fa);
-		border-radius: 8px;
+		margin-top: 1rem;
 	}
 
 	.security-keys-list h4 {
-		margin: 0 0 1rem 0;
-		font-size: 0.95rem;
+		font-family: var(--font-family-display);
+		font-size: 0.9375rem;
 		font-weight: 600;
-		color: var(--color-text, #1a1a1a);
+		color: var(--color-text-secondary);
+		margin: 0 0 0.75rem 0;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
 
 	.keys-list {
@@ -3495,14 +3492,15 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 0.75rem 1rem;
-		background: white;
-		border: 1px solid var(--color-border, #e5e7eb);
-		border-radius: 6px;
-		transition: border-color 0.2s;
+		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: 8px;
+		transition: all 0.2s ease;
 	}
 
 	.key-item:hover {
-		border-color: var(--color-primary, #3b82f6);
+		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
+		border-color: color-mix(in srgb, var(--color-border) 60%, transparent);
 	}
 
 	.key-info {
@@ -3513,7 +3511,8 @@
 	}
 
 	.key-icon {
-		font-size: 1.5rem;
+		color: var(--color-primary);
+		font-size: 1.1rem;
 	}
 
 	.key-details {
@@ -3523,28 +3522,32 @@
 	}
 
 	.key-details strong {
-		font-size: 0.9rem;
-		color: var(--color-text, #1a1a1a);
+		font-size: 0.9375rem;
+		color: var(--color-text-primary);
+		font-weight: 500;
 	}
 
 	.key-details small {
-		font-size: 0.8rem;
-		color: var(--color-text-secondary, #6b7280);
+		font-size: 0.8125rem;
+		color: var(--color-text-secondary);
+		font-family: var(--font-family-mono, 'Courier New', monospace);
 	}
 
 	.btn-danger-small {
-		padding: 0.375rem 0.75rem;
-		font-size: 0.85rem;
-		background: #dc2626;
-		color: white;
-		border: none;
-		border-radius: 4px;
+		padding: 0.5rem 1rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		background: transparent;
+		color: var(--color-error, #dc2626);
+		border: 1px solid color-mix(in srgb, var(--color-error, #dc2626) 40%, transparent);
+		border-radius: 6px;
 		cursor: pointer;
-		transition: background-color 0.2s;
+		transition: all 0.2s ease;
 	}
 
 	.btn-danger-small:hover {
-		background: #b91c1c;
+		background: color-mix(in srgb, var(--color-error, #dc2626) 10%, transparent);
+		border-color: var(--color-error, #dc2626);
 	}
 
 	.btn-danger-small:active {
