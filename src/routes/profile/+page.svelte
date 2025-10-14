@@ -910,6 +910,13 @@
 
 			const challenge = await challengeResponse.json();
 
+			// Log the challenge to see what RP ID Nhost is sending
+			console.log('WebAuthn challenge from Nhost:', {
+				rpId: challenge.rp?.id,
+				rpName: challenge.rp?.name,
+				currentDomain: window.location.hostname
+			});
+
 			// Helper to convert base64url to Uint8Array
 			const base64urlToUint8Array = (base64url: string) => {
 				const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
@@ -917,8 +924,18 @@
 				return Uint8Array.from(binary, c => c.charCodeAt(0));
 			};
 
+			// Helper to convert Uint8Array/ArrayBuffer to base64url
+			const arrayBufferToBase64url = (buffer: ArrayBuffer | Uint8Array) => {
+				const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+				const binary = String.fromCharCode(...bytes);
+				const base64 = btoa(binary);
+				return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+			};
+
 			// Step 2: Create WebAuthn credential using browser API
 			// Convert the challenge and user.id from base64url strings to Uint8Array
+			// Note: RP ID from Nhost must match the domain you're accessing the site from
+			// For development, access via https://reasonsmith.com. localhost won't work.
 			const publicKeyOptions = {
 				...challenge,
 				challenge: base64urlToUint8Array(challenge.challenge),
@@ -926,8 +943,7 @@
 					...challenge.user,
 					id: base64urlToUint8Array(challenge.user.id)
 				}
-				// Note: Using Nhost's rp.id as-is, which means you need to access the site
-				// via the domain that matches what Nhost expects (see console log above)
+				// Using Nhost's RP ID as-is (reasonsmith.com)
 			};
 
 			const publicKeyCredential = await navigator.credentials.create({
@@ -951,10 +967,10 @@
 					body: JSON.stringify({
 						credential: {
 							id: publicKeyCredential.id,
-							rawId: btoa(String.fromCharCode(...new Uint8Array(publicKeyCredential.rawId))),
+							rawId: arrayBufferToBase64url(publicKeyCredential.rawId),
 							response: {
-								clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(credential.clientDataJSON))),
-								attestationObject: btoa(String.fromCharCode(...new Uint8Array(credential.attestationObject)))
+								clientDataJSON: arrayBufferToBase64url(credential.clientDataJSON),
+								attestationObject: arrayBufferToBase64url(credential.attestationObject)
 							},
 							type: publicKeyCredential.type
 						},
