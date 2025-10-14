@@ -1715,12 +1715,13 @@ export const DELETE_EDITORS_DESK_PICK = gql`
 
 // Security Keys (WebAuthn) queries
 // Note: Based on nhost/metadata/databases/default/tables/auth_user_security_keys.yaml
-// Available fields: id, credentialId, userId, credentialPublicKey
+// Available fields: id, credentialId, userId, credentialPublicKey, nickname (not in metadata but exists in DB)
 const SECURITY_KEY_FIELDS = gql`
 	fragment SecurityKeyFields on authUserSecurityKeys {
 		id
 		credentialId
 		userId
+		nickname
 	}
 `;
 
