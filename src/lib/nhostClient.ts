@@ -93,6 +93,11 @@ if (isBrowser) {
 			const [input, init] = args;
 			const url = typeof input === 'string' ? input : input instanceof Request ? input.url : '';
 
+			// Wait for role upgrade before GraphQL requests
+			if (url.includes('/graphql') && roleUpgradePromise) {
+				await roleUpgradePromise;
+			}
+
 			// Log GraphQL requests with role headers
 			if (url.includes('/graphql')) {
 				const headers = init?.headers || {};
@@ -152,6 +157,9 @@ if (isBrowser) {
 
 export const nhost = new NhostClient(nhostConfig);
 
+// Track role upgrade completion
+let roleUpgradePromise: Promise<void> | null = null;
+
 // Apply initial GraphQL role header (authenticated users start as 'me')
 function applyInitialGraphqlRoleHeader() {
 	const user = nhost.auth.getUser();
@@ -170,6 +178,7 @@ async function upgradeRoleHeaders() {
 	const user = nhost.auth.getUser();
 	if (!user) {
 		console.log('upgradeRoleHeaders: No user found');
+		roleUpgradePromise = Promise.resolve();
 		return;
 	}
 
@@ -235,6 +244,13 @@ export async function refreshUserRole() {
 	await upgradeRoleHeaders();
 }
 
+// Wait for role upgrade to complete before making GraphQL requests
+export async function waitForRoleReady(): Promise<void> {
+	if (roleUpgradePromise) {
+		await roleUpgradePromise;
+	}
+}
+
 // Debug function for admin requests
 export function debugAdminRequest(operation: string) {
 	const user = nhost.auth.getUser();
@@ -286,9 +302,9 @@ export async function ensureContributor() {
 if (isBrowser) {
 	if (nhost.auth.getUser()) {
 		applyInitialGraphqlRoleHeader();
-		ensureContributor().then(() => {
+		roleUpgradePromise = ensureContributor().then(() => {
 			// After ensuring contributor exists, upgrade to proper role
-			upgradeRoleHeaders();
+			return upgradeRoleHeaders();
 		});
 	}
 	nhost.auth.onAuthStateChanged(async (event) => {
@@ -300,7 +316,8 @@ if (isBrowser) {
 			await ensureContributor();
 			// After ensuring contributor exists, upgrade to proper role
 			console.log('Upgrading role headers');
-			await upgradeRoleHeaders();
+			roleUpgradePromise = upgradeRoleHeaders();
+			await roleUpgradePromise;
 		}
 		if (event === 'SIGNED_OUT') {
 			console.log('User signed out, resetting to anonymous');
