@@ -151,8 +151,15 @@
 			);
 
 			if (!challengeResponse.ok) {
-				const errorData = await challengeResponse.json();
-				throw new Error(errorData.message || 'Failed to start security key sign-in');
+				let errorMessage = 'Failed to start security key sign-in';
+				try {
+					const errorData = await challengeResponse.json();
+					errorMessage = errorData.message || errorData.error || errorMessage;
+				} catch (e) {
+					// Response is not JSON, use status text
+					errorMessage = `${errorMessage} (${challengeResponse.status} ${challengeResponse.statusText})`;
+				}
+				throw new Error(errorMessage);
 			}
 
 			const challenge = await challengeResponse.json();
@@ -164,8 +171,17 @@
 				return Uint8Array.from(binary, c => c.charCodeAt(0));
 			};
 
+			// Helper to convert Uint8Array/ArrayBuffer to base64url
+			const arrayBufferToBase64url = (buffer: ArrayBuffer | Uint8Array) => {
+				const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+				const binary = String.fromCharCode(...bytes);
+				const base64 = btoa(binary);
+				return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+			};
+
 			// Step 2: Get WebAuthn credential using browser API
 			// Convert the challenge and allowCredentials IDs from base64url strings to Uint8Array
+			// Note: RP ID from Nhost must match the domain (reasonsmith.com)
 			const publicKeyOptions = {
 				...challenge,
 				challenge: base64urlToUint8Array(challenge.challenge),
@@ -174,9 +190,8 @@
 						...cred,
 						id: base64urlToUint8Array(cred.id)
 					}))
-				}),
-				// Override rpId for development - use current domain
-				rpId: window.location.hostname
+				})
+				// Using Nhost's RP ID as-is
 			};
 
 			const publicKeyCredential = await navigator.credentials.get({
@@ -199,12 +214,12 @@
 					body: JSON.stringify({
 						credential: {
 							id: publicKeyCredential.id,
-							rawId: btoa(String.fromCharCode(...new Uint8Array(publicKeyCredential.rawId))),
+							rawId: arrayBufferToBase64url(publicKeyCredential.rawId),
 							response: {
-								clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(assertion.clientDataJSON))),
-								authenticatorData: btoa(String.fromCharCode(...new Uint8Array(assertion.authenticatorData))),
-								signature: btoa(String.fromCharCode(...new Uint8Array(assertion.signature))),
-								userHandle: assertion.userHandle ? btoa(String.fromCharCode(...new Uint8Array(assertion.userHandle))) : null
+								clientDataJSON: arrayBufferToBase64url(assertion.clientDataJSON),
+								authenticatorData: arrayBufferToBase64url(assertion.authenticatorData),
+								signature: arrayBufferToBase64url(assertion.signature),
+								userHandle: assertion.userHandle ? arrayBufferToBase64url(assertion.userHandle) : null
 							},
 							type: publicKeyCredential.type
 						}
@@ -213,8 +228,14 @@
 			);
 
 			if (!verifyResponse.ok) {
-				const errorData = await verifyResponse.json();
-				throw new Error(errorData.message || 'Failed to verify security key');
+				let errorMessage = 'Failed to verify security key';
+				try {
+					const errorData = await verifyResponse.json();
+					errorMessage = errorData.message || errorData.error || errorMessage;
+				} catch (e) {
+					errorMessage = `${errorMessage} (${verifyResponse.status} ${verifyResponse.statusText})`;
+				}
+				throw new Error(errorMessage);
 			}
 
 			const authResult = await verifyResponse.json();
