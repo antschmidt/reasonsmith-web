@@ -1715,7 +1715,9 @@ export const DELETE_EDITORS_DESK_PICK = gql`
 
 // Security Keys (WebAuthn) queries
 // Note: Based on nhost/metadata/databases/default/tables/auth_user_security_keys.yaml
-// Available fields: id, credentialId, userId, credentialPublicKey, nickname (not in metadata but exists in DB)
+// WARNING: The 'nickname' field exists in the database but is NOT present in the metadata.
+// This schema inconsistency may cause confusion or errors if metadata is used for type generation or validation.
+// To resolve, update the metadata to include 'nickname', or ensure all code using this field is aware of the discrepancy.
 const SECURITY_KEY_FIELDS = gql`
 	fragment SecurityKeyFields on authUserSecurityKeys {
 		id
