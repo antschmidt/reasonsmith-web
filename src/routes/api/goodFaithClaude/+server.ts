@@ -218,7 +218,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						headers: {
 							'Content-Type': 'application/json',
 							'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET || '',
-							'x-hasura-role': 'admin'
+							// Admin secret provides full access - no role needed
 						},
 						body: JSON.stringify({
 							query: `query { contributor(limit: 1) { id } }`
@@ -236,7 +236,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							headers: {
 								'Content-Type': 'application/json',
 								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET || '',
-								'x-hasura-role': 'admin'
+								// Admin secret provides full access - no role needed
 							},
 							body: JSON.stringify({
 								query: `query { contributor(limit: 1) { id } }`
@@ -253,7 +253,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							headers: {
 								'Content-Type': 'application/json',
 								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET || '',
-								'x-hasura-role': 'admin'
+								// Admin secret provides full access - no role needed
 							},
 							body: JSON.stringify({
 								query: `
@@ -340,7 +340,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						headers: {
 							'Content-Type': 'application/json',
 							'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET_CREDIT || '',
-							'x-hasura-role': 'admin'
+							// Admin secret provides full access - no role needed
 						},
 						body: JSON.stringify({ query: `query { contributor(limit: 1) { id } }` })
 					});
@@ -373,7 +373,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							headers: {
 								'Content-Type': 'application/json',
 								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET_CREDIT || '',
-								'x-hasura-role': 'admin'
+								// Admin secret provides full access - no role needed
 							},
 							body: JSON.stringify({
 								query: print(mutation),
