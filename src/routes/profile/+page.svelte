@@ -1030,7 +1030,14 @@
 
 			if (response.ok) {
 				const data = await response.json();
-				securityKeys = data.authenticators || data || [];
+				if (Array.isArray(data)) {
+					securityKeys = data;
+				} else if (data && Array.isArray(data.authenticators)) {
+					securityKeys = data.authenticators;
+				} else {
+					console.warn('Unexpected response format for security keys:', data);
+					securityKeys = [];
+				}
 			}
 		} catch (err) {
 			console.error('Error loading security keys:', err);
