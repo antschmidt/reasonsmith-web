@@ -93,6 +93,11 @@ if (isBrowser) {
 			const [input, init] = args;
 			const url = typeof input === 'string' ? input : input instanceof Request ? input.url : '';
 
+			// Wait for role upgrade before GraphQL requests
+			if (url.includes('/graphql') && roleUpgradePromise) {
+				await roleUpgradePromise;
+			}
+
 			// Log GraphQL requests with role headers
 			if (url.includes('/graphql')) {
 				const headers = init?.headers || {};
@@ -152,6 +157,9 @@ if (isBrowser) {
 
 export const nhost = new NhostClient(nhostConfig);
 
+// Track role upgrade completion
+let roleUpgradePromise: Promise<void> | null = null;
+
 // Apply initial GraphQL role header (authenticated users start as 'me')
 function applyInitialGraphqlRoleHeader() {
 	const user = nhost.auth.getUser();
@@ -164,9 +172,6 @@ function applyInitialGraphqlRoleHeader() {
 		nhost.graphql.setHeaders({ 'x-hasura-role': 'anonymous' });
 	}
 }
-
-// Track role upgrade completion
-let roleUpgradePromise: Promise<void> | null = null;
 
 // Upgrade role headers based on database role (call after initial auth)
 async function upgradeRoleHeaders() {
