@@ -1740,3 +1740,44 @@ export const DELETE_SECURITY_KEY = gql`
 		}
 	}
 `;
+
+// Auth Providers queries
+export const GET_USER_PROVIDERS = gql`
+	query GetUserProviders($userId: uuid!) {
+		authUserProviders(where: { userId: { _eq: $userId } }) {
+			providerId
+		}
+	}
+`;
+
+// Check if user has password set
+export const CHECK_USER_HAS_PASSWORD = gql`
+	query CheckUserHasPassword($userId: uuid!) {
+		hasPassword: users_aggregate(
+			where: { id: { _eq: $userId }, passwordHash: { _is_null: false } }
+		) {
+			aggregate {
+				count
+			}
+		}
+	}
+`;
+
+// Combined query to get all auth methods in one request
+export const GET_USER_AUTH_METHODS = gql`
+	query GetUserAuthMethods($userId: uuid!) {
+		# Get OAuth providers
+		authUserProviders(where: { userId: { _eq: $userId } }) {
+			providerId
+		}
+
+		# Check if password is set
+		hasPassword: users_aggregate(
+			where: { id: { _eq: $userId }, passwordHash: { _is_null: false } }
+		) {
+			aggregate {
+				count
+			}
+		}
+	}
+`;

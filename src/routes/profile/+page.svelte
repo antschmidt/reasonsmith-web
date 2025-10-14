@@ -131,6 +131,7 @@
         subscription_tier
         avatar_url
         has_password_auth
+        login_providers
       }
       discussion(where: { created_by: { _eq: $id } }, order_by: { created_at: desc }) {
         id
@@ -494,18 +495,19 @@
 	}
 
 	async function loadAuthProviders() {
-		if (!user) return;
-		loadingProviders = true;
+		if (!contributor?.login_providers) {
+			authProviders = [];
+			return;
+		}
+
+		// Simply read from the login_providers field that's automatically synced by DB triggers
 		try {
-			const response = await fetch(`/api/checkAuthMethods?userId=${user.id}`);
-			if (response.ok) {
-				const data = await response.json();
-				authProviders = data.providers || [];
-			}
+			authProviders = Array.isArray(contributor.login_providers)
+				? contributor.login_providers
+				: [];
 		} catch (e) {
-			console.error('Failed to load auth providers:', e);
-		} finally {
-			loadingProviders = false;
+			console.error('Failed to parse login providers:', e);
+			authProviders = [];
 		}
 	}
 
