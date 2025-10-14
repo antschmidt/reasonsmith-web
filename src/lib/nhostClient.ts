@@ -92,8 +92,35 @@ if (isBrowser) {
 		window.fetch = async (...args) => {
 			const [input, init] = args;
 			const url = typeof input === 'string' ? input : input instanceof Request ? input.url : '';
+
+			// Log GraphQL requests with role headers
+			if (url.includes('/graphql')) {
+				const headers = init?.headers || {};
+				const headersObj = headers instanceof Headers ? Object.fromEntries(headers.entries()) : headers;
+				console.log('[GraphQL Request]', {
+					url,
+					role: headersObj['x-hasura-role'] || headersObj['X-Hasura-Role'],
+					userId: headersObj['X-Hasura-User-Id'] || headersObj['x-hasura-user-id'],
+					hasAuth: !!(headersObj['Authorization'] || headersObj['authorization'])
+				});
+			}
+
 			try {
 				const response = await originalFetch(input as RequestInfo, init as RequestInit);
+
+				// Log GraphQL errors
+				if (url.includes('/graphql') && !response.ok) {
+					const clone = response.clone();
+					try {
+						const json = await clone.json();
+						if (json.errors) {
+							console.error('[GraphQL Error]', json.errors);
+						}
+					} catch (e) {
+						// Ignore JSON parse errors
+					}
+				}
+
 				if (url.includes(TOKEN_ENDPOINT_PATH) && !response.ok) {
 					console.warn(
 						'[nhostClient] Clearing cached session after token endpoint failure',
@@ -164,12 +191,10 @@ async function upgradeRoleHeaders() {
 		const userRole = result.data?.contributor_by_pk?.role || 'user';
 
 		// Map database roles to Hasura roles
-		// Note: 'admin' users use 'slartibartfast' Hasura role since admin role
-		// is not configured in Hasura metadata. Backend checks actual role from contributor table.
 		let hasuraRole;
 		switch (userRole) {
 			case 'admin':
-				hasuraRole = 'slartibartfast'; // Use slartibartfast role for admins in Hasura
+				hasuraRole = 'admin'; // Full system access
 				break;
 			case 'slartibartfast':
 				hasuraRole = 'slartibartfast'; // Site manager (featured content, disputes)
