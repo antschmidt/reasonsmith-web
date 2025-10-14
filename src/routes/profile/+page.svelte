@@ -952,7 +952,12 @@
 				user: {
 					...challenge.user,
 					id: base64urlToUint8Array(challenge.user.id)
-				}
+				},
+				// Convert excludeCredentials IDs from base64url strings to ArrayBuffers
+				excludeCredentials: challenge.excludeCredentials?.map((cred: any) => ({
+					...cred,
+					id: base64urlToUint8Array(cred.id)
+				})) || []
 				// Using Nhost's RP ID as-is (reasonsmith.com)
 			};
 
