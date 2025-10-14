@@ -460,7 +460,17 @@
 		}
 	}
 
-	onMount(() => {
+	onMount(async () => {
+		// Wait for initial auth state to load before checking access
+		await new Promise<void>((resolve) => {
+			const unsubscribe = nhost.auth.onAuthStateChanged(() => {
+				unsubscribe();
+				resolve();
+			});
+			// Timeout in case auth never fires
+			setTimeout(resolve, 2000);
+		});
+
 		const off = nhost.auth.onAuthStateChanged(async () => {
 			user = nhost.auth.getUser();
 			const roles = collectRoles(user);
@@ -472,7 +482,9 @@
 				error = 'You do not have permission to view this page.';
 			}
 		});
-		ensureAuth();
+
+		await ensureAuth();
+
 		return () => {
 			try {
 				(off as any)?.();
