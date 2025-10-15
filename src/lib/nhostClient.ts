@@ -169,6 +169,22 @@ if (isBrowser) {
 
 export const nhost = createClient(nhostConfig);
 
+// TypeScript declarations for v3 compatibility methods
+declare module '@nhost/nhost-js' {
+	interface AuthClient {
+		isAuthenticatedAsync: () => Promise<boolean>;
+		onAuthStateChanged: (callback: (event?: string, session?: any) => void) => () => void;
+		getAccessToken: () => string | null;
+		signIn: (params: any) => Promise<any>;
+		signUp: (params: any) => Promise<any>;
+		changePassword: (params: any) => Promise<any>;
+		getUser: () => any;
+	}
+	interface GraphQLClient {
+		getUrl: () => string;
+	}
+}
+
 // v3 compatibility: Add onAuthStateChanged to auth client
 // v4 uses sessionStorage.onChange, but v3 used auth.onAuthStateChanged
 // @ts-ignore - Adding v3 compatibility method
@@ -253,12 +269,12 @@ nhost.auth.signIn = async (params: any) => {
 				password: params.password
 			});
 			// Convert v4 response to v3 format
-			// v4: FetchResponse<SignInEmailPasswordResponse> with body.session, body.mfa
+			// v4: FetchResponse<SignInEmailPasswordResponse> with body.session, body.mfa, error
 			// v3: { session?, mfa?, error? }
 			return {
 				session: result.body?.session,
 				mfa: result.body?.mfa,
-				error: result.body?.error ?? null
+				error: result.error ? { message: result.error.message } : null
 			};
 		}
 		// Handle magic link / passwordless email sign-in
@@ -272,15 +288,21 @@ nhost.auth.signIn = async (params: any) => {
 			return {
 				session: null,
 				mfa: null,
-				error:
-					result.status >= 400
-						? result.body?.error
-							? {
-									message: result.body.error.message || 'Failed to send magic link',
-									code: result.body.error.code
-								}
-							: { message: result.statusText || 'Failed to send magic link' }
-						: null
+				error: result.error
+					? {
+						message: result.error.message || 'Failed to send magic link',
+						code: result.error.code ?? (result.body?.error?.code ?? null)
+					}
+					: (result.body?.error
+						? {
+							message: result.body.error.message || 'Failed to send magic link',
+							code: result.body.error.code ?? null
+						}
+						: (result.status && result.status !== 200
+							? { message: `Failed to send magic link (status ${result.status})`, code: null }
+							: null
+						)
+					)
 			};
 		}
 		// Handle OAuth provider sign-in
@@ -556,7 +578,10 @@ async function upgradeRoleHeaders() {
 		await nhost.auth.isAuthenticatedAsync();
 
 		// Get user's role from database (monkey-patched to auto-inject headers and return v3 format)
-		const result = await nhost.graphql.request(
+		const result = await nhost.graphql.request<
+			{ contributor_by_pk: { role: string } | null },
+			{ userId: string }
+		>(
 			`
       query GetUserRole($userId: uuid!) {
         contributor_by_pk(id: $userId) {
@@ -704,9 +729,10 @@ export function debugAdminRequest(operation: string) {
 // Correct constraint name (user_pkey) per contributor_constraint enum
 // Important: do NOT overwrite an existing display_name on conflict.
 // Only update the email; keep display_name as user-configured value.
-// Set monthly_credits_remaining to 10 for new users (database trigger handles signup bonus for purchased credits)
+// Set analysis_limit to 10 for new users (gives them 10 monthly credits)
+// Note: A database trigger should set monthly_credits_remaining based on analysis_limit
 const UPSERT_CONTRIBUTOR = `
-  mutation UpsertContributor($id: uuid!, $display_name: String, $email: String) {
+  mutation UpsertContributor($id: uuid!, $display_name: String, $email: String, $reset_date: timestamptz!) {
     insert_contributor_one(
       object: {
         id: $id,
@@ -714,8 +740,7 @@ const UPSERT_CONTRIBUTOR = `
         email: $email,
         analysis_limit: 10,
         analysis_enabled: true,
-        monthly_credits_remaining: 10,
-        monthly_credits_reset_at: "now() + interval '1 month'"
+        analysis_count_reset_at: $reset_date
       },
       on_conflict: { constraint: user_pkey, update_columns: [email] }
     ) { id }
@@ -741,10 +766,23 @@ export async function ensureContributor() {
 	let displayName = user.displayName || user.email?.split('@')[0] || 'Anonymous';
 	if (displayName.length > 50) displayName = displayName.slice(0, 50);
 
+	// Calculate reset date (1 month from now)
+	const resetDate = new Date();
+	resetDate.setMonth(resetDate.getMonth() + 1);
+
+	console.log('[ensureContributor] Creating/updating contributor with:', {
+		id: user.id,
+		display_name: displayName,
+		...(dev && { email: user.email }),
+		analysis_limit: 10,
+		reset_date: resetDate.toISOString()
+	});
+
 	const res = await nhost.graphql.request(UPSERT_CONTRIBUTOR, {
 		id: user.id,
 		display_name: displayName,
-		email: user.email ?? null
+		email: user.email ?? null,
+		reset_date: resetDate.toISOString()
 	});
 
 	if (res.error) {
