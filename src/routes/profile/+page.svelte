@@ -1179,6 +1179,16 @@
 		}
 	}
 
+	async function refreshMfaStatus() {
+		// Refresh user data from server to get updated MFA status
+		const userResult = await nhost.auth.getUser();
+		// v4 API returns FetchResponse<User> where body is the User object directly
+		const updatedUser = userResult.body;
+		if (updatedUser) {
+			mfaEnabled = updatedUser.activeMfaType === 'totp';
+		}
+	}
+
 	async function completeMfaSetup() {
 		if (!mfaVerificationCode) {
 			mfaError = 'Please enter the verification code from your authenticator app';
@@ -1199,12 +1209,7 @@
 				throw new Error(result.error.message || 'Invalid verification code');
 			}
 
-			// Refresh user data from server to get updated MFA status
-			const userResult = await nhost.auth.getUser();
-			const updatedUser = userResult.body?.user;
-			if (updatedUser) {
-				mfaEnabled = updatedUser.activeMfaType === 'totp';
-			}
+			await refreshMfaStatus();
 
 			mfaSuccess = 'Multi-factor authentication has been enabled successfully!';
 			showMfaSetup = false;
@@ -1243,12 +1248,7 @@
 				throw new Error(result.error.message || 'Invalid verification code');
 			}
 
-			// Refresh user data from server to get updated MFA status
-			const userResult = await nhost.auth.getUser();
-			const updatedUser = userResult.body?.user;
-			if (updatedUser) {
-				mfaEnabled = updatedUser.activeMfaType === 'totp';
-			}
+			await refreshMfaStatus();
 
 			mfaSuccess = 'Multi-factor authentication has been disabled.';
 			mfaVerificationCode = '';
