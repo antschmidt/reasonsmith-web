@@ -761,9 +761,8 @@ export async function ensureContributor() {
 	console.log('[ensureContributor] Creating/updating contributor with:', {
 		id: user.id,
 		display_name: displayName,
-		email: user.email,
+		...(dev && { email: user.email }),
 		analysis_limit: 10,
-		monthly_credits_remaining: 10,
 		reset_date: resetDate.toISOString()
 	});
 
