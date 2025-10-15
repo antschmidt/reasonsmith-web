@@ -123,6 +123,11 @@
 	let enablingMfa = false;
 	let disablingMfa = false;
 
+	// Password reset state
+	let passwordResetSending = false;
+	let passwordResetSuccess: string | null = null;
+	let passwordResetError: string | null = null;
+
 	const GET_FULL_PROFILE = `
     query GetFullProfile($id: uuid!) {
       contributor_by_pk(id: $id) {
@@ -1263,6 +1268,41 @@
 			disablingMfa = false;
 		}
 	}
+
+	async function sendPasswordReset() {
+		if (!user?.email) {
+			passwordResetError = 'No email address found for your account';
+			return;
+		}
+
+		passwordResetError = null;
+		passwordResetSuccess = null;
+		passwordResetSending = true;
+
+		try {
+			const result = await nhost.auth.sendPasswordResetEmail({
+				email: user.email,
+				options: {
+					redirectTo: `${window.location.origin}/reset-password`
+				}
+			});
+
+			if (result.error) {
+				throw new Error(result.error.message || 'Failed to send password reset email');
+			}
+
+			passwordResetSuccess = `Password reset email sent to ${user.email}. Please check your inbox.`;
+
+			setTimeout(() => {
+				passwordResetSuccess = null;
+			}, 8000);
+		} catch (err: any) {
+			console.error('Error sending password reset:', err);
+			passwordResetError = err?.message || 'Failed to send password reset email';
+		} finally {
+			passwordResetSending = false;
+		}
+	}
 </script>
 
 <div class="editorial-profile-page {editing ? 'editing' : ''}">
@@ -2097,6 +2137,35 @@
 									</div>
 								</div>
 							{/if}
+						</div>
+
+						<!-- Password Reset Section -->
+						<div class="security-info">
+							<div class="security-item">
+								<div class="security-icon">🔑</div>
+								<div class="security-details">
+									<h4>Password Reset</h4>
+									<p class="security-description">
+										Send a password reset link to your email address.
+									</p>
+								</div>
+							</div>
+
+							{#if passwordResetError}
+								<div class="error-message">{passwordResetError}</div>
+							{/if}
+
+							{#if passwordResetSuccess}
+								<div class="success-message">{passwordResetSuccess}</div>
+							{/if}
+
+							<button
+								class="btn-secondary"
+								onclick={sendPasswordReset}
+								disabled={passwordResetSending}
+							>
+								{passwordResetSending ? 'Sending email...' : 'Send password reset email'}
+							</button>
 						</div>
 					</div>
 				</div>
