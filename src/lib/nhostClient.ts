@@ -271,7 +271,13 @@ nhost.auth.signIn = async (params: any) => {
 			return {
 				session: null,
 				mfa: null,
-				error: result.status >= 400 ? { message: 'Failed to send magic link' } : null
+				error: result.status >= 400
+					? (
+						result.body?.error
+							? { message: result.body.error.message || 'Failed to send magic link', code: result.body.error.code }
+							: { message: result.statusText || 'Failed to send magic link' }
+					)
+					: null
 			};
 		}
 		// Handle OAuth provider sign-in
@@ -361,7 +367,7 @@ nhost.auth.signOut = async (params?: any) => {
 
 // v3 compatibility: Add changePassword to auth client
 // v4: changeUserPassword() is the method name, v3: changePassword()
-// @ts-ignore - Adding v3 compatibility method
+// @ts-expect-error: Adding v3 compatibility method to nhost.auth; changePassword does not exist in type definition but is required for legacy support.
 nhost.auth.changePassword = async (params: any) => {
 	try {
 		// v4 API: changeUserPassword({ newPassword, ticket? })
@@ -372,7 +378,12 @@ nhost.auth.changePassword = async (params: any) => {
 
 		// Convert v4 response to v3 format
 		return {
-			error: result.status >= 400 ? { message: 'Failed to change password' } : null
+			error: result.status >= 400
+				? {
+					message:
+						(result.error?.message || result.message || `Failed to change password (status ${result.status})`)
+				}
+				: null
 		};
 	} catch (error: any) {
 		return {
