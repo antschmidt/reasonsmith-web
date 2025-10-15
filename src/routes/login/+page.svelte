@@ -88,13 +88,14 @@
 				password
 			});
 
-			if (result.error) {
-				error = new Error(result.error.message || 'Sign in failed');
-			} else if (result.mfa) {
+			// v4 API: Check result.status for errors (>= 400 means error)
+			if (result.status >= 400) {
+				error = new Error(result.statusText || 'Sign in failed');
+			} else if (result.body?.mfa) {
 				// MFA is required - show TOTP prompt
-				mfaTicket = result.mfa.ticket;
+				mfaTicket = result.body.mfa.ticket;
 				showMfaPrompt = true;
-			} else {
+			} else if (result.body?.session) {
 				// Redirect after successful sign-in
 				goto(redirectTo);
 			}
@@ -112,8 +113,9 @@
 				otp: totpCode
 			});
 
-			if (result.error) {
-				throw new Error(result.error.message || 'Invalid verification code');
+			// v4 API: Check result.status for errors
+			if (result.status >= 400) {
+				throw new Error(result.statusText || 'Invalid verification code');
 			}
 
 			// Session is automatically set by the SDK

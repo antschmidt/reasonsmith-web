@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { nhost, ensureContributor, getUserFromServer } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
-	import { GET_USER_STATS, UPDATE_CONTRIBUTOR_AVATAR, DELETE_SECURITY_KEY } from '$lib/graphql/queries';
+	import { GET_USER_STATS, UPDATE_CONTRIBUTOR_AVATAR, DELETE_SECURITY_KEY, SEARCH_CONTRIBUTORS, ADD_PURCHASED_CREDITS } from '$lib/graphql/queries';
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
 	import { env as publicEnv } from '$env/dynamic/public';
 	import { getOAuthRedirectURL, isStandalone } from '$lib/utils/pwa';
@@ -128,9 +128,19 @@
 	let passwordResetSuccess: string | null = null;
 	let passwordResetError: string | null = null;
 
+	// Admin credit management state
+	let creditSearchTerm = '';
+	let creditSearchResults: any[] = [];
+	let selectedUser: any = null;
+	let creditsToAdd = 0;
+	let creditManagementLoading = false;
+	let creditManagementSuccess: string | null = null;
+	let creditManagementError: string | null = null;
+
 	// Constants for UI timeouts
 	const MFA_SUCCESS_MESSAGE_DURATION = 5000; // 5 seconds
 	const PASSWORD_RESET_SUCCESS_MESSAGE_DURATION = 8000; // 8 seconds
+	const CREDIT_SUCCESS_MESSAGE_DURATION = 5000; // 5 seconds
 
 	const GET_FULL_PROFILE = `
     query GetFullProfile($id: uuid!) {
@@ -1307,6 +1317,74 @@
 			passwordResetSending = false;
 		}
 	}
+
+	async function searchUsers() {
+		if (!creditSearchTerm || creditSearchTerm.length < 2) {
+			creditSearchResults = [];
+			return;
+		}
+
+		creditManagementLoading = true;
+		creditManagementError = null;
+
+		try {
+			const searchPattern = `%${creditSearchTerm}%`;
+			const result = await nhost.graphql.request(SEARCH_CONTRIBUTORS, {
+				searchTerm: searchPattern
+			});
+
+			if (result.error) {
+				throw new Error('Failed to search users');
+			}
+
+			creditSearchResults = result.data?.contributor || [];
+		} catch (err: any) {
+			console.error('Error searching users:', err);
+			creditManagementError = err?.message || 'Failed to search users';
+			creditSearchResults = [];
+		} finally {
+			creditManagementLoading = false;
+		}
+	}
+
+	async function addCredits() {
+		if (!selectedUser || !creditsToAdd || creditsToAdd <= 0) {
+			creditManagementError = 'Please select a user and enter a valid credit amount';
+			return;
+		}
+
+		creditManagementLoading = true;
+		creditManagementError = null;
+		creditManagementSuccess = null;
+
+		try {
+			const result = await nhost.graphql.request(ADD_PURCHASED_CREDITS, {
+				contributorId: selectedUser.id,
+				creditsToAdd: creditsToAdd
+			});
+
+			if (result.error) {
+				throw new Error('Failed to add credits');
+			}
+
+			creditManagementSuccess = `Successfully added ${creditsToAdd} credits to ${selectedUser.display_name || selectedUser.auth_email}`;
+
+			// Reset form
+			creditsToAdd = 0;
+			selectedUser = null;
+			creditSearchTerm = '';
+			creditSearchResults = [];
+
+			setTimeout(() => {
+				creditManagementSuccess = null;
+			}, CREDIT_SUCCESS_MESSAGE_DURATION);
+		} catch (err: any) {
+			console.error('Error adding credits:', err);
+			creditManagementError = err?.message || 'Failed to add credits';
+		} finally {
+			creditManagementLoading = false;
+		}
+	}
 </script>
 
 <div class="editorial-profile-page {editing ? 'editing' : ''}">
@@ -2187,6 +2265,101 @@
 										complete role management.
 									</div>
 								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- Admin Credit Management Section -->
+					<div class="profile-card admin-credit-management-section">
+						<h3 class="section-title">Credit Management</h3>
+						<div class="credit-management-info">
+							<p class="section-description">Add purchased credits to user accounts.</p>
+
+							{#if creditManagementError}
+								<div class="error-message">{creditManagementError}</div>
+							{/if}
+
+							{#if creditManagementSuccess}
+								<div class="success-message">{creditManagementSuccess}</div>
+							{/if}
+
+							<div class="form-section">
+								<div class="form-group">
+									<label for="creditSearchTerm">Search for user:</label>
+									<input
+										id="creditSearchTerm"
+										type="text"
+										bind:value={creditSearchTerm}
+										oninput={searchUsers}
+										placeholder="Enter email, handle, or display name..."
+										disabled={creditManagementLoading}
+									/>
+								</div>
+
+								{#if creditSearchResults.length > 0}
+									<div class="user-search-results">
+										{#each creditSearchResults as searchResult}
+											<button
+												type="button"
+												class="user-search-result {selectedUser?.id === searchResult.id ? 'selected' : ''}"
+												onclick={() => {
+													selectedUser = searchResult;
+													creditSearchTerm = searchResult.auth_email || searchResult.handle;
+													creditSearchResults = [];
+												}}
+											>
+												<div class="user-info">
+													<div class="user-name">{searchResult.display_name || searchResult.handle || 'Unknown'}</div>
+													<div class="user-email">{searchResult.auth_email || ''}</div>
+												</div>
+												<div class="user-credits">
+													<span class="credits-label">Credits:</span>
+													<span class="credits-value">{searchResult.purchased_credits_remaining || 0}</span>
+												</div>
+											</button>
+										{/each}
+									</div>
+								{/if}
+
+								{#if selectedUser}
+									<div class="selected-user-card">
+										<div class="selected-user-info">
+											<strong>{selectedUser.display_name || selectedUser.handle}</strong>
+											<span class="user-email-small">{selectedUser.auth_email}</span>
+											<span class="current-credits">Current credits: {selectedUser.purchased_credits_remaining || 0}</span>
+										</div>
+										<button
+											type="button"
+											class="btn-text-danger"
+											onclick={() => {
+												selectedUser = null;
+												creditSearchTerm = '';
+											}}
+										>
+											Clear
+										</button>
+									</div>
+								{/if}
+
+								<div class="form-group">
+									<label for="creditsToAdd">Credits to add:</label>
+									<input
+										id="creditsToAdd"
+										type="number"
+										bind:value={creditsToAdd}
+										min="1"
+										placeholder="Enter amount..."
+										disabled={creditManagementLoading || !selectedUser}
+									/>
+								</div>
+
+								<button
+									class="btn-primary"
+									onclick={addCredits}
+									disabled={creditManagementLoading || !selectedUser || !creditsToAdd || creditsToAdd <= 0}
+								>
+									{creditManagementLoading ? 'Adding credits...' : 'Add Credits'}
+								</button>
 							</div>
 						</div>
 					</div>
@@ -3130,10 +3303,129 @@
 	}
 
 	/* Analysis Credits Section */
-	.analysis-credits-section {
+	.analysis-credits-section,
+	.admin-credit-management-section {
 		padding: 1.5rem;
 		position: relative;
 		overflow: hidden;
+	}
+
+	.admin-credit-management-section .section-description {
+		color: var(--color-text-secondary);
+		margin-bottom: 1rem;
+		font-size: 0.9rem;
+	}
+
+	.user-search-results {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin: 1rem 0;
+		max-height: 300px;
+		overflow-y: auto;
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		padding: 0.5rem;
+		background: var(--color-surface);
+	}
+
+	.user-search-result {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		background: var(--color-surface);
+		cursor: pointer;
+		transition: all 0.2s ease;
+		text-align: left;
+		width: 100%;
+	}
+
+	.user-search-result:hover {
+		background: var(--color-surface-alt);
+		border-color: var(--color-primary);
+		transform: translateX(4px);
+	}
+
+	.user-search-result.selected {
+		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+		border-color: var(--color-primary);
+	}
+
+	.user-info {
+		flex: 1;
+	}
+
+	.user-name {
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin-bottom: 0.25rem;
+	}
+
+	.user-email {
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+	}
+
+	.user-credits {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.credits-label {
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+	}
+
+	.credits-value {
+		font-weight: 700;
+		color: var(--color-primary);
+	}
+
+	.selected-user-card {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1rem;
+		border: 2px solid var(--color-primary);
+		border-radius: 8px;
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+		margin-bottom: 1rem;
+	}
+
+	.selected-user-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.user-email-small {
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+	}
+
+	.current-credits {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--color-primary);
+	}
+
+	.btn-text-danger {
+		color: var(--color-danger);
+		background: transparent;
+		border: none;
+		padding: 0.5rem 1rem;
+		border-radius: 6px;
+		cursor: pointer;
+		font-size: 0.875rem;
+		transition: all 0.2s ease;
+	}
+
+	.btn-text-danger:hover {
+		background: color-mix(in srgb, var(--color-danger) 10%, transparent);
 	}
 
 	.credits-info {
