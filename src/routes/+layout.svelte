@@ -50,7 +50,18 @@
 			return;
 		}
 
+		// Check if session is valid
+		const session = nhost.getUserSession();
+		if (!session || !session.user) {
+			hasAdminAccess = false;
+			contributor = null;
+			return;
+		}
+
 		try {
+			// Wait for authentication to be ready (allows token refresh)
+			await nhost.auth.isAuthenticatedAsync();
+
 			const result = await nhost.graphql.request(
 				`
 				query GetCurrentUserRole($userId: uuid!) {
@@ -65,6 +76,18 @@
 				{ userId: user.id }
 			);
 
+			// Check for JWT errors
+			if (result.error) {
+				const errorMsg = Array.isArray(result.error)
+					? result.error[0]?.message || ''
+					: result.error.message || '';
+
+				if (errorMsg.includes('JWT') || errorMsg.includes('JWTExpired')) {
+					console.log('JWT expired in checkAdminAccess, will retry on next auth cycle');
+					return;
+				}
+			}
+
 			const contributorData = result.data?.contributor_by_pk;
 			if (contributorData) {
 				contributor = contributorData;
@@ -73,7 +96,14 @@
 				contributor = null;
 				hasAdminAccess = false;
 			}
-		} catch (err) {
+		} catch (err: any) {
+			// Check if it's a JWT error
+			const errorMsg = err?.message || String(err);
+			if (errorMsg.includes('JWT') || errorMsg.includes('JWTExpired')) {
+				console.log('JWT expired in checkAdminAccess catch, will retry on next auth cycle');
+				return;
+			}
+
 			console.error('Failed to get user role:', err);
 			hasAdminAccess = false;
 			contributor = null;

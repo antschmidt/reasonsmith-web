@@ -1086,6 +1086,50 @@ export const GET_CONTRIBUTOR = gql`
 	${CONTRIBUTOR_FIELDS}
 `;
 
+// Search contributors (for admin purposes)
+export const SEARCH_CONTRIBUTORS = gql`
+	query SearchContributors($searchTerm: String!) {
+		contributor(
+			where: {
+				_or: [
+					{ display_name: { _ilike: $searchTerm } }
+					{ handle: { _ilike: $searchTerm } }
+					{ auth_email: { _ilike: $searchTerm } }
+				]
+			}
+			limit: 20
+		) {
+			...ContributorFields
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
+`;
+
+// Mutation to anonymize all user content and delete the contributor record (admin only)
+// Note: A database trigger will automatically delete the auth.users record when contributor is deleted
+export const ANONYMIZE_AND_DELETE_USER = gql`
+	mutation AnonymizeAndDeleteUser($userId: uuid!) {
+		# Anonymize all discussions created by this user
+		update_discussion(where: { created_by: { _eq: $userId } }, _set: { is_anonymous: true }) {
+			affected_rows
+		}
+
+		# Anonymize all posts by this user
+		update_post(where: { author_id: { _eq: $userId } }, _set: { is_anonymous: true }) {
+			affected_rows
+		}
+
+		# Delete the contributor record
+		# A database trigger will automatically delete the corresponding auth.users record
+		delete_contributor(where: { id: { _eq: $userId } }) {
+			affected_rows
+			returning {
+				id
+			}
+		}
+	}
+`;
+
 // Mutation to increment analysis usage count
 export const INCREMENT_ANALYSIS_USAGE = gql`
 	mutation IncrementAnalysisUsage($contributorId: uuid!) {
@@ -1129,12 +1173,32 @@ export const UPDATE_CONTRIBUTOR_AVATAR = gql`
 	${CONTRIBUTOR_FIELDS}
 `;
 
-// Mutation to add purchased credits
+// Mutation to add purchased credits (increments both total and remaining)
 export const ADD_PURCHASED_CREDITS = gql`
 	mutation AddPurchasedCredits($contributorId: uuid!, $creditsToAdd: Int!) {
 		update_contributor_by_pk(
 			pk_columns: { id: $contributorId }
-			_inc: { purchased_credits_total: $creditsToAdd }
+			_inc: { purchased_credits_total: $creditsToAdd, purchased_credits_remaining: $creditsToAdd }
+		) {
+			...ContributorFields
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
+`;
+
+// Mutation to set purchased credits to a specific value
+export const SET_PURCHASED_CREDITS = gql`
+	mutation SetPurchasedCredits(
+		$contributorId: uuid!
+		$totalCredits: Int!
+		$remainingCredits: Int!
+	) {
+		update_contributor_by_pk(
+			pk_columns: { id: $contributorId }
+			_set: {
+				purchased_credits_total: $totalCredits
+				purchased_credits_remaining: $remainingCredits
+			}
 		) {
 			...ContributorFields
 		}
@@ -1592,10 +1656,7 @@ export const GET_EDITORS_DESK_PICK_BY_ID = gql`
 export const GET_MY_PENDING_EDITORS_DESK_APPROVALS = gql`
 	query GetMyPendingEditorsDeskApprovals($authorId: uuid!) {
 		editors_desk_pick(
-			where: {
-				author_id: { _eq: $authorId }
-				status: { _eq: "pending_author_approval" }
-			}
+			where: { author_id: { _eq: $authorId }, status: { _eq: "pending_author_approval" } }
 			order_by: { created_at: desc }
 		) {
 			id
@@ -1743,4 +1804,3 @@ export const DELETE_SECURITY_KEY = gql`
 		}
 	}
 `;
-

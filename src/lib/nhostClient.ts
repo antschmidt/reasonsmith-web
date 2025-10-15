@@ -93,26 +93,27 @@ if (isBrowser) {
 			const [input, init] = args;
 			const url = typeof input === 'string' ? input : input instanceof Request ? input.url : '';
 
-			// Wait for role upgrade before GraphQL requests
-			if (url.includes('/graphql') && roleUpgradePromise) {
-				await roleUpgradePromise;
-			}
-
 			// Log GraphQL requests with role headers
 			if (url.includes('/graphql')) {
 				const headers = init?.headers || {};
-				const headersObj: Record<string, string> = headers instanceof Headers
-					? Object.fromEntries(headers.entries())
-					: Array.isArray(headers) && headers.every(
-						(entry) => Array.isArray(entry) && entry.length === 2 && typeof entry[0] === 'string'
-					)
-					? Object.fromEntries(headers)
-					: Array.isArray(headers)
-					? (() => {
-						console.warn('[nhostClient] Headers array is not in key-value pair format:', headers);
-						return {};
-					})()
-					: headers as Record<string, string>;
+				const headersObj: Record<string, string> =
+					headers instanceof Headers
+						? Object.fromEntries(headers.entries())
+						: Array.isArray(headers) &&
+							  headers.every(
+									(entry) =>
+										Array.isArray(entry) && entry.length === 2 && typeof entry[0] === 'string'
+							  )
+							? Object.fromEntries(headers)
+							: Array.isArray(headers)
+								? (() => {
+										console.warn(
+											'[nhostClient] Headers array is not in key-value pair format:',
+											headers
+										);
+										return {};
+									})()
+								: (headers as Record<string, string>);
 				console.log('[GraphQL Request]', {
 					url,
 					role: headersObj['x-hasura-role'] || headersObj['X-Hasura-Role'],
@@ -271,23 +272,22 @@ nhost.auth.signIn = async (params: any) => {
 			return {
 				session: null,
 				mfa: null,
-				error: result.status >= 400
-					? (
-						result.body?.error
-							? { message: result.body.error.message || 'Failed to send magic link', code: result.body.error.code }
+				error:
+					result.status >= 400
+						? result.body?.error
+							? {
+									message: result.body.error.message || 'Failed to send magic link',
+									code: result.body.error.code
+								}
 							: { message: result.statusText || 'Failed to send magic link' }
-					)
-					: null
+						: null
 			};
 		}
 		// Handle OAuth provider sign-in
 		if (params.provider) {
 			// v4: Use signInProviderURL to get the OAuth URL and navigate to it
 			// v4 API: signInProviderURL(provider: string, options?: { redirectTo?: string })
-			const providerUrl = nhost.auth.signInProviderURL(
-				params.provider,
-				params.options
-			);
+			const providerUrl = nhost.auth.signInProviderURL(params.provider, params.options);
 			// Trigger the redirect
 			window.location.href = providerUrl;
 			// OAuth redirects immediately, no response to return
@@ -378,12 +378,15 @@ nhost.auth.changePassword = async (params: any) => {
 
 		// Convert v4 response to v3 format
 		return {
-			error: result.status >= 400
-				? {
-					message:
-						(result.error?.message || result.message || `Failed to change password (status ${result.status})`)
-				}
-				: null
+			error:
+				result.status >= 400
+					? {
+							message:
+								result.error?.message ||
+								result.message ||
+								`Failed to change password (status ${result.status})`
+						}
+					: null
 		};
 	} catch (error: any) {
 		return {
@@ -435,10 +438,28 @@ nhost.graphql.request = async function <TData = any, TVariables = any>(
 			delete cleanVariables.headers;
 		}
 
+		// Debug log for delete mutations
+		if (query.includes('delete_contributor')) {
+			console.log('[GraphQL Request Debug]', {
+				queryPreview: query.substring(0, 200),
+				variables: cleanVariables,
+				headers: currentGraphqlHeaders
+			});
+		}
+
 		result = await originalGraphqlRequest(
 			{ query, variables: cleanVariables },
 			{ headers: currentGraphqlHeaders }
 		);
+
+		// Debug log for delete mutation results
+		if (query.includes('delete_contributor')) {
+			console.log('[GraphQL Response Debug]', {
+				status: result.status,
+				data: result.body?.data,
+				errors: result.body?.errors
+			});
+		}
 	} else {
 		// v4 API: merge headers
 		const request = args[0];
@@ -446,7 +467,11 @@ nhost.graphql.request = async function <TData = any, TVariables = any>(
 
 		// Clean request variables - remove any headers key
 		const cleanRequest = { ...request };
-		if (cleanRequest.variables && typeof cleanRequest.variables === 'object' && 'headers' in cleanRequest.variables) {
+		if (
+			cleanRequest.variables &&
+			typeof cleanRequest.variables === 'object' &&
+			'headers' in cleanRequest.variables
+		) {
 			cleanRequest.variables = { ...cleanRequest.variables };
 			delete cleanRequest.variables.headers;
 		}
@@ -458,7 +483,26 @@ nhost.graphql.request = async function <TData = any, TVariables = any>(
 				...(options.headers || {})
 			}
 		};
+
+		// Debug log for delete mutations
+		if (cleanRequest.query && cleanRequest.query.includes('delete_contributor')) {
+			console.log('[GraphQL Request Debug]', {
+				queryPreview: cleanRequest.query.substring(0, 200),
+				variables: cleanRequest.variables,
+				headers: mergedOptions.headers
+			});
+		}
+
 		result = await originalGraphqlRequest(cleanRequest, mergedOptions);
+
+		// Debug log for delete mutation results
+		if (cleanRequest.query && cleanRequest.query.includes('delete_contributor')) {
+			console.log('[GraphQL Response Debug]', {
+				status: result.status,
+				data: result.body?.data,
+				errors: result.body?.errors
+			});
+		}
 	}
 
 	// Convert v4 response format to v3 format for backward compatibility
@@ -488,23 +532,29 @@ function applyInitialGraphqlRoleHeader() {
 			'x-hasura-role': 'me',
 			'X-Hasura-User-Id': user.id
 		};
+		console.log('[applyInitialGraphqlRoleHeader] Set initial role to "me" for user', user.id);
 	} else {
 		currentGraphqlHeaders = { 'x-hasura-role': 'anonymous' };
+		console.log('[applyInitialGraphqlRoleHeader] Set role to "anonymous"');
 	}
 }
 
 // Upgrade role headers based on database role (call after initial auth)
 async function upgradeRoleHeaders() {
-	const user = nhost.getUserSession()?.user;
-	if (!user) {
+	const session = nhost.getUserSession();
+	if (!session?.user) {
 		console.log('upgradeRoleHeaders: No user found');
 		roleUpgradePromise = Promise.resolve();
 		return;
 	}
 
+	const user = session.user;
 	console.log('upgradeRoleHeaders: Starting role upgrade for user', user.id);
 
 	try {
+		// Wait for authentication to be ready (allows token refresh)
+		await nhost.auth.isAuthenticatedAsync();
+
 		// Get user's role from database (monkey-patched to auto-inject headers and return v3 format)
 		const result = await nhost.graphql.request(
 			`
@@ -516,6 +566,18 @@ async function upgradeRoleHeaders() {
     `,
 			{ userId: user.id }
 		);
+
+		// Check for JWT errors
+		if (result.error) {
+			const errorMsg = Array.isArray(result.error)
+				? result.error[0]?.message || ''
+				: result.error.message || '';
+
+			if (errorMsg.includes('JWT') || errorMsg.includes('JWTExpired')) {
+				console.log('JWT expired in upgradeRoleHeaders, will retry on next auth cycle');
+				return;
+			}
+		}
 
 		const userRole = result.data?.contributor_by_pk?.role || 'user';
 
@@ -541,13 +603,22 @@ async function upgradeRoleHeaders() {
 		console.log('upgradeRoleHeaders: Setting role', {
 			databaseRole: userRole,
 			hasuraRole: hasuraRole,
-			userId: user.id
+			userId: user.id,
+			beforeHeaders: { ...currentGraphqlHeaders }
 		});
 		currentGraphqlHeaders = {
 			'x-hasura-role': hasuraRole,
 			'X-Hasura-User-Id': user.id
 		};
-	} catch (err) {
+		console.log('upgradeRoleHeaders: Headers after update', { ...currentGraphqlHeaders });
+	} catch (err: any) {
+		// Check if it's a JWT error
+		const errorMsg = err?.message || String(err);
+		if (errorMsg.includes('JWT') || errorMsg.includes('JWTExpired')) {
+			console.log('JWT expired in upgradeRoleHeaders catch, will retry on next auth cycle');
+			return;
+		}
+
 		console.error('Failed to upgrade user role, staying as me:', err);
 		console.error('Error details:', {
 			message: err instanceof Error ? err.message : String(err),
@@ -574,6 +645,19 @@ export async function waitForRoleReady(): Promise<void> {
 // Export function to get current GraphQL headers (for use in app)
 export function getGraphqlHeaders(): Record<string, string> {
 	return currentGraphqlHeaders;
+}
+
+// Export function to check current role status (for debugging)
+export function debugCurrentRole(): void {
+	const user = nhost.getUserSession()?.user;
+	const actualRole =
+		typeof window !== 'undefined' ? window.sessionStorage.getItem('userActualRole') : null;
+	console.log('[Role Debug]', {
+		userId: user?.id,
+		email: user?.email,
+		currentHeaders: { ...currentGraphqlHeaders },
+		sessionStorageRole: actualRole
+	});
 }
 
 // Helper to make GraphQL requests with automatic header injection (v4 compatibility)
@@ -620,7 +704,7 @@ export function debugAdminRequest(operation: string) {
 // Correct constraint name (user_pkey) per contributor_constraint enum
 // Important: do NOT overwrite an existing display_name on conflict.
 // Only update the email; keep display_name as user-configured value.
-// Set analysis_limit to 10 for new users (database trigger handles signup bonus)
+// Set monthly_credits_remaining to 10 for new users (database trigger handles signup bonus for purchased credits)
 const UPSERT_CONTRIBUTOR = `
   mutation UpsertContributor($id: uuid!, $display_name: String, $email: String) {
     insert_contributor_one(
@@ -629,7 +713,9 @@ const UPSERT_CONTRIBUTOR = `
         display_name: $display_name,
         email: $email,
         analysis_limit: 10,
-        analysis_enabled: true
+        analysis_enabled: true,
+        monthly_credits_remaining: 10,
+        monthly_credits_reset_at: "now() + interval '1 month'"
       },
       on_conflict: { constraint: user_pkey, update_columns: [email] }
     ) { id }
@@ -637,17 +723,41 @@ const UPSERT_CONTRIBUTOR = `
 `;
 
 export async function ensureContributor() {
-	const user = nhost.getUserSession()?.user;
-	if (!user) return;
+	const session = nhost.getUserSession();
+	if (!session?.user) {
+		console.log('No session in ensureContributor, skipping');
+		return;
+	}
 
+	// Wait for authentication to be ready (allows token refresh)
+	try {
+		await nhost.auth.isAuthenticatedAsync();
+	} catch (err) {
+		console.log('Auth check failed in ensureContributor, skipping:', err);
+		return;
+	}
+
+	const user = session.user;
 	let displayName = user.displayName || user.email?.split('@')[0] || 'Anonymous';
 	if (displayName.length > 50) displayName = displayName.slice(0, 50);
+
 	const res = await nhost.graphql.request(UPSERT_CONTRIBUTOR, {
 		id: user.id,
 		display_name: displayName,
 		email: user.email ?? null
 	});
+
 	if (res.error) {
+		// Check if it's a JWT error
+		const errorMsg = Array.isArray(res.error)
+			? res.error[0]?.message || ''
+			: res.error.message || '';
+
+		if (errorMsg.includes('JWT') || errorMsg.includes('JWTExpired')) {
+			console.log('JWT expired in ensureContributor, will retry on next auth cycle');
+			return;
+		}
+
 		console.error('Failed to upsert contributor:', res.error);
 	}
 }

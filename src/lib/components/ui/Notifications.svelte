@@ -40,12 +40,34 @@
 		error = null;
 
 		try {
+			// Check if user is authenticated before making requests
+			const session = nhost.getUserSession();
+			if (!session || !session.user) {
+				console.log('No active session, skipping notification load');
+				loading = false;
+				return;
+			}
+
+			// Wait a bit for token refresh if needed
+			await nhost.auth.isAuthenticatedAsync();
+
 			const [notifResult, countResult] = await Promise.all([
 				nhost.graphql.request(GET_NOTIFICATIONS, { userId }),
 				nhost.graphql.request(GET_UNREAD_NOTIFICATION_COUNT, { userId })
 			]);
 
 			if (notifResult.error) {
+				// Check if it's a JWT error - if so, just silently skip (token is being refreshed)
+				const errorMsg = Array.isArray(notifResult.error)
+					? notifResult.error[0]?.message || ''
+					: notifResult.error.message || '';
+
+				if (errorMsg.includes('JWT') || errorMsg.includes('JWTExpired')) {
+					console.log('JWT expired, will retry on next load');
+					loading = false;
+					return;
+				}
+
 				error = 'Failed to load notifications';
 				console.error('Notification error:', notifResult.error);
 			} else if (notifResult.data) {
@@ -55,9 +77,15 @@
 			if (countResult.data) {
 				unreadCount = countResult.data.notification_aggregate?.aggregate?.count || 0;
 			}
-		} catch (err) {
-			error = `Failed to load notifications: ${err}`;
-			console.error('Error loading notifications:', err);
+		} catch (err: any) {
+			// Check if it's a JWT error - if so, just silently skip
+			const errorMsg = err?.message || String(err);
+			if (errorMsg.includes('JWT') || errorMsg.includes('JWTExpired')) {
+				console.log('JWT expired, will retry on next load');
+			} else {
+				error = `Failed to load notifications: ${err}`;
+				console.error('Error loading notifications:', err);
+			}
 		}
 
 		loading = false;
