@@ -290,8 +290,10 @@
 
 			// The response should contain session tokens - need to set them in Nhost
 			if (authResult.session) {
-				// Manually set session in Nhost client
-				await nhost.auth.refreshSession(authResult.session.refreshToken);
+				// Manually set session in Nhost client using v4 API
+				await nhost.auth.refreshToken({
+					refreshToken: authResult.session.refreshToken
+				});
 			}
 
 			// Redirect after successful sign-in
