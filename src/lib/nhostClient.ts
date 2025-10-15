@@ -251,7 +251,7 @@ nhost.auth.signIn = async (params: any) => {
 			return {
 				session: result.body?.session,
 				mfa: result.body?.mfa,
-				error: null
+				error: result.body?.error ?? null
 			};
 		}
 		// Handle OAuth provider sign-in
