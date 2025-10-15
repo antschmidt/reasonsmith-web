@@ -271,7 +271,13 @@ nhost.auth.signIn = async (params: any) => {
 			return {
 				session: null,
 				mfa: null,
-				error: result.status >= 400 ? { message: 'Failed to send magic link' } : null
+				error: result.status >= 400
+					? (
+						result.body?.error
+							? { message: result.body.error.message || 'Failed to send magic link', code: result.body.error.code }
+							: { message: result.statusText || 'Failed to send magic link' }
+					)
+					: null
 			};
 		}
 		// Handle OAuth provider sign-in
