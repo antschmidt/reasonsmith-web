@@ -367,7 +367,7 @@ nhost.auth.signOut = async (params?: any) => {
 
 // v3 compatibility: Add changePassword to auth client
 // v4: changeUserPassword() is the method name, v3: changePassword()
-// @ts-ignore - Adding v3 compatibility method
+// @ts-expect-error: Adding v3 compatibility method to nhost.auth; changePassword does not exist in type definition but is required for legacy support.
 nhost.auth.changePassword = async (params: any) => {
 	try {
 		// v4 API: changeUserPassword({ newPassword, ticket? })
