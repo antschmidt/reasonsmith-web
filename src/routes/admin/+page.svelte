@@ -233,7 +233,6 @@
 				throw new Error('Contributor not found');
 			}
 
-			const currentTotal = currentContributor.purchased_credits_total ?? 0;
 			const currentUsed = currentContributor.purchased_credits_used ?? 0;
 
 			// Calculate new total: used + remaining
@@ -242,7 +241,7 @@
 			const result = await nhost.graphql.request(SET_PURCHASED_CREDITS, {
 				contributorId,
 				totalCredits: newTotal,
-				remainingCredits: remainingCredits
+				usedCredits: currentUsed
 			});
 
 			if (result.error) {

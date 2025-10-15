@@ -1173,12 +1173,13 @@ export const UPDATE_CONTRIBUTOR_AVATAR = gql`
 	${CONTRIBUTOR_FIELDS}
 `;
 
-// Mutation to add purchased credits (increments both total and remaining)
+// Mutation to add purchased credits (increments total, remaining is auto-calculated)
+// Note: purchased_credits_remaining is a generated column (total - used), so we only increment total
 export const ADD_PURCHASED_CREDITS = gql`
 	mutation AddPurchasedCredits($contributorId: uuid!, $creditsToAdd: Int!) {
 		update_contributor_by_pk(
 			pk_columns: { id: $contributorId }
-			_inc: { purchased_credits_total: $creditsToAdd, purchased_credits_remaining: $creditsToAdd }
+			_inc: { purchased_credits_total: $creditsToAdd }
 		) {
 			...ContributorFields
 		}
@@ -1187,18 +1188,12 @@ export const ADD_PURCHASED_CREDITS = gql`
 `;
 
 // Mutation to set purchased credits to a specific value
+// Note: purchased_credits_remaining is calculated as (total - used), so we update total and used
 export const SET_PURCHASED_CREDITS = gql`
-	mutation SetPurchasedCredits(
-		$contributorId: uuid!
-		$totalCredits: Int!
-		$remainingCredits: Int!
-	) {
+	mutation SetPurchasedCredits($contributorId: uuid!, $totalCredits: Int!, $usedCredits: Int!) {
 		update_contributor_by_pk(
 			pk_columns: { id: $contributorId }
-			_set: {
-				purchased_credits_total: $totalCredits
-				purchased_credits_remaining: $remainingCredits
-			}
+			_set: { purchased_credits_total: $totalCredits, purchased_credits_used: $usedCredits }
 		) {
 			...ContributorFields
 		}
