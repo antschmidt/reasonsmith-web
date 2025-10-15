@@ -103,8 +103,15 @@ if (isBrowser) {
 				const headers = init?.headers || {};
 				const headersObj: Record<string, string> = headers instanceof Headers
 					? Object.fromEntries(headers.entries())
-					: Array.isArray(headers)
+					: Array.isArray(headers) && headers.every(
+						(entry) => Array.isArray(entry) && entry.length === 2 && typeof entry[0] === 'string'
+					)
 					? Object.fromEntries(headers)
+					: Array.isArray(headers)
+					? (() => {
+						console.warn('[nhostClient] Headers array is not in key-value pair format:', headers);
+						return {};
+					})()
 					: headers as Record<string, string>;
 				console.log('[GraphQL Request]', {
 					url,
