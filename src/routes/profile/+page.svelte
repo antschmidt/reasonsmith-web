@@ -2292,6 +2292,101 @@
 							</div>
 						</div>
 					</div>
+
+					<!-- Admin Credit Management Section -->
+					<div class="profile-card admin-credit-management-section">
+						<h3 class="section-title">Credit Management</h3>
+						<div class="credit-management-info">
+							<p class="section-description">Add purchased credits to user accounts.</p>
+
+							{#if creditManagementError}
+								<div class="error-message">{creditManagementError}</div>
+							{/if}
+
+							{#if creditManagementSuccess}
+								<div class="success-message">{creditManagementSuccess}</div>
+							{/if}
+
+							<div class="form-section">
+								<div class="form-group">
+									<label for="creditSearchTerm">Search for user:</label>
+									<input
+										id="creditSearchTerm"
+										type="text"
+										bind:value={creditSearchTerm}
+										oninput={searchUsers}
+										placeholder="Enter email, handle, or display name..."
+										disabled={creditManagementLoading}
+									/>
+								</div>
+
+								{#if creditSearchResults.length > 0}
+									<div class="user-search-results">
+										{#each creditSearchResults as searchResult}
+											<button
+												type="button"
+												class="user-search-result {selectedUser?.id === searchResult.id ? 'selected' : ''}"
+												onclick={() => {
+													selectedUser = searchResult;
+													creditSearchTerm = searchResult.auth_email || searchResult.handle;
+													creditSearchResults = [];
+												}}
+											>
+												<div class="user-info">
+													<div class="user-name">{searchResult.display_name || searchResult.handle || 'Unknown'}</div>
+													<div class="user-email">{searchResult.auth_email || ''}</div>
+												</div>
+												<div class="user-credits">
+													<span class="credits-label">Credits:</span>
+													<span class="credits-value">{searchResult.purchased_credits_remaining || 0}</span>
+												</div>
+											</button>
+										{/each}
+									</div>
+								{/if}
+
+								{#if selectedUser}
+									<div class="selected-user-card">
+										<div class="selected-user-info">
+											<strong>{selectedUser.display_name || selectedUser.handle}</strong>
+											<span class="user-email-small">{selectedUser.auth_email}</span>
+											<span class="current-credits">Current credits: {selectedUser.purchased_credits_remaining || 0}</span>
+										</div>
+										<button
+											type="button"
+											class="btn-text-danger"
+											onclick={() => {
+												selectedUser = null;
+												creditSearchTerm = '';
+											}}
+										>
+											Clear
+										</button>
+									</div>
+								{/if}
+
+								<div class="form-group">
+									<label for="creditsToAdd">Credits to add:</label>
+									<input
+										id="creditsToAdd"
+										type="number"
+										bind:value={creditsToAdd}
+										min="1"
+										placeholder="Enter amount..."
+										disabled={creditManagementLoading || !selectedUser}
+									/>
+								</div>
+
+								<button
+									class="btn-primary"
+									onclick={addCredits}
+									disabled={creditManagementLoading || !selectedUser || !creditsToAdd || creditsToAdd <= 0}
+								>
+									{creditManagementLoading ? 'Adding credits...' : 'Add Credits'}
+								</button>
+							</div>
+						</div>
+					</div>
 				{:else if contributor?.role === 'slartibartfast'}
 					<div class="profile-card analysis-credits-section">
 						<h3 class="section-title" hidden>Analysis Access</h3>
@@ -3399,10 +3494,129 @@
 	}
 
 	/* Analysis Credits Section */
-	.analysis-credits-section {
+	.analysis-credits-section,
+	.admin-credit-management-section {
 		padding: 1.5rem;
 		position: relative;
 		overflow: hidden;
+	}
+
+	.admin-credit-management-section .section-description {
+		color: var(--color-text-secondary);
+		margin-bottom: 1rem;
+		font-size: 0.9rem;
+	}
+
+	.user-search-results {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin: 1rem 0;
+		max-height: 300px;
+		overflow-y: auto;
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		padding: 0.5rem;
+		background: var(--color-surface);
+	}
+
+	.user-search-result {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		background: var(--color-surface);
+		cursor: pointer;
+		transition: all 0.2s ease;
+		text-align: left;
+		width: 100%;
+	}
+
+	.user-search-result:hover {
+		background: var(--color-surface-alt);
+		border-color: var(--color-primary);
+		transform: translateX(4px);
+	}
+
+	.user-search-result.selected {
+		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+		border-color: var(--color-primary);
+	}
+
+	.user-info {
+		flex: 1;
+	}
+
+	.user-name {
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin-bottom: 0.25rem;
+	}
+
+	.user-email {
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+	}
+
+	.user-credits {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.credits-label {
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+	}
+
+	.credits-value {
+		font-weight: 700;
+		color: var(--color-primary);
+	}
+
+	.selected-user-card {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1rem;
+		border: 2px solid var(--color-primary);
+		border-radius: 8px;
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+		margin-bottom: 1rem;
+	}
+
+	.selected-user-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.user-email-small {
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+	}
+
+	.current-credits {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--color-primary);
+	}
+
+	.btn-text-danger {
+		color: var(--color-danger);
+		background: transparent;
+		border: none;
+		padding: 0.5rem 1rem;
+		border-radius: 6px;
+		cursor: pointer;
+		font-size: 0.875rem;
+		transition: all 0.2s ease;
+	}
+
+	.btn-text-danger:hover {
+		background: color-mix(in srgb, var(--color-danger) 10%, transparent);
 	}
 
 	.credits-info {
