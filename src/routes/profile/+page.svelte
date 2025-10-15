@@ -128,6 +128,10 @@
 	let passwordResetSuccess: string | null = null;
 	let passwordResetError: string | null = null;
 
+	// Constants for UI timeouts
+	const MFA_SUCCESS_MESSAGE_DURATION = 5000; // 5 seconds
+	const PASSWORD_RESET_SUCCESS_MESSAGE_DURATION = 8000; // 8 seconds
+
 	const GET_FULL_PROFILE = `
     query GetFullProfile($id: uuid!) {
       contributor_by_pk(id: $id) {
@@ -1224,7 +1228,7 @@
 
 			setTimeout(() => {
 				mfaSuccess = null;
-			}, 5000);
+			}, MFA_SUCCESS_MESSAGE_DURATION);
 		} catch (err: any) {
 			console.error('Error enabling MFA:', err);
 			mfaError = err?.message || 'Failed to enable MFA. Please check your code and try again.';
@@ -1260,7 +1264,7 @@
 
 			setTimeout(() => {
 				mfaSuccess = null;
-			}, 5000);
+			}, MFA_SUCCESS_MESSAGE_DURATION);
 		} catch (err: any) {
 			console.error('Error disabling MFA:', err);
 			mfaError = err?.message || 'Failed to disable MFA. Please check your code and try again.';
@@ -1295,7 +1299,7 @@
 
 			setTimeout(() => {
 				passwordResetSuccess = null;
-			}, 8000);
+			}, PASSWORD_RESET_SUCCESS_MESSAGE_DURATION);
 		} catch (err: any) {
 			console.error('Error sending password reset:', err);
 			passwordResetError = err?.message || 'Failed to send password reset email';
