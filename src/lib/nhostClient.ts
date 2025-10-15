@@ -774,8 +774,6 @@ export async function ensureContributor() {
 		reset_date: resetDate.toISOString()
 	});
 
-	console.log('[ensureContributor] Result:', res);
-
 	if (res.error) {
 		// Check if it's a JWT error
 		const errorMsg = Array.isArray(res.error)

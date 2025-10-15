@@ -1179,7 +1179,7 @@ export const ADD_PURCHASED_CREDITS = gql`
 	mutation AddPurchasedCredits($contributorId: uuid!, $creditsToAdd: Int!) {
 		update_contributor_by_pk(
 			pk_columns: { id: $contributorId }
-			_inc: { purchased_credits_total: $creditsToAdd }
+			_inc: { purchased_credits_total: $creditsToAdd, purchased_credits_remaining: $creditsToAdd }
 		) {
 			...ContributorFields
 		}
