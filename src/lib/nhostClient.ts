@@ -208,9 +208,15 @@ nhost.auth.getAccessToken = () => {
 	}
 };
 
-// v3 compatibility: Add getUser to auth client
-// v4: getUser() is async and makes an API call, v3: getUser() was sync
-// Use getUserSession()?.user instead to avoid SSR crashes
+// v3 compatibility: Save original v4 getUser (async) and create sync version
+// v4: getUser() is async and makes an API call
+// v3: getUser() was sync and returned cached user
+const originalGetUser = nhost.auth.getUser.bind(nhost.auth);
+
+// Export the v4 async version for when we need fresh data from server
+export const getUserFromServer = originalGetUser;
+
+// Override with v3 sync version for backward compatibility
 // @ts-ignore - Adding v3 compatibility method
 nhost.auth.getUser = () => {
 	try {
