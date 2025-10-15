@@ -111,6 +111,18 @@
 		tiktok: ''
 	} as Record<string, string>;
 
+	// MFA state
+	let mfaEnabled = false;
+	let showMfaSetup = false;
+	let mfaQrCode = '';
+	let mfaSecret = '';
+	let mfaVerificationCode = '';
+	let mfaError: string | null = null;
+	let mfaSuccess: string | null = null;
+	let settingUpMfa = false;
+	let enablingMfa = false;
+	let disablingMfa = false;
+
 	const GET_FULL_PROFILE = `
     query GetFullProfile($id: uuid!) {
       contributor_by_pk(id: $id) {
@@ -491,6 +503,10 @@
 			await loadAuthProviders();
 			// Load security keys after profile is loaded
 			await loadSecurityKeys();
+
+			// Check MFA status from user session
+			const currentUser = nhost.auth.getUser();
+			mfaEnabled = currentUser?.activeMfaType === 'totp';
 		} catch (e: any) {
 			error = e?.message || 'Failed to load profile.';
 		} finally {
@@ -1136,6 +1152,103 @@
 			emailChangeError = err?.message || 'Failed to change email. Please try again.';
 		} finally {
 			changingEmail = false;
+		}
+	}
+
+	// MFA Functions
+	async function startMfaSetup() {
+		mfaError = null;
+		mfaSuccess = null;
+		settingUpMfa = true;
+
+		try {
+			const result = await nhost.auth.changeUserMfa();
+
+			if (result.body?.imageUrl) {
+				mfaQrCode = result.body.imageUrl;
+				mfaSecret = result.body.secret || '';
+				showMfaSetup = true;
+			} else {
+				throw new Error('Invalid response from server');
+			}
+		} catch (err: any) {
+			console.error('Error generating MFA QR code:', err);
+			mfaError = err?.message || 'Failed to start MFA setup';
+		} finally {
+			settingUpMfa = false;
+		}
+	}
+
+	async function completeMfaSetup() {
+		if (!mfaVerificationCode) {
+			mfaError = 'Please enter the verification code from your authenticator app';
+			return;
+		}
+
+		mfaError = null;
+		mfaSuccess = null;
+		enablingMfa = true;
+
+		try {
+			const result = await nhost.auth.verifyChangeUserMfa({
+				code: mfaVerificationCode,
+				activeMfaType: 'totp'
+			});
+
+			if (result.error) {
+				throw new Error(result.error.message || 'Invalid verification code');
+			}
+
+			mfaSuccess = 'Multi-factor authentication has been enabled successfully!';
+			mfaEnabled = true;
+			showMfaSetup = false;
+			mfaVerificationCode = '';
+			mfaQrCode = '';
+			mfaSecret = '';
+
+			setTimeout(() => {
+				mfaSuccess = null;
+			}, 5000);
+		} catch (err: any) {
+			console.error('Error enabling MFA:', err);
+			mfaError = err?.message || 'Failed to enable MFA. Please check your code and try again.';
+		} finally {
+			enablingMfa = false;
+		}
+	}
+
+	async function disableMfa() {
+		if (!mfaVerificationCode) {
+			mfaError = 'Please enter a verification code from your authenticator app';
+			return;
+		}
+
+		mfaError = null;
+		mfaSuccess = null;
+		disablingMfa = true;
+
+		try {
+			const result = await nhost.auth.verifyChangeUserMfa({
+				code: mfaVerificationCode,
+				activeMfaType: ''
+			});
+
+			if (result.error) {
+				throw new Error(result.error.message || 'Invalid verification code');
+			}
+
+			mfaSuccess = 'Multi-factor authentication has been disabled.';
+			mfaEnabled = false;
+			mfaVerificationCode = '';
+
+			setTimeout(() => {
+				mfaSuccess = null;
+			}, 5000);
+		} catch (err: any) {
+			console.error('Error disabling MFA:', err);
+			mfaError = err?.message || 'Failed to disable MFA. Please check your code and try again.';
+		} finally {
+			disablingMfa = false;
 		}
 	}
 </script>
@@ -1855,6 +1968,119 @@
 											disabled={addingSecurityKey}
 										>
 											Cancel
+										</button>
+									</div>
+								</div>
+							{/if}
+						</div>
+
+						<!-- Multi-Factor Authentication Section -->
+						<div class="security-info">
+							<div class="security-item">
+								<div class="security-icon">🔐</div>
+								<div class="security-details">
+									<h4>Multi-Factor Authentication</h4>
+									<p class="security-description">
+										Add an extra layer of security by requiring a verification code from your authenticator app when signing in.
+									</p>
+									<p class="mfa-status {mfaEnabled ? 'enabled' : 'disabled'}">
+										{mfaEnabled ? '✓ Enabled' : '✗ Not enabled'}
+									</p>
+								</div>
+							</div>
+
+							{#if mfaError}
+								<div class="error-message">{mfaError}</div>
+							{/if}
+
+							{#if mfaSuccess}
+								<div class="success-message">{mfaSuccess}</div>
+							{/if}
+
+							{#if !mfaEnabled}
+								{#if !showMfaSetup}
+									<button class="btn-secondary" onclick={startMfaSetup} disabled={settingUpMfa}>
+										{settingUpMfa ? 'Setting up...' : 'Enable MFA'}
+									</button>
+								{:else}
+									<div class="form-section">
+										<h4>Set up MFA</h4>
+										<p>Scan this QR code with your authenticator app (Google Authenticator, Authy, 1Password, etc.):</p>
+
+										{#if mfaQrCode}
+											<div class="qr-code-container">
+												<img src={mfaQrCode} alt="MFA QR Code" class="qr-code" />
+											</div>
+										{/if}
+
+										{#if mfaSecret}
+											<div class="secret-key">
+												<p><strong>Or enter this key manually:</strong></p>
+												<code>{mfaSecret}</code>
+											</div>
+										{/if}
+
+										<div class="form-group">
+											<label for="mfaVerificationCode">Enter verification code from your app:</label>
+											<input
+												id="mfaVerificationCode"
+												type="text"
+												bind:value={mfaVerificationCode}
+												placeholder="000000"
+												maxlength="6"
+												pattern="[0-9]*"
+												inputmode="numeric"
+											/>
+										</div>
+
+										<div class="form-actions">
+											<button
+												class="btn-primary"
+												onclick={completeMfaSetup}
+												disabled={enablingMfa || !mfaVerificationCode}
+											>
+												{enablingMfa ? 'Verifying...' : 'Verify and Enable'}
+											</button>
+											<button
+												class="btn-secondary"
+												onclick={() => {
+													showMfaSetup = false;
+													mfaVerificationCode = '';
+													mfaQrCode = '';
+													mfaSecret = '';
+													mfaError = null;
+												}}
+												disabled={enablingMfa}
+											>
+												Cancel
+											</button>
+										</div>
+									</div>
+								{/if}
+							{:else}
+								<div class="form-section">
+									<p><strong>To disable MFA, enter a verification code from your authenticator app:</strong></p>
+
+									<div class="form-group">
+										<label for="mfaDisableCode">Verification code:</label>
+										<input
+											id="mfaDisableCode"
+											type="text"
+											bind:value={mfaVerificationCode}
+											placeholder="000000"
+											maxlength="6"
+											pattern="[0-9]*"
+											inputmode="numeric"
+										/>
+									</div>
+
+									<div class="form-actions">
+										<button
+											class="btn-danger"
+											onclick={disableMfa}
+											disabled={disablingMfa || !mfaVerificationCode}
+										>
+											{disablingMfa ? 'Disabling...' : 'Disable MFA'}
 										</button>
 									</div>
 								</div>
@@ -3557,5 +3783,61 @@
 
 	.btn-danger-small:active {
 		background: #991b1b;
+	}
+
+	/* MFA Styles */
+	.mfa-status {
+		margin-top: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		border-radius: 6px;
+		font-size: 0.875rem;
+		font-weight: 500;
+		display: inline-block;
+	}
+
+	.mfa-status.enabled {
+		background: color-mix(in srgb, #10b981 10%, transparent);
+		color: #10b981;
+		border: 1px solid color-mix(in srgb, #10b981 30%, transparent);
+	}
+
+	.mfa-status.disabled {
+		background: color-mix(in srgb, var(--color-text-secondary) 10%, transparent);
+		color: var(--color-text-secondary);
+		border: 1px solid color-mix(in srgb, var(--color-text-secondary) 30%, transparent);
+	}
+
+	.qr-code-container {
+		margin: 1.5rem 0;
+		text-align: center;
+	}
+
+	.qr-code {
+		max-width: 256px;
+		height: auto;
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		padding: 1rem;
+		background: white;
+	}
+
+	.secret-key {
+		margin: 1rem 0;
+		padding: 1rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+	}
+
+	.secret-key code {
+		font-family: var(--font-family-mono, 'Courier New', monospace);
+		font-size: 0.875rem;
+		color: var(--color-primary);
+		word-break: break-all;
+		display: block;
+		margin-top: 0.5rem;
+		padding: 0.5rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+		border-radius: 4px;
 	}
 </style>

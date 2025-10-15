@@ -1,4 +1,4 @@
-import { NhostClient } from '@nhost/nhost-js';
+import { createClient } from '@nhost/nhost-js';
 import { env } from '$env/dynamic/public';
 import { dev } from '$app/environment';
 
@@ -101,7 +101,11 @@ if (isBrowser) {
 			// Log GraphQL requests with role headers
 			if (url.includes('/graphql')) {
 				const headers = init?.headers || {};
-				const headersObj = headers instanceof Headers ? Object.fromEntries(headers.entries()) : headers;
+				const headersObj: Record<string, string> = headers instanceof Headers
+					? Object.fromEntries(headers.entries())
+					: Array.isArray(headers)
+					? Object.fromEntries(headers)
+					: headers as Record<string, string>;
 				console.log('[GraphQL Request]', {
 					url,
 					role: headersObj['x-hasura-role'] || headersObj['X-Hasura-Role'],
@@ -155,27 +159,253 @@ if (isBrowser) {
 	});
 }
 
-export const nhost = new NhostClient(nhostConfig);
+export const nhost = createClient(nhostConfig);
+
+// v3 compatibility: Add onAuthStateChanged to auth client
+// v4 uses sessionStorage.onChange, but v3 used auth.onAuthStateChanged
+// @ts-ignore - Adding v3 compatibility method
+nhost.auth.onAuthStateChanged = (callback: (event?: string, session?: any) => void) => {
+	let previousSession = nhost.getUserSession();
+
+	return nhost.sessionStorage.onChange((newSession) => {
+		const wasSignedIn = !!previousSession;
+		const isSignedIn = !!newSession;
+
+		let event: string | undefined;
+		if (!wasSignedIn && isSignedIn) {
+			event = 'SIGNED_IN';
+		} else if (wasSignedIn && !isSignedIn) {
+			event = 'SIGNED_OUT';
+		} else if (isSignedIn) {
+			event = 'TOKEN_CHANGED';
+		}
+
+		if (event) {
+			callback(event, newSession);
+		}
+
+		previousSession = newSession;
+	});
+};
+
+// v3 compatibility: Add getAccessToken to auth client
+// v4: Access token is in the session object
+// @ts-ignore - Adding v3 compatibility method
+nhost.auth.getAccessToken = () => {
+	try {
+		const session = nhost.getUserSession();
+		return session?.accessToken || null;
+	} catch (error) {
+		// Handle errors gracefully (e.g., during SSR)
+		return null;
+	}
+};
+
+// v3 compatibility: Add getUser to auth client
+// v4: getUser() is async and makes an API call, v3: getUser() was sync
+// Use getUserSession()?.user instead to avoid SSR crashes
+// @ts-ignore - Adding v3 compatibility method
+nhost.auth.getUser = () => {
+	try {
+		const session = nhost.getUserSession();
+		return session?.user || null;
+	} catch (error) {
+		// Handle errors gracefully (e.g., during SSR)
+		return null;
+	}
+};
+
+// v3 compatibility: Add isAuthenticatedAsync
+// In v3, this was an async check. In v4, we check if there's a valid session
+// @ts-ignore - Adding v3 compatibility method
+nhost.auth.isAuthenticatedAsync = async () => {
+	try {
+		const session = nhost.getUserSession();
+		return !!session?.user;
+	} catch (error) {
+		return false;
+	}
+};
+
+// v3 compatibility: Add signIn to auth client
+// v4: signIn() was replaced with signInEmailPassword() and other specific methods
+// @ts-ignore - Adding v3 compatibility method
+nhost.auth.signIn = async (params: any) => {
+	try {
+		// Detect sign-in type and route to appropriate v4 method
+		if (params.email && params.password) {
+			const result = await nhost.auth.signInEmailPassword({
+				email: params.email,
+				password: params.password
+			});
+			// Convert v4 response to v3 format
+			// v4: FetchResponse<SignInEmailPasswordResponse> with body.session, body.mfa
+			// v3: { session?, mfa?, error? }
+			return {
+				session: result.body?.session,
+				mfa: result.body?.mfa,
+				error: null
+			};
+		}
+		// Handle OAuth provider sign-in
+		if (params.provider) {
+			// v4: Use signInProviderURL to get the OAuth URL and navigate to it
+			// v4 API: signInProviderURL(provider: string, options?: { redirectTo?: string })
+			const providerUrl = nhost.auth.signInProviderURL(
+				params.provider,
+				params.options
+			);
+			// Trigger the redirect
+			window.location.href = providerUrl;
+			// OAuth redirects immediately, no response to return
+			return {
+				session: null,
+				mfa: null,
+				error: null
+			};
+		}
+		// Add other sign-in types as needed
+		throw new Error('Unsupported signIn parameters');
+	} catch (error: any) {
+		// v4 throws FetchError, convert to v3 error format
+		return {
+			session: null,
+			mfa: null,
+			error: { message: error.message || 'Sign in failed' }
+		};
+	}
+};
+
+// v3 compatibility: Add signUp to auth client
+// v4: signUp() was replaced with signUpEmailPassword()
+// @ts-ignore - Adding v3 compatibility method
+nhost.auth.signUp = async (params: any) => {
+	try {
+		if (params.email && params.password) {
+			const result = await nhost.auth.signUpEmailPassword({
+				email: params.email,
+				password: params.password,
+				options: params.options
+			});
+			// Convert v4 response to v3 format
+			return {
+				session: result.body?.session,
+				error: null
+			};
+		}
+		throw new Error('Unsupported signUp parameters');
+	} catch (error: any) {
+		return {
+			session: null,
+			error: { message: error.message || 'Sign up failed' }
+		};
+	}
+};
+
+// Note: In v4, OAuth token exchange is handled automatically by the SDK
+// The SDK processes OAuth callbacks and manages session storage internally
+
+// v3 compatibility: Add getUrl to graphql client
+// v4: GraphQL URL is constructed from subdomain and region
+// @ts-ignore - Adding v3 compatibility method
+nhost.graphql.getUrl = () => {
+	return `https://${PUBLIC_NHOST_SUBDOMAIN}.graphql.${PUBLIC_NHOST_REGION}.nhost.run/v1`;
+};
+
+// Monkey-patch graphql.request to automatically inject Hasura role headers
+// This maintains v3 API compatibility while adding v4 header injection
+const originalGraphqlRequest = nhost.graphql.request.bind(nhost.graphql);
+// @ts-ignore - Monkey-patch for v3 API compatibility
+nhost.graphql.request = async function <TData = any, TVariables = any>(
+	...args: any[]
+): Promise<any> {
+	// v4 API: request({ query, variables }, options)
+	// v3 API: request(query, variables)
+
+	let result;
+	// Detect which API is being used
+	// v3 API: request(query, variables) where query is string or DocumentNode
+	// v4 API: request({ query, variables }, options) where first arg is an object with 'query' property
+	const isV3Api = typeof args[0] === 'string' || (args[0] && !('query' in args[0]));
+
+	if (isV3Api) {
+		// v3 API: convert to v4 format
+		let query = args[0];
+		const variables = args[1];
+
+		// If query is a DocumentNode (from gql``), extract the string query
+		// v4 SDK requires a plain string, not a DocumentNode
+		if (query && typeof query === 'object' && 'loc' in query && query.loc?.source?.body) {
+			query = query.loc.source.body;
+		}
+
+		// Clean variables - remove any headers key that shouldn't be there
+		const cleanVariables = variables ? { ...variables } : undefined;
+		if (cleanVariables && 'headers' in cleanVariables) {
+			delete cleanVariables.headers;
+		}
+
+		result = await originalGraphqlRequest(
+			{ query, variables: cleanVariables },
+			{ headers: currentGraphqlHeaders }
+		);
+	} else {
+		// v4 API: merge headers
+		const request = args[0];
+		const options = args[1] || {};
+
+		// Clean request variables - remove any headers key
+		const cleanRequest = { ...request };
+		if (cleanRequest.variables && typeof cleanRequest.variables === 'object' && 'headers' in cleanRequest.variables) {
+			cleanRequest.variables = { ...cleanRequest.variables };
+			delete cleanRequest.variables.headers;
+		}
+
+		const mergedOptions = {
+			...options,
+			headers: {
+				...currentGraphqlHeaders,
+				...(options.headers || {})
+			}
+		};
+		result = await originalGraphqlRequest(cleanRequest, mergedOptions);
+	}
+
+	// Convert v4 response format to v3 format for backward compatibility
+	// v4: { body: { data, errors }, status, headers }
+	// v3: { data, error }
+	return {
+		data: result.body?.data,
+		error: result.body?.errors && result.body.errors.length > 0 ? result.body.errors : undefined,
+		// Keep v4 properties for new code
+		body: result.body,
+		status: result.status,
+		headers: result.headers
+	};
+} as any;
 
 // Track role upgrade completion
 let roleUpgradePromise: Promise<void> | null = null;
 
+// Store current GraphQL headers (v4 doesn't have persistent setHeaders)
+let currentGraphqlHeaders: Record<string, string> = { 'x-hasura-role': 'anonymous' };
+
 // Apply initial GraphQL role header (authenticated users start as 'me')
 function applyInitialGraphqlRoleHeader() {
-	const user = nhost.auth.getUser();
+	const user = nhost.getUserSession()?.user;
 	if (user) {
-		nhost.graphql.setHeaders({
+		currentGraphqlHeaders = {
 			'x-hasura-role': 'me',
 			'X-Hasura-User-Id': user.id
-		});
+		};
 	} else {
-		nhost.graphql.setHeaders({ 'x-hasura-role': 'anonymous' });
+		currentGraphqlHeaders = { 'x-hasura-role': 'anonymous' };
 	}
 }
 
 // Upgrade role headers based on database role (call after initial auth)
 async function upgradeRoleHeaders() {
-	const user = nhost.auth.getUser();
+	const user = nhost.getUserSession()?.user;
 	if (!user) {
 		console.log('upgradeRoleHeaders: No user found');
 		roleUpgradePromise = Promise.resolve();
@@ -185,7 +415,7 @@ async function upgradeRoleHeaders() {
 	console.log('upgradeRoleHeaders: Starting role upgrade for user', user.id);
 
 	try {
-		// Get user's role from database (using 'me' role initially)
+		// Get user's role from database (monkey-patched to auto-inject headers and return v3 format)
 		const result = await nhost.graphql.request(
 			`
       query GetUserRole($userId: uuid!) {
@@ -223,16 +453,16 @@ async function upgradeRoleHeaders() {
 			hasuraRole: hasuraRole,
 			userId: user.id
 		});
-		nhost.graphql.setHeaders({
+		currentGraphqlHeaders = {
 			'x-hasura-role': hasuraRole,
 			'X-Hasura-User-Id': user.id
-		});
+		};
 	} catch (err) {
 		console.error('Failed to upgrade user role, staying as me:', err);
 		console.error('Error details:', {
 			message: err instanceof Error ? err.message : String(err),
 			user: user.id,
-			currentHeaders: nhost.graphql.getHeaders()
+			currentHeaders: currentGraphqlHeaders
 		});
 		// Keep existing 'me' role if upgrade fails
 	}
@@ -251,9 +481,43 @@ export async function waitForRoleReady(): Promise<void> {
 	}
 }
 
+// Export function to get current GraphQL headers (for use in app)
+export function getGraphqlHeaders(): Record<string, string> {
+	return currentGraphqlHeaders;
+}
+
+// Helper to make GraphQL requests with automatic header injection (v4 compatibility)
+// Returns v3-style { data, error } for backward compatibility
+export async function graphqlRequest<TData = any, TVariables = Record<string, any>>(
+	query: string,
+	variables?: TVariables
+): Promise<{ data?: TData; error?: any }> {
+	try {
+		const result = await nhost.graphql.request(
+			{
+				query,
+				variables
+			},
+			{
+				headers: currentGraphqlHeaders
+			}
+		);
+
+		// v4 returns { body, status, headers }
+		// body contains { data, errors }
+		if (result.body?.errors && result.body.errors.length > 0) {
+			return { error: result.body.errors };
+		}
+
+		return { data: result.body?.data };
+	} catch (error) {
+		return { error };
+	}
+}
+
 // Debug function for admin requests
 export function debugAdminRequest(operation: string) {
-	const user = nhost.auth.getUser();
+	const user = nhost.getUserSession()?.user;
 	const actualRole =
 		typeof window !== 'undefined' ? window.sessionStorage.getItem('userActualRole') : null;
 	console.log(`[Admin Debug] ${operation}:`, {
@@ -283,7 +547,7 @@ const UPSERT_CONTRIBUTOR = `
 `;
 
 export async function ensureContributor() {
-	const user = nhost.auth.getUser();
+	const user = nhost.getUserSession()?.user;
 	if (!user) return;
 
 	let displayName = user.displayName || user.email?.split('@')[0] || 'Anonymous';
@@ -300,16 +564,22 @@ export async function ensureContributor() {
 
 // Run on initial load (if already authenticated) and on sign-in events
 if (isBrowser) {
-	if (nhost.auth.getUser()) {
+	if (nhost.getUserSession()) {
 		applyInitialGraphqlRoleHeader();
 		roleUpgradePromise = ensureContributor().then(() => {
 			// After ensuring contributor exists, upgrade to proper role
 			return upgradeRoleHeaders();
 		});
 	}
-	nhost.auth.onAuthStateChanged(async (event) => {
-		console.log('Auth state changed:', event);
-		if (event === 'SIGNED_IN') {
+
+	// v4: Use sessionStorage.onChange instead of auth.onAuthStateChanged
+	let previousSession = nhost.getUserSession();
+	nhost.sessionStorage.onChange(async (newSession) => {
+		const wasSignedIn = !!previousSession;
+		const isSignedIn = !!newSession;
+
+		// Sign in event
+		if (!wasSignedIn && isSignedIn) {
 			console.log('User signed in, applying initial role header');
 			applyInitialGraphqlRoleHeader();
 			console.log('Ensuring contributor exists');
@@ -319,9 +589,12 @@ if (isBrowser) {
 			roleUpgradePromise = upgradeRoleHeaders();
 			await roleUpgradePromise;
 		}
-		if (event === 'SIGNED_OUT') {
+		// Sign out event
+		else if (wasSignedIn && !isSignedIn) {
 			console.log('User signed out, resetting to anonymous');
 			applyInitialGraphqlRoleHeader();
 		}
+
+		previousSession = newSession;
 	});
 }

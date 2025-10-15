@@ -399,7 +399,7 @@
 					oninput={onSearchInput}
 					onkeydown={(e) => e.key === 'Enter' && search()}
 				/>
-				<button class="search-button" onclick={search}>Search</button>
+				<!-- <button class="search-button" onclick={search}>Search</button> -->
 			</div>
 		</section>
 	</header>
@@ -625,7 +625,7 @@
 		padding: 0.9rem 1.2rem;
 		border-radius: 999px;
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
-		background: var(--color-surface);
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 		color: var(--color-text-primary);
 		font-size: 1rem;
 		transition: all 0.25s ease;
