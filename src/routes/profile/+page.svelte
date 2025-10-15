@@ -1244,8 +1244,7 @@
 			}
 
 			// Refresh user data from server to get updated MFA status
-			const userResult = await nhost.auth.getUser();
-			const updatedUser = userResult.body?.user;
+			const { user: updatedUser } = await nhost.auth.getUser();
 			if (updatedUser) {
 				mfaEnabled = updatedUser.activeMfaType === 'totp';
 			}
