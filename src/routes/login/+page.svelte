@@ -83,7 +83,7 @@
 	const handleEmailPasswordSignIn = async () => {
 		error = null;
 		try {
-			const result = await nhost.auth.signIn({
+			const result = await nhost.auth.signInEmailPassword({
 				email,
 				password
 			});
