@@ -1162,7 +1162,7 @@
 		settingUpMfa = true;
 
 		try {
-			const result = await nhost.auth.changeUserMfa();
+			const result = await nhost.auth.changeUserMfa({ type: 'totp' });
 
 			if (result.body?.imageUrl) {
 				mfaQrCode = result.body.imageUrl;
