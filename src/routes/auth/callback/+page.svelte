@@ -16,30 +16,21 @@
 		const standalone = isStandalone();
 		const fromPWA = isFromPWA();
 
-		console.log('[Auth Callback] Component mounted', { standalone, fromPWA });
-
 		// Check if already signed in (in case the event already fired)
 		const checkAuthAndRedirect = async () => {
 			let isAuthenticated = false;
 			try {
-				console.log('[Auth Callback] Checking authentication status...');
 				isAuthenticated = await nhost.auth.isAuthenticatedAsync();
-				console.log('[Auth Callback] Authentication status:', isAuthenticated);
 			} catch (authError) {
-				console.warn('[Auth Callback] Authentication check failed:', authError);
 				// Fall back to checking current user state
 				isAuthenticated = !!nhost.auth.getUser();
-				console.log('[Auth Callback] Fallback authentication status:', isAuthenticated);
 			}
 
 			if (isAuthenticated) {
 				isSignedIn = true;
-				const user = nhost.auth.getUser();
-				console.log('[Auth Callback] User authenticated:', user?.email);
 
 				// If we're in browser but came from PWA, show "Return to App" button
 				if (!standalone && fromPWA) {
-					console.log('[Auth Callback] PWA flow - showing return button');
 					showReturnButton = true;
 					// Auto-redirect after 3 seconds as fallback
 					redirectTimeout = setTimeout(() => {
@@ -47,18 +38,40 @@
 					}, 3000);
 				} else {
 					// Normal flow: redirect to home page (shows dashboard for authenticated users)
-					console.log('[Auth Callback] Normal flow - redirecting to home');
 					goto('/');
 				}
 				return true;
-			} else {
-				console.log('[Auth Callback] User not authenticated yet, waiting for auth event...');
 			}
 			return false;
 		};
 
 		// Initialize the auth check
 		const initAuth = async () => {
+			// Check if we have a refresh token from OAuth callback in the URL
+			const urlParams = new URLSearchParams(window.location.search);
+			const refreshToken = urlParams.get('refreshToken');
+
+			if (refreshToken) {
+				try {
+					// Use the SDK's built-in refreshToken method to exchange it
+					const result = await nhost.auth.refreshToken({
+						refreshToken: refreshToken
+					});
+
+					if (result.body) {
+						// The SDK will automatically store the session
+						// Redirect to remove the token from the URL
+						window.location.replace('/');
+						return;
+					}
+				} catch (error) {
+					console.error('[Auth Callback] Error exchanging token:', error);
+				}
+			}
+
+			// Give Nhost SDK a moment to process session
+			await new Promise(resolve => setTimeout(resolve, 500));
+
 			// First, check if already authenticated
 			const alreadyAuthenticated = await checkAuthAndRedirect();
 
@@ -69,6 +82,16 @@
 						await checkAuthAndRedirect();
 					}
 				});
+
+				// Also poll a few times in case the event already fired
+				let pollCount = 0;
+				const pollInterval = setInterval(async () => {
+					pollCount++;
+					const success = await checkAuthAndRedirect();
+					if (success || pollCount >= 10) {
+						clearInterval(pollInterval);
+					}
+				}, 1000);
 			}
 		};
 

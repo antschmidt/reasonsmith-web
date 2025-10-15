@@ -19,6 +19,11 @@
 	let activeTab: 'signin' | 'signup' = 'signin';
 	const currentYear = new Date().getFullYear();
 
+	// MFA/TOTP state
+	let mfaTicket = '';
+	let totpCode = '';
+	let showMfaPrompt = false;
+
 	// Get redirect URL from query params
 	let redirectTo = '';
 	onMount(() => {
@@ -78,16 +83,42 @@
 	const handleEmailPasswordSignIn = async () => {
 		error = null;
 		try {
-			const { error: signInError } = await nhost.auth.signIn({
+			const result = await nhost.auth.signInEmailPassword({
 				email,
 				password
 			});
-			if (signInError) {
-				error = new Error(signInError.message || 'Sign in failed');
+
+			if (result.error) {
+				error = new Error(result.error.message || 'Sign in failed');
+			} else if (result.mfa) {
+				// MFA is required - show TOTP prompt
+				mfaTicket = result.mfa.ticket;
+				showMfaPrompt = true;
 			} else {
 				// Redirect after successful sign-in
 				goto(redirectTo);
 			}
+		} catch (err) {
+			error = err as Error;
+		}
+	};
+
+	const handleTotpVerification = async () => {
+		error = null;
+		try {
+			// Use SDK to verify TOTP code
+			const result = await nhost.auth.verifySignInMfaTotp({
+				ticket: mfaTicket,
+				otp: totpCode
+			});
+
+			if (result.error) {
+				throw new Error(result.error.message || 'Invalid verification code');
+			}
+
+			// Session is automatically set by the SDK
+			// Redirect after successful MFA verification
+			goto(redirectTo);
 		} catch (err) {
 			error = err as Error;
 		}
@@ -405,24 +436,61 @@
 
 					{#if showEmailPassword}
 						<div class="auth-form">
-							<input type="email" bind:value={email} placeholder="Email" class="auth-input" />
-							<input
-								type="password"
-								bind:value={password}
-								placeholder="Password"
-								class="auth-input"
-								maxlength="50"
-							/>
-							<button
-								type="button"
-								class="auth-submit-button"
-								onclick={activeTab === 'signin'
-									? handleEmailPasswordSignIn
-									: handleEmailPasswordSignUp}
-								disabled={!email || !password}
-							>
-								{activeTab === 'signin' ? 'Sign In' : 'Sign Up'}
-							</button>
+							{#if showMfaPrompt}
+								<!-- TOTP verification prompt -->
+								<p class="auth-hint" style="text-align: left; margin-bottom: 0.5rem;">
+									Enter the 6-digit code from your authenticator app:
+								</p>
+								<input
+									type="text"
+									bind:value={totpCode}
+									placeholder="000000"
+									class="auth-input"
+									maxlength="6"
+									pattern="[0-9]{6}"
+									inputmode="numeric"
+									autocomplete="one-time-code"
+								/>
+								<button
+									type="button"
+									class="auth-submit-button"
+									onclick={handleTotpVerification}
+									disabled={totpCode.length !== 6}
+								>
+									Verify Code
+								</button>
+								<button
+									type="button"
+									class="auth-cancel-button"
+									onclick={() => {
+										showMfaPrompt = false;
+										mfaTicket = '';
+										totpCode = '';
+									}}
+								>
+									Cancel
+								</button>
+							{:else}
+								<!-- Email/Password sign in form -->
+								<input type="email" bind:value={email} placeholder="Email" class="auth-input" />
+								<input
+									type="password"
+									bind:value={password}
+									placeholder="Password"
+									class="auth-input"
+									maxlength="50"
+								/>
+								<button
+									type="button"
+									class="auth-submit-button"
+									onclick={activeTab === 'signin'
+										? handleEmailPasswordSignIn
+										: handleEmailPasswordSignUp}
+									disabled={!email || !password}
+								>
+									{activeTab === 'signin' ? 'Sign In' : 'Sign Up'}
+								</button>
+							{/if}
 						</div>
 					{/if}
 
@@ -762,6 +830,24 @@
 	.auth-submit-button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.auth-cancel-button {
+		padding: 0.75rem 1.5rem;
+		background: transparent;
+		color: var(--color-text-secondary);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		font-size: 1rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.auth-cancel-button:hover {
+		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
+		border-color: var(--color-text-secondary);
+		color: var(--color-text-primary);
 	}
 
 	.auth-success {

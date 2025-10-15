@@ -988,7 +988,7 @@
 
 			// Check and reset monthly credits if needed
 			if (contributor) {
-				const HASURA_GRAPHQL_ENDPOINT = 'https://graphql.reasonsmith.com/v1/graphql';
+				const HASURA_GRAPHQL_ENDPOINT = nhost.graphql.getUrl();
 				const accessToken = nhost.auth.getAccessToken();
 
 				if (accessToken) {
