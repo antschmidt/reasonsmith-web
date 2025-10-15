@@ -504,9 +504,8 @@
 			// Load security keys after profile is loaded
 			await loadSecurityKeys();
 
-			// Check MFA status from user session
-			const currentUser = nhost.auth.getUser();
-			mfaEnabled = currentUser?.activeMfaType === 'totp';
+			// Check MFA status from server
+			await refreshMfaStatus();
 		} catch (e: any) {
 			error = e?.message || 'Failed to load profile.';
 		} finally {
