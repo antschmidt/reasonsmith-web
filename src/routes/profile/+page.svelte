@@ -123,6 +123,15 @@
 	let enablingMfa = false;
 	let disablingMfa = false;
 
+	// Password reset state
+	let passwordResetSending = false;
+	let passwordResetSuccess: string | null = null;
+	let passwordResetError: string | null = null;
+
+	// Constants for UI timeouts
+	const MFA_SUCCESS_MESSAGE_DURATION = 5000; // 5 seconds
+	const PASSWORD_RESET_SUCCESS_MESSAGE_DURATION = 8000; // 8 seconds
+
 	const GET_FULL_PROFILE = `
     query GetFullProfile($id: uuid!) {
       contributor_by_pk(id: $id) {
@@ -1219,7 +1228,7 @@
 
 			setTimeout(() => {
 				mfaSuccess = null;
-			}, 5000);
+			}, MFA_SUCCESS_MESSAGE_DURATION);
 		} catch (err: any) {
 			console.error('Error enabling MFA:', err);
 			mfaError = err?.message || 'Failed to enable MFA. Please check your code and try again.';
@@ -1255,12 +1264,47 @@
 
 			setTimeout(() => {
 				mfaSuccess = null;
-			}, 5000);
+			}, MFA_SUCCESS_MESSAGE_DURATION);
 		} catch (err: any) {
 			console.error('Error disabling MFA:', err);
 			mfaError = err?.message || 'Failed to disable MFA. Please check your code and try again.';
 		} finally {
 			disablingMfa = false;
+		}
+	}
+
+	async function sendPasswordReset() {
+		if (!user?.email) {
+			passwordResetError = 'No email address found for your account';
+			return;
+		}
+
+		passwordResetError = null;
+		passwordResetSuccess = null;
+		passwordResetSending = true;
+
+		try {
+			const result = await nhost.auth.sendPasswordResetEmail({
+				email: user.email,
+				options: {
+					redirectTo: `${window.location.origin}/reset-password`
+				}
+			});
+
+			if (result.error) {
+				throw new Error(result.error.message || 'Failed to send password reset email');
+			}
+
+			passwordResetSuccess = `Password reset email sent to ${user.email}. Please check your inbox.`;
+
+			setTimeout(() => {
+				passwordResetSuccess = null;
+			}, PASSWORD_RESET_SUCCESS_MESSAGE_DURATION);
+		} catch (err: any) {
+			console.error('Error sending password reset:', err);
+			passwordResetError = err?.message || 'Failed to send password reset email';
+		} finally {
+			passwordResetSending = false;
 		}
 	}
 </script>
@@ -2097,6 +2141,35 @@
 									</div>
 								</div>
 							{/if}
+						</div>
+
+						<!-- Password Reset Section -->
+						<div class="security-info">
+							<div class="security-item">
+								<div class="security-icon">🔑</div>
+								<div class="security-details">
+									<h4>Password Reset</h4>
+									<p class="security-description">
+										Send a password reset link to your email address.
+									</p>
+								</div>
+							</div>
+
+							{#if passwordResetError}
+								<div class="error-message">{passwordResetError}</div>
+							{/if}
+
+							{#if passwordResetSuccess}
+								<div class="success-message">{passwordResetSuccess}</div>
+							{/if}
+
+							<button
+								class="btn-secondary"
+								onclick={sendPasswordReset}
+								disabled={passwordResetSending}
+							>
+								{passwordResetSending ? 'Sending email...' : 'Send password reset email'}
+							</button>
 						</div>
 					</div>
 				</div>

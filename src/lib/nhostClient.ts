@@ -260,6 +260,26 @@ nhost.auth.signIn = async (params: any) => {
 				error: result.body?.error ?? null
 			};
 		}
+		// Handle magic link / passwordless email sign-in
+		if (params.email && !params.password && !params.provider) {
+			// v4: Use signInPasswordlessEmail for magic link
+			const result = await nhost.auth.signInPasswordlessEmail({
+				email: params.email,
+				options: params.options
+			});
+			// v4 returns FetchResponse<OKResponse> for passwordless (no session in response)
+			return {
+				session: null,
+				mfa: null,
+				error: result.status >= 400
+					? (
+						result.body?.error
+							? { message: result.body.error.message || 'Failed to send magic link', code: result.body.error.code }
+							: { message: result.statusText || 'Failed to send magic link' }
+					)
+					: null
+			};
+		}
 		// Handle OAuth provider sign-in
 		if (params.provider) {
 			// v4: Use signInProviderURL to get the OAuth URL and navigate to it
@@ -342,6 +362,33 @@ nhost.auth.signOut = async (params?: any) => {
 		localStorage.removeItem('nhostRefreshTokenId');
 		localStorage.removeItem('nhostRefreshTokenExpiresAt');
 		throw error;
+	}
+};
+
+// v3 compatibility: Add changePassword to auth client
+// v4: changeUserPassword() is the method name, v3: changePassword()
+// @ts-expect-error: Adding v3 compatibility method to nhost.auth; changePassword does not exist in type definition but is required for legacy support.
+nhost.auth.changePassword = async (params: any) => {
+	try {
+		// v4 API: changeUserPassword({ newPassword, ticket? })
+		const result = await nhost.auth.changeUserPassword({
+			newPassword: params.newPassword || params.password,
+			ticket: params.ticket
+		});
+
+		// Convert v4 response to v3 format
+		return {
+			error: result.status >= 400
+				? {
+					message:
+						(result.error?.message || result.message || `Failed to change password (status ${result.status})`)
+				}
+				: null
+		};
+	} catch (error: any) {
+		return {
+			error: { message: error.message || 'Failed to change password' }
+		};
 	}
 };
 
