@@ -309,6 +309,36 @@ nhost.auth.signUp = async (params: any) => {
 	}
 };
 
+// v3 compatibility: Add signOut to auth client
+// v4: signOut() requires refreshToken parameter, v3: signOut() had no parameters
+// @ts-ignore - Adding v3 compatibility method
+const originalSignOut = nhost.auth.signOut.bind(nhost.auth);
+nhost.auth.signOut = async (params?: any) => {
+	try {
+		// Get current refresh token from session
+		const session = nhost.getUserSession();
+		const refreshToken = session?.refreshToken || localStorage.getItem('nhostRefreshToken');
+
+		if (refreshToken) {
+			// v4: Call with refreshToken
+			return await originalSignOut({ refreshToken });
+		} else {
+			// No refresh token available - just clear local storage
+			localStorage.removeItem('nhostRefreshToken');
+			localStorage.removeItem('nhostRefreshTokenId');
+			localStorage.removeItem('nhostRefreshTokenExpiresAt');
+			// Return success-like response
+			return { body: 'OK' as const };
+		}
+	} catch (error: any) {
+		// If signOut fails, still clear local storage
+		localStorage.removeItem('nhostRefreshToken');
+		localStorage.removeItem('nhostRefreshTokenId');
+		localStorage.removeItem('nhostRefreshTokenExpiresAt');
+		throw error;
+	}
+};
+
 // Note: In v4, OAuth token exchange is handled automatically by the SDK
 // The SDK processes OAuth callbacks and manages session storage internally
 
