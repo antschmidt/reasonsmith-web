@@ -1199,8 +1199,14 @@
 				throw new Error(result.error.message || 'Invalid verification code');
 			}
 
+			// Refresh user data from server to get updated MFA status
+			const userResult = await nhost.auth.getUser();
+			const updatedUser = userResult.body?.user;
+			if (updatedUser) {
+				mfaEnabled = updatedUser.activeMfaType === 'totp';
+			}
+
 			mfaSuccess = 'Multi-factor authentication has been enabled successfully!';
-			mfaEnabled = true;
 			showMfaSetup = false;
 			mfaVerificationCode = '';
 			mfaQrCode = '';
@@ -1237,8 +1243,14 @@
 				throw new Error(result.error.message || 'Invalid verification code');
 			}
 
+			// Refresh user data from server to get updated MFA status
+			const userResult = await nhost.auth.getUser();
+			const updatedUser = userResult.body?.user;
+			if (updatedUser) {
+				mfaEnabled = updatedUser.activeMfaType === 'totp';
+			}
+
 			mfaSuccess = 'Multi-factor authentication has been disabled.';
-			mfaEnabled = false;
 			mfaVerificationCode = '';
 
 			setTimeout(() => {
