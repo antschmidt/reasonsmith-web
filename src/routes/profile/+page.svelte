@@ -1,7 +1,14 @@
 <script lang="ts">
 	import { nhost, ensureContributor, getUserFromServer } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
-	import { GET_USER_STATS, UPDATE_CONTRIBUTOR_AVATAR, DELETE_SECURITY_KEY, SEARCH_CONTRIBUTORS, ADD_PURCHASED_CREDITS } from '$lib/graphql/queries';
+	import {
+		GET_USER_STATS,
+		UPDATE_CONTRIBUTOR_AVATAR,
+		DELETE_SECURITY_KEY,
+		SEARCH_CONTRIBUTORS,
+		ADD_PURCHASED_CREDITS,
+		SET_PURCHASED_CREDITS
+	} from '$lib/graphql/queries';
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
 	import { env as publicEnv } from '$env/dynamic/public';
 	import { getOAuthRedirectURL, isStandalone } from '$lib/utils/pwa';
@@ -128,14 +135,16 @@
 	let passwordResetSuccess: string | null = null;
 	let passwordResetError: string | null = null;
 
-	// Admin credit management state
+	// Credit management state (admin only)
 	let creditSearchTerm = '';
 	let creditSearchResults: any[] = [];
 	let selectedUser: any = null;
+	let creditOperationMode: 'add' | 'set' = 'add';
 	let creditsToAdd = 0;
+	let creditsToSet = 0;
 	let creditManagementLoading = false;
-	let creditManagementSuccess: string | null = null;
 	let creditManagementError: string | null = null;
+	let creditManagementSuccess: string | null = null;
 
 	// Constants for UI timeouts
 	const MFA_SUCCESS_MESSAGE_DURATION = 5000; // 5 seconds
@@ -1318,14 +1327,12 @@
 		}
 	}
 
+	// Credit management functions (admin only)
 	async function searchUsers() {
 		if (!creditSearchTerm || creditSearchTerm.length < 2) {
 			creditSearchResults = [];
 			return;
 		}
-
-		creditManagementLoading = true;
-		creditManagementError = null;
 
 		try {
 			const searchPattern = `%${creditSearchTerm}%`;
@@ -1333,54 +1340,71 @@
 				searchTerm: searchPattern
 			});
 
-			if (result.error) {
-				throw new Error('Failed to search users');
-			}
-
 			creditSearchResults = result.data?.contributor || [];
 		} catch (err: any) {
 			console.error('Error searching users:', err);
-			creditManagementError = err?.message || 'Failed to search users';
 			creditSearchResults = [];
-		} finally {
-			creditManagementLoading = false;
 		}
 	}
 
-	async function addCredits() {
-		if (!selectedUser || !creditsToAdd || creditsToAdd <= 0) {
-			creditManagementError = 'Please select a user and enter a valid credit amount';
+	async function manageCredits() {
+		if (!selectedUser) {
+			creditManagementError = 'Please select a user';
 			return;
 		}
 
-		creditManagementLoading = true;
 		creditManagementError = null;
 		creditManagementSuccess = null;
+		creditManagementLoading = true;
 
 		try {
-			const result = await nhost.graphql.request(ADD_PURCHASED_CREDITS, {
-				contributorId: selectedUser.id,
-				creditsToAdd: creditsToAdd
-			});
+			if (creditOperationMode === 'add') {
+				if (!creditsToAdd || creditsToAdd <= 0) {
+					throw new Error('Please enter a valid credit amount to add');
+				}
 
-			if (result.error) {
-				throw new Error('Failed to add credits');
+				const result = await nhost.graphql.request(ADD_PURCHASED_CREDITS, {
+					contributorId: selectedUser.id,
+					creditsToAdd: creditsToAdd
+				});
+
+				if (result.error) {
+					throw new Error(result.error.message || 'Failed to add credits');
+				}
+
+				creditManagementSuccess = `Successfully added ${creditsToAdd} credits to ${selectedUser.display_name || selectedUser.auth_email}`;
+			} else {
+				// Set mode
+				if (creditsToSet < 0) {
+					throw new Error('Credits cannot be negative');
+				}
+
+				const result = await nhost.graphql.request(SET_PURCHASED_CREDITS, {
+					contributorId: selectedUser.id,
+					totalCredits: creditsToSet,
+					remainingCredits: creditsToSet
+				});
+
+				if (result.error) {
+					throw new Error(result.error.message || 'Failed to set credits');
+				}
+
+				creditManagementSuccess = `Successfully set credits to ${creditsToSet} for ${selectedUser.display_name || selectedUser.auth_email}`;
 			}
-
-			creditManagementSuccess = `Successfully added ${creditsToAdd} credits to ${selectedUser.display_name || selectedUser.auth_email}`;
-
-			// Reset form
-			creditsToAdd = 0;
-			selectedUser = null;
-			creditSearchTerm = '';
-			creditSearchResults = [];
 
 			setTimeout(() => {
 				creditManagementSuccess = null;
 			}, CREDIT_SUCCESS_MESSAGE_DURATION);
+
+			// Reset form
+			creditsToAdd = 0;
+			creditsToSet = 0;
+			selectedUser = null;
+			creditSearchTerm = '';
+			creditSearchResults = [];
 		} catch (err: any) {
-			console.error('Error adding credits:', err);
-			creditManagementError = err?.message || 'Failed to add credits';
+			console.error('Error managing credits:', err);
+			creditManagementError = err?.message || 'Failed to manage credits';
 		} finally {
 			creditManagementLoading = false;
 		}
@@ -2429,6 +2453,173 @@
 									</div>
 								</div>
 							{/if}
+						</div>
+					</div>
+				{/if}
+
+				<!-- Admin Credit Management -->
+				{#if contributor?.role === 'admin'}
+					<div class="profile-card admin-credit-management-section">
+						<h3 class="section-title">Credit Management</h3>
+						<div class="credit-management-info">
+							<p class="section-description">
+								Add or set purchased credits for user accounts.
+							</p>
+
+							<!-- Error/Success messages -->
+							{#if creditManagementError}
+								<div class="error-message">{creditManagementError}</div>
+							{/if}
+
+							{#if creditManagementSuccess}
+								<div class="success-message">{creditManagementSuccess}</div>
+							{/if}
+
+							<div class="form-section">
+								<!-- Operation mode toggle -->
+								<div class="form-group">
+									<label>Operation Mode:</label>
+									<div class="mode-toggle">
+										<button
+											type="button"
+											class="mode-button {creditOperationMode === 'add' ? 'active' : ''}"
+											onclick={() => (creditOperationMode = 'add')}
+										>
+											Add Credits
+										</button>
+										<button
+											type="button"
+											class="mode-button {creditOperationMode === 'set' ? 'active' : ''}"
+											onclick={() => (creditOperationMode = 'set')}
+										>
+											Set Credits
+										</button>
+									</div>
+								</div>
+
+								<!-- User search input -->
+								<div class="form-group">
+									<label for="creditSearchTerm">Search for user:</label>
+									<input
+										id="creditSearchTerm"
+										type="text"
+										bind:value={creditSearchTerm}
+										oninput={searchUsers}
+										placeholder="Enter email, handle, or display name..."
+										class="form-input"
+									/>
+								</div>
+
+								<!-- Search results dropdown -->
+								{#if creditSearchResults.length > 0}
+									<div class="user-search-results">
+										{#each creditSearchResults as searchResult}
+											<button
+												type="button"
+												class="user-search-result {selectedUser?.id === searchResult.id
+													? 'selected'
+													: ''}"
+												onclick={() => {
+													selectedUser = searchResult;
+													creditSearchTerm =
+														searchResult.auth_email || searchResult.handle;
+													creditSearchResults = [];
+													// Pre-populate set mode with current credits
+													if (creditOperationMode === 'set') {
+														creditsToSet = searchResult.purchased_credits_remaining || 0;
+													}
+												}}
+											>
+												<div class="user-info">
+													<div class="user-name">
+														{searchResult.display_name || searchResult.handle || 'Unknown'}
+													</div>
+													<div class="user-email">{searchResult.auth_email || ''}</div>
+												</div>
+												<div class="user-credits">
+													<span class="credits-label">Credits:</span>
+													<span class="credits-value"
+														>{searchResult.purchased_credits_remaining || 0}</span
+													>
+												</div>
+											</button>
+										{/each}
+									</div>
+								{/if}
+
+								<!-- Selected user display -->
+								{#if selectedUser}
+									<div class="selected-user-card">
+										<div class="selected-user-info">
+											<strong>{selectedUser.display_name || selectedUser.handle}</strong>
+											<span class="user-email-small">{selectedUser.auth_email}</span>
+											<span class="current-credits"
+												>Current credits: {selectedUser.purchased_credits_remaining || 0}</span
+											>
+										</div>
+										<button
+											type="button"
+											class="btn-text-danger"
+											onclick={() => {
+												selectedUser = null;
+												creditSearchTerm = '';
+												creditsToAdd = 0;
+												creditsToSet = 0;
+											}}
+										>
+											Clear
+										</button>
+									</div>
+								{/if}
+
+								<!-- Credits input (conditional based on mode) -->
+								{#if creditOperationMode === 'add'}
+									<div class="form-group">
+										<label for="creditsToAdd">Credits to add:</label>
+										<input
+											id="creditsToAdd"
+											type="number"
+											bind:value={creditsToAdd}
+											min="1"
+											placeholder="Enter amount..."
+											class="form-input"
+											disabled={creditManagementLoading || !selectedUser}
+										/>
+									</div>
+								{:else}
+									<div class="form-group">
+										<label for="creditsToSet">Set credits to:</label>
+										<input
+											id="creditsToSet"
+											type="number"
+											bind:value={creditsToSet}
+											min="0"
+											placeholder="Enter amount..."
+											class="form-input"
+											disabled={creditManagementLoading || !selectedUser}
+										/>
+										<p class="input-hint">
+											This will set both total and remaining credits to this value.
+										</p>
+									</div>
+								{/if}
+
+								<!-- Submit button -->
+								<button
+									class="btn-primary"
+									onclick={manageCredits}
+									disabled={creditManagementLoading ||
+										!selectedUser ||
+										(creditOperationMode === 'add' && (!creditsToAdd || creditsToAdd <= 0)) ||
+										(creditOperationMode === 'set' && creditsToSet < 0)}
+								>
+									{creditManagementLoading
+										? 'Processing...'
+										: creditOperationMode === 'add'
+											? 'Add Credits'
+											: 'Set Credits'}
+								</button>
+							</div>
 						</div>
 					</div>
 				{/if}
@@ -4216,5 +4407,246 @@
 		padding: 0.5rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
 		border-radius: 4px;
+	}
+
+	/* Credit Management Styles */
+	.admin-credit-management-section {
+		margin-top: 2rem;
+	}
+
+	.credit-management-info {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+	}
+
+	.section-description {
+		color: var(--color-text-secondary);
+		font-size: 0.9375rem;
+		margin: 0;
+	}
+
+	.form-section {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+	}
+
+	.form-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.form-group label {
+		font-weight: 600;
+		color: var(--color-text-primary);
+		font-size: 0.9375rem;
+	}
+
+	.form-input {
+		padding: 0.75rem 1rem;
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		font-size: 0.9375rem;
+		background: var(--color-surface);
+		color: var(--color-text-primary);
+		transition: all 0.2s ease;
+	}
+
+	.form-input:focus {
+		outline: none;
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+
+	.form-input:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
+	}
+
+	.input-hint {
+		font-size: 0.8125rem;
+		color: var(--color-text-secondary);
+		font-style: italic;
+		margin: 0;
+	}
+
+	.mode-toggle {
+		display: flex;
+		gap: 0;
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		overflow: hidden;
+		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
+	}
+
+	.mode-button {
+		flex: 1;
+		padding: 0.75rem 1.5rem;
+		background: transparent;
+		border: none;
+		color: var(--color-text-secondary);
+		font-size: 0.9375rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.mode-button:first-child {
+		border-right: 1px solid var(--color-border);
+	}
+
+	.mode-button.active {
+		background: var(--color-primary);
+		color: white;
+	}
+
+	.mode-button:not(.active):hover {
+		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+		color: var(--color-text-primary);
+	}
+
+	.user-search-results {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		overflow: hidden;
+		max-height: 300px;
+		overflow-y: auto;
+	}
+
+	.user-search-result {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1rem;
+		background: var(--color-surface);
+		border: none;
+		border-bottom: 1px solid var(--color-border);
+		text-align: left;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.user-search-result:last-child {
+		border-bottom: none;
+	}
+
+	.user-search-result:hover {
+		background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
+	}
+
+	.user-search-result.selected {
+		background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+		border-left: 3px solid var(--color-primary);
+	}
+
+	.user-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		flex: 1;
+	}
+
+	.user-name {
+		font-weight: 600;
+		color: var(--color-text-primary);
+		font-size: 0.9375rem;
+	}
+
+	.user-email {
+		font-size: 0.8125rem;
+		color: var(--color-text-secondary);
+	}
+
+	.user-credits {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.25rem;
+	}
+
+	.credits-label {
+		font-size: 0.75rem;
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.credits-value {
+		font-size: 1.25rem;
+		font-weight: 700;
+		color: var(--color-primary);
+	}
+
+	.selected-user-card {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1rem;
+		background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+		border: 2px solid var(--color-primary);
+		border-radius: 8px;
+	}
+
+	.selected-user-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+
+	.selected-user-info strong {
+		color: var(--color-text-primary);
+		font-size: 1rem;
+	}
+
+	.user-email-small {
+		font-size: 0.8125rem;
+		color: var(--color-text-secondary);
+	}
+
+	.current-credits {
+		font-size: 0.875rem;
+		color: var(--color-primary);
+		font-weight: 600;
+	}
+
+	.error-message {
+		background: color-mix(in srgb, #ef4444 10%, transparent);
+		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+		color: #dc2626;
+		padding: 0.875rem 1rem;
+		border-radius: 8px;
+		font-size: 0.875rem;
+	}
+
+	.success-message {
+		background: color-mix(in srgb, #10b981 10%, transparent);
+		border: 1px solid color-mix(in srgb, #10b981 30%, transparent);
+		color: #059669;
+		padding: 0.875rem 1rem;
+		border-radius: 8px;
+		font-size: 0.875rem;
+	}
+
+	.btn-text-danger {
+		padding: 0.5rem 1rem;
+		background: transparent;
+		color: #dc2626;
+		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+		border-radius: 6px;
+		font-size: 0.875rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.btn-text-danger:hover {
+		background: color-mix(in srgb, #ef4444 10%, transparent);
+		border-color: #ef4444;
 	}
 </style>

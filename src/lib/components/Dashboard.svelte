@@ -46,7 +46,7 @@
 				editorsDeskPicks = (data as any)?.editors_desk_pick ?? [];
 			}
 		} catch (e: any) {
-			console.error('Failed to load Editors\' Desk picks:', e);
+			console.error("Failed to load Editors' Desk picks:", e);
 		} finally {
 			editorsDeskLoading = false;
 		}
@@ -57,6 +57,17 @@
 		error = null;
 
 		try {
+			// Check if user session is valid
+			const session = nhost.getUserSession();
+			if (!session || !session.user) {
+				console.log('No active session, skipping dashboard load');
+				loading = false;
+				return;
+			}
+
+			// Wait for authentication to be ready
+			await nhost.auth.isAuthenticatedAsync();
+
 			// Load dashboard data
 			const dashboardResult = await nhost.graphql.request(GET_DASHBOARD_DATA, {
 				userId: user.id as unknown as string
@@ -64,9 +75,18 @@
 
 			// Handle dashboard data
 			if (dashboardResult.error) {
-				error = Array.isArray(dashboardResult.error)
+				const errorMsg = Array.isArray(dashboardResult.error)
 					? dashboardResult.error.map((e: any) => e.message ?? String(e)).join('; ')
 					: ((dashboardResult.error as any).message ?? 'Failed to load dashboard data');
+
+				// Check if it's a JWT error - if so, silently skip and let token refresh
+				if (errorMsg.includes('JWT') || errorMsg.includes('JWTExpired')) {
+					console.log('JWT expired, skipping dashboard load - will retry');
+					loading = false;
+					return;
+				}
+
+				error = errorMsg;
 			} else if (dashboardResult.data) {
 				// Focus on drafts and active work only
 
@@ -110,9 +130,15 @@
 					return dateB - dateA; // Most recent first
 				});
 			}
-		} catch (err) {
-			error = `Failed to load data: ${err}`;
-			console.error('Error loading dashboard data:', err);
+		} catch (err: any) {
+			// Check if it's a JWT error - if so, silently skip
+			const errorMsg = err?.message || String(err);
+			if (errorMsg.includes('JWT') || errorMsg.includes('JWTExpired')) {
+				console.log('JWT expired during dashboard load, will retry');
+			} else {
+				error = `Failed to load data: ${err}`;
+				console.error('Error loading dashboard data:', err);
+			}
 		}
 
 		loading = false;

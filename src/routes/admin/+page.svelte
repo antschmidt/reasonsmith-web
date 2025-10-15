@@ -4,9 +4,11 @@
 	import {
 		UPDATE_CONTRIBUTOR_ANALYSIS_SETTINGS,
 		RESET_ANALYSIS_USAGE,
-		UPDATE_CONTRIBUTOR_ROLE
+		UPDATE_CONTRIBUTOR_ROLE,
+		SET_PURCHASED_CREDITS,
+		ANONYMIZE_AND_DELETE_USER
 	} from '$lib/graphql/queries';
-	import { refreshUserRole, debugAdminRequest } from '$lib/nhostClient';
+	import { refreshUserRole, debugAdminRequest, debugCurrentRole } from '$lib/nhostClient';
 
 	type Contributor = {
 		id: string;
@@ -18,6 +20,12 @@
 		analysis_limit: number | null;
 		analysis_count_used: number;
 		analysis_count_reset_at: string;
+		monthly_credits_remaining: number | null;
+		monthly_credits_reset_at: string | null;
+		purchased_credits_total: number | null;
+		purchased_credits_used: number | null;
+		purchased_credits_remaining: number | null;
+		subscription_tier: string | null;
 	};
 
 	let user = nhost.auth.getUser();
@@ -37,11 +45,18 @@
         handle
         display_name
         email
+        auth_email
         role
         analysis_enabled
         analysis_limit
         analysis_count_used
         analysis_count_reset_at
+        monthly_credits_remaining
+        monthly_credits_reset_at
+        purchased_credits_total
+        purchased_credits_used
+        purchased_credits_remaining
+        subscription_tier
       }
     }
   `;
@@ -206,6 +221,134 @@
 		}
 	}
 
+	async function updatePurchasedCredits(contributorId: string, remainingCredits: number) {
+		saving = true;
+		error = null;
+		success = null;
+
+		try {
+			// Get the current contributor to calculate the new total
+			const currentContributor = contributors.find((c) => c.id === contributorId);
+			if (!currentContributor) {
+				throw new Error('Contributor not found');
+			}
+
+			const currentTotal = currentContributor.purchased_credits_total ?? 0;
+			const currentUsed = currentContributor.purchased_credits_used ?? 0;
+
+			// Calculate new total: used + remaining
+			const newTotal = currentUsed + remainingCredits;
+
+			const result = await nhost.graphql.request(SET_PURCHASED_CREDITS, {
+				contributorId,
+				totalCredits: newTotal,
+				remainingCredits: remainingCredits
+			});
+
+			if (result.error) {
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'Failed to update purchased credits'
+					: result.error.message || 'Failed to update purchased credits';
+				throw new Error(errorMessage);
+			}
+
+			// Update local state
+			contributors = contributors.map((c) =>
+				c.id === contributorId
+					? {
+							...c,
+							purchased_credits_remaining: remainingCredits,
+							purchased_credits_total: newTotal
+						}
+					: c
+			);
+
+			success = 'Purchased credits updated successfully';
+			setTimeout(() => (success = null), 3000);
+		} catch (err: any) {
+			error = err.message || 'Failed to update purchased credits';
+			console.error('Error updating purchased credits:', err);
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function deleteUser(contributorId: string, contributorName: string) {
+		// Only admin can delete users
+		if (!isAdmin) {
+			error = 'Only admin can delete users';
+			setTimeout(() => (error = null), 3000);
+			return;
+		}
+
+		// Prevent admin from deleting themselves
+		if (contributorId === user?.id) {
+			error = 'You cannot delete your own account';
+			setTimeout(() => (error = null), 3000);
+			return;
+		}
+
+		// Confirm deletion
+		const confirmed = confirm(
+			`Are you sure you want to delete ${contributorName}?\n\n` +
+				`This will:\n` +
+				`• Anonymize all their discussions and posts\n` +
+				`• Delete their contributor profile\n` +
+				`• This action CANNOT be undone`
+		);
+
+		if (!confirmed) return;
+
+		saving = true;
+		error = null;
+		success = null;
+
+		try {
+			// Debug: Check current role before mutation
+			console.log('[deleteUser] Checking role before mutation:');
+			debugCurrentRole();
+
+			// Force role refresh to ensure we have admin role
+			console.log('[deleteUser] Forcing role refresh...');
+			await refreshUserRole();
+
+			// Debug: Check role after refresh
+			console.log('[deleteUser] Checking role after refresh:');
+			debugCurrentRole();
+
+			// Debug: Log mutation details
+			console.log('[deleteUser] Calling mutation with:', {
+				mutation: ANONYMIZE_AND_DELETE_USER,
+				variables: { userId: contributorId },
+				currentRole: window.sessionStorage.getItem('userActualRole')
+			});
+
+			const result = await nhost.graphql.request(ANONYMIZE_AND_DELETE_USER, {
+				userId: contributorId
+			});
+
+			console.log('[deleteUser] Mutation result:', result);
+
+			if (result.error) {
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'Failed to delete user'
+					: result.error.message || 'Failed to delete user';
+				throw new Error(errorMessage);
+			}
+
+			// Remove from local state
+			contributors = contributors.filter((c) => c.id !== contributorId);
+
+			success = `User ${contributorName} deleted successfully. All their content has been anonymized.`;
+			setTimeout(() => (success = null), 5000);
+		} catch (err: any) {
+			error = err.message || 'Failed to delete user';
+			console.error('Error deleting user:', err);
+		} finally {
+			saving = false;
+		}
+	}
+
 	async function updateUserRole(contributorId: string, newRole: string) {
 		// Only admin can assign admin role
 		if (!isAdmin && newRole === 'admin') {
@@ -282,14 +425,6 @@
 			<p class="lead">Manage analysis permissions and usage limits for all users</p>
 		</header>
 
-		{#if error}
-			<div class="error-message">{error}</div>
-		{/if}
-
-		{#if success}
-			<div class="success-message">{success}</div>
-		{/if}
-
 		{#if loading}
 			<div class="loading">Loading contributors...</div>
 		{:else}
@@ -299,6 +434,9 @@
 						<tr>
 							<th>User</th>
 							<th>Role</th>
+							<th>Subscription</th>
+							<th>Monthly Credits</th>
+							<th>Purchased Credits</th>
 							<th>Analysis Enabled</th>
 							<th>Usage Limit</th>
 							<th>Used / Reset</th>
@@ -310,9 +448,14 @@
 							<tr class="contributor-row">
 								<td class="user-info">
 									<div class="user-name">
-										{contributor.display_name || contributor.handle || 'Unnamed'}
+										{contributor.display_name ||
+											contributor.handle ||
+											contributor.auth_email ||
+											'Unnamed'}
 									</div>
-									<div class="user-email">{contributor.email}</div>
+									{#if contributor.display_name || contributor.handle}
+										<div class="user-email">{contributor.auth_email}</div>
+									{/if}
 								</td>
 								<td>
 									{#if isAdmin || (currentUserRole === 'slartibartfast' && !['admin'].includes(contributor.role))}
@@ -331,6 +474,41 @@
 									{:else}
 										<span class="role-badge role-{contributor.role}">{contributor.role}</span>
 									{/if}
+								</td>
+								<td>
+									<span class="subscription-badge tier-{contributor.subscription_tier || 'free'}">
+										{contributor.subscription_tier || 'free'}
+									</span>
+								</td>
+								<td class="credits-info">
+									<div class="credits-count">
+										{contributor.monthly_credits_remaining ?? 0}
+									</div>
+									{#if contributor.monthly_credits_reset_at}
+										<div class="reset-date">
+											Reset: {new Date(contributor.monthly_credits_reset_at).toLocaleDateString()}
+										</div>
+									{/if}
+								</td>
+								<td class="credits-info">
+									<div class="credits-edit-container">
+										<label class="credits-label">Remaining:</label>
+										<input
+											type="number"
+											class="credits-input"
+											value={contributor.purchased_credits_remaining ?? 0}
+											min="0"
+											disabled={saving}
+											onblur={(e) => {
+												const remaining = parseInt(e.currentTarget.value) || 0;
+												updatePurchasedCredits(contributor.id, remaining);
+											}}
+										/>
+									</div>
+									<div class="reset-date">
+										Total: {contributor.purchased_credits_total ?? 0} / Used: {contributor.purchased_credits_used ??
+											0}
+									</div>
 								</td>
 								<td>
 									<label class="toggle">
@@ -374,13 +552,30 @@
 									</div>
 								</td>
 								<td>
-									<button
-										class="btn-secondary reset-btn"
-										disabled={saving || contributor.role === 'me'}
-										onclick={() => resetAnalysisCount(contributor.id)}
-									>
-										Reset Count
-									</button>
+									<div class="action-buttons">
+										<button
+											class="btn-secondary reset-btn"
+											disabled={saving || contributor.role === 'me'}
+											onclick={() => resetAnalysisCount(contributor.id)}
+											title="Reset analysis count"
+										>
+											Reset Count
+										</button>
+										{#if isAdmin && contributor.id !== user?.id}
+											<button
+												class="btn-danger delete-btn"
+												disabled={saving}
+												onclick={() =>
+													deleteUser(
+														contributor.id,
+														contributor.display_name || contributor.handle || contributor.email
+													)}
+												title="Delete user and anonymize their content"
+											>
+												Delete User
+											</button>
+										{/if}
+									</div>
 								</td>
 							</tr>
 						{/each}
@@ -390,6 +585,25 @@
 		{/if}
 	{/if}
 </div>
+
+<!-- Toast notifications -->
+{#if error}
+	<div class="toast toast-error">
+		<div class="toast-content">
+			<span class="toast-icon">⚠️</span>
+			<span class="toast-message">{error}</span>
+		</div>
+	</div>
+{/if}
+
+{#if success}
+	<div class="toast toast-success">
+		<div class="toast-content">
+			<span class="toast-icon">✓</span>
+			<span class="toast-message">{success}</span>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.admin-container {
@@ -435,23 +649,57 @@
 		line-height: 1.6;
 	}
 
-	.error-message,
-	.success-message {
+	/* Toast notifications */
+	.toast {
+		position: fixed;
+		top: 2rem;
+		right: 2rem;
+		z-index: 1000;
+		min-width: 300px;
+		max-width: 500px;
 		padding: 1rem 1.5rem;
 		border-radius: 12px;
-		margin-bottom: 1.5rem;
 		font-weight: 600;
+		box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+		animation: slideIn 0.3s ease-out;
+		backdrop-filter: blur(20px);
 	}
 
-	.error-message {
-		background: color-mix(in srgb, #ef4444 15%, transparent);
-		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+	@keyframes slideIn {
+		from {
+			transform: translateX(120%);
+			opacity: 0;
+		}
+		to {
+			transform: translateX(0);
+			opacity: 1;
+		}
+	}
+
+	.toast-content {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.toast-icon {
+		font-size: 1.25rem;
+		line-height: 1;
+	}
+
+	.toast-message {
+		flex: 1;
+	}
+
+	.toast-error {
+		background: color-mix(in srgb, #ef4444 20%, var(--color-surface));
+		border: 1px solid color-mix(in srgb, #ef4444 40%, transparent);
 		color: #ef4444;
 	}
 
-	.success-message {
-		background: color-mix(in srgb, #10b981 15%, transparent);
-		border: 1px solid color-mix(in srgb, #10b981 30%, transparent);
+	.toast-success {
+		background: color-mix(in srgb, #10b981 20%, var(--color-surface));
+		border: 1px solid color-mix(in srgb, #10b981 40%, transparent);
 		color: #10b981;
 	}
 
@@ -474,6 +722,7 @@
 	table {
 		width: 100%;
 		border-collapse: collapse;
+		table-layout: fixed;
 	}
 
 	thead {
@@ -485,11 +734,39 @@
 		text-align: left;
 		font-weight: 700;
 		color: var(--color-text-primary);
-		font-size: 0.9rem;
+		font-size: 0.7rem;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
 	}
+
+	th:nth-child(1) {
+		width: 18%;
+	} /* User */
+	th:nth-child(2) {
+		width: 10%;
+	} /* Role */
+	th:nth-child(3) {
+		width: 9%;
+	} /* Subscription */
+	th:nth-child(4) {
+		width: 11%;
+	} /* Monthly Credits */
+	th:nth-child(5) {
+		width: 13%;
+	} /* Purchased Credits */
+	th:nth-child(6) {
+		width: 9%;
+	} /* Analysis Enabled */
+	th:nth-child(7) {
+		width: 9%;
+	} /* Usage Limit */
+	th:nth-child(8) {
+		width: 11%;
+	} /* Used / Reset */
+	th:nth-child(9) {
+		width: 10%;
+	} /* Actions */
 
 	.contributor-row {
 		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
@@ -503,6 +780,7 @@
 	td {
 		padding: 1.25rem;
 		vertical-align: middle;
+		overflow: hidden;
 	}
 
 	.user-info {
@@ -545,6 +823,93 @@
 	.role-user {
 		background: color-mix(in srgb, var(--color-text-secondary) 20%, transparent);
 		color: var(--color-text-secondary);
+	}
+
+	.subscription-badge {
+		display: inline-block;
+		padding: 0.35rem 0.75rem;
+		border-radius: 12px;
+		font-size: 0.8rem;
+		font-weight: 600;
+		text-transform: capitalize;
+		letter-spacing: 0.05em;
+	}
+
+	.tier-free {
+		background: color-mix(in srgb, var(--color-text-secondary) 20%, transparent);
+		color: var(--color-text-secondary);
+	}
+
+	.tier-basic {
+		background: linear-gradient(135deg, #3b82f6, #60a5fa);
+		color: white;
+		box-shadow: 0 2px 8px color-mix(in srgb, #3b82f6 30%, transparent);
+	}
+
+	.tier-pro {
+		background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+		color: white;
+		box-shadow: 0 2px 8px color-mix(in srgb, #8b5cf6 30%, transparent);
+	}
+
+	.tier-enterprise {
+		background: linear-gradient(135deg, #f59e0b, #fbbf24);
+		color: white;
+		box-shadow: 0 2px 8px color-mix(in srgb, #f59e0b 30%, transparent);
+	}
+
+	.credits-info {
+		min-width: 140px;
+	}
+
+	.credits-count {
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin-bottom: 0.25rem;
+		font-size: 0.95rem;
+	}
+
+	.credits-edit-container {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 0.25rem;
+	}
+
+	.credits-label {
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+		font-weight: 500;
+		white-space: nowrap;
+	}
+
+	.credits-input {
+		width: 80px;
+		min-width: 80px;
+		max-width: 80px;
+		padding: 0.4rem 0.6rem;
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: 8px;
+		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
+		backdrop-filter: blur(10px);
+		color: var(--color-text-primary);
+		font-size: 0.85rem;
+		font-weight: 600;
+		transition:
+			border-color 0.2s ease,
+			box-shadow 0.2s ease;
+		box-sizing: border-box;
+	}
+
+	.credits-input:focus {
+		outline: none;
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+	}
+
+	.credits-input:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
 	}
 
 	.role-select {
@@ -623,6 +988,8 @@
 
 	.limit-input {
 		width: 100px;
+		min-width: 100px;
+		max-width: 100px;
 		padding: 0.5rem 0.75rem;
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
 		border-radius: 8px;
@@ -630,7 +997,10 @@
 		backdrop-filter: blur(10px);
 		color: var(--color-text-primary);
 		font-size: 0.9rem;
-		transition: all 0.3s ease;
+		transition:
+			border-color 0.2s ease,
+			box-shadow 0.2s ease;
+		box-sizing: border-box;
 	}
 
 	.limit-input:focus {
@@ -654,6 +1024,13 @@
 		color: var(--color-text-secondary);
 	}
 
+	.action-buttons {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		align-items: stretch;
+	}
+
 	.btn-secondary {
 		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
 		backdrop-filter: blur(10px);
@@ -674,6 +1051,32 @@
 	}
 
 	.btn-secondary:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	.btn-danger {
+		background: color-mix(in srgb, #ef4444 15%, var(--color-surface));
+		backdrop-filter: blur(10px);
+		color: #ef4444;
+		border: 1px solid color-mix(in srgb, #ef4444 40%, transparent);
+		padding: 0.5rem 1rem;
+		border-radius: 8px;
+		cursor: pointer;
+		font-weight: 600;
+		font-size: 0.85rem;
+		transition: all 0.3s ease;
+	}
+
+	.btn-danger:hover:not(:disabled) {
+		background: color-mix(in srgb, #ef4444 25%, var(--color-surface));
+		border-color: #ef4444;
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px color-mix(in srgb, #ef4444 25%, transparent);
+	}
+
+	.btn-danger:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 		transform: none;
