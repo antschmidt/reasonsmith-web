@@ -290,7 +290,9 @@
 
 			// The response should contain session tokens - need to set them in Nhost
 			if (authResult.session) {
-				// Manually set session in Nhost client using v4 API
+				// v4 API: Use refreshToken to exchange and establish session
+				// Note: v4 doesn't have setSession(), so refreshToken() is the correct approach
+				// The SDK automatically stores the session after a successful token exchange
 				await nhost.auth.refreshToken({
 					refreshToken: authResult.session.refreshToken
 				});

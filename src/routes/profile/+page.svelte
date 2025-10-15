@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { nhost, ensureContributor } from '$lib/nhostClient';
+	import { nhost, ensureContributor, getUserFromServer } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
 	import { GET_USER_STATS, UPDATE_CONTRIBUTOR_AVATAR, DELETE_SECURITY_KEY } from '$lib/graphql/queries';
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
@@ -504,9 +504,8 @@
 			// Load security keys after profile is loaded
 			await loadSecurityKeys();
 
-			// Check MFA status from user session
-			const currentUser = nhost.auth.getUser();
-			mfaEnabled = currentUser?.activeMfaType === 'totp';
+			// Check MFA status from server
+			await refreshMfaStatus();
 		} catch (e: any) {
 			error = e?.message || 'Failed to load profile.';
 		} finally {
@@ -1181,7 +1180,8 @@
 
 	async function refreshMfaStatus() {
 		// Refresh user data from server to get updated MFA status
-		const userResult = await nhost.auth.getUser();
+		// Use v4 SDK method directly (not the v3 compatibility shim)
+		const userResult = await getUserFromServer();
 		// v4 API returns FetchResponse<User> where body is the User object directly
 		const updatedUser = userResult.body;
 		if (updatedUser) {
