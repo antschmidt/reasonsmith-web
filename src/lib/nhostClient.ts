@@ -372,7 +372,12 @@ nhost.auth.changePassword = async (params: any) => {
 
 		// Convert v4 response to v3 format
 		return {
-			error: result.status >= 400 ? { message: 'Failed to change password' } : null
+			error: result.status >= 400
+				? {
+					message:
+						(result.error?.message || result.message || `Failed to change password (status ${result.status})`)
+				}
+				: null
 		};
 	} catch (error: any) {
 		return {
