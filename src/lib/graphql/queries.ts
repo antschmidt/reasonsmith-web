@@ -1155,6 +1155,33 @@ export const INCREMENT_PURCHASED_CREDITS_USED = gql`
 	${CONTRIBUTOR_FIELDS}
 `;
 
+// Query to search for contributors by email or handle
+export const SEARCH_CONTRIBUTORS = gql`
+	query SearchContributors($searchTerm: String!) {
+		contributor(
+			where: {
+				_or: [
+					{ auth_email: { _ilike: $searchTerm } }
+					{ handle: { _ilike: $searchTerm } }
+					{ display_name: { _ilike: $searchTerm } }
+				]
+			}
+			limit: 10
+			order_by: { created_at: desc }
+		) {
+			id
+			display_name
+			handle
+			auth_email
+			purchased_credits_total
+			purchased_credits_used
+			purchased_credits_remaining
+			analysis_limit
+			role
+		}
+	}
+`;
+
 // Mutation to update subscription tier
 export const UPDATE_SUBSCRIPTION_TIER = gql`
 	mutation UpdateSubscriptionTier(
