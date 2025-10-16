@@ -45,7 +45,11 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								onclick={() => onInsert(citation.id)}
+								onclick={() => {
+									console.log('[CitationsList] Insert button clicked for citation:', citation.id);
+									console.log('[CitationsList] onInsert function:', onInsert);
+									onInsert(citation.id);
+								}}
 								title="Insert citation reference"
 							>
 								Insert

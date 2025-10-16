@@ -36,11 +36,7 @@
 		extractReplyRef,
 		ensureIdsForCitationData
 	} from '$lib/utils/contentExtraction';
-	import {
-		getCachedAnalysis,
-		cacheAnalysis,
-		hashContent
-	} from '$lib/utils/analysisCache';
+	import { getCachedAnalysis, cacheAnalysis, hashContent } from '$lib/utils/analysisCache';
 	import { assessContentQuality } from '$lib/utils/contentQuality';
 	import {
 		getDiscussionTitle,
@@ -84,7 +80,7 @@
 	// Editors' Desk approval state
 	let editorsDeskApprovals = $state<any[]>([]);
 	let pendingApprovalForThisDiscussion = $derived(
-		editorsDeskApprovals.find(pick => pick.discussion_id === discussion?.id)
+		editorsDeskApprovals.find((pick) => pick.discussion_id === discussion?.id)
 	);
 
 	// New comment form state
@@ -570,7 +566,9 @@
 
 				// Check if this was a real Claude analysis or heuristic fallback
 				if (data.usedClaude === false) {
-					throw new Error('Claude API is not available. Heuristic scoring cannot be used for publishing.');
+					throw new Error(
+						'Claude API is not available. Heuristic scoring cannot be used for publishing.'
+					);
 				}
 
 				const score01 =
@@ -1217,22 +1215,23 @@
 				const updatedDraft = updateResult.data?.update_discussion_version_by_pk;
 				if (updatedDraft) {
 					// Check if draft already has citations
-					const existingCitationsResult = await nhost.graphql.request(
-						GET_DISCUSSION_CITATIONS,
-						{ discussion_version_id: existingDraft.id }
-					);
+					const existingCitationsResult = await nhost.graphql.request(GET_DISCUSSION_CITATIONS, {
+						discussion_version_id: existingDraft.id
+					});
 
 					// If draft has no citations, copy from published version
 					if (!existingCitationsResult.data?.discussion_version_citation?.length) {
 						const publishedVersion = discussion.current_version?.[0];
 						if (publishedVersion) {
-							console.log('Draft has no citations, copying from published version:', publishedVersion.id);
+							console.log(
+								'Draft has no citations, copying from published version:',
+								publishedVersion.id
+							);
 
 							// Get citations from published version
-							const citationsResult = await nhost.graphql.request(
-								GET_DISCUSSION_CITATIONS,
-								{ discussion_version_id: publishedVersion.id }
-							);
+							const citationsResult = await nhost.graphql.request(GET_DISCUSSION_CITATIONS, {
+								discussion_version_id: publishedVersion.id
+							});
 
 							if (citationsResult.data?.discussion_version_citation) {
 								const citations = citationsResult.data.discussion_version_citation;
@@ -1240,16 +1239,13 @@
 
 								// Copy each citation link to the draft version
 								for (const dc of citations) {
-									await nhost.graphql.request(
-										LINK_CITATION_TO_DISCUSSION,
-										{
-											discussion_version_id: existingDraft.id,
-											citation_id: dc.citation.id,
-											citation_order: dc.citation_order,
-											custom_point_supported: dc.custom_point_supported,
-											custom_relevant_quote: dc.custom_relevant_quote
-										}
-									);
+									await nhost.graphql.request(LINK_CITATION_TO_DISCUSSION, {
+										discussion_version_id: existingDraft.id,
+										citation_id: dc.citation.id,
+										citation_order: dc.citation_order,
+										custom_point_supported: dc.custom_point_supported,
+										custom_relevant_quote: dc.custom_relevant_quote
+									});
 								}
 								console.log('Copied citations to existing draft');
 							}
@@ -1339,10 +1335,9 @@
 					console.log('Copying citations from published version:', publishedVersion.id);
 
 					// Get citations from published version
-					const citationsResult = await nhost.graphql.request(
-						GET_DISCUSSION_CITATIONS,
-						{ discussion_version_id: publishedVersion.id }
-					);
+					const citationsResult = await nhost.graphql.request(GET_DISCUSSION_CITATIONS, {
+						discussion_version_id: publishedVersion.id
+					});
 
 					if (citationsResult.data?.discussion_version_citation) {
 						const citations = citationsResult.data.discussion_version_citation;
@@ -1350,16 +1345,13 @@
 
 						// Copy each citation link to the draft version
 						for (const dc of citations) {
-							await nhost.graphql.request(
-								LINK_CITATION_TO_DISCUSSION,
-								{
-									discussion_version_id: newDraft.id,
-									citation_id: dc.citation.id,
-									citation_order: dc.citation_order,
-									custom_point_supported: dc.custom_point_supported,
-									custom_relevant_quote: dc.custom_relevant_quote
-								}
-							);
+							await nhost.graphql.request(LINK_CITATION_TO_DISCUSSION, {
+								discussion_version_id: newDraft.id,
+								citation_id: dc.citation.id,
+								citation_order: dc.citation_order,
+								custom_point_supported: dc.custom_point_supported,
+								custom_relevant_quote: dc.custom_relevant_quote
+							});
 						}
 						console.log('Copied citations to draft');
 					}
@@ -1389,22 +1381,23 @@
 
 			if (draftVersion) {
 				// Draft already exists, check if it needs citations copied
-				const existingCitationsResult = await nhost.graphql.request(
-					GET_DISCUSSION_CITATIONS,
-					{ discussion_version_id: draftVersion.id }
-				);
+				const existingCitationsResult = await nhost.graphql.request(GET_DISCUSSION_CITATIONS, {
+					discussion_version_id: draftVersion.id
+				});
 
 				// If draft has no citations, copy from published version before navigating
 				if (!existingCitationsResult.data?.discussion_version_citation?.length) {
 					const publishedVersion = discussion.current_version?.[0];
 					if (publishedVersion) {
-						console.log('[startEdit] Draft has no citations, copying from published version:', publishedVersion.id);
+						console.log(
+							'[startEdit] Draft has no citations, copying from published version:',
+							publishedVersion.id
+						);
 
 						// Get citations from published version
-						const citationsResult = await nhost.graphql.request(
-							GET_DISCUSSION_CITATIONS,
-							{ discussion_version_id: publishedVersion.id }
-						);
+						const citationsResult = await nhost.graphql.request(GET_DISCUSSION_CITATIONS, {
+							discussion_version_id: publishedVersion.id
+						});
 
 						if (citationsResult.data?.discussion_version_citation) {
 							const citations = citationsResult.data.discussion_version_citation;
@@ -1412,16 +1405,13 @@
 
 							// Copy each citation link to the draft version
 							for (const dc of citations) {
-								await nhost.graphql.request(
-									LINK_CITATION_TO_DISCUSSION,
-									{
-										discussion_version_id: draftVersion.id,
-										citation_id: dc.citation.id,
-										citation_order: dc.citation_order,
-										custom_point_supported: dc.custom_point_supported,
-										custom_relevant_quote: dc.custom_relevant_quote
-									}
-								);
+								await nhost.graphql.request(LINK_CITATION_TO_DISCUSSION, {
+									discussion_version_id: draftVersion.id,
+									citation_id: dc.citation.id,
+									citation_order: dc.citation_order,
+									custom_point_supported: dc.custom_point_supported,
+									custom_relevant_quote: dc.custom_relevant_quote
+								});
 							}
 							console.log('[startEdit] Copied citations to draft');
 						}
@@ -1956,8 +1946,15 @@
 
 	// Citation reference insertion for editing
 	function insertEditCitationReference(citationId: string) {
-		const textarea = document.querySelector('#edit-description') as HTMLTextAreaElement;
-		if (!textarea) return;
+		console.log('[INSERT] Function called with citationId:', citationId);
+
+		const textarea = document.getElementById('edit-description') as HTMLTextAreaElement;
+		console.log('[INSERT] Found textarea:', !!textarea);
+
+		if (!textarea) {
+			console.error('[INSERT] Could not find edit-description textarea');
+			return;
+		}
 
 		const allCitations = editStyleMetadata.citations || [];
 		const citationNumber = allCitations.findIndex((c) => c.id === citationId) + 1;
@@ -1974,6 +1971,7 @@
 
 		// Restore cursor position after the inserted citation
 		setTimeout(() => {
+			textarea.focus();
 			textarea.setSelectionRange(
 				start + `[${citationNumber}]`.length,
 				start + `[${citationNumber}]`.length
@@ -2095,7 +2093,10 @@
 		const textarea = document.querySelector(
 			'textarea[aria-label="New comment"]'
 		) as HTMLTextAreaElement;
-		if (!textarea) return;
+		if (!textarea) {
+			console.error('Could not find comment textarea');
+			return;
+		}
 
 		const allCitations = commentStyleMetadata.citations || [];
 		const citationNumber = allCitations.findIndex((c) => c.id === citationId) + 1;
@@ -2114,6 +2115,7 @@
 
 		// Restore cursor position after the inserted citation
 		setTimeout(() => {
+			textarea.focus();
 			textarea.setSelectionRange(
 				start + `[${citationNumber}]`.length,
 				start + `[${citationNumber}]`.length
@@ -2355,7 +2357,14 @@
 		if (!file) return;
 
 		// Validate file type
-		const allowedTypes = ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/x-wav'];
+		const allowedTypes = [
+			'audio/mpeg',
+			'audio/mp3',
+			'audio/mp4',
+			'audio/m4a',
+			'audio/wav',
+			'audio/x-wav'
+		];
 		if (!allowedTypes.includes(file.type) && !file.name.match(/\.(mp3|m4a|wav)$/i)) {
 			audioUploadError = 'Please upload an audio file (MP3, M4A, or WAV)';
 			return;
@@ -2378,19 +2387,22 @@
 				throw new Error('No discussion version found');
 			}
 
-			// Upload to Nhost Storage
-			const { fileMetadata, error: uploadError } = await nhost.storage.upload({
-				file,
-				bucketId: 'audio'
+			// Upload to Nhost Storage using v4 API
+			const uploadResult = await nhost.storage.uploadFiles({
+				'file[]': [file],
+				'bucket-id': 'audio'
 			});
 
-			if (uploadError) {
-				throw new Error(uploadError.message || 'Failed to upload audio file');
+			if (uploadResult.error) {
+				throw new Error(uploadResult.error.message || 'Failed to upload audio file');
 			}
 
-			if (!fileMetadata) {
+			if (!uploadResult.body?.processedFiles?.[0]) {
 				throw new Error('No file metadata returned');
 			}
+
+			// Get the uploaded file metadata
+			const fileMetadata = uploadResult.body.processedFiles[0];
 
 			// Store the file ID to use with our API proxy
 			const audioUrl = `/api/audio/${fileMetadata.id}`;
@@ -2413,7 +2425,10 @@
 			console.log('Version check result:', checkResult);
 			console.log('Current user ID:', user?.id);
 			console.log('Version created_by:', checkResult.data?.discussion_version_by_pk?.created_by);
-			console.log('IDs match:', user?.id === checkResult.data?.discussion_version_by_pk?.created_by);
+			console.log(
+				'IDs match:',
+				user?.id === checkResult.data?.discussion_version_by_pk?.created_by
+			);
 			console.log('Discussion owner ID:', discussion?.contributor?.id);
 			console.log('User owns discussion:', user?.id === discussion?.contributor?.id);
 			console.log('User role:', contributor?.role);
@@ -2452,7 +2467,6 @@
 
 			// Clear file input
 			input.value = '';
-
 		} catch (err: any) {
 			console.error('Error uploading audio:', err);
 			audioUploadError = err.message || 'Failed to upload audio file';
@@ -2494,7 +2508,6 @@
 			if (discussion.current_version?.[0]) {
 				discussion.current_version[0].audio_url = null;
 			}
-
 		} catch (err: any) {
 			console.error('Error removing audio:', err);
 			audioUploadError = err.message || 'Failed to remove audio';
@@ -2624,9 +2637,10 @@
 
 			// Check if this was a real Claude analysis or heuristic fallback
 			if (data.usedClaude === false) {
-				throw new Error('Claude API is not available. Heuristic scoring cannot be used for publishing.');
+				throw new Error(
+					'Claude API is not available. Heuristic scoring cannot be used for publishing.'
+				);
 			}
-
 
 			if (data.error) {
 				throw new Error(data.error);
@@ -3179,7 +3193,6 @@
 
 	/* Comment Writing Info Styles */
 
-
 	@keyframes slideDown {
 		from {
 			opacity: 0;
@@ -3334,5 +3347,4 @@
 		border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
 		border-radius: var(--border-radius-sm);
 	}
-
 </style>
