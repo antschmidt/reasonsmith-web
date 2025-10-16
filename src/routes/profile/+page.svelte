@@ -1764,6 +1764,9 @@
 							<button
 								class="security-item clickable"
 								onclick={() => (expandedEmailAuth = !expandedEmailAuth)}
+								aria-expanded={expandedEmailAuth}
+								aria-controls="email-auth-panel"
+								type="button"
 							>
 								<div class="security-icon">📧</div>
 								<div class="security-details">
@@ -1775,7 +1778,11 @@
 							</button>
 
 							{#if expandedEmailAuth}
-								<div class="change-email-form" transition:slide={{ duration: 300 }}>
+								<div
+									id="email-auth-panel"
+									class="change-email-form"
+									transition:slide={{ duration: 300 }}
+								>
 									<h4>Change Email Address</h4>
 									<p class="form-description">
 										Enter your new email address. We'll send a verification link to confirm the
@@ -1845,6 +1852,8 @@
 								type="button"
 								class="security-item clickable"
 								onclick={() => (expandedPasswordAuth = !expandedPasswordAuth)}
+								aria-expanded={expandedPasswordAuth}
+								aria-controls="password-auth-panel"
 							>
 								<div class="security-icon">🔐</div>
 								<div class="security-details">
@@ -1866,7 +1875,7 @@
 							</button>
 
 							{#if expandedPasswordAuth}
-								<div transition:slide={{ duration: 300 }}>
+								<div id="password-auth-panel" transition:slide={{ duration: 300 }}>
 									{#if !authProviders.includes('email-password') && !showAddPassword}
 										<button class="btn-secondary" onclick={() => (showAddPassword = true)}>
 											Add Email/Password Authentication
@@ -2053,6 +2062,9 @@
 							<button
 								class="security-item clickable"
 								onclick={() => (expandedSecurityKeysSection = !expandedSecurityKeysSection)}
+								aria-expanded={expandedSecurityKeysSection}
+								aria-controls="security-keys-panel"
+								type="button"
 							>
 								<div class="security-icon">🔑</div>
 								<div class="security-details">
@@ -2076,106 +2088,113 @@
 							</button>
 
 							{#if expandedSecurityKeysSection}
-								<!-- List of existing security keys -->
-								{#if securityKeys.length > 0}
-									<div class="security-keys-list" transition:slide={{ duration: 300 }}>
-										<h4>Registered Security Keys</h4>
-										<ul class="keys-list">
-											{#each securityKeys as key, index}
-												<li class="key-item">
-													<button
-														class="key-info clickable"
-														onclick={() => {
-															if (expandedSecurityKeys.includes(key.id)) {
-																expandedSecurityKeys = expandedSecurityKeys.filter(
-																	(id) => id !== key.id
-																);
-															} else {
-																expandedSecurityKeys = [...expandedSecurityKeys, key.id];
-															}
-														}}
-													>
-														<span class="key-icon">🔐</span>
-														<div class="key-details">
-															<strong>{key.nickname || `Security Key #${index + 1}`}</strong>
-															<small class="credential-id"
-																>ID: ...{key.credentialId?.substring(
-																	key.credentialId.length - 8
-																)}</small
-															>
-														</div>
-													</button>
-													{#if expandedSecurityKeys.includes(key.id)}
+								<div id="security-keys-panel">
+									<!-- List of existing security keys -->
+									{#if securityKeys.length > 0}
+										<div class="security-keys-list" transition:slide={{ duration: 300 }}>
+											<h4>Registered Security Keys</h4>
+											<ul class="keys-list">
+												{#each securityKeys as key, index}
+													<li class="key-item">
 														<button
-															class="btn-danger-small"
-															onclick={() => removeSecurityKey(key.id, key.credentialId)}
-															transition:slide={{ duration: 300, axis: 'x' }}
+															class="key-info clickable"
+															onclick={() => {
+																if (expandedSecurityKeys.includes(key.id)) {
+																	expandedSecurityKeys = expandedSecurityKeys.filter(
+																		(id) => id !== key.id
+																	);
+																} else {
+																	expandedSecurityKeys = [...expandedSecurityKeys, key.id];
+																}
+															}}
+															aria-expanded={expandedSecurityKeys.includes(key.id)}
+															aria-controls={`key-actions-${key.id}`}
+															type="button"
 														>
-															Remove
+															<span class="key-icon">🔐</span>
+															<div class="key-details">
+																<strong>{key.nickname || `Security Key #${index + 1}`}</strong>
+																<small class="credential-id"
+																	>ID: ...{key.credentialId?.substring(
+																		key.credentialId.length - 8
+																	)}</small
+																>
+															</div>
 														</button>
-													{/if}
-												</li>
-											{/each}
-										</ul>
-									</div>
-								{/if}
-
-								{#if !showAddSecurityKey}
-									<button class="btn-secondary" onclick={() => (showAddSecurityKey = true)}>
-										Add Security Key
-									</button>
-								{/if}
-
-								{#if showAddSecurityKey}
-									<div class="add-password-form" transition:slide={{ duration: 300 }}>
-										<h4>Add Security Key</h4>
-										<p class="form-description">
-											Give your security key a memorable name, then follow the prompts to register
-											it.
-										</p>
-
-										<label class="field">
-											<span>Key Nickname</span>
-											<input
-												type="text"
-												bind:value={securityKeyName}
-												placeholder="e.g., YubiKey 5, TouchID"
-												maxlength="50"
-											/>
-											<small class="hint">Choose a name that helps you identify this key</small>
-										</label>
-
-										{#if securityKeyError}
-											<div class="error-message">{securityKeyError}</div>
-										{/if}
-
-										{#if securityKeySuccess}
-											<div class="success-message">{securityKeySuccess}</div>
-										{/if}
-
-										<div class="form-actions">
-											<button
-												class="btn-primary"
-												onclick={handleAddSecurityKey}
-												disabled={addingSecurityKey}
-											>
-												{addingSecurityKey ? 'Registering...' : 'Register Security Key'}
-											</button>
-											<button
-												class="btn-secondary"
-												onclick={() => {
-													showAddSecurityKey = false;
-													securityKeyName = '';
-													securityKeyError = null;
-													securityKeySuccess = null;
-												}}
-												disabled={addingSecurityKey}
-											>
-												Cancel
-											</button>
+														{#if expandedSecurityKeys.includes(key.id)}
+															<div id={`key-actions-${key.id}`}>
+																<button
+																	class="btn-danger-small"
+																	onclick={() => removeSecurityKey(key.id, key.credentialId)}
+																	transition:slide={{ duration: 300, axis: 'x' }}
+																>
+																	Remove
+																</button>
+															</div>
+														{/if}
+													</li>
+												{/each}
+											</ul>
 										</div>
-									</div>
-								{/if}
+									{/if}
+
+									{#if !showAddSecurityKey}
+										<button class="btn-secondary" onclick={() => (showAddSecurityKey = true)}>
+											Add Security Key
+										</button>
+									{/if}
+
+									{#if showAddSecurityKey}
+										<div class="add-password-form" transition:slide={{ duration: 300 }}>
+											<h4>Add Security Key</h4>
+											<p class="form-description">
+												Give your security key a memorable name, then follow the prompts to register
+												it.
+											</p>
+
+											<label class="field">
+												<span>Key Nickname</span>
+												<input
+													type="text"
+													bind:value={securityKeyName}
+													placeholder="e.g., YubiKey 5, TouchID"
+													maxlength="50"
+												/>
+												<small class="hint">Choose a name that helps you identify this key</small>
+											</label>
+
+											{#if securityKeyError}
+												<div class="error-message">{securityKeyError}</div>
+											{/if}
+
+											{#if securityKeySuccess}
+												<div class="success-message">{securityKeySuccess}</div>
+											{/if}
+
+											<div class="form-actions">
+												<button
+													class="btn-primary"
+													onclick={handleAddSecurityKey}
+													disabled={addingSecurityKey}
+												>
+													{addingSecurityKey ? 'Registering...' : 'Register Security Key'}
+												</button>
+												<button
+													class="btn-secondary"
+													onclick={() => {
+														showAddSecurityKey = false;
+														securityKeyName = '';
+														securityKeyError = null;
+														securityKeySuccess = null;
+													}}
+													disabled={addingSecurityKey}
+												>
+													Cancel
+												</button>
+											</div>
+										</div>
+									{/if}
+								</div>
 							{/if}
 						</div>
 
