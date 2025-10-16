@@ -142,6 +142,11 @@
 		}
 	}
 
+	// Public method to insert text at cursor position
+	export function insertText(text: string) {
+		editor?.chain().focus().insertContent(text).run();
+	}
+
 	function addLink() {
 		const url = prompt('Enter URL:');
 		if (url) {
@@ -283,19 +288,14 @@
 					onclick={toggleCodeBlock}
 					title="Code Block"
 				>
-					{"{ }"}
+					{'{ }'}
 				</button>
 			</div>
 
 			<div class="toolbar-separator"></div>
 
 			<div class="toolbar-group">
-				<button
-					type="button"
-					class="toolbar-btn"
-					onclick={addLink}
-					title="Insert Link"
-				>
+				<button type="button" class="toolbar-btn" onclick={addLink} title="Insert Link">
 					🔗
 				</button>
 				<button
@@ -310,11 +310,7 @@
 		</div>
 	{/if}
 
-	<div
-		bind:this={element}
-		class="editor-wrapper"
-		style="min-height: {minHeight}"
-	></div>
+	<div bind:this={element} class="editor-wrapper" style="min-height: {minHeight}"></div>
 </div>
 
 <style>

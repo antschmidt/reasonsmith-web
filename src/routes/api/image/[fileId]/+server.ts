@@ -40,7 +40,13 @@ export async function GET({ params, request }) {
 
 		// Get the image data and content type
 		const imageBuffer = await response.arrayBuffer();
-		const contentType = response.headers.get('content-type') || 'image/jpeg';
+		let contentType = response.headers.get('content-type') || 'image/jpeg';
+
+		// HEIC files are not supported by most browsers - log a warning
+		if (contentType === 'image/heic' || contentType === 'image/heif') {
+			logger.warn('HEIC/HEIF image detected - browsers may not support this format:', fileId);
+			logger.warn('Client should convert HEIC to JPEG/PNG before upload');
+		}
 
 		logger.info('Successfully fetched image, size:', imageBuffer.byteLength, 'type:', contentType);
 
@@ -48,6 +54,7 @@ export async function GET({ params, request }) {
 		return new Response(imageBuffer, {
 			headers: {
 				'Content-Type': contentType,
+				'Content-Disposition': 'inline', // Display inline, not as download
 				'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
 				'Content-Length': imageBuffer.byteLength.toString()
 			}

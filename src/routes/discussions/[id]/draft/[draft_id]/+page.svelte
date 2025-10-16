@@ -34,10 +34,12 @@
 	import { INCREMENT_PURCHASED_CREDITS_USED } from '$lib/graphql/queries';
 	import RichTextEditor from '$lib/components/RichTextEditor.svelte';
 
-
 	// Get parameters
 	const discussionId = $page.params.id;
 	const draftId = $page.params.draft_id;
+
+	// Reference to the RichTextEditor for inserting citation references
+	let descriptionEditor: RichTextEditor;
 
 	// Helper function to determine label from score
 	function getLabel(score: number): string {
@@ -275,14 +277,16 @@
 
 			// Load citations from citation table
 			console.log('[loadDraft] Loading citations for draft version:', draft.id);
-			const citationsResult = await nhost.graphql.request(
-				GET_DISCUSSION_CITATIONS,
-				{ discussion_version_id: draft.id }
-			);
+			const citationsResult = await nhost.graphql.request(GET_DISCUSSION_CITATIONS, {
+				discussion_version_id: draft.id
+			});
 			console.log('[loadDraft] Citations query result:', citationsResult);
 
 			if (!citationsResult.error && citationsResult.data?.discussion_version_citation) {
-				console.log('[loadDraft] Found citations:', citationsResult.data.discussion_version_citation.length);
+				console.log(
+					'[loadDraft] Found citations:',
+					citationsResult.data.discussion_version_citation.length
+				);
 				// Convert database citations to local format
 				styleMetadata.citations = citationsResult.data.discussion_version_citation
 					.sort((a: any, b: any) => a.citation_order - b.citation_order)
@@ -470,10 +474,9 @@
 			const citationsToSave = styleMetadata.citations || [];
 
 			// Get existing citations for this draft
-			const existingCitationsResult = await nhost.graphql.request(
-				GET_DISCUSSION_CITATIONS,
-				{ discussion_version_id: draft.id }
-			);
+			const existingCitationsResult = await nhost.graphql.request(GET_DISCUSSION_CITATIONS, {
+				discussion_version_id: draft.id
+			});
 
 			const existingCitations = existingCitationsResult.data?.discussion_version_citation || [];
 			const existingCitationIds = new Set(existingCitations.map((c: any) => c.citation.id));
@@ -482,13 +485,10 @@
 			// Remove citations that are no longer in the list
 			for (const existing of existingCitations) {
 				if (!newCitationIds.has(existing.citation.id)) {
-					await nhost.graphql.request(
-						REMOVE_CITATION_FROM_DISCUSSION,
-						{
-							discussion_version_id: draft.id,
-							citation_id: existing.citation.id
-						}
-					);
+					await nhost.graphql.request(REMOVE_CITATION_FROM_DISCUSSION, {
+						discussion_version_id: draft.id,
+						citation_id: existing.citation.id
+					});
 				}
 			}
 
@@ -498,53 +498,44 @@
 
 				if (!existingCitationIds.has(citation.id)) {
 					// Create new citation
-					const createResult = await nhost.graphql.request(
-						CREATE_CITATION,
-						{
-							id: citation.id,
-							title: citation.title,
-							url: citation.url,
-							author: citation.author || null,
-							publisher: citation.publisher || null,
-							publish_date: citation.publish_date || null,
-							accessed_date: citation.accessed_date || null,
-							page_number: citation.page_number || null,
-							point_supported: citation.point_supported,
-							relevant_quote: citation.relevant_quote,
-							created_by: user.id
-						}
-					);
+					const createResult = await nhost.graphql.request(CREATE_CITATION, {
+						id: citation.id,
+						title: citation.title,
+						url: citation.url,
+						author: citation.author || null,
+						publisher: citation.publisher || null,
+						publish_date: citation.publish_date || null,
+						accessed_date: citation.accessed_date || null,
+						page_number: citation.page_number || null,
+						point_supported: citation.point_supported,
+						relevant_quote: citation.relevant_quote,
+						created_by: user.id
+					});
 
 					if (!createResult.error) {
 						// Link citation to discussion version
-						await nhost.graphql.request(
-							LINK_CITATION_TO_DISCUSSION,
-							{
-								discussion_version_id: draft.id,
-								citation_id: citation.id,
-								citation_order: i,
-								custom_point_supported: citation.point_supported,
-								custom_relevant_quote: citation.relevant_quote
-							}
-						);
+						await nhost.graphql.request(LINK_CITATION_TO_DISCUSSION, {
+							discussion_version_id: draft.id,
+							citation_id: citation.id,
+							citation_order: i,
+							custom_point_supported: citation.point_supported,
+							custom_relevant_quote: citation.relevant_quote
+						});
 					}
 				} else {
 					// Update existing citation in citation table
-					const updateResult = await nhost.graphql.request(
-						UPDATE_CITATION,
-						{
-							id: citation.id,
-							title: citation.title,
-							url: citation.url,
-							author: citation.author || null,
-							publisher: citation.publisher || null,
-							publish_date: citation.publish_date || null,
-							accessed_date: citation.accessed_date || null,
-							page_number: citation.page_number || null,
-							point_supported: citation.point_supported,
-							relevant_quote: citation.relevant_quote
-						}
-					);
+					const updateResult = await nhost.graphql.request(UPDATE_CITATION, {
+						id: citation.id,
+						title: citation.title,
+						url: citation.url,
+						author: citation.author || null,
+						publisher: citation.publisher || null,
+						publish_date: citation.publish_date || null,
+						accessed_date: citation.accessed_date || null,
+						page_number: citation.page_number || null,
+						point_supported: citation.point_supported,
+						relevant_quote: citation.relevant_quote
+					});
 
 					if (updateResult.error) {
 						console.error('Failed to update citation:', updateResult.error);
@@ -555,15 +546,12 @@
 					}
 
 					// Also update the join table's custom fields
-					const joinUpdateResult = await nhost.graphql.request(
-						UPDATE_DISCUSSION_VERSION_CITATION,
-						{
-							discussion_version_id: draft.id,
-							citation_id: citation.id,
-							custom_point_supported: citation.point_supported,
-							custom_relevant_quote: citation.relevant_quote
-						}
-					);
+					const joinUpdateResult = await nhost.graphql.request(UPDATE_DISCUSSION_VERSION_CITATION, {
+						discussion_version_id: draft.id,
+						citation_id: citation.id,
+						custom_point_supported: citation.point_supported,
+						custom_relevant_quote: citation.relevant_quote
+					});
 
 					if (joinUpdateResult.error) {
 						console.error('Failed to update join table:', joinUpdateResult.error);
@@ -650,10 +638,10 @@
 
 				const data = await response.json();
 
-
 				// Check if this was a real Claude analysis or heuristic fallback
 				if (data.usedClaude === false) {
-					goodFaithError = 'AI analysis is temporarily unavailable. Please try again later or contact support if the issue persists.';
+					goodFaithError =
+						'AI analysis is temporarily unavailable. Please try again later or contact support if the issue persists.';
 					goodFaithTesting = false;
 					return null;
 				}
@@ -793,22 +781,23 @@
 	}
 
 	function insertCitationReference(citationId: string) {
-		const textarea = document.getElementById('draft-description') as HTMLTextAreaElement;
-		if (!textarea) return;
+		console.log('[DRAFT INSERT] Function called with citationId:', citationId);
 
-		const cursorPos = textarea.selectionStart;
-		const citationNumber = (styleMetadata.citations || []).findIndex((c) => c.id === citationId) + 1 || 1;
+		if (!descriptionEditor) {
+			console.error('[DRAFT INSERT] Editor reference not found');
+			return;
+		}
 
-		const beforeText = description.slice(0, cursorPos);
-		const afterText = description.slice(cursorPos);
-		description = `${beforeText}[${citationNumber}]${afterText}`;
+		const citationNumber =
+			(styleMetadata.citations || []).findIndex((c) => c.id === citationId) + 1 || 1;
 
-		// Restore cursor position after the inserted reference
-		setTimeout(() => {
-			textarea.focus();
-			const newPosition = cursorPos + `[${citationNumber}]`.length;
-			textarea.setSelectionRange(newPosition, newPosition);
-		}, 0);
+		console.log('[DRAFT INSERT] Citation number:', citationNumber);
+		console.log('[DRAFT INSERT] Inserting citation reference');
+
+		// Insert the citation reference at the current cursor position
+		descriptionEditor.insertText(`[${citationNumber}]`);
+
+		console.log('[DRAFT INSERT] Citation reference inserted');
 	}
 
 	async function publishDraft() {
@@ -1071,7 +1060,9 @@
 
 			if (updateDiscussionResult.error) {
 				console.error('Update discussion GraphQL error:', updateDiscussionResult.error);
-				throw new Error(`Failed to update discussion current_version_id: ${JSON.stringify(updateDiscussionResult.error)}`);
+				throw new Error(
+					`Failed to update discussion current_version_id: ${JSON.stringify(updateDiscussionResult.error)}`
+				);
 			}
 
 			if (!updateDiscussionResult.data?.update_discussion?.returning?.[0]) {
@@ -1137,12 +1128,9 @@
 		autoSaveInterval = setInterval(() => {
 			if (!draft || loading || saving || publishing) return;
 
-			const citationsChanged = JSON.stringify(styleMetadata.citations || []) !== JSON.stringify(lastSavedCitations);
-			if (
-				title !== lastSavedTitle ||
-				description !== lastSavedDescription ||
-				citationsChanged
-			) {
+			const citationsChanged =
+				JSON.stringify(styleMetadata.citations || []) !== JSON.stringify(lastSavedCitations);
+			if (title !== lastSavedTitle || description !== lastSavedDescription || citationsChanged) {
 				saveDraft();
 			}
 		}, 10000);
@@ -1344,6 +1332,7 @@
 				<div class="form-group">
 					<label for="draft-description">Description</label>
 					<RichTextEditor
+						bind:this={descriptionEditor}
 						bind:content={description}
 						placeholder="Describe your discussion..."
 						minHeight="400px"
@@ -1384,7 +1373,9 @@
 												height="16"
 												viewBox="0 0 16 16"
 												fill="none"
-												style="transform: rotate({isExpanded ? 180 : 0}deg); transition: transform 0.2s;"
+												style="transform: rotate({isExpanded
+													? 180
+													: 0}deg); transition: transform 0.2s;"
 											>
 												<path
 													d="M4 6L8 10L12 6"
@@ -1412,17 +1403,20 @@
 												{/if}
 												{#if citation.author}
 													<div class="meta-row">
-														<strong>Author:</strong> {citation.author}
+														<strong>Author:</strong>
+														{citation.author}
 													</div>
 												{/if}
 												{#if citation.publisher}
 													<div class="meta-row">
-														<strong>Publisher:</strong> {citation.publisher}
+														<strong>Publisher:</strong>
+														{citation.publisher}
 													</div>
 												{/if}
 												{#if citation.page_number}
 													<div class="meta-row">
-														<strong>Page:</strong> {citation.page_number}
+														<strong>Page:</strong>
+														{citation.page_number}
 													</div>
 												{/if}
 											</div>
@@ -1436,7 +1430,7 @@
 													}}
 													title="Insert citation reference"
 												>
-													Insert [{ index + 1}]
+													Insert [{index + 1}]
 												</Button>
 												<Button
 													variant="ghost"
