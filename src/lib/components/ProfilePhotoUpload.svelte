@@ -2,7 +2,7 @@
 	import { nhost } from '$lib/nhostClient';
 	import { UPDATE_CONTRIBUTOR_AVATAR } from '$lib/graphql/queries';
 	import { browser } from '$app/environment';
-	import { contributorStore } from '$lib/stores/contributorStore';
+	import { contributorStore } from '$lib/stores/contributorStore.js';
 
 	interface Props {
 		currentAvatarUrl: string | null;

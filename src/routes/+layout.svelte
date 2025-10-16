@@ -3,7 +3,7 @@
 	import { nhost } from '$lib/nhostClient';
 	import { hasAdminAccess as hasAdminAccessUtil } from '$lib/permissions';
 	import { theme, toggleTheme } from '$lib/themeStore';
-	import { contributorStore } from '$lib/stores/contributorStore';
+	import { contributorStore } from '$lib/stores/contributorStore.js';
 	import { dev } from '$app/environment';
 	import { injectAnalytics } from '@vercel/analytics/sveltekit';
 	import { page } from '$app/stores';
