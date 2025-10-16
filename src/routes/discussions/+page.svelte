@@ -243,7 +243,7 @@
 			}
 			editorsDeskPicks = (data as any)?.editors_desk_pick ?? [];
 		} catch (e: any) {
-			editorsDeskError = e.message ?? 'Failed to load Editors\' Desk picks';
+			editorsDeskError = e.message ?? "Failed to load Editors' Desk picks";
 		} finally {
 			editorsDeskLoading = false;
 		}
@@ -478,6 +478,32 @@
 									{:else}
 										<span>Unknown author</span>
 									{/if}
+									{#if canCurate}
+										<button
+											class="editors-desk-button"
+											onclick={(e) => {
+												e.stopPropagation();
+												openPicker(d);
+											}}
+											title="Add to Editors' Desk"
+											aria-label="Add to Editors' Desk"
+										>
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												width="16"
+												height="16"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+											>
+												<path d="M12 5v14M5 12h14"></path>
+											</svg>
+											<span>Add to Editors' Desk</span>
+										</button>
+									{/if}
 									<time
 										>{new Date(d.created_at).toLocaleDateString('en-US', {
 											year: 'numeric',
@@ -487,32 +513,6 @@
 									>
 								</footer>
 							</div>
-							{#if canCurate}
-								<button
-									class="editors-desk-button"
-									onclick={(e) => {
-										e.stopPropagation();
-										openPicker(d);
-									}}
-									title="Add to Editors' Desk"
-									aria-label="Add to Editors' Desk"
-								>
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										width="16"
-										height="16"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									>
-										<path d="M12 5v14M5 12h14"></path>
-									</svg>
-									<span>Add to Editors' Desk</span>
-								</button>
-							{/if}
 						</div>
 					{/each}
 				</div>
@@ -695,7 +695,8 @@
 	}
 
 	.article-list {
-		display: grid;
+		display: flex;
+		flex-direction: column;
 		gap: clamp(1.75rem, 4vw, 2.5rem);
 	}
 
@@ -792,6 +793,8 @@
 	.card-byline {
 		margin-top: clamp(1.25rem, 3vw, 1.75rem);
 		display: flex;
+		align-items: center;
+		justify-content: space-between;
 		flex-wrap: wrap;
 		gap: 0.75rem;
 		padding-top: 1rem;
@@ -812,7 +815,6 @@
 	}
 
 	.card-byline time {
-		margin-left: auto;
 		font-variant-numeric: tabular-nums;
 	}
 
@@ -904,8 +906,9 @@
 	}
 
 	.editors-desk-button {
-		background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
+		background: linear-gradient(135deg, var(--color-accent), var(--color-secondary));
 		color: white;
+		max-width: 12rem;
 		border: none;
 		padding: 0.65rem 1.25rem;
 		border-radius: var(--border-radius-lg);
