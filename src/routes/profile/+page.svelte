@@ -1842,6 +1842,7 @@
 						<!-- Password Authentication Section -->
 						<div class="security-info">
 							<button
+								type="button"
 								class="security-item clickable"
 								onclick={() => (expandedPasswordAuth = !expandedPasswordAuth)}
 							>
