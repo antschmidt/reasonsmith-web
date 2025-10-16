@@ -3,6 +3,7 @@
 	import { nhost } from '$lib/nhostClient';
 	import { hasAdminAccess as hasAdminAccessUtil } from '$lib/permissions';
 	import { theme, toggleTheme } from '$lib/themeStore';
+	import { contributorStore } from '$lib/stores/contributorStore';
 	import { dev } from '$app/environment';
 	import { injectAnalytics } from '@vercel/analytics/sveltekit';
 	import { page } from '$app/stores';
@@ -17,6 +18,13 @@
 		display_name?: string;
 		handle?: string;
 	} | null = null;
+
+	// Subscribe to contributor store for avatar updates
+	contributorStore.subscribe((data) => {
+		if (data && contributor) {
+			contributor.avatar_url = data.avatar_url;
+		}
+	});
 
 	function collectRoles(u: any): string[] {
 		if (!u) return [];
@@ -92,9 +100,12 @@
 			if (contributorData) {
 				contributor = contributorData;
 				hasAdminAccess = hasAdminAccessUtil(contributorData);
+				// Update the store with contributor data
+				contributorStore.set(contributorData);
 			} else {
 				contributor = null;
 				hasAdminAccess = false;
+				contributorStore.reset();
 			}
 		} catch (err: any) {
 			// Check if it's a JWT error
