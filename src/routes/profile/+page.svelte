@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { nhost, ensureContributor, getUserFromServer } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
+	import { slide } from 'svelte/transition';
 	import {
 		GET_USER_STATS,
 		UPDATE_CONTRIBUTOR_AVATAR,
@@ -88,6 +89,12 @@
 	let changingEmail = false;
 	let emailVerificationSent = false;
 
+	// Expandable section states
+	let expandedEmailAuth = false;
+	let expandedPasswordAuth = false;
+	let expandedSecurityKeysSection = false; // Whether the security keys section is expanded
+	let expandedSecurityKeys: string[] = []; // Array of expanded key IDs
+
 	let editing = false;
 
 	let contributor: any = null;
@@ -121,6 +128,7 @@
 	// MFA state
 	let mfaEnabled = false;
 	let showMfaSetup = false;
+	let showMfaDisable = false;
 	let mfaQrCode = '';
 	let mfaSecret = '';
 	let mfaVerificationCode = '';
@@ -516,7 +524,9 @@
 			});
 
 			if (hasPasswordAuthMissing) {
-				console.log('has_password_auth field missing due to schema cache - will show correct value after page refresh');
+				console.log(
+					'has_password_auth field missing due to schema cache - will show correct value after page refresh'
+				);
 				// Schema cache issue - the field will appear correctly after a page reload
 				// when the GraphQL schema cache has been updated
 			}
@@ -551,9 +561,7 @@
 
 		// Simply read from the login_providers field that's automatically synced by DB triggers
 		try {
-			authProviders = Array.isArray(contributor.login_providers)
-				? contributor.login_providers
-				: [];
+			authProviders = Array.isArray(contributor.login_providers) ? contributor.login_providers : [];
 		} catch (e) {
 			console.error('Failed to parse login providers:', e);
 			authProviders = [];
@@ -562,14 +570,14 @@
 
 	function getProviderInfo(providerId: string): { name: string; icon: string } {
 		const providers: Record<string, { name: string; icon: string }> = {
-			'email': { name: 'Email/Password', icon: '🔐' },
+			email: { name: 'Email/Password', icon: '🔐' },
 			'email-password': { name: 'Email/Password', icon: '🔐' },
-			'github': { name: 'GitHub', icon: '🐙' },
-			'google': { name: 'Google', icon: '🔵' },
-			'apple': { name: 'Apple', icon: '🍎' },
-			'facebook': { name: 'Facebook', icon: '📘' },
-			'linkedin': { name: 'LinkedIn', icon: '💼' },
-			'twitter': { name: 'Twitter', icon: '🐦' }
+			github: { name: 'GitHub', icon: '🐙' },
+			google: { name: 'Google', icon: '🔵' },
+			apple: { name: 'Apple', icon: '🍎' },
+			facebook: { name: 'Facebook', icon: '📘' },
+			linkedin: { name: 'LinkedIn', icon: '💼' },
+			twitter: { name: 'Twitter', icon: '🐦' }
 		};
 		return providers[providerId] || { name: providerId, icon: '🔑' };
 	}
@@ -814,7 +822,8 @@
 				throw new Error(result.error.message || 'Failed to add password');
 			}
 
-			passwordSuccess = 'Password authentication added successfully! You can now sign in with email and password.';
+			passwordSuccess =
+				'Password authentication added successfully! You can now sign in with email and password.';
 
 			// Re-check password auth status to update UI
 			await checkPasswordAuth();
@@ -830,7 +839,6 @@
 				showAddPassword = false;
 				passwordSuccess = null;
 			}, 3000);
-
 		} catch (err: any) {
 			console.error('Error adding password:', err);
 			passwordError = err?.message || 'Failed to add password. Please try again.';
@@ -888,7 +896,6 @@
 				showChangePassword = false;
 				passwordSuccess = null;
 			}, 3000);
-
 		} catch (err: any) {
 			console.error('Error changing password:', err);
 			passwordError = err?.message || 'Failed to change password. Please try again.';
@@ -925,7 +932,9 @@
 			}
 
 			if (!window.isSecureContext) {
-				throw new Error('WebAuthn requires HTTPS. Please access the site via https:// or localhost.');
+				throw new Error(
+					'WebAuthn requires HTTPS. Please access the site via https:// or localhost.'
+				);
 			}
 
 			if (!navigator.credentials || !navigator.credentials.create) {
@@ -946,16 +955,13 @@
 			}
 			const nhostAuthUrl = `https://${subdomain}.auth.${region}.nhost.run`;
 
-			const challengeResponse = await fetch(
-				`${nhostAuthUrl}/v1/user/webauthn/add`,
-				{
-					method: 'POST',
-					headers: {
-						'Authorization': `Bearer ${accessToken}`,
-						'Content-Type': 'application/json'
-					}
+			const challengeResponse = await fetch(`${nhostAuthUrl}/v1/user/webauthn/add`, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${accessToken}`,
+					'Content-Type': 'application/json'
 				}
-			);
+			});
 
 			if (!challengeResponse.ok) {
 				throw new Error('Failed to start security key registration');
@@ -974,7 +980,7 @@
 			const base64urlToUint8Array = (base64url: string) => {
 				const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
 				const binary = atob(base64);
-				return Uint8Array.from(binary, c => c.charCodeAt(0));
+				return Uint8Array.from(binary, (c) => c.charCodeAt(0));
 			};
 
 			// Helper to convert Uint8Array/ArrayBuffer to base64url
@@ -997,16 +1003,17 @@
 					id: base64urlToUint8Array(challenge.user.id)
 				},
 				// Convert excludeCredentials IDs from base64url strings to ArrayBuffers
-				excludeCredentials: challenge.excludeCredentials?.map((cred: any) => ({
-					...cred,
-					id: base64urlToUint8Array(cred.id)
-				})) || []
+				excludeCredentials:
+					challenge.excludeCredentials?.map((cred: any) => ({
+						...cred,
+						id: base64urlToUint8Array(cred.id)
+					})) || []
 				// Using Nhost's RP ID as-is (reasonsmith.com)
 			};
 
-			const publicKeyCredential = await navigator.credentials.create({
+			const publicKeyCredential = (await navigator.credentials.create({
 				publicKey: publicKeyOptions
-			}) as PublicKeyCredential;
+			})) as PublicKeyCredential;
 
 			if (!publicKeyCredential) {
 				throw new Error('Failed to create security key credential');
@@ -1014,28 +1021,25 @@
 
 			// Step 3: Verify the credential with Nhost
 			const credential = publicKeyCredential.response as AuthenticatorAttestationResponse;
-			const verifyResponse = await fetch(
-				`${nhostAuthUrl}/v1/user/webauthn/verify`,
-				{
-					method: 'POST',
-					headers: {
-						'Authorization': `Bearer ${accessToken}`,
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify({
-						credential: {
-							id: publicKeyCredential.id,
-							rawId: arrayBufferToBase64url(publicKeyCredential.rawId),
-							response: {
-								clientDataJSON: arrayBufferToBase64url(credential.clientDataJSON),
-								attestationObject: arrayBufferToBase64url(credential.attestationObject)
-							},
-							type: publicKeyCredential.type
+			const verifyResponse = await fetch(`${nhostAuthUrl}/v1/user/webauthn/verify`, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${accessToken}`,
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					credential: {
+						id: publicKeyCredential.id,
+						rawId: arrayBufferToBase64url(publicKeyCredential.rawId),
+						response: {
+							clientDataJSON: arrayBufferToBase64url(credential.clientDataJSON),
+							attestationObject: arrayBufferToBase64url(credential.attestationObject)
 						},
-						nickname: securityKeyName.trim()
-					})
-				}
-			);
+						type: publicKeyCredential.type
+					},
+					nickname: securityKeyName.trim()
+				})
+			});
 
 			if (!verifyResponse.ok) {
 				const errorData = await verifyResponse.json();
@@ -1061,7 +1065,6 @@
 				showAddSecurityKey = false;
 				securityKeySuccess = null;
 			}, 3000);
-
 		} catch (err: any) {
 			console.error('Error adding security key:', err);
 			securityKeyError = err?.message || 'Failed to add security key. Please try again.';
@@ -1079,9 +1082,7 @@
 
 		// Simply read from the security_keys field that's automatically synced by DB triggers
 		try {
-			securityKeys = Array.isArray(contributor.security_keys)
-				? contributor.security_keys
-				: [];
+			securityKeys = Array.isArray(contributor.security_keys) ? contributor.security_keys : [];
 		} catch (err) {
 			console.error('Error parsing security keys:', err);
 			securityKeys = [];
@@ -1090,7 +1091,11 @@
 
 	// Remove a security key
 	async function removeSecurityKey(keyId: string, credentialId: string) {
-		if (!confirm(`Are you sure you want to remove this security key (${credentialId.substring(0, 8)}...)?`)) {
+		if (
+			!confirm(
+				`Are you sure you want to remove this security key (${credentialId.substring(0, 8)}...)?`
+			)
+		) {
 			return;
 		}
 
@@ -1110,7 +1115,6 @@
 			setTimeout(() => {
 				securityKeySuccess = null;
 			}, 3000);
-
 		} catch (err: any) {
 			console.error('Error removing security key:', err);
 			securityKeyError = err?.message || 'Failed to remove security key';
@@ -1173,7 +1177,6 @@
 				showChangeEmail = false;
 				emailVerificationSent = false;
 			}, 10000); // Longer delay for email change instructions
-
 		} catch (err: any) {
 			console.error('Error changing email:', err);
 			emailChangeError = err?.message || 'Failed to change email. Please try again.';
@@ -1756,34 +1759,35 @@
 				<div class="profile-card security-section">
 					<h3 class="section-title">Security Settings</h3>
 					<div class="security-content">
-						<!-- Email Change Section -->
+						<!-- Email Address Section -->
 						<div class="security-info">
-							<div class="security-item">
+							<button
+								class="security-item clickable"
+								onclick={() => (expandedEmailAuth = !expandedEmailAuth)}
+								aria-expanded={expandedEmailAuth}
+								aria-controls="email-auth-panel"
+								type="button"
+							>
 								<div class="security-icon">📧</div>
 								<div class="security-details">
 									<h4>Email Address</h4>
-									<p class="security-description">
-										Change your account email address. Your reputation and all data will be preserved.
-									</p>
 									<div class="current-email">
-										<span class="email-label">Current Email:</span>
 										<span class="email-value">{user?.email || 'Not set'}</span>
 									</div>
 								</div>
-							</div>
+							</button>
 
-							{#if !showChangeEmail}
-								<button class="btn-secondary" onclick={() => (showChangeEmail = true)}>
-									Change Email Address
-								</button>
-							{/if}
-
-							{#if showChangeEmail}
-								<div class="change-email-form">
+							{#if expandedEmailAuth}
+								<div
+									id="email-auth-panel"
+									class="change-email-form"
+									transition:slide={{ duration: 300 }}
+								>
 									<h4>Change Email Address</h4>
 									<p class="form-description">
-										Enter your new email address. We'll send a verification link to confirm the change.
-										Your account will continue to use your current email until you verify the new one.
+										Enter your new email address. We'll send a verification link to confirm the
+										change. Your account will continue to use your current email until you verify
+										the new one.
 									</p>
 
 									<label class="field">
@@ -1827,7 +1831,7 @@
 											<button
 												class="btn-secondary"
 												onclick={() => {
-													showChangeEmail = false;
+													expandedEmailAuth = false;
 													newEmail = '';
 													emailChangeError = null;
 													emailChangeSuccess = null;
@@ -1844,290 +1848,352 @@
 
 						<!-- Password Authentication Section -->
 						<div class="security-info">
-							<div class="security-item">
+							<button
+								type="button"
+								class="security-item clickable"
+								onclick={() => (expandedPasswordAuth = !expandedPasswordAuth)}
+								aria-expanded={expandedPasswordAuth}
+								aria-controls="password-auth-panel"
+							>
 								<div class="security-icon">🔐</div>
 								<div class="security-details">
-									<h4>Authentication Methods</h4>
-									<p class="security-description">
-										Manage your sign-in methods. You can add email/password as a backup to your OAuth accounts.
-									</p>
+									<h4>Email/Password Authentication</h4>
 									<div class="auth-methods-list">
-										{#if user?.email}
+										{#if authProviders.includes('email-password')}
 											<div class="auth-method">
 												<span class="method-icon">✓</span>
-												<span class="method-name">Email ({user.email})</span>
+												<span class="method-name">Enabled</span>
+											</div>
+										{:else}
+											<div class="auth-method">
+												<span class="method-icon">○</span>
+												<span class="method-name">Not set up</span>
 											</div>
 										{/if}
+									</div>
+								</div>
+							</button>
 
-										<!-- Show all auth providers (OAuth + email-password) from login_providers -->
-										{#if authProviders.length > 0}
-											{#each authProviders as providerId}
-												{@const providerInfo = getProviderInfo(providerId)}
-												<div class="auth-method">
-													<span class="method-icon">{providerInfo.icon}</span>
-													<span class="method-name">{providerInfo.name}</span>
+							{#if expandedPasswordAuth}
+								<div id="password-auth-panel" transition:slide={{ duration: 300 }}>
+									{#if !authProviders.includes('email-password') && !showAddPassword}
+										<button class="btn-secondary" onclick={() => (showAddPassword = true)}>
+											Add Email/Password Authentication
+										</button>
+									{/if}
+
+									{#if showAddPassword}
+										<div class="add-password-form" transition:slide={{ duration: 300 }}>
+											<h4>Add Password Authentication</h4>
+											<p class="form-description">
+												Create a password to enable email/password sign-in as a backup to your OAuth
+												method.
+											</p>
+
+											<label class="field">
+												<span>Email (for password reset)</span>
+												<input
+													type="email"
+													bind:value={newPasswordEmail}
+													placeholder={user?.email || 'your@email.com'}
+													readonly={!!user?.email}
+												/>
+												<small class="hint">
+													{user?.email ? 'Using your account email' : 'Enter your email address'}
+												</small>
+											</label>
+
+											<label class="field">
+												<span>New Password</span>
+												<input
+													type="password"
+													bind:value={newPassword}
+													placeholder="Enter a strong password"
+													minlength="8"
+												/>
+												<small class="hint">Minimum 8 characters</small>
+											</label>
+
+											<label class="field">
+												<span>Confirm Password</span>
+												<input
+													type="password"
+													bind:value={confirmPassword}
+													placeholder="Re-enter your password"
+												/>
+											</label>
+
+											{#if passwordError}
+												<div class="error-message">{passwordError}</div>
+											{/if}
+
+											{#if passwordSuccess}
+												<div class="success-message">{passwordSuccess}</div>
+											{/if}
+
+											<div class="form-actions">
+												<button
+													class="btn-primary"
+													onclick={handleAddPassword}
+													disabled={addingPassword}
+												>
+													{addingPassword ? 'Adding...' : 'Add Password'}
+												</button>
+												<button
+													class="btn-secondary"
+													onclick={() => {
+														showAddPassword = false;
+														newPassword = '';
+														confirmPassword = '';
+														passwordError = null;
+													}}
+													disabled={addingPassword}
+												>
+													Cancel
+												</button>
+											</div>
+										</div>
+									{/if}
+
+									{#if authProviders.includes('email-password')}
+										{#if !showChangePassword}
+											<div class="password-actions" transition:slide={{ duration: 300 }}>
+												<button class="btn-secondary" onclick={() => (showChangePassword = true)}>
+													Change Password
+												</button>
+												<button
+													class="btn-secondary"
+													onclick={sendPasswordReset}
+													disabled={passwordResetSending}
+												>
+													{passwordResetSending ? 'Sending email...' : 'Send password reset email'}
+												</button>
+											</div>
+
+											{#if passwordResetError}
+												<div class="error-message" transition:slide={{ duration: 300 }}>
+													{passwordResetError}
 												</div>
-											{/each}
+											{/if}
+
+											{#if passwordResetSuccess}
+												<div class="success-message" transition:slide={{ duration: 300 }}>
+													{passwordResetSuccess}
+												</div>
+											{/if}
 										{/if}
 
-										<!-- Show loading state -->
-										{#if loadingProviders}
-											<div class="auth-method loading">
-												<span class="method-icon">⏳</span>
-												<span class="method-name">Loading...</span>
+										{#if showChangePassword}
+											<div class="add-password-form" transition:slide={{ duration: 300 }}>
+												<h4>Change Password</h4>
+												<p class="form-description">
+													Update your password for email/password sign-in.
+												</p>
+
+												<label class="field">
+													<span>Current Password</span>
+													<input
+														type="password"
+														bind:value={currentPassword}
+														placeholder="Enter your current password"
+													/>
+												</label>
+
+												<label class="field">
+													<span>New Password</span>
+													<input
+														type="password"
+														bind:value={newPassword}
+														placeholder="Enter a strong password"
+														minlength="8"
+													/>
+													<small class="hint">Minimum 8 characters</small>
+												</label>
+
+												<label class="field">
+													<span>Confirm New Password</span>
+													<input
+														type="password"
+														bind:value={confirmPassword}
+														placeholder="Re-enter your new password"
+													/>
+												</label>
+
+												{#if passwordError}
+													<div class="error-message">{passwordError}</div>
+												{/if}
+
+												{#if passwordSuccess}
+													<div class="success-message">{passwordSuccess}</div>
+												{/if}
+
+												<div class="form-actions">
+													<button
+														class="btn-primary"
+														onclick={handleChangePassword}
+														disabled={changingPassword}
+													>
+														{changingPassword ? 'Changing...' : 'Change Password'}
+													</button>
+													<button
+														class="btn-secondary"
+														onclick={() => {
+															showChangePassword = false;
+															currentPassword = '';
+															newPassword = '';
+															confirmPassword = '';
+															passwordError = null;
+															passwordSuccess = null;
+														}}
+														disabled={changingPassword}
+													>
+														Cancel
+													</button>
+												</div>
 											</div>
 										{/if}
-									</div>
-								</div>
-							</div>
-
-							{#if !authProviders.includes('email-password') && !showAddPassword}
-								<button class="btn-secondary" onclick={() => (showAddPassword = true)}>
-									Add Email/Password Authentication
-								</button>
-							{/if}
-
-							{#if showAddPassword}
-								<div class="add-password-form">
-									<h4>Add Password Authentication</h4>
-									<p class="form-description">
-										Create a password to enable email/password sign-in as a backup to your OAuth
-										method.
-									</p>
-
-									<label class="field">
-										<span>Email (for password reset)</span>
-										<input
-											type="email"
-											bind:value={newPasswordEmail}
-											placeholder={user?.email || 'your@email.com'}
-											readonly={!!user?.email}
-										/>
-										<small class="hint">
-											{user?.email ? 'Using your account email' : 'Enter your email address'}
-										</small>
-									</label>
-
-									<label class="field">
-										<span>New Password</span>
-										<input
-											type="password"
-											bind:value={newPassword}
-											placeholder="Enter a strong password"
-											minlength="8"
-										/>
-										<small class="hint">Minimum 8 characters</small>
-									</label>
-
-									<label class="field">
-										<span>Confirm Password</span>
-										<input
-											type="password"
-											bind:value={confirmPassword}
-											placeholder="Re-enter your password"
-										/>
-									</label>
-
-									{#if passwordError}
-										<div class="error-message">{passwordError}</div>
 									{/if}
-
-									{#if passwordSuccess}
-										<div class="success-message">{passwordSuccess}</div>
-									{/if}
-
-									<div class="form-actions">
-										<button
-											class="btn-primary"
-											onclick={handleAddPassword}
-											disabled={addingPassword}
-										>
-											{addingPassword ? 'Adding...' : 'Add Password'}
-										</button>
-										<button
-											class="btn-secondary"
-											onclick={() => {
-												showAddPassword = false;
-												newPassword = '';
-												confirmPassword = '';
-												passwordError = null;
-											}}
-											disabled={addingPassword}
-										>
-											Cancel
-										</button>
-									</div>
-								</div>
-							{/if}
-
-							{#if authProviders.includes('email-password') && !showChangePassword}
-								<button class="btn-secondary" onclick={() => (showChangePassword = true)}>
-									Change Password
-								</button>
-							{/if}
-
-							{#if showChangePassword}
-								<div class="add-password-form">
-									<h4>Change Password</h4>
-									<p class="form-description">
-										Update your password for email/password sign-in.
-									</p>
-
-									<label class="field">
-										<span>Current Password</span>
-										<input
-											type="password"
-											bind:value={currentPassword}
-											placeholder="Enter your current password"
-										/>
-									</label>
-
-									<label class="field">
-										<span>New Password</span>
-										<input
-											type="password"
-											bind:value={newPassword}
-											placeholder="Enter a strong password"
-											minlength="8"
-										/>
-										<small class="hint">Minimum 8 characters</small>
-									</label>
-
-									<label class="field">
-										<span>Confirm New Password</span>
-										<input
-											type="password"
-											bind:value={confirmPassword}
-											placeholder="Re-enter your new password"
-										/>
-									</label>
-
-									{#if passwordError}
-										<div class="error-message">{passwordError}</div>
-									{/if}
-
-									{#if passwordSuccess}
-										<div class="success-message">{passwordSuccess}</div>
-									{/if}
-
-									<div class="form-actions">
-										<button
-											class="btn-primary"
-											onclick={handleChangePassword}
-											disabled={changingPassword}
-										>
-											{changingPassword ? 'Changing...' : 'Change Password'}
-										</button>
-										<button
-											class="btn-secondary"
-											onclick={() => {
-												showChangePassword = false;
-												currentPassword = '';
-												newPassword = '';
-												confirmPassword = '';
-												passwordError = null;
-												passwordSuccess = null;
-											}}
-											disabled={changingPassword}
-										>
-											Cancel
-										</button>
-									</div>
 								</div>
 							{/if}
 						</div>
 
 						<!-- Security Keys (WebAuthn) Section -->
 						<div class="security-info">
-							<div class="security-item">
+							<button
+								class="security-item clickable"
+								onclick={() => (expandedSecurityKeysSection = !expandedSecurityKeysSection)}
+								aria-expanded={expandedSecurityKeysSection}
+								aria-controls="security-keys-panel"
+								type="button"
+							>
 								<div class="security-icon">🔑</div>
 								<div class="security-details">
 									<h4>Security Keys</h4>
-									<p class="security-description">
-										Add hardware security keys or use built-in biometric authentication (TouchID/FaceID) for enhanced security.
-									</p>
-								</div>
-							</div>
-
-							<!-- List of existing security keys -->
-							{#if securityKeys.length > 0}
-								<div class="security-keys-list">
-									<h4>Registered Security Keys</h4>
-									<ul class="keys-list">
-										{#each securityKeys as key, index}
-											<li class="key-item">
-												<div class="key-info">
-													<span class="key-icon">🔐</span>
-													<div class="key-details">
-														<strong>{key.nickname || `Security Key #${index + 1}`}</strong>
-														<small class="credential-id">ID: ...{key.credentialId?.substring(key.credentialId.length - 8)}</small>
-													</div>
-												</div>
-												<button
-													class="btn-danger-small"
-													onclick={() => removeSecurityKey(key.id, key.credentialId)}
+									<div class="auth-methods-list">
+										{#if securityKeys.length > 0}
+											<div class="auth-method">
+												<span class="method-icon">🔐</span>
+												<span class="method-name"
+													>{securityKeys.length} key{securityKeys.length !== 1 ? 's' : ''} registered</span
 												>
-													Remove
-												</button>
-											</li>
-										{/each}
-									</ul>
-								</div>
-							{/if}
-
-							{#if !showAddSecurityKey}
-								<button class="btn-secondary" onclick={() => (showAddSecurityKey = true)}>
-									Add Security Key
-								</button>
-							{/if}
-
-							{#if showAddSecurityKey}
-								<div class="add-password-form">
-									<h4>Add Security Key</h4>
-									<p class="form-description">
-										Give your security key a memorable name, then follow the prompts to register it.
-									</p>
-
-									<label class="field">
-										<span>Key Nickname</span>
-										<input
-											type="text"
-											bind:value={securityKeyName}
-											placeholder="e.g., YubiKey 5, TouchID"
-											maxlength="50"
-										/>
-										<small class="hint">Choose a name that helps you identify this key</small>
-									</label>
-
-									{#if securityKeyError}
-										<div class="error-message">{securityKeyError}</div>
-									{/if}
-
-									{#if securityKeySuccess}
-										<div class="success-message">{securityKeySuccess}</div>
-									{/if}
-
-									<div class="form-actions">
-										<button
-											class="btn-primary"
-											onclick={handleAddSecurityKey}
-											disabled={addingSecurityKey}
-										>
-											{addingSecurityKey ? 'Registering...' : 'Register Security Key'}
-										</button>
-										<button
-											class="btn-secondary"
-											onclick={() => {
-												showAddSecurityKey = false;
-												securityKeyName = '';
-												securityKeyError = null;
-												securityKeySuccess = null;
-											}}
-											disabled={addingSecurityKey}
-										>
-											Cancel
-										</button>
+											</div>
+										{:else}
+											<div class="auth-method">
+												<span class="method-icon">○</span>
+												<span class="method-name">No keys registered</span>
+											</div>
+										{/if}
 									</div>
+								</div>
+							</button>
+
+							{#if expandedSecurityKeysSection}
+								<div id="security-keys-panel">
+									<!-- List of existing security keys -->
+									{#if securityKeys.length > 0}
+										<div class="security-keys-list" transition:slide={{ duration: 300 }}>
+											<h4>Registered Security Keys</h4>
+											<ul class="keys-list">
+												{#each securityKeys as key, index}
+													<li class="key-item">
+														<button
+															class="key-info clickable"
+															onclick={() => {
+																if (expandedSecurityKeys.includes(key.id)) {
+																	expandedSecurityKeys = expandedSecurityKeys.filter(
+																		(id) => id !== key.id
+																	);
+																} else {
+																	expandedSecurityKeys = [...expandedSecurityKeys, key.id];
+																}
+															}}
+															aria-expanded={expandedSecurityKeys.includes(key.id)}
+															aria-controls={`key-actions-${key.id}`}
+															type="button"
+														>
+															<span class="key-icon">🔐</span>
+															<div class="key-details">
+																<strong>{key.nickname || `Security Key #${index + 1}`}</strong>
+																<small class="credential-id"
+																	>ID: ...{key.credentialId?.substring(
+																		key.credentialId.length - 8
+																	)}</small
+																>
+															</div>
+														</button>
+														{#if expandedSecurityKeys.includes(key.id)}
+															<div id={`key-actions-${key.id}`}>
+																<button
+																	class="btn-danger-small"
+																	onclick={() => removeSecurityKey(key.id, key.credentialId)}
+																	transition:slide={{ duration: 300, axis: 'x' }}
+																>
+																	Remove
+																</button>
+															</div>
+														{/if}
+													</li>
+												{/each}
+											</ul>
+										</div>
+									{/if}
+
+									{#if !showAddSecurityKey}
+										<button class="btn-secondary" onclick={() => (showAddSecurityKey = true)}>
+											Add Security Key
+										</button>
+									{/if}
+
+									{#if showAddSecurityKey}
+										<div class="add-password-form" transition:slide={{ duration: 300 }}>
+											<h4>Add Security Key</h4>
+											<p class="form-description">
+												Give your security key a memorable name, then follow the prompts to register
+												it.
+											</p>
+
+											<label class="field">
+												<span>Key Nickname</span>
+												<input
+													type="text"
+													bind:value={securityKeyName}
+													placeholder="e.g., YubiKey 5, TouchID"
+													maxlength="50"
+												/>
+												<small class="hint">Choose a name that helps you identify this key</small>
+											</label>
+
+											{#if securityKeyError}
+												<div class="error-message">{securityKeyError}</div>
+											{/if}
+
+											{#if securityKeySuccess}
+												<div class="success-message">{securityKeySuccess}</div>
+											{/if}
+
+											<div class="form-actions">
+												<button
+													class="btn-primary"
+													onclick={handleAddSecurityKey}
+													disabled={addingSecurityKey}
+												>
+													{addingSecurityKey ? 'Registering...' : 'Register Security Key'}
+												</button>
+												<button
+													class="btn-secondary"
+													onclick={() => {
+														showAddSecurityKey = false;
+														securityKeyName = '';
+														securityKeyError = null;
+														securityKeySuccess = null;
+													}}
+													disabled={addingSecurityKey}
+												>
+													Cancel
+												</button>
+											</div>
+										</div>
+									{/if}
 								</div>
 							{/if}
 						</div>
@@ -2139,11 +2205,26 @@
 								<div class="security-details">
 									<h4>Multi-Factor Authentication</h4>
 									<p class="security-description">
-										Add an extra layer of security by requiring a verification code from your authenticator app when signing in.
+										Add an extra layer of security by requiring a verification code from your
+										authenticator app when signing in.
 									</p>
-									<p class="mfa-status {mfaEnabled ? 'enabled' : 'disabled'}">
-										{mfaEnabled ? '✓ Enabled' : '✗ Not enabled'}
-									</p>
+									<div class="mfa-status-row">
+										<p class="mfa-status {mfaEnabled ? 'enabled' : 'disabled'}">
+											{mfaEnabled ? '✓ Enabled' : '✗ Not enabled'}
+										</p>
+										{#if mfaEnabled && !showMfaDisable}
+											<button
+												class="btn-small btn-danger-outline"
+												onclick={() => {
+													showMfaDisable = true;
+													mfaVerificationCode = '';
+													mfaError = null;
+												}}
+											>
+												Disable
+											</button>
+										{/if}
+									</div>
 								</div>
 							</div>
 
@@ -2161,9 +2242,12 @@
 										{settingUpMfa ? 'Setting up...' : 'Enable MFA'}
 									</button>
 								{:else}
-									<div class="form-section">
+									<div class="form-section" transition:slide={{ duration: 300 }}>
 										<h4>Set up MFA</h4>
-										<p>Scan this QR code with your authenticator app (Google Authenticator, Authy, 1Password, etc.):</p>
+										<p>
+											Scan this QR code with your authenticator app (Google Authenticator, Authy,
+											1Password, etc.):
+										</p>
 
 										{#if mfaQrCode}
 											<div class="qr-code-container">
@@ -2179,7 +2263,8 @@
 										{/if}
 
 										<div class="form-group">
-											<label for="mfaVerificationCode">Enter verification code from your app:</label>
+											<label for="mfaVerificationCode">Enter verification code from your app:</label
+											>
 											<input
 												id="mfaVerificationCode"
 												type="text"
@@ -2215,9 +2300,13 @@
 										</div>
 									</div>
 								{/if}
-							{:else}
-								<div class="form-section">
-									<p><strong>To disable MFA, enter a verification code from your authenticator app:</strong></p>
+							{:else if showMfaDisable}
+								<div class="form-section" transition:slide={{ duration: 300 }}>
+									<p>
+										<strong
+											>To disable MFA, enter a verification code from your authenticator app:</strong
+										>
+									</p>
 
 									<div class="form-group">
 										<label for="mfaDisableCode">Verification code:</label>
@@ -2238,40 +2327,22 @@
 											onclick={disableMfa}
 											disabled={disablingMfa || !mfaVerificationCode}
 										>
-											{disablingMfa ? 'Disabling...' : 'Disable MFA'}
+											{disablingMfa ? 'Disabling...' : 'Confirm Disable'}
+										</button>
+										<button
+											class="btn-secondary"
+											onclick={() => {
+												showMfaDisable = false;
+												mfaVerificationCode = '';
+												mfaError = null;
+											}}
+											disabled={disablingMfa}
+										>
+											Cancel
 										</button>
 									</div>
 								</div>
 							{/if}
-						</div>
-
-						<!-- Password Reset Section -->
-						<div class="security-info">
-							<div class="security-item">
-								<div class="security-icon">🔑</div>
-								<div class="security-details">
-									<h4>Password Reset</h4>
-									<p class="security-description">
-										Send a password reset link to your email address.
-									</p>
-								</div>
-							</div>
-
-							{#if passwordResetError}
-								<div class="error-message">{passwordResetError}</div>
-							{/if}
-
-							{#if passwordResetSuccess}
-								<div class="success-message">{passwordResetSuccess}</div>
-							{/if}
-
-							<button
-								class="btn-secondary"
-								onclick={sendPasswordReset}
-								disabled={passwordResetSending}
-							>
-								{passwordResetSending ? 'Sending email...' : 'Send password reset email'}
-							</button>
 						</div>
 					</div>
 				</div>
@@ -2289,101 +2360,6 @@
 										complete role management.
 									</div>
 								</div>
-							</div>
-						</div>
-					</div>
-
-					<!-- Admin Credit Management Section -->
-					<div class="profile-card admin-credit-management-section">
-						<h3 class="section-title">Credit Management</h3>
-						<div class="credit-management-info">
-							<p class="section-description">Add purchased credits to user accounts.</p>
-
-							{#if creditManagementError}
-								<div class="error-message">{creditManagementError}</div>
-							{/if}
-
-							{#if creditManagementSuccess}
-								<div class="success-message">{creditManagementSuccess}</div>
-							{/if}
-
-							<div class="form-section">
-								<div class="form-group">
-									<label for="creditSearchTerm">Search for user:</label>
-									<input
-										id="creditSearchTerm"
-										type="text"
-										bind:value={creditSearchTerm}
-										oninput={searchUsers}
-										placeholder="Enter email, handle, or display name..."
-										disabled={creditManagementLoading}
-									/>
-								</div>
-
-								{#if creditSearchResults.length > 0}
-									<div class="user-search-results">
-										{#each creditSearchResults as searchResult}
-											<button
-												type="button"
-												class="user-search-result {selectedUser?.id === searchResult.id ? 'selected' : ''}"
-												onclick={() => {
-													selectedUser = searchResult;
-													creditSearchTerm = searchResult.auth_email || searchResult.handle;
-													creditSearchResults = [];
-												}}
-											>
-												<div class="user-info">
-													<div class="user-name">{searchResult.display_name || searchResult.handle || 'Unknown'}</div>
-													<div class="user-email">{searchResult.auth_email || ''}</div>
-												</div>
-												<div class="user-credits">
-													<span class="credits-label">Credits:</span>
-													<span class="credits-value">{searchResult.purchased_credits_remaining || 0}</span>
-												</div>
-											</button>
-										{/each}
-									</div>
-								{/if}
-
-								{#if selectedUser}
-									<div class="selected-user-card">
-										<div class="selected-user-info">
-											<strong>{selectedUser.display_name || selectedUser.handle}</strong>
-											<span class="user-email-small">{selectedUser.auth_email}</span>
-											<span class="current-credits">Current credits: {selectedUser.purchased_credits_remaining || 0}</span>
-										</div>
-										<button
-											type="button"
-											class="btn-text-danger"
-											onclick={() => {
-												selectedUser = null;
-												creditSearchTerm = '';
-											}}
-										>
-											Clear
-										</button>
-									</div>
-								{/if}
-
-								<div class="form-group">
-									<label for="creditsToAdd">Credits to add:</label>
-									<input
-										id="creditsToAdd"
-										type="number"
-										bind:value={creditsToAdd}
-										min="1"
-										placeholder="Enter amount..."
-										disabled={creditManagementLoading || !selectedUser}
-									/>
-								</div>
-
-								<button
-									class="btn-primary"
-									onclick={addCredits}
-									disabled={creditManagementLoading || !selectedUser || !creditsToAdd || creditsToAdd <= 0}
-								>
-									{creditManagementLoading ? 'Adding credits...' : 'Add Credits'}
-								</button>
 							</div>
 						</div>
 					</div>
@@ -2453,173 +2429,6 @@
 									</div>
 								</div>
 							{/if}
-						</div>
-					</div>
-				{/if}
-
-				<!-- Admin Credit Management -->
-				{#if contributor?.role === 'admin'}
-					<div class="profile-card admin-credit-management-section">
-						<h3 class="section-title">Credit Management</h3>
-						<div class="credit-management-info">
-							<p class="section-description">
-								Add or set purchased credits for user accounts.
-							</p>
-
-							<!-- Error/Success messages -->
-							{#if creditManagementError}
-								<div class="error-message">{creditManagementError}</div>
-							{/if}
-
-							{#if creditManagementSuccess}
-								<div class="success-message">{creditManagementSuccess}</div>
-							{/if}
-
-							<div class="form-section">
-								<!-- Operation mode toggle -->
-								<div class="form-group">
-									<label>Operation Mode:</label>
-									<div class="mode-toggle">
-										<button
-											type="button"
-											class="mode-button {creditOperationMode === 'add' ? 'active' : ''}"
-											onclick={() => (creditOperationMode = 'add')}
-										>
-											Add Credits
-										</button>
-										<button
-											type="button"
-											class="mode-button {creditOperationMode === 'set' ? 'active' : ''}"
-											onclick={() => (creditOperationMode = 'set')}
-										>
-											Set Credits
-										</button>
-									</div>
-								</div>
-
-								<!-- User search input -->
-								<div class="form-group">
-									<label for="creditSearchTerm">Search for user:</label>
-									<input
-										id="creditSearchTerm"
-										type="text"
-										bind:value={creditSearchTerm}
-										oninput={searchUsers}
-										placeholder="Enter email, handle, or display name..."
-										class="form-input"
-									/>
-								</div>
-
-								<!-- Search results dropdown -->
-								{#if creditSearchResults.length > 0}
-									<div class="user-search-results">
-										{#each creditSearchResults as searchResult}
-											<button
-												type="button"
-												class="user-search-result {selectedUser?.id === searchResult.id
-													? 'selected'
-													: ''}"
-												onclick={() => {
-													selectedUser = searchResult;
-													creditSearchTerm =
-														searchResult.auth_email || searchResult.handle;
-													creditSearchResults = [];
-													// Pre-populate set mode with current credits
-													if (creditOperationMode === 'set') {
-														creditsToSet = searchResult.purchased_credits_remaining || 0;
-													}
-												}}
-											>
-												<div class="user-info">
-													<div class="user-name">
-														{searchResult.display_name || searchResult.handle || 'Unknown'}
-													</div>
-													<div class="user-email">{searchResult.auth_email || ''}</div>
-												</div>
-												<div class="user-credits">
-													<span class="credits-label">Credits:</span>
-													<span class="credits-value"
-														>{searchResult.purchased_credits_remaining || 0}</span
-													>
-												</div>
-											</button>
-										{/each}
-									</div>
-								{/if}
-
-								<!-- Selected user display -->
-								{#if selectedUser}
-									<div class="selected-user-card">
-										<div class="selected-user-info">
-											<strong>{selectedUser.display_name || selectedUser.handle}</strong>
-											<span class="user-email-small">{selectedUser.auth_email}</span>
-											<span class="current-credits"
-												>Current credits: {selectedUser.purchased_credits_remaining || 0}</span
-											>
-										</div>
-										<button
-											type="button"
-											class="btn-text-danger"
-											onclick={() => {
-												selectedUser = null;
-												creditSearchTerm = '';
-												creditsToAdd = 0;
-												creditsToSet = 0;
-											}}
-										>
-											Clear
-										</button>
-									</div>
-								{/if}
-
-								<!-- Credits input (conditional based on mode) -->
-								{#if creditOperationMode === 'add'}
-									<div class="form-group">
-										<label for="creditsToAdd">Credits to add:</label>
-										<input
-											id="creditsToAdd"
-											type="number"
-											bind:value={creditsToAdd}
-											min="1"
-											placeholder="Enter amount..."
-											class="form-input"
-											disabled={creditManagementLoading || !selectedUser}
-										/>
-									</div>
-								{:else}
-									<div class="form-group">
-										<label for="creditsToSet">Set credits to:</label>
-										<input
-											id="creditsToSet"
-											type="number"
-											bind:value={creditsToSet}
-											min="0"
-											placeholder="Enter amount..."
-											class="form-input"
-											disabled={creditManagementLoading || !selectedUser}
-										/>
-										<p class="input-hint">
-											This will set both total and remaining credits to this value.
-										</p>
-									</div>
-								{/if}
-
-								<!-- Submit button -->
-								<button
-									class="btn-primary"
-									onclick={manageCredits}
-									disabled={creditManagementLoading ||
-										!selectedUser ||
-										(creditOperationMode === 'add' && (!creditsToAdd || creditsToAdd <= 0)) ||
-										(creditOperationMode === 'set' && creditsToSet < 0)}
-								>
-									{creditManagementLoading
-										? 'Processing...'
-										: creditOperationMode === 'add'
-											? 'Add Credits'
-											: 'Set Credits'}
-								</button>
-							</div>
 						</div>
 					</div>
 				{/if}
@@ -2843,56 +2652,59 @@
 		min-height: 100vh;
 	}
 
-	/* Profile card styling */
+	/* Profile card styling - sleek glassmorphism design */
 	.profile-card {
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+		backdrop-filter: blur(20px) saturate(1.2);
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		border-radius: 24px;
+		box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 8%, transparent);
 		position: relative;
-		transition: box-shadow 0.2s ease;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
 	.profile-card:hover {
-		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+		box-shadow: 0 15px 40px color-mix(in srgb, var(--color-primary) 12%, transparent);
+		transform: translateY(-2px);
 	}
 
 	/* Layout */
-
 	.profile-view {
 		display: flex;
 		flex-direction: column;
-		gap: 2rem;
+		gap: 1.5rem;
 		width: 100%;
 		max-width: 1000px;
+		padding: 0 1.5rem 3rem;
 	}
 
 	/* Profile header */
 	.profile-header {
-		padding: 2rem;
+		padding: 1.5rem;
 	}
 
 	.view-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: flex-start;
-		gap: 2rem;
-		margin-bottom: 1.5rem;
+		gap: 1.5rem;
+		margin-bottom: 1rem;
 	}
 
 	.profile-main {
 		display: flex;
 		align-items: flex-start;
-		gap: 1.5rem;
+		gap: 1.25rem;
 	}
 
 	.profile-avatar,
 	.profile-avatar-placeholder {
-		width: 120px;
-		height: 120px;
+		width: 100px;
+		height: 100px;
 		border-radius: 50%;
 		flex-shrink: 0;
-		border: 3px solid var(--color-border);
+		border: 2px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 15%, transparent);
 	}
 
 	.profile-avatar {
@@ -2914,25 +2726,28 @@
 	}
 
 	.profile-info h1.profile-title {
-		font-size: clamp(1.75rem, 4vw, 2.5rem);
+		font-size: clamp(1.5rem, 4vw, 2rem);
 		font-weight: 700;
-		margin: 0 0 0.5rem 0;
-		color: var(--color-text-primary);
-		text-shadow: 0 2px 4px color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+		margin: 0 0 0.25rem 0;
+		font-family: var(--font-family-display);
+		background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+		background-clip: text;
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
 	}
 
 	.handle {
-		font-size: 1.1rem;
+		font-size: 0.95rem;
 		color: var(--color-text-secondary);
 		margin: 0;
 		font-weight: 500;
 	}
 
 	.bio {
-		font-size: 1rem;
-		line-height: 1.6;
+		font-size: 0.95rem;
+		line-height: 1.5;
 		color: var(--color-text-secondary);
-		margin: 0;
+		margin: 0.5rem 0 0 0;
 		max-width: 600px;
 	}
 
@@ -2976,32 +2791,36 @@
 	}
 	/* Sections */
 	.section-title {
-		font-size: 1.3rem;
-		font-weight: 600;
-		margin: 0 0 1.5rem 0;
+		font-size: 1.1rem;
+		font-weight: 700;
+		margin: 0 0 1rem 0;
 		color: var(--color-text-primary);
+		font-family: var(--font-family-display);
 	}
 
 	.account-section,
 	.stats-section,
-	.content-section {
-		padding: 2rem;
+	.content-section,
+	.security-section,
+	.analysis-credits-section,
+	.admin-credit-management-section {
+		padding: 1.5rem;
 	}
 
 	/* Account details */
 	.account-details {
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
-		margin-bottom: 1rem;
+		gap: 0.75rem;
+		margin-bottom: 0.75rem;
 	}
 
 	.detail-row {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: 1rem 0;
-		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+		padding: 0.75rem 0;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 15%, transparent);
 	}
 
 	.detail-row:last-child {
@@ -3010,12 +2829,16 @@
 
 	.detail-label {
 		font-weight: 600;
+		font-size: 0.9rem;
 		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
 
 	.detail-value {
 		color: var(--color-text-primary);
 		text-align: right;
+		font-size: 0.95rem;
 	}
 
 	.profile-link {
@@ -3253,27 +3076,30 @@
 	}
 	/* Buttons */
 	.btn-primary {
-		background: var(--color-surface);
+		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+		backdrop-filter: blur(10px);
 		color: var(--color-text-primary);
-		border: 1px solid var(--color-border);
-		padding: 0.625rem 1.25rem;
-		border-radius: 3px;
-		font-weight: 500;
-		font-size: 14px;
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		padding: 0.5rem 1rem;
+		border-radius: 8px;
+		font-weight: 600;
+		font-size: 0.875rem;
 		cursor: pointer;
-		transition: all 0.15s ease;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 		font-family: inherit;
 		letter-spacing: 0.025em;
 	}
 
 	.btn-primary:hover:not(:disabled) {
-		border-color: var(--color-primary);
-		background: var(--color-surface-alt);
+		background: color-mix(in srgb, var(--color-surface-alt) 70%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+		transform: translateY(-1px);
 	}
 
 	.btn-primary:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+		transform: none;
 	}
 
 	.btn-secondary {
@@ -3281,15 +3107,15 @@
 		backdrop-filter: blur(10px);
 		color: var(--color-text-primary);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		padding: 1rem 2rem;
-		border-radius: 16px;
+		padding: 0.5rem 1rem;
+		border-radius: 8px;
 		font-weight: 600;
-		font-size: 1rem;
+		font-size: 0.875rem;
 		cursor: pointer;
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
-	.btn-secondary:hover {
+	.btn-secondary:hover:not(:disabled) {
 		background: color-mix(in srgb, var(--color-surface) 80%, transparent);
 		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
 		transform: translateY(-1px);
@@ -4049,6 +3875,25 @@
 		display: flex;
 		gap: 1rem;
 		align-items: flex-start;
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 0;
+		text-align: left;
+		font-family: inherit;
+		color: inherit;
+	}
+
+	.security-item.clickable {
+		cursor: pointer;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		padding: 0.5rem;
+		margin: -0.5rem;
+		border-radius: 12px;
+	}
+
+	.security-item.clickable:hover {
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
 	}
 
 	.security-icon {
@@ -4118,8 +3963,13 @@
 	}
 
 	@keyframes pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.5; }
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.5;
+		}
 	}
 
 	.method-name {
@@ -4157,6 +4007,17 @@
 
 	.form-actions button {
 		flex: 1;
+	}
+
+	.password-actions {
+		display: flex;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.password-actions button {
+		flex: 1;
+		min-width: 200px;
 	}
 
 	.error-message {
@@ -4279,17 +4140,19 @@
 
 	.keys-list {
 		list-style: none;
+		display: flex;
+		flex-direction: row;
 		padding: 0;
 		margin: 0;
 		display: flex;
-		flex-direction: column;
 		gap: 0.75rem;
 	}
 
 	.key-item {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
+		flex-direction: row;
+		gap: 0.75rem;
+		max-width: 20rem;
 		padding: 0.75rem 1rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
@@ -4297,16 +4160,30 @@
 		transition: all 0.2s ease;
 	}
 
-	.key-item:hover {
-		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
-		border-color: color-mix(in srgb, var(--color-border) 60%, transparent);
-	}
-
 	.key-info {
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
 		flex: 1;
+		background: none;
+		border: none;
+		padding: 0;
+		text-align: left;
+		font-family: inherit;
+		color: inherit;
+		width: 100%;
+	}
+
+	.key-info.clickable {
+		cursor: pointer;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		padding: 0.5rem;
+		margin: -0.5rem;
+		border-radius: 8px;
+	}
+
+	.key-info.clickable:hover {
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
 	}
 
 	.key-icon {
@@ -4334,6 +4211,7 @@
 
 	.btn-danger-small {
 		padding: 0.5rem 1rem;
+		margin: 0 1rem;
 		font-size: 0.875rem;
 		font-weight: 500;
 		background: transparent;
@@ -4354,17 +4232,24 @@
 	}
 
 	/* MFA Styles */
-	.mfa-status {
+	.mfa-status-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
 		margin-top: 0.5rem;
-		padding: 0.5rem 0.75rem;
+	}
+
+	.mfa-status {
+		margin: 0;
+		padding: 0.375rem 0.625rem;
 		border-radius: 6px;
-		font-size: 0.875rem;
-		font-weight: 500;
+		font-size: 0.8125rem;
+		font-weight: 600;
 		display: inline-block;
 	}
 
 	.mfa-status.enabled {
-		background: color-mix(in srgb, #10b981 10%, transparent);
+		background: color-mix(in srgb, #10b981 15%, transparent);
 		color: #10b981;
 		border: 1px solid color-mix(in srgb, #10b981 30%, transparent);
 	}
@@ -4373,6 +4258,32 @@
 		background: color-mix(in srgb, var(--color-text-secondary) 10%, transparent);
 		color: var(--color-text-secondary);
 		border: 1px solid color-mix(in srgb, var(--color-text-secondary) 30%, transparent);
+	}
+
+	.btn-small {
+		padding: 0.25rem 0.625rem;
+		font-size: 0.75rem;
+		border-radius: 6px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		border: 1px solid;
+	}
+
+	.btn-danger-outline {
+		background: transparent;
+		color: #ef4444;
+		border-color: color-mix(in srgb, #ef4444 40%, transparent);
+	}
+
+	.btn-danger-outline:hover {
+		background: color-mix(in srgb, #ef4444 10%, transparent);
+		border-color: #ef4444;
+		transform: translateY(-1px);
+	}
+
+	.btn-danger-outline:active {
+		transform: translateY(0);
 	}
 
 	.qr-code-container {
@@ -4445,23 +4356,25 @@
 	}
 
 	.form-input {
-		padding: 0.75rem 1rem;
-		border: 1px solid var(--color-border);
+		padding: 0.625rem 0.875rem;
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
 		border-radius: 8px;
-		font-size: 0.9375rem;
-		background: var(--color-surface);
+		font-size: 0.9rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
+		backdrop-filter: blur(10px);
 		color: var(--color-text-primary);
-		transition: all 0.2s ease;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
 	.form-input:focus {
 		outline: none;
 		border-color: var(--color-primary);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 	}
 
 	.form-input:disabled {
-		opacity: 0.5;
+		opacity: 0.6;
 		cursor: not-allowed;
 		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
 	}
@@ -4500,7 +4413,7 @@
 
 	.mode-button.active {
 		background: var(--color-primary);
-		color: white;
+		color: black;
 	}
 
 	.mode-button:not(.active):hover {

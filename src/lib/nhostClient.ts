@@ -289,20 +289,8 @@ nhost.auth.signIn = async (params: any) => {
 				session: null,
 				mfa: null,
 				error: result.error
-					? {
-						message: result.error.message || 'Failed to send magic link',
-						code: result.error.code ?? (result.body?.error?.code ?? null)
-					}
-					: (result.body?.error
-						? {
-							message: result.body.error.message || 'Failed to send magic link',
-							code: result.body.error.code ?? null
-						}
-						: (result.status && result.status !== 200
-							? { message: `Failed to send magic link (status ${result.status})`, code: null }
-							: null
-						)
-					)
+					? { message: result.error.message || 'Failed to send magic link' }
+					: null
 			};
 		}
 		// Handle OAuth provider sign-in
@@ -773,8 +761,9 @@ export async function ensureContributor() {
 	console.log('[ensureContributor] Creating/updating contributor with:', {
 		id: user.id,
 		display_name: displayName,
-		...(dev && { email: user.email }),
+		email: user.email,
 		analysis_limit: 10,
+		monthly_credits_remaining: 10,
 		reset_date: resetDate.toISOString()
 	});
 
