@@ -68,9 +68,7 @@
 	});
 
 	const authorId = $derived(props.discussionAuthorId || props.postAuthorId || curatorId);
-	const needsApproval = $derived(
-		curatorId && authorId ? curatorId !== authorId : false
-	);
+	const needsApproval = $derived(curatorId && authorId ? curatorId !== authorId : false);
 
 	async function handleSubmit() {
 		if (!curatorId || !authorId) {
@@ -120,7 +118,7 @@
 				props.onClose();
 			}, 1500);
 		} catch (err: any) {
-			error = err.message || 'Failed to create Editors\' Desk pick';
+			error = err.message || "Failed to create Editors' Desk pick";
 		} finally {
 			submitting = false;
 		}
@@ -154,7 +152,13 @@
 				</button>
 			</header>
 
-			<form class="modal-body" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
+			<form
+				class="modal-body"
+				onsubmit={(e) => {
+					e.preventDefault();
+					handleSubmit();
+				}}
+			>
 				{#if needsApproval}
 					<div class="info-banner">
 						<svg
@@ -250,7 +254,12 @@
 				{/if}
 
 				<div class="modal-actions">
-					<button type="button" class="button-secondary" onclick={handleClose} disabled={submitting}>
+					<button
+						type="button"
+						class="button-secondary"
+						onclick={handleClose}
+						disabled={submitting}
+					>
 						Cancel
 					</button>
 					<button type="submit" class="button-primary" disabled={submitting || !title.trim()}>
@@ -279,6 +288,11 @@
 		justify-content: center;
 		z-index: 1000;
 		padding: 1rem;
+	}
+
+	/* Light theme overlay - white semi-transparent background */
+	:global([data-theme='light']) .modal-backdrop {
+		background: rgba(255, 255, 255, 0.8);
 	}
 
 	.modal-content {

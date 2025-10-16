@@ -87,6 +87,11 @@
 		backdrop-filter: blur(2px);
 	}
 
+	/* Light theme overlay - white semi-transparent background */
+	:global([data-theme='light']) .modal-overlay {
+		background: rgba(255, 255, 255, 0.8);
+	}
+
 	.modal-content {
 		background: var(--color-bg-primary);
 		border-radius: 12px;

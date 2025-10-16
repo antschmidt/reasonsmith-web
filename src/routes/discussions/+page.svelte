@@ -488,20 +488,12 @@
 											title="Add to Editors' Desk"
 											aria-label="Add to Editors' Desk"
 										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												width="16"
-												height="16"
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="2"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-											>
-												<path d="M12 5v14M5 12h14"></path>
-											</svg>
-											<span>Add to Editors' Desk</span>
+											<img
+												src="/editors-desk-button-transparent.png"
+												alt="Editors' Desk"
+												width="48"
+												height="48"
+											/>
 										</button>
 									{/if}
 									<time
@@ -934,6 +926,15 @@
 
 	.editors-desk-button svg {
 		flex-shrink: 0;
+	}
+
+	.editors-desk-button img {
+		flex-shrink: 0;
+	}
+
+	/* Invert the icon in dark mode */
+	:global([data-theme='dark']) .editors-desk-button img {
+		filter: invert(1);
 	}
 
 	@media (max-width: 640px) {

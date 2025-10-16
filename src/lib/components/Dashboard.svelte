@@ -2,11 +2,18 @@
 	import type { User } from '@nhost/nhost-js';
 	// Avoid importing gql to prevent type resolution issues; use plain strings
 	import { nhost } from '$lib/nhostClient';
-	import { GET_DASHBOARD_DATA, GET_EDITORS_DESK_PICKS } from '$lib/graphql/queries';
+	import {
+		GET_DASHBOARD_DATA,
+		GET_EDITORS_DESK_PICKS,
+		DELETE_EDITORS_DESK_PICK
+	} from '$lib/graphql/queries';
 	import Notifications from './ui/Notifications.svelte';
 	import EditorsDeskCarousel from './EditorsDeskCarousel.svelte';
 
 	let { user } = $props<{ user: User }>();
+
+	// Track user's curator permissions
+	let canCurate = $state(false);
 
 	// Focus on active work only
 
@@ -52,6 +59,29 @@
 		}
 	}
 
+	async function handleRemovePick(pickId: string) {
+		if (!confirm("Remove this item from Editors' Desk?")) {
+			return;
+		}
+
+		try {
+			const result = await nhost.graphql.request(DELETE_EDITORS_DESK_PICK, {
+				pickId
+			});
+
+			if (result.error) {
+				console.error('Error removing pick:', result.error);
+				alert("Failed to remove item from Editors' Desk");
+			} else {
+				// Remove from local state
+				editorsDeskPicks = editorsDeskPicks.filter((pick) => pick.id !== pickId);
+			}
+		} catch (e: any) {
+			console.error('Failed to remove pick:', e);
+			alert("Failed to remove item from Editors' Desk");
+		}
+	}
+
 	async function loadData() {
 		loading = true;
 		error = null;
@@ -88,6 +118,10 @@
 
 				error = errorMsg;
 			} else if (dashboardResult.data) {
+				// Check user role for curator permissions
+				const userRole = dashboardResult.data.contributor_by_pk?.role;
+				canCurate = userRole === 'slartibartfast' || userRole === 'admin';
+
 				// Focus on drafts and active work only
 
 				// Get database drafts (comment drafts)
@@ -283,7 +317,7 @@
 			{#if editorsDeskPicks.length > 0}
 				<section class="editors-desk-section">
 					<h3 class="subsection-title">Editors' Desk</h3>
-					<EditorsDeskCarousel items={editorsDeskPicks} />
+					<EditorsDeskCarousel items={editorsDeskPicks} {canCurate} onRemove={handleRemovePick} />
 				</section>
 			{/if}
 
