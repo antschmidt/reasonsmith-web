@@ -7,8 +7,14 @@
 	import DOMPurify from 'isomorphic-dompurify';
 	import { getCuratorName, type EditorsDeskPick } from '$lib/utils/editorsDeskUtils';
 
-	const props = $props<{ items?: EditorsDeskPick[] }>();
+	const props = $props<{
+		items?: EditorsDeskPick[];
+		canCurate?: boolean;
+		onRemove?: (pickId: string) => void;
+	}>();
 	const items = $derived(props.items ?? []);
+	const canCurate = $derived(props.canCurate ?? false);
+	const onRemove = $derived(props.onRemove ?? (() => {}));
 
 	let viewport = $state<HTMLDivElement | null>(null);
 	let atStart = $state(true);
@@ -84,6 +90,20 @@
 		<div class="carousel-viewport" bind:this={viewport} role="list" onscroll={updateScrollState}>
 			{#each items as item (item.id)}
 				<div role="listitem" class="carousel-card">
+					{#if canCurate}
+						<button
+							class="remove-button"
+							onclick={(e) => {
+								e.stopPropagation();
+								onRemove(item.id);
+							}}
+							title="Remove from Editors' Desk"
+							aria-label="Remove from Editors' Desk"
+							type="button"
+						>
+							×
+						</button>
+					{/if}
 					<button class="card-link" onclick={() => handleCardClick(item)} type="button">
 						<header class="card-header">
 							<div class="meta-tags">
@@ -177,6 +197,47 @@
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 		overflow: hidden;
 		background: color-mix(in srgb, var(--color-surface) 95%, transparent);
+	}
+
+	.remove-button {
+		position: absolute;
+		top: 0.75rem;
+		right: 0.75rem;
+		width: 1.75rem;
+		height: 1.75rem;
+		border-radius: var(--border-radius-md);
+		background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+		backdrop-filter: blur(20px);
+		color: var(--color-text-secondary);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		font-size: 1.25rem;
+		font-weight: 300;
+		line-height: 1;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 10;
+		transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+		opacity: 0.6;
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-accent) 8%, transparent);
+	}
+
+	.carousel-card:hover .remove-button {
+		opacity: 1;
+	}
+
+	.remove-button:hover {
+		background: color-mix(in srgb, #ef4444 90%, transparent);
+		color: white;
+		border-color: #ef4444;
+		transform: translateY(-2px);
+		box-shadow: 0 8px 20px color-mix(in srgb, #ef4444 25%, transparent);
+	}
+
+	.remove-button:active {
+		transform: translateY(0);
+		box-shadow: 0 4px 12px color-mix(in srgb, #ef4444 20%, transparent);
 	}
 
 	.card-link {

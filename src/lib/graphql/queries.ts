@@ -50,6 +50,12 @@ const POST_FIELDS = gql`
 // Query for the main dashboard view
 export const GET_DASHBOARD_DATA = gql`
 	query GetDashboardData($userId: uuid!) {
+		# Get current user's contributor data (for role check)
+		contributor_by_pk(id: $userId) {
+			id
+			role
+		}
+
 		# Discussions created by the user
 		myDiscussions: discussion(
 			where: { created_by: { _eq: $userId } }
@@ -1723,6 +1729,14 @@ export const CREATE_EDITORS_DESK_PICK = gql`
 	}
 `;
 
+export const DELETE_EDITORS_DESK_PICK = gql`
+	mutation DeleteEditorsDeskPick($pickId: uuid!) {
+		delete_editors_desk_pick_by_pk(id: $pickId) {
+			id
+		}
+	}
+`;
+
 export const UPDATE_EDITORS_DESK_PICK_STATUS = gql`
 	mutation UpdateEditorsDeskPickStatus($id: uuid!, $status: editors_desk_status_enum!) {
 		update_editors_desk_pick_by_pk(pk_columns: { id: $id }, _set: { status: $status }) {
@@ -1757,14 +1771,6 @@ export const UPDATE_EDITORS_DESK_PICK = gql`
 			editor_note
 			display_order
 			published
-		}
-	}
-`;
-
-export const DELETE_EDITORS_DESK_PICK = gql`
-	mutation DeleteEditorsDeskPick($id: uuid!) {
-		delete_editors_desk_pick_by_pk(id: $id) {
-			id
 		}
 	}
 `;

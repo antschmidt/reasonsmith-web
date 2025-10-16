@@ -56,9 +56,7 @@
 			<div class="modal-body">
 				<div class="score-display">
 					<div
-						class="score-circle {isDiscussion
-							? analysisData.label
-							: analysisData.good_faith_label}"
+						class="score-circle {isDiscussion ? analysisData.label : analysisData.good_faith_label}"
 					>
 						<span class="score-number">
 							{isDiscussion
@@ -213,7 +211,7 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		background: rgba(15, 23, 42, 0.7);
+		background: rgba(0, 0, 0, 0.5);
 		backdrop-filter: blur(4px);
 		display: flex;
 		align-items: center;
@@ -223,10 +221,15 @@
 		animation: fadeIn 0.2s ease;
 	}
 
+	/* Light theme overlay - white semi-transparent background */
+	:global([data-theme='light']) .good-faith-modal-overlay {
+		background: rgba(255, 255, 255, 0.8);
+	}
+
 	.good-faith-modal {
 		background: var(--color-surface);
 		border-radius: var(--border-radius-xl);
-		box-shadow: 0 20px 60px rgba(15, 23, 42, 0.3);
+		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 		max-width: 48rem;
 		width: 100%;
 		max-height: 85vh;
@@ -234,6 +237,12 @@
 		display: flex;
 		flex-direction: column;
 		animation: slideUp 0.3s ease;
+		border: 1px solid var(--color-border);
+	}
+
+	/* Light theme modal - stronger shadow for visibility */
+	:global([data-theme='light']) .good-faith-modal {
+		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
 	}
 
 	.modal-header {
