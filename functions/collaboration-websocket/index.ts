@@ -24,6 +24,7 @@ interface ConnectionInfo {
 	userId: string;
 	userName: string;
 	role: string;
+	clientId: number;
 }
 
 interface JWTPayload {
@@ -259,8 +260,11 @@ function setupWSConnection(
 	const room = getOrCreateRoom(postId);
 	const { doc, awareness } = room;
 
-	// Store connection info
-	room.connections.set(conn, { userId, userName, role });
+	// Get a unique client ID for this connection
+	const clientId = awareness.clientID;
+
+	// Store connection info with client ID
+	room.connections.set(conn, { userId, userName, role, clientId });
 
 	// Set user awareness state (for collaborative cursors)
 	const awarenessState = {
@@ -269,6 +273,9 @@ function setupWSConnection(
 			color: generateUserColor(userId)
 		}
 	};
+
+	// Set the local awareness state for this connection
+	awareness.setLocalState(awarenessState);
 
 	// Send initial sync
 	const encoder = encoding.createEncoder();
@@ -295,39 +302,63 @@ function setupWSConnection(
 		const messageType = encoding.readVarUint(decoder);
 
 		switch (messageType) {
-			case syncProtocol.messageYjsSyncStep1:
-			case syncProtocol.messageYjsSyncStep2:
-			case syncProtocol.messageYjsUpdate:
-				// Handle sync protocol messages
+			case syncProtocol.messageYjsSyncStep1: {
+				// Respond with SyncStep2
 				const responseEncoder = encoding.createEncoder();
 				encoding.writeVarUint(responseEncoder, syncProtocol.messageYjsSyncStep2);
-				syncProtocol.readSyncMessage(decoder, responseEncoder, doc, null);
+				syncProtocol.writeSyncStep2(responseEncoder, doc);
+				conn.send(encoding.toUint8Array(responseEncoder));
+				break;
+			}
 
-				// Broadcast to all connections in the room
-				const response = encoding.toUint8Array(responseEncoder);
+			case syncProtocol.messageYjsSyncStep2: {
+				// Apply SyncStep2 (no response needed)
+				syncProtocol.readSyncStep2(decoder, doc, null);
+				break;
+			}
+
+			case syncProtocol.messageYjsUpdate: {
+				// Apply update and broadcast to other connections
+				syncProtocol.readUpdate(decoder, doc, null);
+
+				// Broadcast the original update to all other connections
 				room.connections.forEach((_, otherConn) => {
 					if (otherConn !== conn && otherConn.readyState === WebSocket.OPEN) {
-						otherConn.send(response);
+						otherConn.send(new Uint8Array(message));
 					}
 				});
 				break;
+			}
 
-			case awarenessProtocol.messageAwareness:
+			case awarenessProtocol.messageAwareness: {
 				// Handle awareness protocol messages (collaborative cursors)
 				awarenessProtocol.applyAwarenessUpdate(
 					awareness,
 					encoding.readVarUint8Array(decoder),
 					conn
 				);
+
+				// Broadcast awareness updates to other connections
+				room.connections.forEach((_, otherConn) => {
+					if (otherConn !== conn && otherConn.readyState === WebSocket.OPEN) {
+						otherConn.send(new Uint8Array(message));
+					}
+				});
 				break;
+			}
 		}
 
 		room.lastActivity = new Date();
 	};
 
 	const closeHandler = () => {
+		const connInfo = room.connections.get(conn);
 		room.connections.delete(conn);
-		awareness.setLocalState(null);
+
+		// Remove this client's awareness state
+		if (connInfo) {
+			awareness.setLocalStateField(connInfo.clientId, null);
+		}
 
 		// Persist state when connection closes
 		if (room.connections.size === 0) {
