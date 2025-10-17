@@ -118,7 +118,17 @@
 
 	const GET_EXISTING_DRAFT = `
     query GetExistingDraft($discussionId: uuid!, $authorId: uuid!) {
-      post(where: {discussion_id: {_eq: $discussionId}, author_id: {_eq: $authorId}, status: {_eq: "draft"}}, limit: 1, order_by: {updated_at: desc}) {
+      post(where: {
+        discussion_id: {_eq: $discussionId},
+        status: {_eq: "draft"},
+        _or: [
+          { author_id: {_eq: $authorId} },
+          { post_collaborators: {
+            contributor_id: {_eq: $authorId},
+            status: {_eq: "accepted"}
+          }}
+        ]
+      }, limit: 1, order_by: {updated_at: desc}) {
         id
         draft_content
         updated_at
@@ -320,13 +330,19 @@
 		const qp = $page.url.searchParams;
 		const replyDraftParam = qp.get('replyDraftId');
 		if (replyDraftParam) {
-			// fetch that specific draft id if belongs to this discussion & user
+			// fetch that specific draft id if belongs to this discussion & user (or user is a collaborator)
 			const { data, error } = await nhost.graphql.request(
 				`query GetDraftById($id: uuid!, $authorId: uuid!, $discussionId: uuid!) {
 					post(where: {
 						id: {_eq: $id},
-						author_id: {_eq: $authorId},
-						discussion_id: {_eq: $discussionId}
+						discussion_id: {_eq: $discussionId},
+						_or: [
+							{ author_id: {_eq: $authorId} },
+							{ post_collaborators: {
+								contributor_id: {_eq: $authorId},
+								status: {_eq: "accepted"}
+							}}
+						]
 					}) {
 						id
 						draft_content
@@ -340,11 +356,7 @@
 			if (!error) {
 				const posts = (data as any)?.post;
 				const candidate = posts?.[0];
-				if (
-					candidate &&
-					candidate.author_id === user.id &&
-					candidate.discussion_id === discussionId
-				) {
+				if (candidate && candidate.discussion_id === discussionId) {
 					draftPostId = candidate.id;
 					newComment = candidate.draft_content || '';
 					// Calculate word count for the loaded draft content

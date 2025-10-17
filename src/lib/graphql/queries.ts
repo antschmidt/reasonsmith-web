@@ -154,6 +154,70 @@ export const GET_DASHBOARD_DATA = gql`
 				}
 			}
 		}
+
+		# Get pending collaboration invites for the current user
+		myCollaborationInvites: post_collaborator(
+			where: { contributor_id: { _eq: $userId }, status: { _eq: "pending" } }
+			order_by: { invited_at: desc }
+		) {
+			id
+			post_id
+			status
+			role
+			invited_at
+			inviter {
+				...ContributorFields
+			}
+			post {
+				id
+				draft_content
+				discussion_id
+				discussion {
+					id
+					discussion_versions(limit: 1, order_by: { created_at: desc }) {
+						title
+					}
+				}
+			}
+		}
+
+		# Get drafts where the user is an accepted collaborator
+		collaborativeDrafts: post_collaborator(
+			where: {
+				contributor_id: { _eq: $userId }
+				status: { _eq: "accepted" }
+				post: { status: { _in: ["draft", "pending"] } }
+			}
+			order_by: { post: { updated_at: desc } }
+		) {
+			id
+			post_id
+			role
+			post {
+				id
+				draft_content
+				discussion_id
+				status
+				updated_at
+				good_faith_score
+				good_faith_label
+				good_faith_last_evaluated
+				good_faith_analysis
+				contributor {
+					...ContributorFields
+				}
+				discussion {
+					id
+					discussion_versions(
+						where: { version_type: { _eq: "published" } }
+						order_by: { version_number: desc }
+						limit: 1
+					) {
+						title
+					}
+				}
+			}
+		}
 	}
 	${CONTRIBUTOR_FIELDS}
 `;
@@ -1978,7 +2042,10 @@ export const UPDATE_CONTRIBUTOR_SUBSCRIPTION = gql`
 	) {
 		update_contributor_by_pk(
 			pk_columns: { id: $id }
-			_set: { realtime_collaboration_enabled: $realtimeEnabled, subscription_expires_at: $expiresAt }
+			_set: {
+				realtime_collaboration_enabled: $realtimeEnabled
+				subscription_expires_at: $expiresAt
+			}
 		) {
 			id
 			realtime_collaboration_enabled
@@ -2006,6 +2073,126 @@ export const CHECK_REALTIME_ACCESS = gql`
 					realtime_collaboration_enabled
 					subscription_expires_at
 				}
+			}
+		}
+	}
+`;
+
+// ============================================
+// Phase 1: Basic Post Collaboration
+// ============================================
+
+export const GET_POST_COLLABORATORS = gql`
+	query GetPostCollaborators($postId: uuid!) {
+		post_collaborator(where: { post_id: { _eq: $postId } }) {
+			id
+			post_id
+			contributor_id
+			status
+			role
+			invited_at
+			responded_at
+			contributor {
+				id
+				display_name
+				handle
+				avatar_url
+			}
+			inviter {
+				id
+				display_name
+				handle
+			}
+		}
+	}
+`;
+
+export const GET_MY_COLLABORATION_INVITES = gql`
+	query GetMyCollaborationInvites($userId: uuid!) {
+		post_collaborator(
+			where: { contributor_id: { _eq: $userId }, status: { _eq: "pending" } }
+			order_by: { invited_at: desc }
+		) {
+			id
+			post_id
+			status
+			role
+			invited_at
+			inviter {
+				id
+				display_name
+				handle
+			}
+			post {
+				id
+				draft_content
+				discussion_id
+				discussion {
+					id
+					discussion_versions(limit: 1, order_by: { created_at: desc }) {
+						title
+					}
+				}
+			}
+		}
+	}
+`;
+
+export const INVITE_COLLABORATOR = gql`
+	mutation InviteCollaborator(
+		$postId: uuid!
+		$contributorId: uuid!
+		$role: String!
+		$invitedBy: uuid!
+	) {
+		insert_post_collaborator_one(
+			object: {
+				post_id: $postId
+				contributor_id: $contributorId
+				role: $role
+				invited_by: $invitedBy
+				status: "pending"
+			}
+		) {
+			id
+			post_id
+			contributor_id
+			status
+			role
+		}
+	}
+`;
+
+export const UPDATE_COLLABORATION_STATUS = gql`
+	mutation UpdateCollaborationStatus($id: uuid!, $status: String!, $respondedAt: timestamptz!) {
+		update_post_collaborator_by_pk(
+			pk_columns: { id: $id }
+			_set: { status: $status, responded_at: $respondedAt }
+		) {
+			id
+			status
+			responded_at
+		}
+	}
+`;
+
+export const REMOVE_COLLABORATOR = gql`
+	mutation RemoveCollaborator($id: uuid!) {
+		delete_post_collaborator_by_pk(id: $id) {
+			id
+		}
+	}
+`;
+
+export const CHECK_POST_EDIT_PERMISSION = gql`
+	query CheckPostEditPermission($postId: uuid!, $userId: uuid!) {
+		post_by_pk(id: $postId) {
+			id
+			author_id
+			post_collaborators(where: { contributor_id: { _eq: $userId } }) {
+				contributor_id
+				status
+				role
 			}
 		}
 	}
