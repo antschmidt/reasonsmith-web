@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { nhost } from '$lib/nhostClient';
-	import { apolloClient } from '$lib/apolloClient';
 	import { GET_SUBSCRIPTION_PLANS } from '$lib/graphql/queries';
 	import { Check } from '@lucide/svelte';
 
@@ -21,11 +20,11 @@
 
 		user = currentUser;
 
-		// Fetch subscription plans
+		// Fetch subscription plans using nhost GraphQL
 		try {
-			const result = await apolloClient.query({
-				query: GET_SUBSCRIPTION_PLANS
-			});
+			const result = await nhost.graphql.request(
+				GET_SUBSCRIPTION_PLANS.loc?.source?.body || GET_SUBSCRIPTION_PLANS
+			);
 
 			plans = result.data?.subscription_plan || [];
 		} catch (error) {
