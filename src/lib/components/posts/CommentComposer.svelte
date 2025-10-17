@@ -5,6 +5,8 @@
 	import Button from '../ui/Button.svelte';
 	import RichTextEditor from '../RichTextEditor.svelte';
 	import CollaboratorInviteButton from '../CollaboratorInviteButton.svelte';
+	import { nhost } from '$lib/nhostClient';
+	import { CHECK_REALTIME_ACCESS, GET_POST_COLLABORATORS } from '$lib/graphql/queries';
 
 	type Citation = {
 		id: string;
@@ -158,6 +160,98 @@
 		formatChicagoCitation: (citation: Citation) => string;
 		assessContentQuality: (content: string, title?: string) => { score: number; issues: string[] };
 	}>();
+
+	// Collaboration state
+	let enableRealtimeCollaboration = $state(false);
+	let collaborationRoom = $state('');
+	let collaborationUser = $state<{ name: string; color: string } | undefined>(undefined);
+	let collaborationError = $state<string | null>(null);
+
+	// Generate a consistent color for a user based on their ID
+	function generateUserColor(userId: string): string {
+		const colors = [
+			'#3b82f6', // blue
+			'#8b5cf6', // purple
+			'#ec4899', // pink
+			'#f59e0b', // amber
+			'#10b981', // green
+			'#06b6d4', // cyan
+			'#f97316', // orange
+			'#6366f1' // indigo
+		];
+
+		// Simple hash function to pick a color based on user ID
+		let hash = 0;
+		for (let i = 0; i < userId.length; i++) {
+			hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+		}
+		return colors[Math.abs(hash) % colors.length];
+	}
+
+	// Check collaboration conditions when draft exists
+	$effect(() => {
+		async function checkCollaboration() {
+			if (!draftPostId || !user?.id) {
+				enableRealtimeCollaboration = false;
+				return;
+			}
+
+			try {
+				// Check if author and all collaborators have realtime enabled
+				const result = await nhost.graphql.request(CHECK_REALTIME_ACCESS, {
+					postId: draftPostId,
+					userId: user.id
+				});
+
+				if (result.error) {
+					console.error('Error checking realtime access:', result.error);
+					enableRealtimeCollaboration = false;
+					return;
+				}
+
+				const post = result.data?.post_by_pk;
+				if (!post) {
+					enableRealtimeCollaboration = false;
+					return;
+				}
+
+				// Check if author has realtime enabled
+				const authorHasRealtime = post.author?.realtime_collaboration_enabled;
+
+				// Check if subscription is valid (not expired)
+				const authorSubValid =
+					!post.author?.subscription_expires_at ||
+					new Date(post.author.subscription_expires_at) > new Date();
+
+				// Check all accepted collaborators
+				const collaborators = post.post_collaborators || [];
+				const allCollaboratorsHaveRealtime = collaborators.every((collab: any) => {
+					const hasRealtime = collab.contributor?.realtime_collaboration_enabled;
+					const subValid =
+						!collab.contributor?.subscription_expires_at ||
+						new Date(collab.contributor.subscription_expires_at) > new Date();
+					return hasRealtime && subValid;
+				});
+
+				// Enable collaboration if author and all collaborators have it
+				if (authorHasRealtime && authorSubValid && allCollaboratorsHaveRealtime) {
+					enableRealtimeCollaboration = true;
+					collaborationRoom = draftPostId;
+					collaborationUser = {
+						name: user.displayName || user.email?.split('@')[0] || 'Anonymous',
+						color: generateUserColor(user.id)
+					};
+				} else {
+					enableRealtimeCollaboration = false;
+				}
+			} catch (error) {
+				console.error('Error checking collaboration:', error);
+				enableRealtimeCollaboration = false;
+			}
+		}
+
+		checkCollaboration();
+	});
 </script>
 
 <section class="add-comment">
@@ -255,6 +349,13 @@
 				}}
 				placeholder="Add your comment... (Style will be automatically determined by length)"
 				minHeight="300px"
+				enableCollaboration={enableRealtimeCollaboration}
+				{collaborationRoom}
+				{collaborationUser}
+				onCollaborationError={(error) => {
+					collaborationError = error;
+					console.error('Collaboration error:', error);
+				}}
 			/>
 
 			{#if showAdvancedFeatures}
