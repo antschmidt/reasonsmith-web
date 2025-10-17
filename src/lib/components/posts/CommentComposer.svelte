@@ -4,6 +4,7 @@
 	import CitationForm from '../citations/CitationForm.svelte';
 	import Button from '../ui/Button.svelte';
 	import RichTextEditor from '../RichTextEditor.svelte';
+	import CollaboratorInviteButton from '../CollaboratorInviteButton.svelte';
 
 	type Citation = {
 		id: string;
@@ -230,10 +231,7 @@
 							</div>
 
 							{#if showCitationForm && !editingCitation}
-								<CitationForm
-									onAdd={onAddCitation}
-									onCancel={() => (showCitationForm = false)}
-								/>
+								<CitationForm onAdd={onAddCitation} onCancel={() => (showCitationForm = false)} />
 							{/if}
 
 							{#if showCitationEditForm && editingCitation}
@@ -272,10 +270,8 @@
 						<div class="citation-picker-modal">
 							<div class="citation-picker-header">
 								<h4>Insert Citation Reference</h4>
-								<button
-									type="button"
-									class="close-btn"
-									onclick={() => (showCitationPicker = false)}>✕</button
+								<button type="button" class="close-btn" onclick={() => (showCitationPicker = false)}
+									>✕</button
 								>
 							</div>
 							<div class="citation-picker-content">
@@ -440,8 +436,7 @@
 					<div class="good-faith-header">
 						<h4>Comment Analysis</h4>
 						<div class="good-faith-score">
-							<span class="score-value"
-								>{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span
+							<span class="score-value">{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span
 							>
 							<span class="score-label {goodFaithResult.good_faith_label}"
 								>{goodFaithResult.good_faith_label}</span
@@ -521,6 +516,10 @@
 						{/if}
 					{/if}
 				</div>
+
+				{#if draftPostId && user?.id}
+					<CollaboratorInviteButton postId={draftPostId} ownerId={user.id} />
+				{/if}
 
 				{#if replyingToPost}
 					<div class="replying-indicator">

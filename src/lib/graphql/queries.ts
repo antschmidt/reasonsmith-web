@@ -2197,3 +2197,45 @@ export const CHECK_POST_EDIT_PERMISSION = gql`
 		}
 	}
 `;
+
+export const SEARCH_USERS_FOR_COLLABORATION = gql`
+	query SearchUsersForCollaboration($searchTerm: String!) {
+		contributor(
+			where: {
+				_or: [{ display_name: { _ilike: $searchTerm } }, { handle: { _ilike: $searchTerm } }]
+			}
+			limit: 10
+		) {
+			id
+			display_name
+			handle
+			avatar_url
+		}
+	}
+`;
+
+export const ADD_POST_COLLABORATOR = gql`
+	mutation AddPostCollaborator(
+		$postId: uuid!
+		$contributorId: uuid!
+		$role: String!
+		$invitedBy: uuid!
+	) {
+		insert_post_collaborator_one(
+			object: {
+				post_id: $postId
+				contributor_id: $contributorId
+				role: $role
+				invited_by: $invitedBy
+				status: "pending"
+			}
+		) {
+			id
+			post_id
+			contributor_id
+			role
+			status
+			invited_at
+		}
+	}
+`;
