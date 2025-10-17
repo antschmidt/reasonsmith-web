@@ -55,6 +55,7 @@
 		"graphql": "^16.11.0",
 		"heic2any": "^0.0.4",
 		"isomorphic-dompurify": "^2.29.0",
+		"lib0": "^0.2.114",
 		"neo4j-driver": "^6.0.0",
 		"openai": "^6.3.0"
 	}
