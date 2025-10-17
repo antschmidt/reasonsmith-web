@@ -1925,3 +1925,88 @@ export const DELETE_SECURITY_KEY = gql`
 		}
 	}
 `;
+
+// ============================================
+// Subscription and Real-Time Collaboration
+// ============================================
+
+export const GET_SUBSCRIPTION_PLANS = gql`
+	query GetSubscriptionPlans {
+		subscription_plan(order_by: { price_monthly: asc }) {
+			id
+			name
+			price_monthly
+			features
+			display_name
+			description
+		}
+	}
+`;
+
+export const GET_COLLABORATION_SESSION = gql`
+	query GetCollaborationSession($postId: uuid!) {
+		collaboration_session(where: { post_id: { _eq: $postId } }) {
+			id
+			post_id
+			yjs_state
+			last_active_at
+			created_at
+		}
+	}
+`;
+
+export const UPSERT_COLLABORATION_SESSION = gql`
+	mutation UpsertCollaborationSession($postId: uuid!, $yjsState: bytea!) {
+		insert_collaboration_session_one(
+			object: { post_id: $postId, yjs_state: $yjsState, last_active_at: "now()" }
+			on_conflict: {
+				constraint: collaboration_session_post_id_key
+				update_columns: [yjs_state, last_active_at]
+			}
+		) {
+			id
+			post_id
+		}
+	}
+`;
+
+export const UPDATE_CONTRIBUTOR_SUBSCRIPTION = gql`
+	mutation UpdateContributorSubscription(
+		$id: uuid!
+		$realtimeEnabled: Boolean!
+		$expiresAt: timestamptz
+	) {
+		update_contributor_by_pk(
+			pk_columns: { id: $id }
+			_set: { realtime_collaboration_enabled: $realtimeEnabled, subscription_expires_at: $expiresAt }
+		) {
+			id
+			realtime_collaboration_enabled
+			subscription_expires_at
+		}
+	}
+`;
+
+export const CHECK_REALTIME_ACCESS = gql`
+	query CheckRealtimeAccess($postId: uuid!, $userId: uuid!) {
+		post_by_pk(id: $postId) {
+			id
+			status
+			author_id
+			author: contributor {
+				id
+				display_name
+				realtime_collaboration_enabled
+				subscription_expires_at
+			}
+			post_collaborators(where: { contributor_id: { _eq: $userId }, status: { _eq: "accepted" } }) {
+				contributor {
+					id
+					display_name
+					realtime_collaboration_enabled
+					subscription_expires_at
+				}
+			}
+		}
+	}
+`;
