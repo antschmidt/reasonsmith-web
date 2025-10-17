@@ -14,6 +14,9 @@ importers:
       '@apollo/client':
         specifier: ^4.0.7
         version: 4.0.7(graphql@16.11.0)(rxjs@7.8.2)
+      '@lucide/svelte':
+        specifier: ^0.546.0
+        version: 0.546.0(svelte@5.40.0)
       '@nhost/nhost-js':
         specifier: ^4.0.1
         version: 4.0.1
@@ -519,6 +522,11 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@lucide/svelte@0.546.0':
+    resolution: {integrity: sha512-qFVQ+BUJH9Swns7cag3Wik7VqKZfN2hwDZ2VazbZJc8VSqI0kgOZCZ2OVwrvNxdkl8Mw9M9H1ROB0BXh/WH/sA==}
+    peerDependencies:
+      svelte: ^5
 
   '@mapbox/node-pre-gyp@2.0.0':
     resolution: {integrity: sha512-llMXd39jtP0HpQLVI37Bf1m2ADlEb35GYSh1SDSLsBhR+5iCxiNGlT31yqbNtVHygHAtMy6dWFERpU2JgufhPg==}
@@ -2189,6 +2197,10 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@lucide/svelte@0.546.0(svelte@5.40.0)':
+    dependencies:
+      svelte: 5.40.0
 
   '@mapbox/node-pre-gyp@2.0.0':
     dependencies:

@@ -47,6 +47,7 @@
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.65.0",
 		"@apollo/client": "^4.0.7",
+		"@lucide/svelte": "^0.546.0",
 		"@nhost/nhost-js": "^4.0.1",
 		"@tiptap/extension-bubble-menu": "^3.7.0",
 		"@tiptap/extension-link": "^3.7.0",
