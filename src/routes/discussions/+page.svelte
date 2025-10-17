@@ -5,6 +5,7 @@
 	import FeaturedAnalysesCarousel from '$lib/components/FeaturedAnalysesCarousel.svelte';
 	import EditorsDeskCarousel from '$lib/components/EditorsDeskCarousel.svelte';
 	import EditorsDeskPicker from '$lib/components/EditorsDeskPicker.svelte';
+	import SaveButton from '$lib/components/SaveButton.svelte';
 	import {
 		LIST_PUBLISHED_DISCUSSIONS,
 		SEARCH_PUBLISHED_DISCUSSIONS,
@@ -478,24 +479,27 @@
 									{:else}
 										<span>Unknown author</span>
 									{/if}
-									{#if canCurate}
-										<button
-											class="editors-desk-button"
-											onclick={(e) => {
-												e.stopPropagation();
-												openPicker(d);
-											}}
-											title="Add to Editors' Desk"
-											aria-label="Add to Editors' Desk"
-										>
-											<img
-												src="/editors-desk-button-transparent.png"
-												alt="Editors' Desk"
-												width="48"
-												height="48"
-											/>
-										</button>
-									{/if}
+									<div class="card-actions">
+										<SaveButton discussionId={d.id} size="small" />
+										{#if canCurate}
+											<button
+												class="editors-desk-button"
+												onclick={(e) => {
+													e.stopPropagation();
+													openPicker(d);
+												}}
+												title="Add to Editors' Desk"
+												aria-label="Add to Editors' Desk"
+											>
+												<img
+													src="/editors-desk-button-transparent.png"
+													alt="Editors' Desk"
+													width="24"
+													height="24"
+												/>
+											</button>
+										{/if}
+									</div>
 									<time
 										>{new Date(d.created_at).toLocaleDateString('en-US', {
 											year: 'numeric',
@@ -628,24 +632,6 @@
 		outline: none;
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
-	}
-
-	.search-button {
-		padding: 0.85rem 1.8rem;
-		border-radius: 999px;
-		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-		color: var(--color-primary);
-		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
-		font-weight: 600;
-		font-size: 0.95rem;
-		cursor: pointer;
-		transition: all 0.25s ease;
-	}
-
-	.search-button:hover,
-	.search-button:focus {
-		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
-		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
 	}
 
 	.analysis-section {
@@ -810,6 +796,12 @@
 		font-variant-numeric: tabular-nums;
 	}
 
+	.card-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
 	@media (max-width: 640px) {
 		.card-byline {
 			flex-direction: column;
@@ -898,34 +890,23 @@
 	}
 
 	.editors-desk-button {
-		background: linear-gradient(135deg, var(--color-accent), var(--color-secondary));
+		background: transparent;
 		color: white;
 		max-width: 12rem;
 		border: none;
-		padding: 0.65rem 1.25rem;
-		border-radius: var(--border-radius-lg);
+		/*padding: 0.65rem 1.25rem;*/
+		/*border-radius: var(--border-radius-lg);*/
 		font-size: 0.85rem;
 		font-weight: 600;
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
 		cursor: pointer;
-		transition: all 0.25s ease;
-		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-accent) 15%, transparent);
+		/*transition: all 0.25s ease;*/
 	}
 
 	.editors-desk-button:hover {
 		transform: translateY(-2px);
-		box-shadow: 0 8px 20px color-mix(in srgb, var(--color-accent) 25%, transparent);
-		background: linear-gradient(
-			135deg,
-			color-mix(in srgb, var(--color-accent) 90%, black),
-			color-mix(in srgb, var(--color-primary) 90%, black)
-		);
-	}
-
-	.editors-desk-button svg {
-		flex-shrink: 0;
 	}
 
 	.editors-desk-button img {
@@ -938,10 +919,6 @@
 	}
 
 	@media (max-width: 640px) {
-		.editors-desk-button span {
-			display: none;
-		}
-
 		.editors-desk-button {
 			width: 2.5rem;
 			height: 2.5rem;

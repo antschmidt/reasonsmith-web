@@ -1019,7 +1019,24 @@
 			authReady = true;
 		}, 100);
 
-		if (focusReplyOnMount) {
+		// Handle hash navigation to scroll to specific post
+		const hash = window.location.hash;
+		if (hash && hash.startsWith('#post-')) {
+			setTimeout(() => {
+				const targetElement = document.querySelector(hash);
+				if (targetElement) {
+					targetElement.scrollIntoView({
+						behavior: 'smooth',
+						block: 'center'
+					});
+					// Add highlight effect
+					targetElement.classList.add('highlight-flash');
+					setTimeout(() => {
+						targetElement.classList.remove('highlight-flash');
+					}, 2000);
+				}
+			}, 500); // Give time for posts to render
+		} else if (focusReplyOnMount) {
 			const ta = document.querySelector(
 				'textarea[aria-label="New comment"]'
 			) as HTMLTextAreaElement | null;
@@ -3346,5 +3363,23 @@
 		background: color-mix(in srgb, var(--color-error) 10%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
 		border-radius: var(--border-radius-sm);
+	}
+
+	/* Highlight flash animation for scrolled-to posts */
+	:global(.highlight-flash) {
+		animation: highlight-pulse 2s ease-in-out;
+	}
+
+	@keyframes highlight-pulse {
+		0% {
+			box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 50%, transparent);
+		}
+		50% {
+			box-shadow: 0 0 20px 8px color-mix(in srgb, var(--color-accent) 30%, transparent);
+			border-color: var(--color-accent);
+		}
+		100% {
+			box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent);
+		}
 	}
 </style>
