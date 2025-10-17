@@ -5,7 +5,9 @@
 	import {
 		GET_DASHBOARD_DATA,
 		GET_EDITORS_DESK_PICKS,
-		DELETE_EDITORS_DESK_PICK
+		DELETE_EDITORS_DESK_PICK,
+		GET_SAVED_ITEMS,
+		REMOVE_SAVED_ITEM
 	} from '$lib/graphql/queries';
 	import Notifications from './ui/Notifications.svelte';
 	import EditorsDeskCarousel from './EditorsDeskCarousel.svelte';
@@ -40,6 +42,10 @@
 	// Editors' Desk state
 	let editorsDeskPicks = $state<any[]>([]);
 	let editorsDeskLoading = $state(false);
+
+	// Saved Items state
+	let savedItems = $state<any[]>([]);
+	let savedItemsLoading = $state(false);
 
 	async function fetchEditorsDeskPicks() {
 		editorsDeskLoading = true;
@@ -79,6 +85,43 @@
 		} catch (e: any) {
 			console.error('Failed to remove pick:', e);
 			alert("Failed to remove item from Editors' Desk");
+		}
+	}
+
+	async function fetchSavedItems() {
+		if (!user?.id) return;
+
+		savedItemsLoading = true;
+		try {
+			const { data, error: gqlError } = await nhost.graphql.request(GET_SAVED_ITEMS, {
+				contributorId: user.id
+			});
+			if (gqlError) {
+				console.error('Error loading saved items:', gqlError);
+			} else {
+				savedItems = (data as any)?.saved_item ?? [];
+			}
+		} catch (e: any) {
+			console.error('Failed to load saved items:', e);
+		} finally {
+			savedItemsLoading = false;
+		}
+	}
+
+	async function handleRemoveSavedItem(savedItemId: string) {
+		try {
+			const result = await nhost.graphql.request(REMOVE_SAVED_ITEM, {
+				savedItemId
+			});
+
+			if (result.error) {
+				console.error('Error removing saved item:', result.error);
+			} else {
+				// Remove from local state
+				savedItems = savedItems.filter((item) => item.id !== savedItemId);
+			}
+		} catch (e: any) {
+			console.error('Failed to remove saved item:', e);
 		}
 	}
 
@@ -181,6 +224,7 @@
 	$effect(() => {
 		loadData();
 		fetchEditorsDeskPicks();
+		fetchSavedItems();
 	});
 
 	function getDraftHref(d: {
@@ -318,6 +362,107 @@
 				<section class="editors-desk-section">
 					<h3 class="subsection-title">Editors' Desk</h3>
 					<EditorsDeskCarousel items={editorsDeskPicks} {canCurate} onRemove={handleRemovePick} />
+				</section>
+			{/if}
+
+			{#if savedItemsLoading}
+				<section class="saved-items-section">
+					<h3 class="subsection-title">Saved for Later</h3>
+					<p>Loading saved items…</p>
+				</section>
+			{:else if savedItems.length > 0}
+				<section class="saved-items-section">
+					<h3 class="subsection-title">Saved for Later</h3>
+					<div class="saved-items-list">
+						{#each savedItems as item}
+							<article class="saved-item-card">
+								{#if item.discussion}
+									<a href="/discussions/{item.discussion.id}" class="saved-item-link">
+										<div class="saved-item-header">
+											<span class="saved-item-type">Discussion</span>
+											<span class="saved-item-date"
+												>{new Date(item.created_at).toLocaleDateString()}</span
+											>
+										</div>
+										{#if item.discussion.current_version?.[0]}
+											<h4 class="saved-item-title">{item.discussion.current_version[0].title}</h4>
+											{#if item.discussion.current_version[0].description}
+												<p class="saved-item-excerpt">
+													{item.discussion.current_version[0].description.substring(0, 200)}...
+												</p>
+											{/if}
+										{:else}
+											<h4 class="saved-item-title">Discussion</h4>
+										{/if}
+										{#if item.discussion.contributor}
+											<p class="saved-item-author">
+												By {item.discussion.contributor.display_name ||
+													item.discussion.contributor.handle}
+											</p>
+										{/if}
+									</a>
+								{:else if item.post}
+									<a
+										href="/discussions/{item.post.discussion_id}#post-{item.post.id}"
+										class="saved-item-link"
+									>
+										<div class="saved-item-header">
+											<span class="saved-item-type">Comment</span>
+											<span class="saved-item-date"
+												>{new Date(item.created_at).toLocaleDateString()}</span
+											>
+										</div>
+										<p class="saved-item-excerpt">{item.post.content.substring(0, 200)}...</p>
+										{#if item.post.discussion?.current_version?.[0]}
+											<p class="saved-item-context">
+												In: {item.post.discussion.current_version[0].title}
+											</p>
+										{/if}
+										{#if item.post.contributor}
+											<p class="saved-item-author">
+												By {item.post.contributor.display_name || item.post.contributor.handle}
+											</p>
+										{/if}
+									</a>
+								{:else if item.editors_desk_pick}
+									<a
+										href={item.editors_desk_pick.discussion_id
+											? `/discussions/${item.editors_desk_pick.discussion_id}`
+											: '/discussions'}
+										class="saved-item-link"
+									>
+										<div class="saved-item-header">
+											<span class="saved-item-type">Featured</span>
+											<span class="saved-item-date"
+												>{new Date(item.created_at).toLocaleDateString()}</span
+											>
+										</div>
+										<h4 class="saved-item-title">{item.editors_desk_pick.title}</h4>
+										{#if item.editors_desk_pick.excerpt}
+											<p class="saved-item-excerpt">{item.editors_desk_pick.excerpt}</p>
+										{/if}
+										{#if item.editors_desk_pick.editor_note}
+											<p class="saved-item-note">
+												<strong>Editor's Note:</strong>
+												{item.editors_desk_pick.editor_note}
+											</p>
+										{/if}
+									</a>
+								{/if}
+								<button
+									class="saved-item-remove"
+									onclick={(e) => {
+										e.preventDefault();
+										handleRemoveSavedItem(item.id);
+									}}
+									title="Remove from saved items"
+									aria-label="Remove from saved items"
+								>
+									×
+								</button>
+							</article>
+						{/each}
+					</div>
 				</section>
 			{/if}
 
@@ -864,5 +1009,148 @@
 	.editors-desk-section .subsection-title {
 		margin-top: 0;
 		margin-bottom: 1rem;
+	}
+
+	/* Saved Items Section */
+	.saved-items-section {
+		margin-bottom: 2rem;
+		padding: 1.5rem;
+		background: var(--color-surface);
+		border-radius: 8px;
+		border: 1px solid var(--color-border);
+	}
+
+	.saved-items-section .subsection-title {
+		margin-top: 0;
+		margin-bottom: 1rem;
+	}
+
+	.saved-items-list {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.saved-item-card {
+		position: relative;
+		padding: 1.25rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-md);
+		transition: all 0.2s ease;
+	}
+
+	.saved-item-card:hover {
+		border-color: var(--color-accent);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-accent) 10%, transparent);
+	}
+
+	.saved-item-link {
+		display: block;
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.saved-item-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.75rem;
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+	}
+
+	.saved-item-type {
+		padding: 0.25rem 0.625rem;
+		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+		color: var(--color-accent);
+		border-radius: var(--border-radius-sm);
+		font-weight: 600;
+		text-transform: uppercase;
+		font-size: 0.75rem;
+		letter-spacing: 0.05em;
+	}
+
+	.saved-item-date {
+		color: var(--color-text-secondary);
+	}
+
+	.saved-item-title {
+		margin: 0 0 0.5rem 0;
+		font-size: 1.125rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		line-height: 1.4;
+	}
+
+	.saved-item-excerpt {
+		margin: 0.5rem 0;
+		color: var(--color-text-secondary);
+		line-height: 1.6;
+		overflow: hidden;
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		-webkit-box-orient: vertical;
+	}
+
+	.saved-item-context {
+		margin: 0.5rem 0;
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+		font-style: italic;
+	}
+
+	.saved-item-author {
+		margin: 0.5rem 0 0 0;
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+	}
+
+	.saved-item-note {
+		margin: 0.75rem 0 0 0;
+		padding: 0.75rem;
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+		border-left: 3px solid var(--color-primary);
+		border-radius: var(--border-radius-sm);
+		font-size: 0.9rem;
+		line-height: 1.6;
+	}
+
+	.saved-item-remove {
+		position: absolute;
+		top: 0.75rem;
+		right: 0.75rem;
+		width: 1.75rem;
+		height: 1.75rem;
+		border-radius: var(--border-radius-md);
+		background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+		backdrop-filter: blur(20px);
+		color: var(--color-text-secondary);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		font-size: 1.25rem;
+		font-weight: 300;
+		line-height: 1;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+		opacity: 0.6;
+	}
+
+	.saved-item-card:hover .saved-item-remove {
+		opacity: 1;
+	}
+
+	.saved-item-remove:hover {
+		background: color-mix(in srgb, #ef4444 90%, transparent);
+		color: white;
+		border-color: #ef4444;
+		transform: translateY(-2px);
+		box-shadow: 0 8px 20px color-mix(in srgb, #ef4444 25%, transparent);
+	}
+
+	.saved-item-remove:active {
+		transform: translateY(0);
 	}
 </style>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { scale } from 'svelte/transition';
 	import GoodFaithBadge from '../ui/GoodFaithBadge.svelte';
+	import SaveButton from '../SaveButton.svelte';
 
 	type Contributor = {
 		id: string;
@@ -138,9 +139,13 @@
 		<span class="spacer"></span>
 
 		<!-- Action Buttons -->
+		<SaveButton postId={post.id} size="small" />
 		{#if onReply}
-			<button type="button" class="reply-post-btn" onclick={() => onReply?.(post)} title="Reply to this comment"
-				>↳</button
+			<button
+				type="button"
+				class="reply-post-btn"
+				onclick={() => onReply?.(post)}
+				title="Reply to this comment">↳</button
 			>
 		{/if}
 
@@ -291,11 +296,14 @@
 						</div>
 						{#if historicalVersion.created_at}
 							<div class="context-meta">
-								Version created: {new Date(historicalVersion.created_at).toLocaleDateString('en-US', {
-									year: 'numeric',
-									month: 'long',
-									day: 'numeric'
-								})}
+								Version created: {new Date(historicalVersion.created_at).toLocaleDateString(
+									'en-US',
+									{
+										year: 'numeric',
+										month: 'long',
+										day: 'numeric'
+									}
+								)}
 							</div>
 						{/if}
 					</div>

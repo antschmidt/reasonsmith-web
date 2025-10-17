@@ -6,6 +6,7 @@
 	import { nhost } from '$lib/nhostClient';
 	import DOMPurify from 'isomorphic-dompurify';
 	import { getCuratorName, type EditorsDeskPick } from '$lib/utils/editorsDeskUtils';
+	import SaveButton from './SaveButton.svelte';
 
 	const props = $props<{
 		items?: EditorsDeskPick[];
@@ -90,20 +91,23 @@
 		<div class="carousel-viewport" bind:this={viewport} role="list" onscroll={updateScrollState}>
 			{#each items as item (item.id)}
 				<div role="listitem" class="carousel-card">
-					{#if canCurate}
-						<button
-							class="remove-button"
-							onclick={(e) => {
-								e.stopPropagation();
-								onRemove(item.id);
-							}}
-							title="Remove from Editors' Desk"
-							aria-label="Remove from Editors' Desk"
-							type="button"
-						>
-							×
-						</button>
-					{/if}
+					<div class="card-actions-top">
+						<SaveButton editorsDeskPickId={item.id} size="small" />
+						{#if canCurate}
+							<button
+								class="remove-button"
+								onclick={(e) => {
+									e.stopPropagation();
+									onRemove(item.id);
+								}}
+								title="Remove from Editors' Desk"
+								aria-label="Remove from Editors' Desk"
+								type="button"
+							>
+								×
+							</button>
+						{/if}
+					</div>
 					<button class="card-link" onclick={() => handleCardClick(item)} type="button">
 						<header class="card-header">
 							<div class="meta-tags">
@@ -199,10 +203,20 @@
 		background: color-mix(in srgb, var(--color-surface) 95%, transparent);
 	}
 
-	.remove-button {
+	.card-actions-top {
 		position: absolute;
 		top: 0.75rem;
 		right: 0.75rem;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		z-index: 10;
+	}
+
+	.remove-button {
+		position: relative;
+		top: 0;
+		right: 0;
 		width: 1.75rem;
 		height: 1.75rem;
 		border-radius: var(--border-radius-md);
