@@ -2239,3 +2239,164 @@ export const ADD_POST_COLLABORATOR = gql`
 		}
 	}
 `;
+
+// ============================================
+// Edit Lock System - Turn-based Collaboration
+// ============================================
+
+// Note: Using direct mutations instead of PostgreSQL functions due to Hasura tracking limitations
+// The business logic is handled client-side with optimistic updates
+
+export const ACQUIRE_EDIT_LOCK = gql`
+	mutation AcquireEditLock($postId: uuid!, $userId: uuid!, $now: timestamptz!) {
+		# Update post to set current editor
+		update_post_by_pk(
+			pk_columns: { id: $postId }
+			_set: { current_editor_id: $userId, edit_locked_at: $now }
+		) {
+			id
+			current_editor_id
+			edit_locked_at
+			collaboration_enabled
+		}
+		# Update collaborator status (use alias to avoid conflict)
+		set_collaborator_lock: update_post_collaborator(
+			where: { post_id: { _eq: $postId }, contributor_id: { _eq: $userId } }
+			_set: { has_edit_lock: true, edit_lock_acquired_at: $now }
+		) {
+			affected_rows
+		}
+		# Release other collaborators' locks (use alias to avoid conflict)
+		release_other_locks: update_post_collaborator(
+			where: {
+				post_id: { _eq: $postId }
+				contributor_id: { _neq: $userId }
+				has_edit_lock: { _eq: true }
+			}
+			_set: { has_edit_lock: false, edit_lock_acquired_at: null }
+		) {
+			affected_rows
+		}
+	}
+`;
+
+export const RELEASE_EDIT_LOCK = gql`
+	mutation ReleaseEditLock($postId: uuid!, $userId: uuid!) {
+		# Clear current editor
+		update_post_by_pk(
+			pk_columns: { id: $postId }
+			_set: { current_editor_id: null, edit_locked_at: null }
+		) {
+			id
+			current_editor_id
+			edit_locked_at
+			collaboration_enabled
+		}
+		# Release collaborator's lock
+		update_post_collaborator(
+			where: { post_id: { _eq: $postId }, contributor_id: { _eq: $userId } }
+			_set: { has_edit_lock: false, edit_lock_acquired_at: null }
+		) {
+			affected_rows
+		}
+	}
+`;
+
+export const TOGGLE_COLLABORATION = gql`
+	mutation ToggleCollaboration($postId: uuid!, $enabled: Boolean!) {
+		# Toggle collaboration and release all locks
+		update_post_by_pk(
+			pk_columns: { id: $postId }
+			_set: { collaboration_enabled: $enabled, current_editor_id: null, edit_locked_at: null }
+		) {
+			id
+			collaboration_enabled
+			current_editor_id
+			edit_locked_at
+		}
+		# Release all collaborator locks
+		update_post_collaborator(
+			where: { post_id: { _eq: $postId }, has_edit_lock: { _eq: true } }
+			_set: { has_edit_lock: false, edit_lock_acquired_at: null }
+		) {
+			affected_rows
+		}
+	}
+`;
+
+export const GET_EDIT_LOCK_STATUS = gql`
+	query GetEditLockStatus($postId: uuid!) {
+		post_by_pk(id: $postId) {
+			id
+			current_editor_id
+			edit_locked_at
+			collaboration_enabled
+			author_id
+			author: contributor {
+				id
+				display_name
+				handle
+				avatar_url
+			}
+			current_editor: contributorByCurrentEditorId {
+				id
+				display_name
+				handle
+				avatar_url
+			}
+			post_collaborators(where: { status: { _eq: "accepted" } }) {
+				id
+				has_edit_lock
+				edit_lock_acquired_at
+				contributor {
+					id
+					display_name
+					handle
+					avatar_url
+				}
+			}
+		}
+	}
+`;
+
+// Subscription for real-time draft content updates
+export const SUBSCRIBE_TO_DRAFT_UPDATES = gql`
+	subscription SubscribeToDraftUpdates($postId: uuid!) {
+		post_by_pk(id: $postId) {
+			id
+			draft_content
+			updated_at
+			current_editor_id
+			edit_locked_at
+		}
+	}
+`;
+
+// Subscription for real-time edit lock status changes
+export const SUBSCRIBE_TO_EDIT_LOCK_STATUS = gql`
+	subscription SubscribeToEditLockStatus($postId: uuid!) {
+		post_by_pk(id: $postId) {
+			id
+			current_editor_id
+			edit_locked_at
+			collaboration_enabled
+			current_editor: contributorByCurrentEditorId {
+				id
+				display_name
+				handle
+				avatar_url
+			}
+			post_collaborators(where: { status: { _eq: "accepted" } }) {
+				id
+				has_edit_lock
+				edit_lock_acquired_at
+				contributor {
+					id
+					display_name
+					handle
+					avatar_url
+				}
+			}
+		}
+	}
+`;

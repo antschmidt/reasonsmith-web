@@ -5,10 +5,6 @@
 	import Link from '@tiptap/extension-link';
 	import Underline from '@tiptap/extension-underline';
 	import Placeholder from '@tiptap/extension-placeholder';
-	import Collaboration from '@tiptap/extension-collaboration';
-	import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
-	import * as Y from 'yjs';
-	import { WebsocketProvider } from 'y-websocket';
 
 	// Props
 	let {
@@ -17,29 +13,18 @@
 		onUpdate = (html: string) => {},
 		showToolbar = true,
 		minHeight = '200px',
-		// Collaboration props
-		enableCollaboration = false,
-		collaborationRoom = undefined,
-		collaborationUser = undefined,
-		onCollaborationError = undefined
+		readonly = false
 	} = $props<{
 		content?: string;
 		placeholder?: string;
 		onUpdate?: (html: string) => void;
 		showToolbar?: boolean;
 		minHeight?: string;
-		// Collaboration
-		enableCollaboration?: boolean;
-		collaborationRoom?: string;
-		collaborationUser?: { name: string; color: string };
-		onCollaborationError?: (error: string) => void;
+		readonly?: boolean;
 	}>();
 
 	let element: HTMLDivElement;
 	let editor: Editor | null = null;
-	let yDoc: Y.Doc | null = null;
-	let provider: WebsocketProvider | null = null;
-	let isCollaborationActive = $state(false);
 
 	// Toolbar state
 	let isBold = $state(false);
@@ -73,74 +58,40 @@
 					: 0;
 	}
 
+	// Watch for readonly changes and update editor
+	$effect(() => {
+		if (editor) {
+			editor.setEditable(!readonly);
+		}
+	});
+
+	// Watch for external content changes and update editor
+	$effect(() => {
+		if (editor && content !== editor.getHTML()) {
+			editor.commands.setContent(content);
+		}
+	});
+
 	onMount(() => {
-		// Setup collaboration if enabled
-		if (enableCollaboration && collaborationRoom && collaborationUser) {
-			try {
-				yDoc = new Y.Doc();
-
-				// Get WebSocket URL from environment or use default
-				const wsUrl =
-					import.meta.env.PUBLIC_COLLABORATION_WS_URL ||
-					'wss://functions.reasonsmith.com/collaboration-websocket';
-
-				provider = new WebsocketProvider(wsUrl, collaborationRoom, yDoc, {
-					params: {
-						userName: collaborationUser.name,
-						userColor: collaborationUser.color
-					}
-				});
-
-				provider.on('status', (event: { status: string }) => {
-					isCollaborationActive = event.status === 'connected';
-				});
-
-				provider.on('connection-error', (error: any) => {
-					console.error('Collaboration connection error:', error);
-					onCollaborationError?.('Failed to connect to collaboration server');
-				});
-			} catch (error) {
-				console.error('Error setting up collaboration:', error);
-				onCollaborationError?.('Failed to initialize collaboration');
-			}
-		}
-
-		// Build extensions list
-		const extensions: any[] = [
-			StarterKit.configure({
-				heading: {
-					levels: [2, 3, 4] // Only h2-h4 for better hierarchy
-				},
-				// Disable history when collaboration is enabled (Yjs handles this)
-				history: !enableCollaboration
-			}),
-			Link.configure({
-				openOnClick: false,
-				HTMLAttributes: {
-					class: 'editor-link'
-				}
-			}),
-			Underline,
-			Placeholder.configure({ placeholder })
-		];
-
-		// Add collaboration extensions if enabled
-		if (enableCollaboration && yDoc) {
-			extensions.push(
-				Collaboration.configure({
-					document: yDoc
-				}),
-				CollaborationCursor.configure({
-					provider: provider!,
-					user: collaborationUser
-				})
-			);
-		}
-
 		editor = new Editor({
 			element,
-			extensions,
-			content: enableCollaboration ? undefined : content, // Don't set initial content for collaboration
+			extensions: [
+				StarterKit.configure({
+					heading: {
+						levels: [2, 3, 4] // Only h2-h4 for better hierarchy
+					}
+				}),
+				Link.configure({
+					openOnClick: false,
+					HTMLAttributes: {
+						class: 'editor-link'
+					}
+				}),
+				Underline,
+				Placeholder.configure({ placeholder })
+			],
+			content,
+			editable: !readonly,
 			onTransaction: () => {
 				updateToolbarState();
 			},
@@ -161,8 +112,6 @@
 
 	onDestroy(() => {
 		editor?.destroy();
-		provider?.destroy();
-		yDoc?.destroy();
 	});
 
 	// Toolbar actions
@@ -231,15 +180,8 @@
 	}
 </script>
 
-<div class="rich-text-editor">
-	{#if enableCollaboration && isCollaborationActive}
-		<div class="collaboration-status">
-			<span class="status-indicator live"></span>
-			<span class="status-text">Live collaboration active</span>
-		</div>
-	{/if}
-
-	{#if showToolbar}
+<div class="rich-text-editor" class:readonly>
+	{#if showToolbar && !readonly}
 		<div class="editor-toolbar">
 			<div class="toolbar-group">
 				<button
@@ -398,42 +340,9 @@
 		overflow: hidden;
 	}
 
-	.collaboration-status {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 0.75rem;
-		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-		border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
-		font-size: 0.875rem;
-		color: var(--color-primary);
-		font-weight: 500;
-	}
-
-	.status-indicator {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: var(--color-text-secondary);
-	}
-
-	.status-indicator.live {
-		background: #10b981;
-		animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-	}
-
-	@keyframes pulse {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.5;
-		}
-	}
-
-	.status-text {
-		flex: 1;
+	.rich-text-editor.readonly {
+		border-color: var(--color-border);
+		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
 	}
 
 	.editor-toolbar {
@@ -494,6 +403,11 @@
 		padding: 1rem;
 		outline: none;
 		min-height: inherit;
+	}
+
+	:global(.rich-text-editor.readonly .rich-text-editor-content) {
+		cursor: default;
+		opacity: 0.9;
 	}
 
 	/* Editor content styles */

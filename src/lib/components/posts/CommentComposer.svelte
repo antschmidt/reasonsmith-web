@@ -5,8 +5,18 @@
 	import Button from '../ui/Button.svelte';
 	import RichTextEditor from '../RichTextEditor.svelte';
 	import CollaboratorInviteButton from '../CollaboratorInviteButton.svelte';
+	import CollaborationControls from '../CollaborationControls.svelte';
 	import { nhost } from '$lib/nhostClient';
-	import { CHECK_REALTIME_ACCESS, GET_POST_COLLABORATORS } from '$lib/graphql/queries';
+	import {
+		GET_EDIT_LOCK_STATUS,
+		ACQUIRE_EDIT_LOCK,
+		RELEASE_EDIT_LOCK,
+		TOGGLE_COLLABORATION,
+		SUBSCRIBE_TO_DRAFT_UPDATES,
+		SUBSCRIBE_TO_EDIT_LOCK_STATUS
+	} from '$lib/graphql/queries';
+	import { apolloClient } from '$lib/apolloClient';
+	import type { ObservableSubscription } from '@apollo/client';
 
 	type Citation = {
 		id: string;
@@ -161,97 +171,224 @@
 		assessContentQuality: (content: string, title?: string) => { score: number; issues: string[] };
 	}>();
 
-	// Collaboration state
-	let enableRealtimeCollaboration = $state(false);
-	let collaborationRoom = $state('');
-	let collaborationUser = $state<{ name: string; color: string } | undefined>(undefined);
-	let collaborationError = $state<string | null>(null);
+	// Edit Lock Collaboration State
+	let editLockStatus = $state<any>(null);
+	let isLoadingLock = $state(false);
+	let lockError = $state<string | null>(null);
+	let draftUpdateSubscription: ObservableSubscription | null = null;
+	let lockStatusSubscription: ObservableSubscription | null = null;
 
-	// Generate a consistent color for a user based on their ID
-	function generateUserColor(userId: string): string {
-		const colors = [
-			'#3b82f6', // blue
-			'#8b5cf6', // purple
-			'#ec4899', // pink
-			'#f59e0b', // amber
-			'#10b981', // green
-			'#06b6d4', // cyan
-			'#f97316', // orange
-			'#6366f1' // indigo
-		];
+	// Derived state
+	const isAuthor = $derived(draftPostId && user?.id && editLockStatus?.author_id === user.id);
 
-		// Simple hash function to pick a color based on user ID
-		let hash = 0;
-		for (let i = 0; i < userId.length; i++) {
-			hash = userId.charCodeAt(i) + ((hash << 5) - hash);
-		}
-		return colors[Math.abs(hash) % colors.length];
-	}
+	const canEdit = $derived(
+		!editLockStatus ||
+			isAuthor ||
+			(editLockStatus.current_editor_id === user?.id && editLockStatus.collaboration_enabled)
+	);
 
-	// Check collaboration conditions when draft exists
+	const isReadOnly = $derived(
+		editLockStatus &&
+			!isAuthor &&
+			editLockStatus.current_editor_id !== user?.id &&
+			editLockStatus.collaboration_enabled
+	);
+
+	// Load edit lock status when draft is created
 	$effect(() => {
-		async function checkCollaboration() {
+		if (typeof window === 'undefined') return;
+
+		async function loadEditLockStatus() {
 			if (!draftPostId || !user?.id) {
-				enableRealtimeCollaboration = false;
+				editLockStatus = null;
 				return;
 			}
 
 			try {
-				// Check if author and all collaborators have realtime enabled
-				const result = await nhost.graphql.request(CHECK_REALTIME_ACCESS, {
-					postId: draftPostId,
-					userId: user.id
+				const result = await nhost.graphql.request(GET_EDIT_LOCK_STATUS, {
+					postId: draftPostId
 				});
 
 				if (result.error) {
-					console.error('Error checking realtime access:', result.error);
-					enableRealtimeCollaboration = false;
+					console.error('Error loading edit lock status:', result.error);
 					return;
 				}
 
-				const post = result.data?.post_by_pk;
-				if (!post) {
-					enableRealtimeCollaboration = false;
-					return;
-				}
-
-				// Check if author has realtime enabled
-				const authorHasRealtime = post.author?.realtime_collaboration_enabled;
-
-				// Check if subscription is valid (not expired)
-				const authorSubValid =
-					!post.author?.subscription_expires_at ||
-					new Date(post.author.subscription_expires_at) > new Date();
-
-				// Check all accepted collaborators
-				const collaborators = post.post_collaborators || [];
-				const allCollaboratorsHaveRealtime = collaborators.every((collab: any) => {
-					const hasRealtime = collab.contributor?.realtime_collaboration_enabled;
-					const subValid =
-						!collab.contributor?.subscription_expires_at ||
-						new Date(collab.contributor.subscription_expires_at) > new Date();
-					return hasRealtime && subValid;
-				});
-
-				// Enable collaboration if author and all collaborators have it
-				if (authorHasRealtime && authorSubValid && allCollaboratorsHaveRealtime) {
-					enableRealtimeCollaboration = true;
-					collaborationRoom = draftPostId;
-					collaborationUser = {
-						name: user.displayName || user.email?.split('@')[0] || 'Anonymous',
-						color: generateUserColor(user.id)
-					};
-				} else {
-					enableRealtimeCollaboration = false;
-				}
+				editLockStatus = result.data?.post_by_pk;
 			} catch (error) {
-				console.error('Error checking collaboration:', error);
-				enableRealtimeCollaboration = false;
+				console.error('Error loading edit lock status:', error);
 			}
 		}
 
-		checkCollaboration();
+		loadEditLockStatus();
 	});
+
+	// Subscribe to draft updates for real-time content changes
+	$effect(() => {
+		if (typeof window === 'undefined' || !draftPostId) return;
+
+		// Clean up previous subscription
+		if (draftUpdateSubscription) {
+			draftUpdateSubscription.unsubscribe();
+		}
+
+		draftUpdateSubscription = apolloClient
+			.subscribe({
+				query: SUBSCRIBE_TO_DRAFT_UPDATES,
+				variables: { postId: draftPostId }
+			})
+			.subscribe({
+				next: (result: any) => {
+					if (result.data?.post_by_pk) {
+						const updatedPost = result.data.post_by_pk;
+
+						// Only update content if someone else is editing
+						if (updatedPost.current_editor_id && updatedPost.current_editor_id !== user?.id) {
+							comment = updatedPost.draft_content || '';
+							console.log('Draft updated by another user');
+						}
+					}
+				},
+				error: (error: any) => {
+					console.error('Draft update subscription error:', error);
+				}
+			});
+
+		return () => {
+			if (draftUpdateSubscription) {
+				draftUpdateSubscription.unsubscribe();
+			}
+		};
+	});
+
+	// Subscribe to edit lock status changes
+	$effect(() => {
+		if (typeof window === 'undefined' || !draftPostId) return;
+
+		// Clean up previous subscription
+		if (lockStatusSubscription) {
+			lockStatusSubscription.unsubscribe();
+		}
+
+		lockStatusSubscription = apolloClient
+			.subscribe({
+				query: SUBSCRIBE_TO_EDIT_LOCK_STATUS,
+				variables: { postId: draftPostId }
+			})
+			.subscribe({
+				next: (result: any) => {
+					console.log('[Subscription] Edit lock status update:', result.data?.post_by_pk);
+					if (result.data?.post_by_pk) {
+						// Force reactivity by creating a new object
+						editLockStatus = { ...result.data.post_by_pk };
+						console.log('[Subscription] Updated editLockStatus:', editLockStatus);
+					}
+				},
+				error: (error: any) => {
+					console.error('Lock status subscription error:', error);
+				}
+			});
+
+		return () => {
+			if (lockStatusSubscription) {
+				lockStatusSubscription.unsubscribe();
+			}
+		};
+	});
+
+	// Handle acquiring edit lock
+	async function handleAcquireEditLock() {
+		if (!draftPostId || !user?.id) return;
+
+		isLoadingLock = true;
+		lockError = null;
+
+		try {
+			const result = await nhost.graphql.request(ACQUIRE_EDIT_LOCK, {
+				postId: draftPostId,
+				userId: user.id,
+				now: new Date().toISOString()
+			});
+
+			if (result.error) {
+				console.error('Error acquiring edit lock:', result.error);
+				lockError = 'Failed to acquire edit control';
+				return;
+			}
+
+			// Check if mutation succeeded (direct mutation returns post object, not success/error)
+			if (!result.data?.update_post_by_pk) {
+				lockError = 'Failed to acquire edit control';
+			}
+		} catch (error) {
+			console.error('Error acquiring edit lock:', error);
+			lockError = 'Failed to acquire edit control';
+		} finally {
+			isLoadingLock = false;
+		}
+	}
+
+	// Handle releasing edit lock
+	async function handleReleaseEditLock() {
+		if (!draftPostId || !user?.id) return;
+
+		isLoadingLock = true;
+		lockError = null;
+
+		try {
+			const result = await nhost.graphql.request(RELEASE_EDIT_LOCK, {
+				postId: draftPostId,
+				userId: user.id
+			});
+
+			if (result.error) {
+				console.error('Error releasing edit lock:', result.error);
+				lockError = 'Failed to release edit control';
+				return;
+			}
+
+			// Check if mutation succeeded
+			if (!result.data?.update_post_by_pk) {
+				lockError = 'Failed to release edit control';
+			}
+		} catch (error) {
+			console.error('Error releasing edit lock:', error);
+			lockError = 'Failed to release edit control';
+		} finally {
+			isLoadingLock = false;
+		}
+	}
+
+	// Handle toggling collaboration (author only)
+	async function handleToggleCollaboration(enabled: boolean) {
+		if (!draftPostId || !user?.id || !isAuthor) return;
+
+		isLoadingLock = true;
+		lockError = null;
+
+		try {
+			const result = await nhost.graphql.request(TOGGLE_COLLABORATION, {
+				postId: draftPostId,
+				enabled
+			});
+
+			if (result.error) {
+				console.error('Error toggling collaboration:', result.error);
+				lockError = 'Failed to toggle collaboration';
+				return;
+			}
+
+			// Check if mutation succeeded
+			if (!result.data?.update_post_by_pk) {
+				lockError = 'Failed to toggle collaboration';
+			}
+		} catch (error) {
+			console.error('Error toggling collaboration:', error);
+			lockError = 'Failed to toggle collaboration';
+		} finally {
+			isLoadingLock = false;
+		}
+	}
 </script>
 
 <section class="add-comment">
@@ -340,23 +477,54 @@
 				</div>
 			{/if}
 
-			<!-- Rich Text Editor -->
-			<RichTextEditor
-				bind:content={comment}
-				onUpdate={(html) => {
-					comment = html;
-					if (onInput) onInput();
-				}}
-				placeholder="Add your comment... (Style will be automatically determined by length)"
-				minHeight="300px"
-				enableCollaboration={enableRealtimeCollaboration}
-				{collaborationRoom}
-				{collaborationUser}
-				onCollaborationError={(error) => {
-					collaborationError = error;
-					console.error('Collaboration error:', error);
-				}}
-			/>
+			<!-- Collaboration Controls -->
+			{#if draftPostId && editLockStatus && user?.id}
+				<CollaborationControls
+					lockStatus={editLockStatus}
+					currentUserId={user.id}
+					{isAuthor}
+					onAcquireLock={handleAcquireEditLock}
+					onReleaseLock={handleReleaseEditLock}
+					onToggleCollaboration={handleToggleCollaboration}
+					isLoading={isLoadingLock}
+				/>
+			{/if}
+
+			{#if lockError}
+				<div class="lock-error">
+					<p>{lockError}</p>
+				</div>
+			{/if}
+
+			{#if canEdit}
+				<!-- Rich Text Editor (only for active editor) -->
+				<RichTextEditor
+					bind:content={comment}
+					onUpdate={(html) => {
+						comment = html;
+						// Create a synthetic event for onInput handler
+						if (onInput) {
+							const syntheticEvent = {
+								target: { value: html }
+							} as Event;
+							onInput(syntheticEvent);
+						}
+					}}
+					placeholder="Add your comment... (Style will be automatically determined by length)"
+					minHeight="300px"
+					readonly={false}
+				/>
+			{:else if isReadOnly}
+				<!-- Read-only preview for viewers -->
+				<div class="draft-preview">
+					<div class="preview-label">
+						<span>Draft Preview (Read-only)</span>
+					</div>
+					<div class="preview-content">
+						{@html comment}
+					</div>
+				</div>
+			{/if}
 
 			{#if showAdvancedFeatures}
 				<!-- Insert Citation Reference Button -->
@@ -1175,6 +1343,20 @@
 		text-decoration: underline;
 	}
 
+	.lock-error {
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		border-radius: var(--border-radius-md);
+		padding: 0.75rem 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.lock-error p {
+		color: #dc2626;
+		font-size: 0.875rem;
+		margin: 0;
+	}
+
 	/* Comment Actions */
 	.comment-actions {
 		display: flex;
@@ -1277,5 +1459,52 @@
 	.btn-primary:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
+	}
+
+	/* Draft Preview Styles */
+	.draft-preview {
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		background: var(--color-background-secondary);
+		overflow: hidden;
+	}
+
+	.preview-label {
+		padding: 0.5rem 1rem;
+		background: var(--color-background-tertiary);
+		border-bottom: 1px solid var(--color-border);
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.preview-content {
+		padding: 1.5rem;
+		min-height: 300px;
+		color: var(--color-text);
+		line-height: 1.6;
+	}
+
+	.preview-content :global(p) {
+		margin-bottom: 1em;
+	}
+
+	.preview-content :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.preview-content :global(strong) {
+		font-weight: 600;
+	}
+
+	.preview-content :global(em) {
+		font-style: italic;
+	}
+
+	.preview-content :global(a) {
+		color: var(--color-primary);
+		text-decoration: underline;
 	}
 </style>
