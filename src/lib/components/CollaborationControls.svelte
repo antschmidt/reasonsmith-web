@@ -1,12 +1,21 @@
 <script lang="ts">
 	import { Users, Lock, LockOpen, AlertCircle } from '@lucide/svelte';
 	import Button from './ui/Button.svelte';
+	import CollaboratorContextMenu from './CollaboratorContextMenu.svelte';
 
 	type Collaborator = {
 		id: string;
 		display_name: string;
 		handle: string | null;
 		avatar_url: string | null;
+	};
+
+	type PostCollaborator = {
+		id: string;
+		has_edit_lock: boolean;
+		edit_lock_acquired_at: string | null;
+		role: 'viewer' | 'editor' | 'co-author';
+		contributor: Collaborator;
 	};
 
 	type EditLockStatus = {
@@ -16,31 +25,33 @@
 		author_id: string;
 		author: Collaborator;
 		current_editor: Collaborator | null;
-		post_collaborators: Array<{
-			id: string;
-			has_edit_lock: boolean;
-			edit_lock_acquired_at: string | null;
-			contributor: Collaborator;
-		}>;
+		post_collaborators: Array<PostCollaborator>;
 	};
 
 	let {
 		lockStatus,
 		currentUserId,
 		isAuthor,
+		postId,
 		onAcquireLock,
 		onReleaseLock,
 		onToggleCollaboration,
+		onUpdate,
 		isLoading = false
 	} = $props<{
 		lockStatus: EditLockStatus;
 		currentUserId: string;
 		isAuthor: boolean;
+		postId: string;
 		onAcquireLock: () => void;
 		onReleaseLock: () => void;
 		onToggleCollaboration: (enabled: boolean) => void;
+		onUpdate: () => void;
 		isLoading?: boolean;
 	}>();
+
+	let selectedCollaborator = $state<PostCollaborator | null>(null);
+	let showContextMenu = $state(false);
 
 	// Derived state
 	const currentlyEditing = $derived(
@@ -62,8 +73,43 @@
 
 	const canReleaseControl = $derived(isCurrentUserEditing && !isAuthor);
 
-	// Get list of active collaborators (for presence display)
-	const activeCollaborators = $derived(lockStatus.post_collaborators.map((pc) => pc.contributor));
+	// Check if current user is a co-author
+	const isCoAuthor = $derived(
+		lockStatus.post_collaborators.some(
+			(pc) => pc.contributor.id === currentUserId && pc.role === 'co-author'
+		)
+	);
+
+	// Get list of active collaborators including the author
+	const activeCollaborators = $derived.by(() => {
+		// Only include author if author data is available
+		if (!lockStatus.author) {
+			return lockStatus.post_collaborators;
+		}
+
+		// Create a pseudo-collaborator entry for the author
+		const authorAsCollaborator: PostCollaborator = {
+			id: 'author-' + lockStatus.author_id, // Unique ID for author
+			has_edit_lock: lockStatus.current_editor_id === null && lockStatus.edit_locked_at !== null,
+			edit_lock_acquired_at:
+				lockStatus.current_editor_id === null ? lockStatus.edit_locked_at : null,
+			role: 'editor', // Placeholder, we'll check if it's the author in the template
+			contributor: lockStatus.author
+		};
+
+		// Combine author with other collaborators
+		return [authorAsCollaborator, ...lockStatus.post_collaborators];
+	});
+
+	function handleCollaboratorClick(collaborator: PostCollaborator) {
+		selectedCollaborator = collaborator;
+		showContextMenu = true;
+	}
+
+	function handleCloseContextMenu() {
+		showContextMenu = false;
+		selectedCollaborator = null;
+	}
 
 	// Calculate how long the lock has been held
 	function getLockDuration(lockedAt: string | null): string {
@@ -159,13 +205,43 @@
 			</div>
 			<div class="collaborators-avatars">
 				{#each activeCollaborators as collaborator}
-					<div class="collaborator-avatar" title={collaborator.display_name}>
-						{#if collaborator.avatar_url}
-							<img src={collaborator.avatar_url} alt={collaborator.display_name} />
+					<div
+						class="collaborator-avatar"
+						class:author={collaborator.contributor.id === lockStatus.author_id}
+						class:co-author={collaborator.role === 'co-author'}
+						class:clickable={true}
+						title="{collaborator.contributor.display_name} ({collaborator.contributor.id ===
+						lockStatus.author_id
+							? 'Author'
+							: collaborator.role})"
+						onclick={() => handleCollaboratorClick(collaborator)}
+						role="button"
+						tabindex="0"
+						onkeydown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault();
+								handleCollaboratorClick(collaborator);
+							}
+						}}
+					>
+						{#if collaborator.contributor.avatar_url}
+							<img
+								src={collaborator.contributor.avatar_url}
+								alt={collaborator.contributor.display_name}
+							/>
 						{:else}
 							<span class="avatar-initials">
-								{collaborator.display_name?.charAt(0).toUpperCase() || '?'}
+								{collaborator.contributor.display_name?.charAt(0).toUpperCase() || '?'}
 							</span>
+						{/if}
+						{#if collaborator.contributor.id === lockStatus.author_id}
+							<span class="role-badge author-badge" title="Author">👑</span>
+						{:else if collaborator.role === 'co-author'}
+							<span class="role-badge co-author-badge" title="Co-Author">★</span>
+						{:else if collaborator.role === 'editor'}
+							<span class="role-badge editor-badge" title="Editor">✎</span>
+						{:else if collaborator.role === 'viewer'}
+							<span class="role-badge viewer-badge" title="Viewer">👁</span>
 						{/if}
 					</div>
 				{/each}
@@ -173,6 +249,20 @@
 		</div>
 	{/if}
 </div>
+
+{#if selectedCollaborator && showContextMenu}
+	<CollaboratorContextMenu
+		collaborator={selectedCollaborator}
+		{currentUserId}
+		{isAuthor}
+		{isCoAuthor}
+		authorId={lockStatus.author_id}
+		{postId}
+		isOpen={showContextMenu}
+		onClose={handleCloseContextMenu}
+		{onUpdate}
+	/>
+{/if}
 
 <style>
 	.collaboration-controls {
@@ -286,6 +376,7 @@
 	}
 
 	.collaborator-avatar {
+		position: relative;
 		width: 2rem;
 		height: 2rem;
 		border-radius: 50%;
@@ -295,6 +386,31 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		transition: all 0.2s ease;
+	}
+
+	.collaborator-avatar.clickable {
+		cursor: pointer;
+	}
+
+	.collaborator-avatar.clickable:hover {
+		transform: scale(1.1);
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	}
+
+	.collaborator-avatar.clickable:focus {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 2px;
+	}
+
+	.collaborator-avatar.author {
+		border-color: var(--color-primary);
+		border-width: 3px;
+	}
+
+	.collaborator-avatar.co-author {
+		border-color: gold;
+		border-width: 3px;
 	}
 
 	.collaborator-avatar img {
@@ -307,6 +423,47 @@
 		font-size: 0.875rem;
 		font-weight: 600;
 		color: white;
+	}
+
+	.role-badge {
+		position: absolute;
+		bottom: -2px;
+		right: -2px;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 50%;
+		width: 1rem;
+		height: 1rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.625rem;
+		pointer-events: none;
+	}
+
+	.author-badge {
+		background: var(--color-primary);
+		border-color: var(--color-primary);
+		color: white;
+		font-size: 0.75rem;
+	}
+
+	.co-author-badge {
+		background: gold;
+		border-color: darkgoldenrod;
+		color: white;
+	}
+
+	.editor-badge {
+		background: var(--color-primary);
+		border-color: var(--color-primary);
+		color: white;
+	}
+
+	.viewer-badge {
+		background: var(--color-surface-secondary);
+		border-color: var(--color-border);
+		font-size: 0.5rem;
 	}
 
 	@media (max-width: 768px) {

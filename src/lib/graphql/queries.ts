@@ -2241,6 +2241,46 @@ export const ADD_POST_COLLABORATOR = gql`
 `;
 
 // ============================================
+// Collaborator Management
+// ============================================
+
+export const UPDATE_COLLABORATOR_ROLE = gql`
+	mutation UpdateCollaboratorRole($collaboratorId: uuid!, $newRole: String!) {
+		update_post_collaborator_by_pk(pk_columns: { id: $collaboratorId }, _set: { role: $newRole }) {
+			id
+			role
+			contributor {
+				id
+				display_name
+				handle
+				avatar_url
+			}
+		}
+	}
+`;
+
+export const FORCE_RECLAIM_EDIT_LOCK = gql`
+	mutation ForceReclaimEditLock($postId: uuid!, $fromUserId: uuid!, $now: timestamptz!) {
+		# Release the current editor's lock
+		update_post_collaborator(
+			where: { post_id: { _eq: $postId }, contributor_id: { _eq: $fromUserId } }
+			_set: { has_edit_lock: false, edit_lock_acquired_at: null }
+		) {
+			affected_rows
+		}
+		# Clear the post's current editor
+		update_post_by_pk(
+			pk_columns: { id: $postId }
+			_set: { current_editor_id: null, edit_locked_at: null }
+		) {
+			id
+			current_editor_id
+			edit_locked_at
+		}
+	}
+`;
+
+// ============================================
 // Edit Lock System - Turn-based Collaboration
 // ============================================
 
@@ -2348,6 +2388,7 @@ export const GET_EDIT_LOCK_STATUS = gql`
 				id
 				has_edit_lock
 				edit_lock_acquired_at
+				role
 				contributor {
 					id
 					display_name
@@ -2380,6 +2421,13 @@ export const SUBSCRIBE_TO_EDIT_LOCK_STATUS = gql`
 			current_editor_id
 			edit_locked_at
 			collaboration_enabled
+			author_id
+			author: contributor {
+				id
+				display_name
+				handle
+				avatar_url
+			}
 			current_editor: contributorByCurrentEditorId {
 				id
 				display_name
@@ -2390,6 +2438,7 @@ export const SUBSCRIBE_TO_EDIT_LOCK_STATUS = gql`
 				id
 				has_edit_lock
 				edit_lock_acquired_at
+				role
 				contributor {
 					id
 					display_name

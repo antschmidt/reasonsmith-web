@@ -10,19 +10,20 @@
 	interface Props {
 		postId: string;
 		ownerId: string;
+		isAuthor: boolean;
 		isOpen: boolean;
 		onClose: () => void;
 		onInviteSent?: () => void;
 	}
 
-	let { postId, ownerId, isOpen, onClose, onInviteSent }: Props = $props();
+	let { postId, ownerId, isAuthor, isOpen, onClose, onInviteSent }: Props = $props();
 
 	let searchQuery = $state('');
 	let searchResults = $state<any[]>([]);
 	let existingCollaborators = $state<any[]>([]);
 	let isSearching = $state(false);
 	let isInviting = $state(false);
-	let selectedRole = $state<'editor' | 'viewer'>('editor');
+	let selectedRole = $state<'editor' | 'viewer' | 'co-author'>('editor');
 	let errorMessage = $state('');
 	let successMessage = $state('');
 
@@ -171,9 +172,23 @@
 				<div class="role-selection">
 					<label for="role-select">Invite as:</label>
 					<select id="role-select" bind:value={selectedRole}>
+						{#if isAuthor}
+							<option value="co-author">Co-Author (can edit and manage collaborators)</option>
+						{/if}
 						<option value="editor">Editor (can edit content)</option>
-						<option value="viewer">Viewer (can only view)</option>
+						<option value="viewer">Viewer (read-only access)</option>
 					</select>
+					<p class="role-description">
+						{#if selectedRole === 'co-author'}
+							Co-authors can edit content, manage other collaborators, and reclaim locks from
+							editors. They cannot reclaim locks from the author or add other co-authors.
+						{:else if selectedRole === 'editor'}
+							Editors can request edit control and modify content, but cannot manage other
+							collaborators.
+						{:else}
+							Viewers can see draft content but cannot edit or manage collaborators.
+						{/if}
+					</p>
 				</div>
 
 				<!-- Search Input -->
@@ -344,6 +359,17 @@
 		color: var(--text-color);
 		font-size: 0.875rem;
 		cursor: pointer;
+	}
+
+	.role-description {
+		margin-top: 0.5rem;
+		margin-bottom: 0;
+		padding: 0.625rem;
+		background: var(--hover-bg);
+		border-radius: 6px;
+		font-size: 0.8125rem;
+		line-height: 1.5;
+		color: var(--text-secondary);
 	}
 
 	.search-container {

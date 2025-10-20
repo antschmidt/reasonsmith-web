@@ -181,6 +181,12 @@
 	// Derived state
 	const isAuthor = $derived(draftPostId && user?.id && editLockStatus?.author_id === user.id);
 
+	const isCoAuthor = $derived(
+		editLockStatus?.post_collaborators?.some(
+			(pc: any) => pc.contributor.id === user?.id && pc.role === 'co-author'
+		) || false
+	);
+
 	const canEdit = $derived(
 		!editLockStatus ||
 			isAuthor ||
@@ -194,32 +200,32 @@
 			editLockStatus.collaboration_enabled
 	);
 
-	// Load edit lock status when draft is created
-	$effect(() => {
-		if (typeof window === 'undefined') return;
+	// Function to load edit lock status
+	async function loadEditLockStatus() {
+		if (!draftPostId || !user?.id) {
+			editLockStatus = null;
+			return;
+		}
 
-		async function loadEditLockStatus() {
-			if (!draftPostId || !user?.id) {
-				editLockStatus = null;
+		try {
+			const result = await nhost.graphql.request(GET_EDIT_LOCK_STATUS, {
+				postId: draftPostId
+			});
+
+			if (result.error) {
+				console.error('Error loading edit lock status:', result.error);
 				return;
 			}
 
-			try {
-				const result = await nhost.graphql.request(GET_EDIT_LOCK_STATUS, {
-					postId: draftPostId
-				});
-
-				if (result.error) {
-					console.error('Error loading edit lock status:', result.error);
-					return;
-				}
-
-				editLockStatus = result.data?.post_by_pk;
-			} catch (error) {
-				console.error('Error loading edit lock status:', error);
-			}
+			editLockStatus = result.data?.post_by_pk;
+		} catch (error) {
+			console.error('Error loading edit lock status:', error);
 		}
+	}
 
+	// Load edit lock status when draft is created
+	$effect(() => {
+		if (typeof window === 'undefined') return;
 		loadEditLockStatus();
 	});
 
@@ -483,9 +489,11 @@
 					lockStatus={editLockStatus}
 					currentUserId={user.id}
 					{isAuthor}
+					postId={draftPostId}
 					onAcquireLock={handleAcquireEditLock}
 					onReleaseLock={handleReleaseEditLock}
 					onToggleCollaboration={handleToggleCollaboration}
+					onUpdate={loadEditLockStatus}
 					isLoading={isLoadingLock}
 				/>
 			{/if}
