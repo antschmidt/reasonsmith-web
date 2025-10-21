@@ -55,6 +55,7 @@
 		error = null;
 
 		try {
+			console.log('[Chat] Loading messages for post:', postId);
 			const result = await nhost.graphql.request(GET_COLLABORATION_MESSAGES, {
 				postId,
 				limit: 50
@@ -62,14 +63,16 @@
 
 			if (result.error) {
 				error = 'Failed to load messages';
-				console.error('Error loading messages:', result.error);
+				console.error('[Chat] Error loading messages:', result.error);
 			} else if (result.data) {
-				messages = result.data.collaboration_message || [];
+				const newMessages = result.data.collaboration_message || [];
+				console.log('[Chat] Loaded messages:', newMessages.length, 'messages');
+				messages = newMessages;
 				scrollToBottom();
 			}
 		} catch (err) {
 			error = 'Failed to load messages';
-			console.error('Error loading messages:', err);
+			console.error('[Chat] Exception loading messages:', err);
 		} finally {
 			loading = false;
 		}
@@ -255,9 +258,13 @@
 	});
 
 	function startPollingFallback() {
-		if (pollingInterval) return;
+		if (pollingInterval) {
+			console.log('[Chat] Polling already active, skipping');
+			return;
+		}
 		console.log('[Chat] Starting polling fallback every 3 seconds');
 		pollingInterval = setInterval(() => {
+			console.log('[Chat] Polling tick - fetching messages');
 			loadMessages();
 		}, 3000);
 	}

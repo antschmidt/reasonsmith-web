@@ -16,7 +16,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 				"img-src 'self' data: https: blob:", // Allow images from self, data URLs, HTTPS, and blobs
 				"font-src 'self' https:", // Allow fonts from self and HTTPS
 				"media-src 'self' https://*.nhost.run https://storage.reasonsmith.com", // Allow audio/video from Nhost storage
-				"connect-src 'self' https://*.nhost.run https://hasura.reasonsmith.com https://auth.reasonsmith.com https://storage.reasonsmith.com https://functions.reasonsmith.com https://api.vercel.com", // API connections (Nhost subdomain + custom domains)
+				"connect-src 'self' https://*.nhost.run wss://*.nhost.run https://hasura.reasonsmith.com https://auth.reasonsmith.com https://storage.reasonsmith.com https://functions.reasonsmith.com wss://graphql.reasonsmith.com https://api.vercel.com", // API connections (Nhost subdomain + custom domains + WebSocket)
 				"frame-src 'none'", // No frames
 				"object-src 'none'" // No objects
 			].join('; ')
