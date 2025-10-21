@@ -8,7 +8,7 @@
 	/* Editorial Color Palette - Muted & Sophisticated */
 	--color-primary: #546e7a; /* Muted slate blue */
 	--color-accent: #78909c; /* Soft blue-gray */
-	--color-surface: transparent; /* Transparent - let body show through */
+	--color-surface: rgba(255, 255, 255, 0.9);
 	--color-surface-alt: rgba(0, 0, 0, 0.02); /* Barely visible tint */
 	--color-surface-elevated: rgba(255, 255, 255, 0.5); /* Subtle white overlay */
 	--color-text-primary: #263238; /* Deep charcoal */
@@ -62,7 +62,7 @@
 	/* Dark Editorial Theme - Muted */
 	--color-primary: #cfe0e8; /* Muted light slate */
 	--color-accent: #b0bec5; /* Soft blue-gray */
-	--color-surface: rgba(0, 0, 0, 0.469); /* Transparent - let body show through */
+	--color-surface: rgba(0, 0, 0, 0.9); /* 80% opacity for modals and overlays */
 	--color-surface-alt: rgba(0, 0, 0, 0.472); /* Barely visible tint */
 	--color-surface-elevated: rgba(255, 255, 255, 0.05); /* Subtle white overlay */
 	--color-text-primary: #eceff1; /* Soft white */

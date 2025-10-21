@@ -5,11 +5,12 @@
 	interface Props {
 		postId: string;
 		ownerId: string;
+		isAuthor: boolean;
 		disabled?: boolean;
 		onInviteSent?: () => void;
 	}
 
-	let { postId, ownerId, disabled = false, onInviteSent }: Props = $props();
+	let { postId, ownerId, isAuthor, disabled = false, onInviteSent }: Props = $props();
 
 	let showModal = $state(false);
 
@@ -33,7 +34,14 @@
 	<span>Invite</span>
 </button>
 
-<CollaboratorModal {postId} {ownerId} isOpen={showModal} onClose={handleClose} {onInviteSent} />
+<CollaboratorModal
+	{postId}
+	{ownerId}
+	{isAuthor}
+	isOpen={showModal}
+	onClose={handleClose}
+	{onInviteSent}
+/>
 
 <style>
 	.collaborator-invite-button {

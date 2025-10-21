@@ -4,6 +4,19 @@
 	import CitationForm from '../citations/CitationForm.svelte';
 	import Button from '../ui/Button.svelte';
 	import RichTextEditor from '../RichTextEditor.svelte';
+	import CollaboratorInviteButton from '../CollaboratorInviteButton.svelte';
+	import CollaborationControls from '../CollaborationControls.svelte';
+	import { nhost } from '$lib/nhostClient';
+	import {
+		GET_EDIT_LOCK_STATUS,
+		ACQUIRE_EDIT_LOCK,
+		RELEASE_EDIT_LOCK,
+		TOGGLE_COLLABORATION,
+		SUBSCRIBE_TO_DRAFT_UPDATES,
+		SUBSCRIBE_TO_EDIT_LOCK_STATUS
+	} from '$lib/graphql/queries';
+	import { apolloClient } from '$lib/apolloClient';
+	import type { ObservableSubscription } from '@apollo/client';
 
 	type Citation = {
 		id: string;
@@ -98,6 +111,8 @@
 		analysisBlockedReason = null as string | null,
 		canUserUseAnalysis = true,
 		submitting = false,
+		discussionTitle = 'Discussion',
+		discussionId = null,
 		onInput,
 		onFocus,
 		onAddCitation,
@@ -142,6 +157,8 @@
 		analysisBlockedReason?: string | null;
 		canUserUseAnalysis?: boolean;
 		submitting?: boolean;
+		discussionTitle?: string;
+		discussionId?: string | null;
 		onInput?: (e: Event) => void;
 		onFocus?: () => void;
 		onAddCitation?: (citation: Citation) => void;
@@ -157,6 +174,357 @@
 		formatChicagoCitation: (citation: Citation) => string;
 		assessContentQuality: (content: string, title?: string) => { score: number; issues: string[] };
 	}>();
+
+	// Edit Lock Collaboration State
+	let editLockStatus = $state<any>(null);
+	let isLoadingLock = $state(false);
+	let lockError = $state<string | null>(null);
+	let draftUpdateSubscription: ObservableSubscription | null = null;
+	let lockStatusSubscription: ObservableSubscription | null = null;
+
+	// Derived state
+	const isAuthor = $derived(draftPostId && user?.id && editLockStatus?.author_id === user.id);
+
+	const isCoAuthor = $derived(
+		editLockStatus?.post_collaborators?.some(
+			(pc: any) => pc.contributor.id === user?.id && pc.role === 'co-author'
+		) || false
+	);
+
+	const canEdit = $derived.by(() => {
+		// No lock status means anyone can edit (backward compatibility)
+		if (!editLockStatus) {
+			console.log('[canEdit] No lock status - can edit');
+			return true;
+		}
+
+		// Collaboration disabled - only author can edit
+		if (!editLockStatus.collaboration_enabled) {
+			const result = isAuthor;
+			console.log('[canEdit] Collaboration disabled - author only', { isAuthor: result });
+			return result;
+		}
+
+		// Determine who currently has the lock
+		// If current_editor_id is set, that person has the lock
+		// If no current_editor_id but edit_locked_at exists, the author has the lock
+		const editorId =
+			editLockStatus.current_editor_id ||
+			(editLockStatus.edit_locked_at ? editLockStatus.author_id : null);
+
+		// If current user has the lock, they can edit
+		if (editorId === user?.id) {
+			console.log('[canEdit] Current user has lock', { editorId, userId: user?.id });
+			return true;
+		}
+
+		// If no one has the lock yet, author can edit and will auto-acquire lock
+		if (!editorId && isAuthor) {
+			console.log('[canEdit] No lock exists - author can edit and will acquire lock');
+			return true;
+		}
+
+		console.log('[canEdit] Cannot edit - someone else has lock', {
+			isAuthor,
+			current_editor_id: editLockStatus.current_editor_id,
+			edit_locked_at: editLockStatus.edit_locked_at,
+			author_id: editLockStatus.author_id,
+			user_id: user?.id,
+			editorId,
+			collaboration_enabled: editLockStatus.collaboration_enabled
+		});
+		return false;
+	});
+
+	const isReadOnly = $derived.by(() => {
+		// No lock status means not read-only
+		if (!editLockStatus) {
+			console.log('[isReadOnly] No lock status - not read-only');
+			return false;
+		}
+
+		// Collaboration disabled means not read-only (handled by canEdit)
+		if (!editLockStatus.collaboration_enabled) {
+			console.log('[isReadOnly] Collaboration disabled - not read-only');
+			return false;
+		}
+
+		// Check if current user is a collaborator (not the author)
+		const currentUserCollaborator = editLockStatus.post_collaborators?.find(
+			(pc: any) => pc.contributor.id === user?.id
+		);
+
+		// Determine who is currently editing
+		const editorId =
+			editLockStatus.current_editor_id ||
+			(editLockStatus.edit_locked_at ? editLockStatus.author_id : null);
+
+		// If someone else has the lock, show Draft Preview
+		// This includes:
+		// - Collaborators seeing the author's draft
+		// - Author seeing a collaborator's draft
+		if (editorId && editorId !== user?.id && editLockStatus.collaboration_enabled) {
+			// Show Draft Preview if:
+			// 1. Current user is the author (viewing collaborator's work), OR
+			// 2. Current user is a collaborator (viewing anyone else's work)
+			const shouldShowPreview = isAuthor || !!currentUserCollaborator;
+
+			console.log('[isReadOnly] Someone else has lock - checking if should show preview', {
+				isAuthor,
+				isCollaborator: !!currentUserCollaborator,
+				editorId,
+				currentUserId: user?.id,
+				shouldShowPreview
+			});
+
+			if (shouldShowPreview) {
+				return true;
+			}
+		}
+
+		console.log('[isReadOnly] Not read-only', {
+			current_editor_id: editLockStatus.current_editor_id,
+			edit_locked_at: editLockStatus.edit_locked_at,
+			isAuthor,
+			has_edit_lock: currentUserCollaborator?.has_edit_lock,
+			user_id: user?.id,
+			editorId
+		});
+		return false;
+	});
+
+	// Function to load edit lock status
+	async function loadEditLockStatus() {
+		if (!draftPostId || !user?.id) {
+			editLockStatus = null;
+			return;
+		}
+
+		try {
+			const result = await nhost.graphql.request(GET_EDIT_LOCK_STATUS, {
+				postId: draftPostId
+			});
+
+			if (result.error) {
+				console.error('Error loading edit lock status:', result.error);
+				return;
+			}
+
+			editLockStatus = result.data?.post_by_pk;
+		} catch (error) {
+			console.error('Error loading edit lock status:', error);
+		}
+	}
+
+	// Load edit lock status when draft is created
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		loadEditLockStatus();
+	});
+
+	// Subscribe to draft updates for real-time content changes
+	$effect(() => {
+		if (typeof window === 'undefined' || !draftPostId) return;
+
+		// Clean up previous subscription
+		if (draftUpdateSubscription) {
+			draftUpdateSubscription.unsubscribe();
+		}
+
+		draftUpdateSubscription = apolloClient
+			.subscribe({
+				query: SUBSCRIBE_TO_DRAFT_UPDATES,
+				variables: { postId: draftPostId }
+			})
+			.subscribe({
+				next: (result: any) => {
+					if (result.data?.post_by_pk) {
+						const updatedPost = result.data.post_by_pk;
+
+						// Determine who is editing: could be current_editor_id or the author (when current_editor_id is null)
+						const activeEditorId = updatedPost.current_editor_id || updatedPost.author_id;
+						const isViewingOthersEdit = activeEditorId && activeEditorId !== user?.id;
+
+						// Only update content if someone else is editing
+						if (isViewingOthersEdit) {
+							const newContent = updatedPost.draft_content || '';
+							// Force reactivity by reassigning
+							if (comment !== newContent) {
+								comment = newContent;
+								console.log('[Subscription] Draft updated by another user:', {
+									currentEditor: updatedPost.current_editor_id,
+									authorId: updatedPost.author_id,
+									activeEditor: activeEditorId,
+									currentUser: user?.id,
+									contentLength: newContent.length
+								});
+							}
+						}
+					}
+				},
+				error: (error: any) => {
+					console.error('Draft update subscription error:', error);
+				}
+			});
+
+		return () => {
+			if (draftUpdateSubscription) {
+				draftUpdateSubscription.unsubscribe();
+			}
+		};
+	});
+
+	// Subscribe to edit lock status changes
+	$effect(() => {
+		if (typeof window === 'undefined' || !draftPostId) return;
+
+		// Clean up previous subscription
+		if (lockStatusSubscription) {
+			lockStatusSubscription.unsubscribe();
+		}
+
+		lockStatusSubscription = apolloClient
+			.subscribe({
+				query: SUBSCRIBE_TO_EDIT_LOCK_STATUS,
+				variables: { postId: draftPostId }
+			})
+			.subscribe({
+				next: (result: any) => {
+					console.log('[Subscription] Edit lock status update:', result.data?.post_by_pk);
+					if (result.data?.post_by_pk) {
+						// Force reactivity by creating a new object
+						editLockStatus = { ...result.data.post_by_pk };
+						console.log('[Subscription] Updated editLockStatus:', editLockStatus);
+					}
+				},
+				error: (error: any) => {
+					console.error('Lock status subscription error:', error);
+				}
+			});
+
+		return () => {
+			if (lockStatusSubscription) {
+				lockStatusSubscription.unsubscribe();
+			}
+		};
+	});
+
+	// Auto-acquire lock when author starts editing without a lock
+	let hasAutoAcquired = $state(false);
+	$effect(() => {
+		if (typeof window === 'undefined' || !draftPostId || !user?.id || !editLockStatus) return;
+
+		// Only auto-acquire for author when collaboration is enabled and no lock exists
+		const shouldAutoAcquire =
+			isAuthor &&
+			editLockStatus.collaboration_enabled &&
+			!editLockStatus.current_editor_id &&
+			!editLockStatus.edit_locked_at &&
+			!hasAutoAcquired;
+
+		if (shouldAutoAcquire) {
+			console.log('[Auto-Acquire] Author needs lock - acquiring automatically');
+			hasAutoAcquired = true;
+			handleAcquireEditLock();
+		}
+
+		// Don't reset hasAutoAcquired - once we've auto-acquired, we don't want to do it again
+		// The author should manually acquire/release after that
+	});
+
+	// Handle acquiring edit lock
+	async function handleAcquireEditLock() {
+		if (!draftPostId || !user?.id) return;
+
+		isLoadingLock = true;
+		lockError = null;
+
+		try {
+			const result = await nhost.graphql.request(ACQUIRE_EDIT_LOCK, {
+				postId: draftPostId,
+				userId: user.id,
+				now: new Date().toISOString()
+			});
+
+			if (result.error) {
+				console.error('Error acquiring edit lock:', result.error);
+				lockError = 'Failed to acquire edit control';
+				return;
+			}
+
+			// Check if mutation succeeded (direct mutation returns post object, not success/error)
+			if (!result.data?.update_post_by_pk) {
+				lockError = 'Failed to acquire edit control';
+			}
+		} catch (error) {
+			console.error('Error acquiring edit lock:', error);
+			lockError = 'Failed to acquire edit control';
+		} finally {
+			isLoadingLock = false;
+		}
+	}
+
+	// Handle releasing edit lock
+	async function handleReleaseEditLock() {
+		if (!draftPostId || !user?.id) return;
+
+		isLoadingLock = true;
+		lockError = null;
+
+		try {
+			const result = await nhost.graphql.request(RELEASE_EDIT_LOCK, {
+				postId: draftPostId,
+				userId: user.id
+			});
+
+			if (result.error) {
+				console.error('Error releasing edit lock:', result.error);
+				lockError = 'Failed to release edit control';
+				return;
+			}
+
+			// Check if mutation succeeded
+			if (!result.data?.update_post_by_pk) {
+				lockError = 'Failed to release edit control';
+			}
+		} catch (error) {
+			console.error('Error releasing edit lock:', error);
+			lockError = 'Failed to release edit control';
+		} finally {
+			isLoadingLock = false;
+		}
+	}
+
+	// Handle toggling collaboration (author only)
+	async function handleToggleCollaboration(enabled: boolean) {
+		if (!draftPostId || !user?.id || !isAuthor) return;
+
+		isLoadingLock = true;
+		lockError = null;
+
+		try {
+			const result = await nhost.graphql.request(TOGGLE_COLLABORATION, {
+				postId: draftPostId,
+				enabled
+			});
+
+			if (result.error) {
+				console.error('Error toggling collaboration:', result.error);
+				lockError = 'Failed to toggle collaboration';
+				return;
+			}
+
+			// Check if mutation succeeded
+			if (!result.data?.update_post_by_pk) {
+				lockError = 'Failed to toggle collaboration';
+			}
+		} catch (error) {
+			console.error('Error toggling collaboration:', error);
+			lockError = 'Failed to toggle collaboration';
+		} finally {
+			isLoadingLock = false;
+		}
+	}
 </script>
 
 <section class="add-comment">
@@ -230,10 +598,7 @@
 							</div>
 
 							{#if showCitationForm && !editingCitation}
-								<CitationForm
-									onAdd={onAddCitation}
-									onCancel={() => (showCitationForm = false)}
-								/>
+								<CitationForm onAdd={onAddCitation} onCancel={() => (showCitationForm = false)} />
 							{/if}
 
 							{#if showCitationEditForm && editingCitation}
@@ -248,16 +613,79 @@
 				</div>
 			{/if}
 
-			<!-- Rich Text Editor -->
-			<RichTextEditor
-				bind:content={comment}
-				onUpdate={(html) => {
-					comment = html;
-					if (onInput) onInput();
-				}}
-				placeholder="Add your comment... (Style will be automatically determined by length)"
-				minHeight="300px"
-			/>
+			<!-- Collaboration Controls -->
+			{#if draftPostId && user?.id}
+				{#if editLockStatus}
+					<CollaborationControls
+						lockStatus={editLockStatus}
+						currentUserId={user.id}
+						{isAuthor}
+						postId={draftPostId}
+						{discussionId}
+						discussionTitle={discussionTitle || 'Discussion'}
+						onAcquireLock={handleAcquireEditLock}
+						onReleaseLock={handleReleaseEditLock}
+						onToggleCollaboration={handleToggleCollaboration}
+						onUpdate={loadEditLockStatus}
+						isLoading={isLoadingLock}
+					/>
+				{:else}
+					<div class="loading-collaboration">Loading collaboration status...</div>
+				{/if}
+			{/if}
+
+			{#if lockError}
+				<div class="lock-error">
+					<p>{lockError}</p>
+				</div>
+			{/if}
+
+			<!-- Debug info -->
+			<!-- <div
+				style="padding: 1rem; background: #f0f0f0; margin: 1rem 0; font-size: 0.75rem; border: 2px solid red; background-color: black;"
+			>
+				<strong>Debug Info:</strong><br />
+				canEdit: <strong>{canEdit}</strong><br />
+				isReadOnly: <strong>{isReadOnly}</strong><br />
+				isAuthor: {isAuthor}<br />
+				current_editor_id: {editLockStatus?.current_editor_id || 'null'}<br />
+				edit_locked_at: {editLockStatus?.edit_locked_at ? 'YES' : 'NO'}<br />
+				collaboration_enabled: {editLockStatus?.collaboration_enabled}<br />
+				user_id: {user?.id}<br />
+				author_id: {editLockStatus?.author_id}<br />
+				<strong>Showing:</strong>
+				{#if canEdit}EDITOR{:else if isReadOnly}DRAFT PREVIEW{:else}NOTHING{/if}
+			</div> -->
+
+			{#if canEdit}
+				<!-- Rich Text Editor (only for active editor) -->
+				<RichTextEditor
+					bind:content={comment}
+					onUpdate={(html) => {
+						comment = html;
+						// Create a synthetic event for onInput handler
+						if (onInput) {
+							const syntheticEvent = {
+								target: { value: html }
+							} as Event;
+							onInput(syntheticEvent);
+						}
+					}}
+					placeholder="Add your comment... (Style will be automatically determined by length)"
+					minHeight="300px"
+					readonly={false}
+				/>
+			{:else if isReadOnly}
+				<!-- Read-only preview for viewers -->
+				<div class="draft-preview">
+					<div class="preview-label">
+						<span>Draft Preview (Read-only)</span>
+					</div>
+					<div class="preview-content">
+						{@html comment}
+					</div>
+				</div>
+			{/if}
 
 			{#if showAdvancedFeatures}
 				<!-- Insert Citation Reference Button -->
@@ -272,10 +700,8 @@
 						<div class="citation-picker-modal">
 							<div class="citation-picker-header">
 								<h4>Insert Citation Reference</h4>
-								<button
-									type="button"
-									class="close-btn"
-									onclick={() => (showCitationPicker = false)}>✕</button
+								<button type="button" class="close-btn" onclick={() => (showCitationPicker = false)}
+									>✕</button
 								>
 							</div>
 							<div class="citation-picker-content">
@@ -440,8 +866,7 @@
 					<div class="good-faith-header">
 						<h4>Comment Analysis</h4>
 						<div class="good-faith-score">
-							<span class="score-value"
-								>{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span
+							<span class="score-value">{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span
 							>
 							<span class="score-label {goodFaithResult.good_faith_label}"
 								>{goodFaithResult.good_faith_label}</span
@@ -521,6 +946,10 @@
 						{/if}
 					{/if}
 				</div>
+
+				{#if draftPostId && user?.id}
+					<CollaboratorInviteButton postId={draftPostId} ownerId={user.id} {isAuthor} />
+				{/if}
 
 				{#if replyingToPost}
 					<div class="replying-indicator">
@@ -1075,6 +1504,20 @@
 		text-decoration: underline;
 	}
 
+	.lock-error {
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		border-radius: var(--border-radius-md);
+		padding: 0.75rem 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.lock-error p {
+		color: #dc2626;
+		font-size: 0.875rem;
+		margin: 0;
+	}
+
 	/* Comment Actions */
 	.comment-actions {
 		display: flex;
@@ -1177,5 +1620,52 @@
 	.btn-primary:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
+	}
+
+	/* Draft Preview Styles */
+	.draft-preview {
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		background: var(--color-background-secondary);
+		overflow: hidden;
+	}
+
+	.preview-label {
+		padding: 0.5rem 1rem;
+		background: var(--color-background-tertiary);
+		border-bottom: 1px solid var(--color-border);
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.preview-content {
+		padding: 1.5rem;
+		min-height: 300px;
+		color: var(--color-text);
+		line-height: 1.6;
+	}
+
+	.preview-content :global(p) {
+		margin-bottom: 1em;
+	}
+
+	.preview-content :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.preview-content :global(strong) {
+		font-weight: 600;
+	}
+
+	.preview-content :global(em) {
+		font-style: italic;
+	}
+
+	.preview-content :global(a) {
+		color: var(--color-primary);
+		text-decoration: underline;
 	}
 </style>

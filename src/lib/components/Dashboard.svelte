@@ -11,6 +11,7 @@
 	} from '$lib/graphql/queries';
 	import Notifications from './ui/Notifications.svelte';
 	import EditorsDeskCarousel from './EditorsDeskCarousel.svelte';
+	import CollaborationInvites from './CollaborationInvites.svelte';
 
 	let { user } = $props<{ user: User }>();
 
@@ -46,6 +47,10 @@
 	// Saved Items state
 	let savedItems = $state<any[]>([]);
 	let savedItemsLoading = $state(false);
+
+	// Collaboration state
+	let collaborationInvites = $state<any[]>([]);
+	let collaborativeDrafts = $state<any[]>([]);
 
 	async function fetchEditorsDeskPicks() {
 		editorsDeskLoading = true;
@@ -206,6 +211,28 @@
 					const dateB = new Date(b.updated_at || 0).getTime();
 					return dateB - dateA; // Most recent first
 				});
+
+				// Extract collaboration data
+				collaborationInvites = dashboardResult.data.myCollaborationInvites ?? [];
+
+				// Extract collaborative drafts
+				collaborativeDrafts = (dashboardResult.data.collaborativeDrafts ?? []).map(
+					(collab: any) => ({
+						id: collab.post.id,
+						draft_content: collab.post.draft_content,
+						discussion_id: collab.post.discussion_id,
+						updated_at: collab.post.updated_at,
+						discussion_title: collab.post.discussion?.discussion_versions?.[0]?.title ?? null,
+						status: collab.post.status,
+						type: 'comment',
+						role: collab.role,
+						author: collab.post.contributor,
+						good_faith_score: collab.post.good_faith_score,
+						good_faith_label: collab.post.good_faith_label,
+						good_faith_last_evaluated: collab.post.good_faith_last_evaluated,
+						good_faith_analysis: collab.post.good_faith_analysis
+					})
+				);
 			}
 		} catch (err: any) {
 			// Check if it's a JWT error - if so, silently skip
@@ -339,6 +366,13 @@
 			<!-- Notifications -->
 			<Notifications userId={user.id as unknown as string} />
 
+			<!-- Collaboration Invites -->
+			{#if collaborationInvites.length > 0}
+				<section class="card collaboration-section">
+					<CollaborationInvites onInviteResponded={loadData} />
+				</section>
+			{/if}
+
 			<!-- Single Action: New Discussion -->
 			<section class="card quick-discussion">
 				<a href="/discussions/new" class="btn btn-secondary btn-sm">
@@ -470,14 +504,14 @@
 				<p>Loading…</p>
 			{:else if error}
 				<p style="color: var(--color-accent)">{error}</p>
-			{:else if drafts.length === 0}
+			{:else if drafts.length === 0 && collaborativeDrafts.length === 0}
 				<div class="card" style="margin-bottom: 1rem;">
 					<p>
 						No active drafts. <a href="/discussions/new">Start a new discussion</a> or join an existing
 						conversation.
 					</p>
 				</div>
-			{:else}
+			{:else if drafts.length > 0 || collaborativeDrafts.length > 0}
 				<div class="drafts-focus">
 					<h3 class="subsection-title">Continue Working</h3>
 					<p class="section-description">
@@ -555,6 +589,79 @@
 						</article>
 					{/each}
 				</div>
+
+				<!-- Collaborative Drafts Section -->
+				{#if collaborativeDrafts.length > 0}
+					<div class="collaborative-drafts-section">
+						<h3 class="subsection-title">Collaborative Drafts</h3>
+						<p class="section-description">
+							Drafts you're collaborating on with other contributors.
+						</p>
+
+						<div class="drafts-list">
+							{#each collaborativeDrafts as draft}
+								<article class="draft-item collaborative">
+									<div class="draft-content">
+										<a href={getDraftHref(draft)} class="draft-title">
+											{extractSnippet(draft.draft_content || '')}
+										</a>
+
+										<div class="draft-meta">
+											<span>Collaborating as {draft.role}</span>
+											<span class="meta-separator">·</span>
+											<span
+												>By {draft.author?.display_name ||
+													draft.author?.handle ||
+													'Anonymous'}</span
+											>
+											{#if draft.discussion_id}
+												<span class="meta-separator">·</span>
+												<span>Reply to</span>
+												{#if draft.discussion_title}
+													<span class="meta-separator">·</span>
+													<span class="discussion-ref">{draft.discussion_title}</span>
+												{/if}
+											{/if}
+											{#if draft.status === 'pending'}
+												<span class="meta-separator">·</span>
+												<span class="status-pending">Pending review</span>
+											{/if}
+										</div>
+
+										<!-- Good Faith Score (if available) -->
+										{#if draft.good_faith_score !== null && draft.good_faith_score !== undefined}
+											<div class="draft-score">
+												<span class="score-pill {draft.good_faith_label || 'neutral'}">
+													{(draft.good_faith_score * 100).toFixed(0)}% {draft.good_faith_label ||
+														'unrated'}
+												</span>
+											</div>
+										{/if}
+									</div>
+
+									<div class="collab-badge" title="Collaborative draft">
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="18"
+											height="18"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										>
+											<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+											<circle cx="9" cy="7" r="4"></circle>
+											<path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+											<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+										</svg>
+									</div>
+								</article>
+							{/each}
+						</div>
+					</div>
+				{/if}
 			{/if}
 		</main>
 	</div>
@@ -914,6 +1021,36 @@
 
 	.draft-item:hover .draft-delete-icon {
 		opacity: 1;
+	}
+
+	.draft-item.collaborative {
+		background-color: color-mix(in srgb, var(--color-primary) 3%, transparent);
+	}
+
+	.draft-item.collaborative:hover {
+		background-color: color-mix(in srgb, var(--color-primary) 5%, transparent);
+	}
+
+	.collab-badge {
+		flex-shrink: 0;
+		color: var(--color-primary);
+		padding: 0.5rem;
+		opacity: 0.7;
+	}
+
+	.collaborative-drafts-section {
+		margin-top: 2rem;
+	}
+
+	.section-description {
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		margin-bottom: 1rem;
+		line-height: 1.6;
+	}
+
+	.collaboration-section {
+		margin-bottom: 1.5rem;
 	}
 
 	/* Subsection Titles */
