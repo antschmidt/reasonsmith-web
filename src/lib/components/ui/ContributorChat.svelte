@@ -670,7 +670,7 @@
 		right: 0;
 		width: 400px;
 		max-height: 600px;
-		background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+		background: var(--color-surface);
 		backdrop-filter: blur(8px);
 		border: 1px solid var(--color-border);
 		border-radius: var(--border-radius-lg);

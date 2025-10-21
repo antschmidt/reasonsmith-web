@@ -31,12 +31,14 @@
 	let {
 		message,
 		currentUserId,
+		showHeader = true,
 		isProcessing = false,
 		onApproveEditRequest,
 		onDenyEditRequest
 	} = $props<{
 		message: Message;
 		currentUserId: string;
+		showHeader?: boolean;
 		isProcessing?: boolean;
 		onApproveEditRequest?: (messageId: string) => void;
 		onDenyEditRequest?: (messageId: string) => void;
@@ -82,8 +84,9 @@
 	class="message-item {message.message_type} {isOwnMessage ? 'own' : 'other'}"
 	class:system={isSystemMessage}
 	class:request={isEditRequest || isRoleRequest}
+	class:grouped={!showHeader && !isSystemMessage}
 >
-	{#if !isSystemMessage}
+	{#if !isSystemMessage && showHeader}
 		<div class="message-avatar">
 			{#if message.sender.avatar_url}
 				<img src={message.sender.avatar_url} alt={message.sender.display_name} />
@@ -93,10 +96,12 @@
 				</div>
 			{/if}
 		</div>
+	{:else if !isSystemMessage && !showHeader}
+		<div class="message-avatar-spacer"></div>
 	{/if}
 
 	<div class="message-body">
-		{#if !isSystemMessage}
+		{#if !isSystemMessage && showHeader}
 			<div class="message-header">
 				<span class="sender-name">{message.sender.display_name}</span>
 				<span class="message-time">{formatTimeAgo(message.created_at)}</span>
@@ -203,6 +208,20 @@
 		animation: fadeIn 0.2s ease;
 	}
 
+	.message-item.own {
+		flex-direction: row-reverse;
+	}
+
+	.message-item.grouped {
+		padding: 0.25rem 0;
+	}
+
+	.message-avatar-spacer {
+		flex-shrink: 0;
+		width: 32px;
+		height: 0;
+	}
+
 	@keyframes fadeIn {
 		from {
 			opacity: 0;
@@ -217,19 +236,24 @@
 	.message-item.system {
 		justify-content: center;
 		padding: 0.5rem 0;
+		width: 100%;
 	}
 
 	.message-item.system .message-body {
 		background: color-mix(in srgb, var(--color-surface) 50%, transparent);
 		border-radius: var(--border-radius-sm);
 		padding: 0.5rem 1rem;
+		text-align: center;
+		width: 100%;
 	}
 
 	.message-item.system .message-content {
-		font-size: 0.8125rem;
+		font-size: 0.6125rem;
 		color: var(--color-text-secondary);
 		font-style: italic;
 		text-align: center;
+		margin: 0;
+		padding: 0;
 	}
 
 	.message-avatar {
@@ -266,8 +290,16 @@
 	.message-header {
 		display: flex;
 		align-items: center;
+		width: 100%;
 		gap: 0.5rem;
 		margin-bottom: 0.25rem;
+	}
+
+	.own .message-header {
+		display: flex;
+		flex-direction: row-reverse;
+		justify-content: right;
+		/*justify-content: flex-end;*/
 	}
 
 	.sender-name {
@@ -304,6 +336,7 @@
 		padding: 0.5rem 0.75rem;
 		border-radius: var(--border-radius-md);
 		max-width: 80%;
+		text-align: right;
 	}
 
 	.message-item.other .message-text {

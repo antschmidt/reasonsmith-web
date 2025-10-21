@@ -239,10 +239,17 @@
 		{:else if messages.length === 0}
 			<p class="thread-message-empty">No messages yet. Start the conversation!</p>
 		{:else}
-			{#each messages as message (message.id)}
+			{#each messages as message, index (message.id)}
+				{@const prevMessage = index > 0 ? messages[index - 1] : null}
+				{@const showHeader =
+					!prevMessage ||
+					prevMessage.sender_id !== message.sender_id ||
+					prevMessage.message_type === 'system' ||
+					message.message_type === 'system'}
 				<CollaborationMessageItem
 					{message}
 					{currentUserId}
+					{showHeader}
 					isProcessing={processingMessageId === message.id}
 					onApproveEditRequest={handleApproveEditRequest}
 					onDenyEditRequest={handleDenyEditRequest}
@@ -330,10 +337,10 @@
 	.thread-messages {
 		flex: 1;
 		overflow-y: auto;
-		padding: 1rem 1.25rem;
+		padding: 0rem 0.5rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0;
 	}
 
 	.thread-message-empty,
@@ -384,6 +391,8 @@
 
 	.send-button {
 		display: flex;
+		flex-direction: column;
+		align-self: center;
 		align-items: center;
 		justify-content: center;
 		width: 40px;
@@ -391,7 +400,7 @@
 		border-radius: var(--border-radius-md);
 		background: var(--color-primary);
 		border: none;
-		color: white;
+		color: black;
 		cursor: pointer;
 		transition: all var(--transition-speed) ease;
 	}

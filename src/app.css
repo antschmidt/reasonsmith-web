@@ -62,7 +62,7 @@
 	/* Dark Editorial Theme - Muted */
 	--color-primary: #cfe0e8; /* Muted light slate */
 	--color-accent: #b0bec5; /* Soft blue-gray */
-	--color-surface: rgba(0, 0, 0, 0.8); /* 80% opacity for modals and overlays */
+	--color-surface: rgba(0, 0, 0, 0.9); /* 80% opacity for modals and overlays */
 	--color-surface-alt: rgba(0, 0, 0, 0.472); /* Barely visible tint */
 	--color-surface-elevated: rgba(255, 255, 255, 0.05); /* Subtle white overlay */
 	--color-text-primary: #eceff1; /* Soft white */
