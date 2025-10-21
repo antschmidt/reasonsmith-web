@@ -337,7 +337,7 @@
 	.thread-messages {
 		flex: 1;
 		overflow-y: auto;
-		padding: 0rem 0.5rem;
+		padding: 0 0.5rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0;
