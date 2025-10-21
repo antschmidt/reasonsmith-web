@@ -122,8 +122,17 @@
 			if (result.error) {
 				console.error('Error sending message:', result.error);
 				newMessage = messageContent; // Restore message on error
-			} else {
-				// Message will be added via subscription
+			} else if (result.data?.insert_collaboration_message_one) {
+				// Optimistically add the message to the UI immediately
+				const newMsg = result.data.insert_collaboration_message_one;
+
+				// Check if message already exists (from subscription)
+				const messageExists = messages.some((m) => m.id === newMsg.id);
+
+				if (!messageExists) {
+					messages = [...messages, newMsg];
+				}
+
 				scrollToBottom();
 			}
 		} catch (err) {
