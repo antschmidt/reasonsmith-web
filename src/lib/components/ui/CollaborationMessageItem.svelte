@@ -248,7 +248,7 @@
 	}
 
 	.message-item.system .message-content {
-		font-size: 0.6125rem;
+		font-size: 0.625rem;
 		color: var(--color-text-secondary);
 		font-style: italic;
 		text-align: center;
