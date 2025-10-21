@@ -245,13 +245,13 @@
 				}
 			});
 
-		// Start a fallback polling mechanism after 5 seconds if subscription hasn't fired
+		// Start a fallback polling mechanism after 2 seconds if subscription hasn't fired
 		setTimeout(() => {
 			if (!subscriptionActive) {
-				console.log('[Chat] Subscription not active after 5s, starting polling fallback');
+				console.log('[Chat] Subscription not active after 2s, starting polling fallback');
 				startPollingFallback();
 			}
-		}, 5000);
+		}, 2000);
 	});
 
 	function startPollingFallback() {

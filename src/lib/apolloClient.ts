@@ -10,16 +10,11 @@ const isBrowser = typeof window !== 'undefined';
 const PUBLIC_NHOST_SUBDOMAIN = env.PUBLIC_NHOST_SUBDOMAIN;
 const PUBLIC_NHOST_REGION = env.PUBLIC_NHOST_REGION;
 
-// Use custom domain in production, subdomain in development
-const isProduction = isBrowser && window.location.hostname === 'reasonsmith.com';
-const httpUrl = isProduction
-	? 'https://graphql.reasonsmith.com/v1'
-	: `https://${PUBLIC_NHOST_SUBDOMAIN}.graphql.${PUBLIC_NHOST_REGION}.nhost.run/v1`;
-const wsUrl = isProduction
-	? 'wss://graphql.reasonsmith.com/v1'
-	: `wss://${PUBLIC_NHOST_SUBDOMAIN}.graphql.${PUBLIC_NHOST_REGION}.nhost.run/v1`;
+// Always use Nhost subdomain URLs for now (custom domains need DNS setup)
+const httpUrl = `https://${PUBLIC_NHOST_SUBDOMAIN}.graphql.${PUBLIC_NHOST_REGION}.nhost.run/v1`;
+const wsUrl = `wss://${PUBLIC_NHOST_SUBDOMAIN}.graphql.${PUBLIC_NHOST_REGION}.nhost.run/v1`;
 
-console.log('[Apollo] Using URLs:', { httpUrl, wsUrl, isProduction });
+console.log('[Apollo] Using URLs:', { httpUrl, wsUrl, subdomain: PUBLIC_NHOST_SUBDOMAIN });
 
 // HTTP link for queries and mutations
 const httpLink = new HttpLink({
@@ -36,28 +31,34 @@ if (isBrowser) {
 	const wsClient = createClient({
 		url: wsUrl,
 		connectionParams: async () => {
+			// Wait a moment for auth to be ready
+			await new Promise((resolve) => setTimeout(resolve, 100));
+
 			const session = nhost.getUserSession();
 			const accessToken = session?.accessToken;
-			console.log('[WebSocket] Connection params - has token:', !!accessToken);
-			return accessToken
-				? {
-						headers: {
-							Authorization: `Bearer ${accessToken}`
-						}
-					}
-				: {};
+			console.log('[WebSocket] Connection params:', {
+				hasToken: !!accessToken,
+				tokenPreview: accessToken ? accessToken.substring(0, 20) + '...' : null,
+				userId: session?.user?.id
+			});
+
+			if (!accessToken) {
+				console.warn('[WebSocket] No access token available - connection may fail');
+				return {};
+			}
+
+			return {
+				headers: {
+					Authorization: `Bearer ${accessToken}`
+				}
+			};
 		},
-		// Reconnect on connection loss
+		// Reconnect on connection loss - but give up quickly since we have polling fallback
 		shouldRetry: (err) => {
-			console.log('[WebSocket] Retry check, error:', err);
-			return true;
+			console.log('[WebSocket] Connection failed, will use polling fallback');
+			return false; // Don't retry - use polling instead
 		},
-		retryAttempts: 15,
-		retryWait: async (retries) => {
-			console.log('[WebSocket] Retry attempt:', retries);
-			// Exponential backoff with max 30s
-			await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * 2 ** retries, 30000)));
-		},
+		retryAttempts: 0, // No retries - polling fallback will handle it
 		// Keep connection alive with ping/pong
 		keepAlive: 10000, // Send keepalive every 10 seconds
 		// Lazy connection - don't connect until subscription is active
