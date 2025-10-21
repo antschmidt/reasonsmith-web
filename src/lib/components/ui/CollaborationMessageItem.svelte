@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { CheckCircle, XCircle } from '@lucide/svelte';
 	import { formatTimeAgo } from '$lib/utils/time';
+	import { parseTextWithLinks } from '$lib/utils/linkify';
 
 	type Message = {
 		id: string;
@@ -194,7 +195,17 @@
 					{/if}
 				</div>
 			{:else}
-				<p class="message-text">{message.content}</p>
+				<p class="message-text">
+					{#each parseTextWithLinks(message.content) as segment}
+						{#if segment.type === 'link'}
+							<a href={segment.href} target="_blank" rel="noopener noreferrer" class="message-link"
+								>{segment.content}</a
+							>
+						{:else}
+							{segment.content}
+						{/if}
+					{/each}
+				</p>
 			{/if}
 		</div>
 	</div>
@@ -322,6 +333,28 @@
 	.message-text {
 		margin: 0;
 		word-wrap: break-word;
+	}
+
+	.message-link {
+		color: inherit;
+		text-decoration: underline;
+		text-decoration-color: currentColor;
+		text-underline-offset: 2px;
+		transition: opacity var(--transition-speed) ease;
+	}
+
+	.message-link:hover {
+		opacity: 0.8;
+	}
+
+	.message-item.own .message-link {
+		color: white;
+		text-decoration-color: rgba(255, 255, 255, 0.7);
+	}
+
+	.message-item.other .message-link {
+		color: var(--color-primary);
+		text-decoration-color: var(--color-primary);
 	}
 
 	.message-item.own .message-body {
