@@ -8,6 +8,7 @@
 	import { injectAnalytics } from '@vercel/analytics/sveltekit';
 	import { page } from '$app/stores';
 	import InstallPrompt from '$lib/components/ui/InstallPrompt.svelte';
+	import ContributorChat from '$lib/components/ui/ContributorChat.svelte';
 
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = nhost.auth.getUser();
@@ -190,6 +191,7 @@
 			{/if}
 		</div>
 		<div class="nav-actions" role="group" aria-label="Primary actions">
+			<ContributorChat userId={user.id} />
 			{#if hasAdminAccess}
 				<a href="/admin" class="nav-icon" aria-label="User management">
 					<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">

@@ -227,7 +227,8 @@
 	}
 
 	.good-faith-modal {
-		background: var(--color-surface);
+		background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+		backdrop-filter: blur(8px);
 		border-radius: var(--border-radius-xl);
 		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 		max-width: 48rem;

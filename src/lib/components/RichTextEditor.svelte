@@ -12,13 +12,15 @@
 		placeholder = 'Start writing...',
 		onUpdate = (html: string) => {},
 		showToolbar = true,
-		minHeight = '200px'
+		minHeight = '200px',
+		readonly = false
 	} = $props<{
 		content?: string;
 		placeholder?: string;
 		onUpdate?: (html: string) => void;
 		showToolbar?: boolean;
 		minHeight?: string;
+		readonly?: boolean;
 	}>();
 
 	let element: HTMLDivElement;
@@ -56,6 +58,20 @@
 					: 0;
 	}
 
+	// Watch for readonly changes and update editor
+	$effect(() => {
+		if (editor) {
+			editor.setEditable(!readonly);
+		}
+	});
+
+	// Watch for external content changes and update editor
+	$effect(() => {
+		if (editor && content !== editor.getHTML()) {
+			editor.commands.setContent(content);
+		}
+	});
+
 	onMount(() => {
 		editor = new Editor({
 			element,
@@ -75,6 +91,7 @@
 				Placeholder.configure({ placeholder })
 			],
 			content,
+			editable: !readonly,
 			onTransaction: () => {
 				updateToolbarState();
 			},
@@ -163,8 +180,8 @@
 	}
 </script>
 
-<div class="rich-text-editor">
-	{#if showToolbar}
+<div class="rich-text-editor" class:readonly>
+	{#if showToolbar && !readonly}
 		<div class="editor-toolbar">
 			<div class="toolbar-group">
 				<button
@@ -323,6 +340,11 @@
 		overflow: hidden;
 	}
 
+	.rich-text-editor.readonly {
+		border-color: var(--color-border);
+		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
+	}
+
 	.editor-toolbar {
 		display: flex;
 		flex-wrap: wrap;
@@ -381,6 +403,11 @@
 		padding: 1rem;
 		outline: none;
 		min-height: inherit;
+	}
+
+	:global(.rich-text-editor.readonly .rich-text-editor-content) {
+		cursor: default;
+		opacity: 0.9;
 	}
 
 	/* Editor content styles */

@@ -10,6 +10,8 @@
 	} from '$lib/graphql/queries';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import EditControlRequestModal from '$lib/components/EditControlRequestModal.svelte';
+	import RoleUpgradeRequestModal from '$lib/components/RoleUpgradeRequestModal.svelte';
 
 	let { userId } = $props<{ userId: string }>();
 
@@ -22,11 +24,23 @@
 			actor_id: string | null;
 			read: boolean;
 			created_at: string;
+			metadata?: {
+				requester_id?: string;
+				current_holder_id?: string;
+				post_id?: string;
+				discussion_title?: string;
+				requested_role?: string;
+			};
 			discussion: {
 				discussion_versions: Array<{ title: string }>;
 			};
 			post: {
 				content: string;
+				post_collaborators?: Array<{
+					id: string;
+					contributor_id: string;
+					role: string;
+				}>;
 			} | null;
 		}>
 	>([]);
@@ -34,6 +48,17 @@
 	let unreadCount = $state(0);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+
+	// Modal state for request notifications
+	let editControlRequestModal = $state<{
+		isOpen: boolean;
+		notification: (typeof notifications)[0] | null;
+	}>({ isOpen: false, notification: null });
+
+	let roleUpgradeRequestModal = $state<{
+		isOpen: boolean;
+		notification: (typeof notifications)[0] | null;
+	}>({ isOpen: false, notification: null });
 
 	async function loadNotifications() {
 		loading = true;
@@ -134,6 +159,16 @@
 				return `New comment on "${discussionTitle}"`;
 			case 'reply_to_my_comment':
 				return `New reply to your comment`;
+			case 'edit_control_request':
+				// Check if this is for the author or current holder
+				const isForAuthor = notification.metadata?.current_holder_id !== userId;
+				if (isForAuthor) {
+					return `Edit control request for "${notification.metadata?.discussion_title || discussionTitle}"`;
+				} else {
+					return `Someone is requesting edit control`;
+				}
+			case 'role_upgrade_request':
+				return `Role upgrade request for "${notification.metadata?.discussion_title || discussionTitle}"`;
 			default:
 				return 'New notification';
 		}
@@ -194,6 +229,24 @@
 	}
 
 	async function handleNotificationClick(notification: (typeof notifications)[0]) {
+		// Handle request notifications differently - open modal instead of navigating
+		if (notification.type === 'edit_control_request') {
+			editControlRequestModal = { isOpen: true, notification };
+			if (!notification.read) {
+				markAsRead(notification.id);
+			}
+			return;
+		}
+
+		if (notification.type === 'role_upgrade_request') {
+			roleUpgradeRequestModal = { isOpen: true, notification };
+			if (!notification.read) {
+				markAsRead(notification.id);
+			}
+			return;
+		}
+
+		// For regular notifications, navigate to the discussion
 		if (!notification.read) {
 			markAsRead(notification.id);
 		}
@@ -202,6 +255,16 @@
 			notification.post_id ? `#post-${notification.post_id}` : ''
 		}`;
 		await goto(url);
+	}
+
+	function closeEditControlRequestModal() {
+		editControlRequestModal = { isOpen: false, notification: null };
+		loadNotifications(); // Refresh to remove processed notifications
+	}
+
+	function closeRoleUpgradeRequestModal() {
+		roleUpgradeRequestModal = { isOpen: false, notification: null };
+		loadNotifications(); // Refresh to remove processed notifications
 	}
 
 	onMount(() => {
@@ -286,6 +349,28 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Edit Control Request Modal -->
+{#if editControlRequestModal.isOpen && editControlRequestModal.notification}
+	<EditControlRequestModal
+		notification={editControlRequestModal.notification}
+		isAuthor={editControlRequestModal.notification.metadata?.current_holder_id !== userId}
+		currentUserId={userId}
+		isOpen={editControlRequestModal.isOpen}
+		onClose={closeEditControlRequestModal}
+		onUpdate={closeEditControlRequestModal}
+	/>
+{/if}
+
+<!-- Role Upgrade Request Modal -->
+{#if roleUpgradeRequestModal.isOpen && roleUpgradeRequestModal.notification}
+	<RoleUpgradeRequestModal
+		notification={roleUpgradeRequestModal.notification}
+		isOpen={roleUpgradeRequestModal.isOpen}
+		onClose={closeRoleUpgradeRequestModal}
+		onUpdate={closeRoleUpgradeRequestModal}
+	/>
+{/if}
 
 <style>
 	.notifications-container {

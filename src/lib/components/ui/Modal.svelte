@@ -93,7 +93,8 @@
 	}
 
 	.modal-content {
-		background: var(--color-bg-primary);
+		background: color-mix(in srgb, var(--color-bg-primary) 80%, transparent);
+		backdrop-filter: blur(8px);
 		border-radius: 12px;
 		box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
 		width: 90%;
