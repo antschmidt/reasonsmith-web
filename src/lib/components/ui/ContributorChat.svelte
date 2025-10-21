@@ -11,7 +11,9 @@
 		APPROVE_EDIT_CONTROL_REQUEST,
 		DENY_EDIT_CONTROL_REQUEST,
 		APPROVE_ROLE_UPGRADE_REQUEST,
-		DENY_ROLE_UPGRADE_REQUEST
+		DENY_ROLE_UPGRADE_REQUEST,
+		ACCEPT_COLLABORATION_INVITE,
+		DECLINE_COLLABORATION_INVITE
 	} from '$lib/graphql/queries';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -289,6 +291,8 @@
 				return `New comment on "${discussionTitle}"`;
 			case 'reply_to_my_comment':
 				return `New reply to your comment`;
+			case 'collaboration_invite':
+				return `You've been invited to collaborate on "${notification.metadata?.discussion_title || discussionTitle}" as ${notification.metadata?.role || 'editor'}`;
 			case 'edit_control_request':
 				const isForAuthor = notification.metadata?.current_holder_id !== userId;
 				if (isForAuthor) {
@@ -317,28 +321,29 @@
 
 	function isActionableNotification(notification: Notification): boolean {
 		return (
-			notification.type === 'edit_control_request' || notification.type === 'role_upgrade_request'
+			notification.type === 'edit_control_request' ||
+			notification.type === 'role_upgrade_request' ||
+			notification.type === 'collaboration_invite'
 		);
 	}
 
 	async function handleNotificationClick(notification: Notification) {
-		if (isActionableNotification(notification)) {
-			if (!notification.read) {
-				markNotificationAsRead(notification.id);
-			}
-			return;
-		}
-
 		if (!notification.read) {
 			markNotificationAsRead(notification.id);
 		}
 
 		closeChat();
 
-		const url = `/discussions/${notification.discussion_id}${
-			notification.post_id ? `#post-${notification.post_id}` : ''
-		}`;
-		await goto(url);
+		// For collaboration requests (edit_control_request, role_upgrade_request, collaboration_invite),
+		// navigate to home instead of the discussion
+		if (isActionableNotification(notification)) {
+			await goto('/');
+		} else {
+			const url = `/discussions/${notification.discussion_id}${
+				notification.post_id ? `#post-${notification.post_id}` : ''
+			}`;
+			await goto(url);
+		}
 	}
 
 	async function handleApproveEditControl(notification: Notification, event: Event) {
@@ -430,6 +435,52 @@
 			}
 		} catch (err) {
 			console.error('Error denying role upgrade request:', err);
+		} finally {
+			processingNotificationId = null;
+		}
+	}
+
+	async function handleAcceptCollaborationInvite(notification: Notification, event: Event) {
+		event.stopPropagation();
+		processingNotificationId = notification.id;
+
+		try {
+			const result = await nhost.graphql.request(ACCEPT_COLLABORATION_INVITE, {
+				collaboratorId: notification.metadata?.collaborator_id,
+				notificationId: notification.id
+			});
+
+			if (!result.error) {
+				notifications = notifications.filter((n) => n.id !== notification.id);
+				if (!notification.read) {
+					notificationUnreadCount = Math.max(0, notificationUnreadCount - 1);
+				}
+			}
+		} catch (err) {
+			console.error('Error accepting collaboration invite:', err);
+		} finally {
+			processingNotificationId = null;
+		}
+	}
+
+	async function handleDeclineCollaborationInvite(notification: Notification, event: Event) {
+		event.stopPropagation();
+		processingNotificationId = notification.id;
+
+		try {
+			const result = await nhost.graphql.request(DECLINE_COLLABORATION_INVITE, {
+				collaboratorId: notification.metadata?.collaborator_id,
+				notificationId: notification.id
+			});
+
+			if (!result.error) {
+				notifications = notifications.filter((n) => n.id !== notification.id);
+				if (!notification.read) {
+					notificationUnreadCount = Math.max(0, notificationUnreadCount - 1);
+				}
+			}
+		} catch (err) {
+			console.error('Error declining collaboration invite:', err);
 		} finally {
 			processingNotificationId = null;
 		}
@@ -584,6 +635,25 @@
 													disabled={processingNotificationId === notification.id}
 												>
 													Deny
+												</button>
+											</div>
+										{:else if notification.type === 'collaboration_invite'}
+											<div class="notification-actions">
+												<button
+													type="button"
+													class="action-approve"
+													onclick={(e) => handleAcceptCollaborationInvite(notification, e)}
+													disabled={processingNotificationId === notification.id}
+												>
+													Accept
+												</button>
+												<button
+													type="button"
+													class="action-deny"
+													onclick={(e) => handleDeclineCollaborationInvite(notification, e)}
+													disabled={processingNotificationId === notification.id}
+												>
+													Decline
 												</button>
 											</div>
 										{/if}

@@ -71,8 +71,8 @@
 	--color-border: rgba(255, 255, 255, 0.08); /* Minimal border */
 	--color-input-bg: rgba(0, 0, 0, 0.3);
 	--color-cta: var(--color-primary);
-	--color-link: #90a4ae;
-	--color-link-hover: #b0bec5;
+	--color-link: #9e9e9e;
+	--color-link-hover: #9e9e9e;
 
 	/* Status colors - dark mode */
 	--color-error: #f87171;
@@ -145,6 +145,14 @@ a {
 a:hover {
 	color: var(--color-link-hover);
 	text-decoration: underline;
+}
+
+[data-theme='dark'] a,
+[data-theme='dark'] a:link,
+[data-theme='dark'] a:visited,
+[data-theme='dark'] a:hover,
+[data-theme='dark'] a:active {
+	color: #9e9e9e !important;
 }
 
 /* Editorial content containers */
