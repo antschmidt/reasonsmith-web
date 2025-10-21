@@ -2246,6 +2246,37 @@ export const ADD_POST_COLLABORATOR = gql`
 	}
 `;
 
+export const ACCEPT_COLLABORATION_INVITE = gql`
+	mutation AcceptCollaborationInvite($collaboratorId: uuid!, $notificationId: uuid!) {
+		# Update collaborator status to accepted
+		update_post_collaborator_by_pk(
+			pk_columns: { id: $collaboratorId }
+			_set: { status: "accepted" }
+		) {
+			id
+			status
+			post_id
+		}
+		# Delete the notification
+		delete_notification_by_pk(id: $notificationId) {
+			id
+		}
+	}
+`;
+
+export const DECLINE_COLLABORATION_INVITE = gql`
+	mutation DeclineCollaborationInvite($collaboratorId: uuid!, $notificationId: uuid!) {
+		# Delete the collaborator record
+		delete_post_collaborator_by_pk(id: $collaboratorId) {
+			id
+		}
+		# Delete the notification
+		delete_notification_by_pk(id: $notificationId) {
+			id
+		}
+	}
+`;
+
 // ============================================
 // Collaborator Management
 // ============================================

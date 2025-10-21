@@ -47,6 +47,8 @@
 	let processingMessageId = $state<string | null>(null);
 	let subscription: any = null;
 	let messagesContainer: HTMLDivElement;
+	let pollingInterval: ReturnType<typeof setInterval> | null = null;
+	let subscriptionActive = $state(false);
 
 	async function loadMessages() {
 		loading = true;
@@ -201,6 +203,7 @@
 		markMessagesAsRead();
 
 		// Subscribe to real-time messages
+		console.log('[Chat] Setting up subscription for post:', postId);
 		subscription = apolloClient
 			.subscribe({
 				query: SUBSCRIBE_TO_COLLABORATION_MESSAGES,
@@ -208,6 +211,18 @@
 			})
 			.subscribe({
 				next: (result: any) => {
+					console.log(
+						'[Chat] Subscription update received:',
+						result.data?.collaboration_message?.length,
+						'messages'
+					);
+					subscriptionActive = true;
+					// Clear polling fallback if subscription is working
+					if (pollingInterval) {
+						console.log('[Chat] Subscription working, clearing polling fallback');
+						clearInterval(pollingInterval);
+						pollingInterval = null;
+					}
 					if (result.data?.collaboration_message) {
 						messages = result.data.collaboration_message;
 						scrollToBottom();
@@ -215,14 +230,44 @@
 					}
 				},
 				error: (err: any) => {
-					console.error('Subscription error:', err);
+					console.error('[Chat] Subscription error:', err);
+					subscriptionActive = false;
+					// Start polling fallback if subscription fails
+					if (!pollingInterval) {
+						console.log('[Chat] Subscription failed, starting polling fallback');
+						startPollingFallback();
+					}
+					// Try to reconnect after error
+					setTimeout(() => {
+						console.log('[Chat] Attempting to reload messages after subscription error');
+						loadMessages();
+					}, 2000);
 				}
 			});
+
+		// Start a fallback polling mechanism after 5 seconds if subscription hasn't fired
+		setTimeout(() => {
+			if (!subscriptionActive) {
+				console.log('[Chat] Subscription not active after 5s, starting polling fallback');
+				startPollingFallback();
+			}
+		}, 5000);
 	});
+
+	function startPollingFallback() {
+		if (pollingInterval) return;
+		console.log('[Chat] Starting polling fallback every 3 seconds');
+		pollingInterval = setInterval(() => {
+			loadMessages();
+		}, 3000);
+	}
 
 	onDestroy(() => {
 		if (subscription) {
 			subscription.unsubscribe();
+		}
+		if (pollingInterval) {
+			clearInterval(pollingInterval);
 		}
 	});
 </script>
