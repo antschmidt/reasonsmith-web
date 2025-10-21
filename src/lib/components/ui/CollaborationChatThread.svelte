@@ -201,6 +201,7 @@
 		markMessagesAsRead();
 
 		// Subscribe to real-time messages
+		console.log('[Chat] Setting up subscription for post:', postId);
 		subscription = apolloClient
 			.subscribe({
 				query: SUBSCRIBE_TO_COLLABORATION_MESSAGES,
@@ -208,6 +209,11 @@
 			})
 			.subscribe({
 				next: (result: any) => {
+					console.log(
+						'[Chat] Subscription update received:',
+						result.data?.collaboration_message?.length,
+						'messages'
+					);
 					if (result.data?.collaboration_message) {
 						messages = result.data.collaboration_message;
 						scrollToBottom();
@@ -215,7 +221,12 @@
 					}
 				},
 				error: (err: any) => {
-					console.error('Subscription error:', err);
+					console.error('[Chat] Subscription error:', err);
+					// Try to reconnect after error
+					setTimeout(() => {
+						console.log('[Chat] Attempting to reload messages after subscription error');
+						loadMessages();
+					}, 2000);
 				}
 			});
 	});

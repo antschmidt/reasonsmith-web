@@ -39,6 +39,14 @@ if (isBrowser) {
 		retryWait: async (retries) => {
 			// Exponential backoff with max 30s
 			await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * 2 ** retries, 30000)));
+		},
+		// Keep connection alive with ping/pong
+		keepAlive: 10000, // Send keepalive every 10 seconds
+		// Log connection state for debugging
+		on: {
+			connected: () => console.log('[WebSocket] Connected'),
+			closed: () => console.log('[WebSocket] Closed'),
+			error: (err) => console.error('[WebSocket] Error:', err)
 		}
 	});
 
@@ -50,9 +58,7 @@ const splitLink = isBrowser
 	? split(
 			({ query }) => {
 				const definition = getMainDefinition(query);
-				return (
-					definition.kind === 'OperationDefinition' && definition.operation === 'subscription'
-				);
+				return definition.kind === 'OperationDefinition' && definition.operation === 'subscription';
 			},
 			wsLink!,
 			httpLink
