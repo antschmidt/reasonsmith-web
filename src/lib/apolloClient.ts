@@ -35,7 +35,7 @@ if (isBrowser) {
 		},
 		// Reconnect on connection loss
 		shouldRetry: () => true,
-		retryAttempts: Infinity,
+		retryAttempts: 15,
 		retryWait: async (retries) => {
 			// Exponential backoff with max 30s
 			await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * 2 ** retries, 30000)));
