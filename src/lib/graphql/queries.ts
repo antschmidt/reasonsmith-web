@@ -1561,6 +1561,7 @@ const NOTIFICATION_FIELDS = gql`
 		actor_id
 		read
 		created_at
+		metadata
 		discussion {
 			id
 			discussion_versions(
@@ -1574,6 +1575,11 @@ const NOTIFICATION_FIELDS = gql`
 		post {
 			id
 			content
+			post_collaborators {
+				id
+				contributor_id
+				role
+			}
 		}
 	}
 `;
@@ -2260,7 +2266,7 @@ export const UPDATE_COLLABORATOR_ROLE = gql`
 `;
 
 export const FORCE_RECLAIM_EDIT_LOCK = gql`
-	mutation ForceReclaimEditLock($postId: uuid!, $fromUserId: uuid!, $now: timestamptz!) {
+	mutation ForceReclaimEditLock($postId: uuid!, $fromUserId: uuid!) {
 		# Release the current editor's lock
 		update_post_collaborator(
 			where: { post_id: { _eq: $postId }, contributor_id: { _eq: $fromUserId } }
@@ -2408,6 +2414,7 @@ export const SUBSCRIBE_TO_DRAFT_UPDATES = gql`
 			draft_content
 			updated_at
 			current_editor_id
+			author_id
 			edit_locked_at
 		}
 	}
@@ -2446,6 +2453,539 @@ export const SUBSCRIBE_TO_EDIT_LOCK_STATUS = gql`
 					avatar_url
 				}
 			}
+		}
+	}
+`;
+
+// ============================================
+// Edit Control Request System
+// ============================================
+
+export const CREATE_EDIT_CONTROL_REQUEST = gql`
+	mutation CreateEditControlRequest(
+		$postId: uuid!
+		$discussionId: uuid!
+		$requesterId: uuid!
+		$currentHolderId: uuid!
+		$authorId: uuid!
+		$discussionTitle: String!
+		$skipAuthorNotification: Boolean!
+	) {
+		# Delete any existing edit control request notifications for this post from this requester
+		# This prevents duplicate notification errors
+		delete_notification(
+			where: {
+				type: { _eq: "edit_control_request" }
+				post_id: { _eq: $postId }
+				actor_id: { _eq: $requesterId }
+			}
+		) {
+			affected_rows
+		}
+
+		# Create notification for current lock holder
+		insert_notification_one(
+			object: {
+				type: "edit_control_request"
+				recipient_id: $currentHolderId
+				actor_id: $requesterId
+				discussion_id: $discussionId
+				post_id: $postId
+				metadata: {
+					requester_id: $requesterId
+					current_holder_id: $currentHolderId
+					post_id: $postId
+					discussion_title: $discussionTitle
+				}
+			}
+		) {
+			id
+		}
+
+		# Create notification for author (if different from current holder)
+		author_notification: insert_notification_one(
+			object: {
+				type: "edit_control_request"
+				recipient_id: $authorId
+				actor_id: $requesterId
+				discussion_id: $discussionId
+				post_id: $postId
+				metadata: {
+					requester_id: $requesterId
+					current_holder_id: $currentHolderId
+					post_id: $postId
+					discussion_title: $discussionTitle
+				}
+			}
+		) @skip(if: $skipAuthorNotification) {
+			id
+		}
+	}
+`;
+
+export const APPROVE_EDIT_CONTROL_REQUEST = gql`
+	mutation ApproveEditControlRequest(
+		$postId: uuid!
+		$newEditorId: uuid!
+		$previousEditorId: uuid!
+		$now: timestamptz!
+	) {
+		# Release previous editor's lock (only if they have a collaborator record)
+		releaseLock: update_post_collaborator(
+			where: { post_id: { _eq: $postId }, contributor_id: { _eq: $previousEditorId } }
+			_set: { has_edit_lock: false, edit_lock_acquired_at: null }
+		) {
+			affected_rows
+		}
+
+		# Grant lock to requester (only if they have a collaborator record)
+		# If requester is author, they may not have a collaborator record
+		grantLock: update_post_collaborator(
+			where: { post_id: { _eq: $postId }, contributor_id: { _eq: $newEditorId } }
+			_set: { has_edit_lock: true, edit_lock_acquired_at: $now }
+		) {
+			affected_rows
+			returning {
+				id
+				has_edit_lock
+			}
+		}
+
+		# Update post's current editor and lock timestamp
+		# This works for both author and collaborators
+		update_post_by_pk(
+			pk_columns: { id: $postId }
+			_set: { current_editor_id: $newEditorId, edit_locked_at: $now }
+		) {
+			id
+			current_editor_id
+			edit_locked_at
+		}
+
+		# Delete all related notifications for this request
+		delete_notification(
+			where: {
+				_and: [
+					{ type: { _eq: "edit_control_request" } }
+					{ post_id: { _eq: $postId } }
+					{ metadata: { _contains: { requester_id: $newEditorId } } }
+				]
+			}
+		) {
+			affected_rows
+		}
+	}
+`;
+
+export const DENY_EDIT_CONTROL_REQUEST = gql`
+	mutation DenyEditControlRequest($requesterId: uuid!, $postId: uuid!) {
+		# Delete all related notifications for this request
+		delete_notification(
+			where: {
+				_and: [
+					{ type: { _eq: "edit_control_request" } }
+					{ post_id: { _eq: $postId } }
+					{ metadata: { _contains: { requester_id: $requesterId } } }
+				]
+			}
+		) {
+			affected_rows
+		}
+	}
+`;
+
+export const CREATE_ROLE_UPGRADE_REQUEST = gql`
+	mutation CreateRoleUpgradeRequest(
+		$postId: uuid!
+		$discussionId: uuid!
+		$requesterId: uuid!
+		$authorId: uuid!
+		$discussionTitle: String!
+		$requestedRole: String!
+	) {
+		insert_notification_one(
+			object: {
+				type: "role_upgrade_request"
+				recipient_id: $authorId
+				actor_id: $requesterId
+				discussion_id: $discussionId
+				post_id: $postId
+				metadata: {
+					requester_id: $requesterId
+					post_id: $postId
+					discussion_title: $discussionTitle
+					requested_role: $requestedRole
+				}
+			}
+		) {
+			id
+		}
+	}
+`;
+
+export const APPROVE_ROLE_UPGRADE_REQUEST = gql`
+	mutation ApproveRoleUpgradeRequest(
+		$notificationId: uuid!
+		$collaboratorId: uuid!
+		$newRole: String!
+	) {
+		# Update collaborator role
+		update_post_collaborator_by_pk(pk_columns: { id: $collaboratorId }, _set: { role: $newRole }) {
+			id
+			role
+		}
+
+		# Delete notification
+		delete_notification_by_pk(id: $notificationId) {
+			id
+		}
+	}
+`;
+
+export const DENY_ROLE_UPGRADE_REQUEST = gql`
+	mutation DenyRoleUpgradeRequest($notificationId: uuid!) {
+		delete_notification_by_pk(id: $notificationId) {
+			id
+		}
+	}
+`;
+
+// ============================================
+// Collaboration Chat System
+// ============================================
+
+// Fragment for collaboration message fields
+const COLLABORATION_MESSAGE_FIELDS = gql`
+	fragment CollaborationMessageFields on collaboration_message {
+		id
+		post_id
+		sender_id
+		message_type
+		content
+		metadata
+		created_at
+		updated_at
+		deleted_at
+		sender {
+			id
+			display_name
+			handle
+			avatar_url
+		}
+	}
+`;
+
+// Get all collaboration chats for current user
+export const GET_USER_COLLABORATION_CHATS = gql`
+	${COLLABORATION_MESSAGE_FIELDS}
+	query GetUserCollaborationChats($userId: uuid!) {
+		# Posts where user is the author
+		author_posts: post(
+			where: {
+				author_id: { _eq: $userId }
+				collaboration_enabled: { _eq: true }
+				status: { _eq: "draft" }
+			}
+			order_by: { updated_at: desc }
+		) {
+			id
+			discussion_id
+			author_id
+			collaboration_enabled
+			current_editor_id
+			discussion {
+				id
+				discussion_versions(
+					where: { version_type: { _eq: "published" } }
+					order_by: { version_number: desc }
+					limit: 1
+				) {
+					title
+				}
+			}
+			post_collaborators(where: { status: { _eq: "accepted" } }) {
+				id
+				contributor_id
+				role
+				contributor {
+					id
+					display_name
+					handle
+					avatar_url
+				}
+			}
+			collaboration_messages(
+				where: { deleted_at: { _is_null: true } }
+				order_by: { created_at: desc }
+				limit: 1
+			) {
+				...CollaborationMessageFields
+			}
+			unread_count: collaboration_messages_aggregate(
+				where: {
+					deleted_at: { _is_null: true }
+					sender_id: { _neq: $userId }
+					_not: { read_statuses: { user_id: { _eq: $userId } } }
+				}
+			) {
+				aggregate {
+					count
+				}
+			}
+		}
+
+		# Posts where user is a collaborator
+		collaborator_posts: post_collaborator(
+			where: {
+				contributor_id: { _eq: $userId }
+				status: { _eq: "accepted" }
+				post: { collaboration_enabled: { _eq: true }, status: { _eq: "draft" } }
+			}
+			order_by: { post: { updated_at: desc } }
+		) {
+			id
+			post {
+				id
+				discussion_id
+				author_id
+				collaboration_enabled
+				current_editor_id
+				discussion {
+					id
+					discussion_versions(
+						where: { version_type: { _eq: "published" } }
+						order_by: { version_number: desc }
+						limit: 1
+					) {
+						title
+					}
+				}
+				post_collaborators(where: { status: { _eq: "accepted" } }) {
+					id
+					contributor_id
+					role
+					contributor {
+						id
+						display_name
+						handle
+						avatar_url
+					}
+				}
+				collaboration_messages(
+					where: { deleted_at: { _is_null: true } }
+					order_by: { created_at: desc }
+					limit: 1
+				) {
+					...CollaborationMessageFields
+				}
+				unread_count: collaboration_messages_aggregate(
+					where: {
+						deleted_at: { _is_null: true }
+						sender_id: { _neq: $userId }
+						_not: { read_statuses: { user_id: { _eq: $userId } } }
+					}
+				) {
+					aggregate {
+						count
+					}
+				}
+			}
+		}
+	}
+`;
+
+// Get messages for a specific collaboration
+export const GET_COLLABORATION_MESSAGES = gql`
+	${COLLABORATION_MESSAGE_FIELDS}
+	query GetCollaborationMessages($postId: uuid!, $limit: Int = 50, $offset: Int = 0) {
+		collaboration_message(
+			where: { post_id: { _eq: $postId }, deleted_at: { _is_null: true } }
+			order_by: { created_at: asc }
+			limit: $limit
+			offset: $offset
+		) {
+			...CollaborationMessageFields
+		}
+	}
+`;
+
+// Get total unread message count across all collaborations
+export const GET_TOTAL_COLLABORATION_UNREAD_COUNT = gql`
+	query GetTotalCollaborationUnreadCount($userId: uuid!) {
+		collaboration_message_aggregate(
+			where: {
+				deleted_at: { _is_null: true }
+				sender_id: { _neq: $userId }
+				_not: { read_statuses: { user_id: { _eq: $userId } } }
+				post: {
+					_or: [
+						{ author_id: { _eq: $userId } }
+						{
+							post_collaborators: {
+								_and: [{ contributor_id: { _eq: $userId } }, { status: { _eq: "accepted" } }]
+							}
+						}
+					]
+				}
+			}
+		) {
+			aggregate {
+				count
+			}
+		}
+	}
+`;
+
+// Subscribe to new messages in a collaboration
+export const SUBSCRIBE_TO_COLLABORATION_MESSAGES = gql`
+	${COLLABORATION_MESSAGE_FIELDS}
+	subscription SubscribeToCollaborationMessages($postId: uuid!) {
+		collaboration_message(
+			where: { post_id: { _eq: $postId }, deleted_at: { _is_null: true } }
+			order_by: { created_at: asc }
+		) {
+			...CollaborationMessageFields
+		}
+	}
+`;
+
+// Send a collaboration message
+export const SEND_COLLABORATION_MESSAGE = gql`
+	${COLLABORATION_MESSAGE_FIELDS}
+	mutation SendCollaborationMessage(
+		$postId: uuid!
+		$senderId: uuid!
+		$messageType: String = "text"
+		$content: String!
+		$metadata: jsonb = {}
+	) {
+		insert_collaboration_message_one(
+			object: {
+				post_id: $postId
+				sender_id: $senderId
+				message_type: $messageType
+				content: $content
+				metadata: $metadata
+			}
+		) {
+			...CollaborationMessageFields
+		}
+	}
+`;
+
+// Mark messages as read for a specific post
+export const MARK_COLLABORATION_MESSAGES_AS_READ = gql`
+	mutation MarkCollaborationMessagesAsRead(
+		$readStatuses: [collaboration_message_read_status_insert_input!]!
+	) {
+		insert_collaboration_message_read_status(
+			objects: $readStatuses
+			on_conflict: {
+				constraint: collaboration_message_read_status_message_id_user_id_key
+				update_columns: []
+			}
+		) {
+			affected_rows
+		}
+	}
+`;
+
+// Send edit control request as collaboration message
+export const SEND_EDIT_CONTROL_REQUEST_MESSAGE = gql`
+	${COLLABORATION_MESSAGE_FIELDS}
+	mutation SendEditControlRequestMessage(
+		$postId: uuid!
+		$requesterId: uuid!
+		$currentHolderId: uuid!
+		$discussionTitle: String!
+	) {
+		insert_collaboration_message_one(
+			object: {
+				post_id: $postId
+				sender_id: $requesterId
+				message_type: "edit_request"
+				content: "Requesting edit control"
+				metadata: {
+					requester_id: $requesterId
+					current_holder_id: $currentHolderId
+					discussion_title: $discussionTitle
+					status: "pending"
+				}
+			}
+		) {
+			...CollaborationMessageFields
+		}
+	}
+`;
+
+// Approve edit control request from chat
+export const APPROVE_EDIT_CONTROL_FROM_CHAT = gql`
+	mutation ApproveEditControlFromChat(
+		$messageId: uuid!
+		$postId: uuid!
+		$newEditorId: uuid!
+		$previousEditorId: uuid!
+		$now: timestamptz!
+	) {
+		# Release previous editor's lock
+		update_post_collaborator(
+			where: { post_id: { _eq: $postId }, contributor_id: { _eq: $previousEditorId } }
+			_set: { has_edit_lock: false, edit_lock_acquired_at: null }
+		) {
+			affected_rows
+		}
+
+		# Grant lock to requester
+		update_post_collaborator(
+			where: { post_id: { _eq: $postId }, contributor_id: { _eq: $newEditorId } }
+			_set: { has_edit_lock: true, edit_lock_acquired_at: $now }
+		) {
+			affected_rows
+		}
+
+		# Update post's current editor
+		update_post_by_pk(
+			pk_columns: { id: $postId }
+			_set: { current_editor_id: $newEditorId, edit_locked_at: $now }
+		) {
+			id
+			current_editor_id
+			edit_locked_at
+		}
+
+		# Update message to mark as approved
+		update_collaboration_message_by_pk(
+			pk_columns: { id: $messageId }
+			_set: { metadata: { status: "approved" } }
+		) {
+			id
+			metadata
+		}
+	}
+`;
+
+// Deny edit control request from chat
+export const DENY_EDIT_CONTROL_FROM_CHAT = gql`
+	mutation DenyEditControlFromChat($messageId: uuid!, $denialMessage: String) {
+		update_collaboration_message_by_pk(
+			pk_columns: { id: $messageId }
+			_set: { metadata: { status: "denied", denial_message: $denialMessage } }
+		) {
+			id
+			metadata
+		}
+	}
+`;
+
+// Delete (soft delete) a collaboration message
+export const DELETE_COLLABORATION_MESSAGE = gql`
+	mutation DeleteCollaborationMessage($messageId: uuid!) {
+		update_collaboration_message_by_pk(
+			pk_columns: { id: $messageId }
+			_set: { deleted_at: "now()" }
+		) {
+			id
+			deleted_at
 		}
 	}
 `;

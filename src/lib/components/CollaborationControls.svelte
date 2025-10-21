@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { Users, Lock, LockOpen, AlertCircle } from '@lucide/svelte';
+	import { Users, Lock, LockOpen, AlertCircle, Shield } from '@lucide/svelte';
 	import Button from './ui/Button.svelte';
 	import CollaboratorContextMenu from './CollaboratorContextMenu.svelte';
+	import { nhost } from '$lib/nhostClient';
+	import { CREATE_EDIT_CONTROL_REQUEST, CREATE_ROLE_UPGRADE_REQUEST } from '$lib/graphql/queries';
 
 	type Collaborator = {
 		id: string;
@@ -33,6 +35,8 @@
 		currentUserId,
 		isAuthor,
 		postId,
+		discussionId,
+		discussionTitle,
 		onAcquireLock,
 		onReleaseLock,
 		onToggleCollaboration,
@@ -43,6 +47,8 @@
 		currentUserId: string;
 		isAuthor: boolean;
 		postId: string;
+		discussionId: string | null | undefined;
+		discussionTitle: string;
 		onAcquireLock: () => void;
 		onReleaseLock: () => void;
 		onToggleCollaboration: (enabled: boolean) => void;
@@ -52,6 +58,14 @@
 
 	let selectedCollaborator = $state<PostCollaborator | null>(null);
 	let showContextMenu = $state(false);
+	let requestFeedback = $state<string | null>(null);
+	let isRequestingControl = $state(false);
+	let isRequestingRoleUpgrade = $state(false);
+
+	// Get current user's role
+	const currentUserRole = $derived(
+		lockStatus.post_collaborators.find((pc) => pc.contributor.id === currentUserId)?.role || null
+	);
 
 	// Derived state
 	const currentlyEditing = $derived(
@@ -68,7 +82,7 @@
 	);
 
 	const canRequestControl = $derived(
-		!isCurrentUserEditing && !currentlyEditing && lockStatus.collaboration_enabled && !isAuthor
+		!isCurrentUserEditing && lockStatus.collaboration_enabled && !isAuthor
 	);
 
 	const canReleaseControl = $derived(isCurrentUserEditing && !isAuthor);
@@ -109,6 +123,128 @@
 	function handleCloseContextMenu() {
 		showContextMenu = false;
 		selectedCollaborator = null;
+	}
+
+	// Handle edit control request when someone else has the lock
+	async function handleRequestEditControl() {
+		if (!currentlyEditing) {
+			// No one has the lock, try to acquire directly
+			onAcquireLock();
+			return;
+		}
+
+		// Someone has the lock (either a collaborator or the author)
+		// Send approval request
+		isRequestingControl = true;
+		requestFeedback = null;
+
+		try {
+			// Current editor is either a collaborator or the author
+			const currentHolderId = lockStatus.current_editor_id;
+
+			if (!currentHolderId) {
+				console.error('No current editor - cannot request edit control');
+				requestFeedback = 'No one has edit control';
+				isRequestingControl = false;
+				return;
+			}
+
+			// Can't request from yourself
+			if (currentHolderId === currentUserId) {
+				console.error('Cannot request edit control from yourself');
+				requestFeedback = 'You already have edit control';
+				isRequestingControl = false;
+				return;
+			}
+
+			if (!discussionId) {
+				console.error('No discussion ID - cannot create notification');
+				requestFeedback = 'Missing discussion information';
+				isRequestingControl = false;
+				return;
+			}
+
+			console.log('[Request Edit Control]', {
+				postId,
+				discussionId,
+				requesterId: currentUserId,
+				currentHolderId,
+				authorId: lockStatus.author_id,
+				discussionTitle,
+				skipAuthorNotification: lockStatus.author_id === currentHolderId
+			});
+
+			const result = await nhost.graphql.request(CREATE_EDIT_CONTROL_REQUEST, {
+				postId,
+				discussionId,
+				requesterId: currentUserId,
+				currentHolderId: currentHolderId,
+				authorId: lockStatus.author_id,
+				discussionTitle,
+				skipAuthorNotification: lockStatus.author_id === currentHolderId
+			});
+
+			console.log('[Request Edit Control] Result:', result);
+
+			if (result.error) {
+				console.error('Error creating edit control request:', result.error);
+				requestFeedback = 'Failed to send request';
+			} else {
+				const holderName = lockStatus.current_editor?.display_name || 'current editor';
+				requestFeedback = `Request sent to ${holderName} and author`;
+
+				// Clear feedback after 5 seconds
+				setTimeout(() => {
+					requestFeedback = null;
+				}, 5000);
+			}
+		} catch (error) {
+			console.error('Error creating edit control request:', error);
+			requestFeedback = 'Failed to send request';
+		} finally {
+			isRequestingControl = false;
+		}
+	}
+
+	// Handle role upgrade request for viewers
+	async function handleRequestRoleUpgrade() {
+		isRequestingRoleUpgrade = true;
+		requestFeedback = null;
+
+		try {
+			if (!discussionId) {
+				console.error('No discussion ID - cannot create notification');
+				requestFeedback = 'Missing discussion information';
+				isRequestingRoleUpgrade = false;
+				return;
+			}
+
+			const result = await nhost.graphql.request(CREATE_ROLE_UPGRADE_REQUEST, {
+				postId,
+				discussionId,
+				requesterId: currentUserId,
+				authorId: lockStatus.author_id,
+				discussionTitle,
+				requestedRole: 'editor'
+			});
+
+			if (result.error) {
+				console.error('Error creating role upgrade request:', result.error);
+				requestFeedback = 'Failed to send request';
+			} else {
+				requestFeedback = 'Request sent to author';
+
+				// Clear feedback after 5 seconds
+				setTimeout(() => {
+					requestFeedback = null;
+				}, 5000);
+			}
+		} catch (error) {
+			console.error('Error creating role upgrade request:', error);
+			requestFeedback = 'Failed to send request';
+		} finally {
+			isRequestingRoleUpgrade = false;
+		}
 	}
 
 	// Calculate how long the lock has been held
@@ -168,7 +304,12 @@
 	<!-- Action Buttons -->
 	<div class="controls-actions">
 		{#if canRequestControl}
-			<Button variant="primary" size="sm" onclick={onAcquireLock} disabled={isLoading}>
+			<Button
+				variant="primary"
+				size="sm"
+				onclick={handleRequestEditControl}
+				disabled={isLoading || isRequestingControl}
+			>
 				<LockOpen size={16} />
 				Request Edit Control
 			</Button>
@@ -179,6 +320,24 @@
 				<Lock size={16} />
 				Release Control
 			</Button>
+		{/if}
+
+		{#if currentUserRole === 'viewer' && lockStatus.collaboration_enabled}
+			<Button
+				variant="secondary"
+				size="sm"
+				onclick={handleRequestRoleUpgrade}
+				disabled={isRequestingRoleUpgrade}
+			>
+				<Shield size={16} />
+				Request Edit Role
+			</Button>
+		{/if}
+
+		{#if requestFeedback}
+			<div class="request-feedback">
+				{requestFeedback}
+			</div>
 		{/if}
 
 		{#if isAuthor}
@@ -350,6 +509,16 @@
 
 	.toggle-label input[type='checkbox'] {
 		cursor: pointer;
+	}
+
+	.request-feedback {
+		padding: 0.75rem 1rem;
+		background: color-mix(in srgb, var(--color-success) 10%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
+		border-radius: var(--border-radius-sm);
+		font-size: 0.875rem;
+		color: var(--color-success);
+		font-weight: 500;
 	}
 
 	.collaborators-list {

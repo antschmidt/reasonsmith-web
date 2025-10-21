@@ -111,6 +111,8 @@
 		analysisBlockedReason = null as string | null,
 		canUserUseAnalysis = true,
 		submitting = false,
+		discussionTitle = 'Discussion',
+		discussionId = null,
 		onInput,
 		onFocus,
 		onAddCitation,
@@ -155,6 +157,8 @@
 		analysisBlockedReason?: string | null;
 		canUserUseAnalysis?: boolean;
 		submitting?: boolean;
+		discussionTitle?: string;
+		discussionId?: string | null;
 		onInput?: (e: Event) => void;
 		onFocus?: () => void;
 		onAddCitation?: (citation: Citation) => void;
@@ -187,18 +191,107 @@
 		) || false
 	);
 
-	const canEdit = $derived(
-		!editLockStatus ||
-			isAuthor ||
-			(editLockStatus.current_editor_id === user?.id && editLockStatus.collaboration_enabled)
-	);
+	const canEdit = $derived.by(() => {
+		// No lock status means anyone can edit (backward compatibility)
+		if (!editLockStatus) {
+			console.log('[canEdit] No lock status - can edit');
+			return true;
+		}
 
-	const isReadOnly = $derived(
-		editLockStatus &&
-			!isAuthor &&
-			editLockStatus.current_editor_id !== user?.id &&
-			editLockStatus.collaboration_enabled
-	);
+		// Collaboration disabled - only author can edit
+		if (!editLockStatus.collaboration_enabled) {
+			const result = isAuthor;
+			console.log('[canEdit] Collaboration disabled - author only', { isAuthor: result });
+			return result;
+		}
+
+		// Determine who currently has the lock
+		// If current_editor_id is set, that person has the lock
+		// If no current_editor_id but edit_locked_at exists, the author has the lock
+		const editorId =
+			editLockStatus.current_editor_id ||
+			(editLockStatus.edit_locked_at ? editLockStatus.author_id : null);
+
+		// If current user has the lock, they can edit
+		if (editorId === user?.id) {
+			console.log('[canEdit] Current user has lock', { editorId, userId: user?.id });
+			return true;
+		}
+
+		// If no one has the lock yet, author can edit and will auto-acquire lock
+		if (!editorId && isAuthor) {
+			console.log('[canEdit] No lock exists - author can edit and will acquire lock');
+			return true;
+		}
+
+		console.log('[canEdit] Cannot edit - someone else has lock', {
+			isAuthor,
+			current_editor_id: editLockStatus.current_editor_id,
+			edit_locked_at: editLockStatus.edit_locked_at,
+			author_id: editLockStatus.author_id,
+			user_id: user?.id,
+			editorId,
+			collaboration_enabled: editLockStatus.collaboration_enabled
+		});
+		return false;
+	});
+
+	const isReadOnly = $derived.by(() => {
+		// No lock status means not read-only
+		if (!editLockStatus) {
+			console.log('[isReadOnly] No lock status - not read-only');
+			return false;
+		}
+
+		// Collaboration disabled means not read-only (handled by canEdit)
+		if (!editLockStatus.collaboration_enabled) {
+			console.log('[isReadOnly] Collaboration disabled - not read-only');
+			return false;
+		}
+
+		// Check if current user is a collaborator (not the author)
+		const currentUserCollaborator = editLockStatus.post_collaborators?.find(
+			(pc: any) => pc.contributor.id === user?.id
+		);
+
+		// Determine who is currently editing
+		const editorId =
+			editLockStatus.current_editor_id ||
+			(editLockStatus.edit_locked_at ? editLockStatus.author_id : null);
+
+		// If someone else has the lock, show Draft Preview
+		// This includes:
+		// - Collaborators seeing the author's draft
+		// - Author seeing a collaborator's draft
+		if (editorId && editorId !== user?.id && editLockStatus.collaboration_enabled) {
+			// Show Draft Preview if:
+			// 1. Current user is the author (viewing collaborator's work), OR
+			// 2. Current user is a collaborator (viewing anyone else's work)
+			const shouldShowPreview = isAuthor || !!currentUserCollaborator;
+
+			console.log('[isReadOnly] Someone else has lock - checking if should show preview', {
+				isAuthor,
+				isCollaborator: !!currentUserCollaborator,
+				editorId,
+				currentUserId: user?.id,
+				shouldShowPreview
+			});
+
+			if (shouldShowPreview) {
+				return true;
+			}
+		}
+
+		console.log('[isReadOnly] Not read-only', {
+			current_editor_id: editLockStatus.current_editor_id,
+			edit_locked_at: editLockStatus.edit_locked_at,
+			isAuthor,
+			has_edit_lock: currentUserCollaborator?.has_edit_lock,
+			user_id: user?.id,
+			editorId
+		});
+		return false;
+	});
 
 	// Function to load edit lock status
 	async function loadEditLockStatus() {
@@ -248,10 +341,24 @@
 					if (result.data?.post_by_pk) {
 						const updatedPost = result.data.post_by_pk;
 
+						// Determine who is editing: could be current_editor_id or the author (when current_editor_id is null)
+						const activeEditorId = updatedPost.current_editor_id || updatedPost.author_id;
+						const isViewingOthersEdit = activeEditorId && activeEditorId !== user?.id;
+
 						// Only update content if someone else is editing
-						if (updatedPost.current_editor_id && updatedPost.current_editor_id !== user?.id) {
-							comment = updatedPost.draft_content || '';
-							console.log('Draft updated by another user');
+						if (isViewingOthersEdit) {
+							const newContent = updatedPost.draft_content || '';
+							// Force reactivity by reassigning
+							if (comment !== newContent) {
+								comment = newContent;
+								console.log('[Subscription] Draft updated by another user:', {
+									currentEditor: updatedPost.current_editor_id,
+									authorId: updatedPost.author_id,
+									activeEditor: activeEditorId,
+									currentUser: user?.id,
+									contentLength: newContent.length
+								});
+							}
 						}
 					}
 				},
@@ -300,6 +407,29 @@
 				lockStatusSubscription.unsubscribe();
 			}
 		};
+	});
+
+	// Auto-acquire lock when author starts editing without a lock
+	let hasAutoAcquired = $state(false);
+	$effect(() => {
+		if (typeof window === 'undefined' || !draftPostId || !user?.id || !editLockStatus) return;
+
+		// Only auto-acquire for author when collaboration is enabled and no lock exists
+		const shouldAutoAcquire =
+			isAuthor &&
+			editLockStatus.collaboration_enabled &&
+			!editLockStatus.current_editor_id &&
+			!editLockStatus.edit_locked_at &&
+			!hasAutoAcquired;
+
+		if (shouldAutoAcquire) {
+			console.log('[Auto-Acquire] Author needs lock - acquiring automatically');
+			hasAutoAcquired = true;
+			handleAcquireEditLock();
+		}
+
+		// Don't reset hasAutoAcquired - once we've auto-acquired, we don't want to do it again
+		// The author should manually acquire/release after that
 	});
 
 	// Handle acquiring edit lock
@@ -484,18 +614,24 @@
 			{/if}
 
 			<!-- Collaboration Controls -->
-			{#if draftPostId && editLockStatus && user?.id}
-				<CollaborationControls
-					lockStatus={editLockStatus}
-					currentUserId={user.id}
-					{isAuthor}
-					postId={draftPostId}
-					onAcquireLock={handleAcquireEditLock}
-					onReleaseLock={handleReleaseEditLock}
-					onToggleCollaboration={handleToggleCollaboration}
-					onUpdate={loadEditLockStatus}
-					isLoading={isLoadingLock}
-				/>
+			{#if draftPostId && user?.id}
+				{#if editLockStatus}
+					<CollaborationControls
+						lockStatus={editLockStatus}
+						currentUserId={user.id}
+						{isAuthor}
+						postId={draftPostId}
+						{discussionId}
+						discussionTitle={discussionTitle || 'Discussion'}
+						onAcquireLock={handleAcquireEditLock}
+						onReleaseLock={handleReleaseEditLock}
+						onToggleCollaboration={handleToggleCollaboration}
+						onUpdate={loadEditLockStatus}
+						isLoading={isLoadingLock}
+					/>
+				{:else}
+					<div class="loading-collaboration">Loading collaboration status...</div>
+				{/if}
 			{/if}
 
 			{#if lockError}
@@ -503,6 +639,23 @@
 					<p>{lockError}</p>
 				</div>
 			{/if}
+
+			<!-- Debug info -->
+			<!-- <div
+				style="padding: 1rem; background: #f0f0f0; margin: 1rem 0; font-size: 0.75rem; border: 2px solid red; background-color: black;"
+			>
+				<strong>Debug Info:</strong><br />
+				canEdit: <strong>{canEdit}</strong><br />
+				isReadOnly: <strong>{isReadOnly}</strong><br />
+				isAuthor: {isAuthor}<br />
+				current_editor_id: {editLockStatus?.current_editor_id || 'null'}<br />
+				edit_locked_at: {editLockStatus?.edit_locked_at ? 'YES' : 'NO'}<br />
+				collaboration_enabled: {editLockStatus?.collaboration_enabled}<br />
+				user_id: {user?.id}<br />
+				author_id: {editLockStatus?.author_id}<br />
+				<strong>Showing:</strong>
+				{#if canEdit}EDITOR{:else if isReadOnly}DRAFT PREVIEW{:else}NOTHING{/if}
+			</div> -->
 
 			{#if canEdit}
 				<!-- Rich Text Editor (only for active editor) -->
@@ -795,7 +948,7 @@
 				</div>
 
 				{#if draftPostId && user?.id}
-					<CollaboratorInviteButton postId={draftPostId} ownerId={user.id} />
+					<CollaboratorInviteButton postId={draftPostId} ownerId={user.id} {isAuthor} />
 				{/if}
 
 				{#if replyingToPost}

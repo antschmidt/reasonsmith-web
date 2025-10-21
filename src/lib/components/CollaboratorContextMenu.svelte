@@ -57,6 +57,20 @@
 			(isAuthor || collaborator.contributor.id !== authorId) // Co-authors can't reclaim from author
 	);
 
+	// Debug logging
+	$effect(() => {
+		console.log('[CollaboratorContextMenu] Debug:', {
+			isAuthor,
+			isCoAuthor,
+			canManage,
+			canChangeRole,
+			collaboratorId: collaborator.contributor.id,
+			authorId,
+			isAuthorCollaborator: collaborator.contributor.id === authorId,
+			currentRole: collaborator.role
+		});
+	});
+
 	// Reset state when modal opens/closes
 	$effect(() => {
 		if (isOpen) {
@@ -102,8 +116,7 @@
 		try {
 			const result = await nhost.graphql.request(FORCE_RECLAIM_EDIT_LOCK, {
 				postId,
-				fromUserId: collaborator.contributor.id,
-				now: new Date().toISOString()
+				fromUserId: collaborator.contributor.id
 			});
 
 			if (result.error) {
@@ -164,7 +177,11 @@
 			<div class="modal-header">
 				<div class="collaborator-info">
 					{#if collaborator.contributor.avatar_url}
-						<img src={collaborator.contributor.avatar_url} alt={collaborator.contributor.display_name} class="avatar" />
+						<img
+							src={collaborator.contributor.avatar_url}
+							alt={collaborator.contributor.display_name}
+							class="avatar"
+						/>
 					{:else}
 						<div class="avatar-placeholder">
 							{collaborator.contributor.display_name?.charAt(0).toUpperCase() || '?'}
@@ -244,8 +261,8 @@
 					{:else}
 						<div class="remove-confirm">
 							<p class="warning-text">
-								Remove {collaborator.contributor.display_name}? They will lose access to this draft. If they
-								have contributed content, consider crediting them.
+								Remove {collaborator.contributor.display_name}? They will lose access to this draft.
+								If they have contributed content, consider crediting them.
 							</p>
 							<div class="confirm-actions">
 								<Button variant="secondary" size="sm" onclick={() => (showRemoveConfirm = false)}>

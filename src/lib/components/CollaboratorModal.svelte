@@ -289,7 +289,8 @@
 	}
 
 	.modal-content {
-		background: var(--card-bg);
+		background: color-mix(in srgb, var(--card-bg) 80%, transparent);
+		backdrop-filter: blur(8px);
 		border-radius: 12px;
 		width: 100%;
 		max-width: 600px;

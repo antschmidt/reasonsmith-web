@@ -3112,6 +3112,8 @@
 			{analysisBlockedReason}
 			{canUserUseAnalysis}
 			{submitting}
+			discussionId={discussion?.id}
+			discussionTitle={discussion ? getDiscussionTitle(discussion) : 'Discussion'}
 			onInput={onCommentInput}
 			onFocus={loadExistingDraft}
 			onAddCitation={addCommentCitation}
