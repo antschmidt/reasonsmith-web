@@ -10,9 +10,20 @@ const isBrowser = typeof window !== 'undefined';
 const PUBLIC_NHOST_SUBDOMAIN = env.PUBLIC_NHOST_SUBDOMAIN;
 const PUBLIC_NHOST_REGION = env.PUBLIC_NHOST_REGION;
 
+// Use custom domain in production, subdomain in development
+const isProduction = isBrowser && window.location.hostname === 'reasonsmith.com';
+const httpUrl = isProduction
+	? 'https://graphql.reasonsmith.com/v1'
+	: `https://${PUBLIC_NHOST_SUBDOMAIN}.graphql.${PUBLIC_NHOST_REGION}.nhost.run/v1`;
+const wsUrl = isProduction
+	? 'wss://graphql.reasonsmith.com/v1'
+	: `wss://${PUBLIC_NHOST_SUBDOMAIN}.graphql.${PUBLIC_NHOST_REGION}.nhost.run/v1`;
+
+console.log('[Apollo] Using URLs:', { httpUrl, wsUrl, isProduction });
+
 // HTTP link for queries and mutations
 const httpLink = new HttpLink({
-	uri: `https://${PUBLIC_NHOST_SUBDOMAIN}.graphql.${PUBLIC_NHOST_REGION}.nhost.run/v1`,
+	uri: httpUrl,
 	fetch: isBrowser ? window.fetch.bind(window) : undefined
 });
 
@@ -20,8 +31,10 @@ const httpLink = new HttpLink({
 let wsLink: GraphQLWsLink | null = null;
 
 if (isBrowser) {
+	console.log('[WebSocket] Initializing with URL:', wsUrl);
+
 	const wsClient = createClient({
-		url: `wss://${PUBLIC_NHOST_SUBDOMAIN}.graphql.${PUBLIC_NHOST_REGION}.nhost.run/v1`,
+		url: wsUrl,
 		connectionParams: async () => {
 			const session = nhost.getUserSession();
 			const accessToken = session?.accessToken;
@@ -53,8 +66,23 @@ if (isBrowser) {
 		on: {
 			connected: () => console.log('[WebSocket] Connected successfully'),
 			connecting: () => console.log('[WebSocket] Connecting...'),
-			closed: (event) => console.log('[WebSocket] Closed:', event),
-			error: (err) => console.error('[WebSocket] Error:', err),
+			closed: (event) => {
+				console.log('[WebSocket] Closed:', {
+					code: event?.code,
+					reason: event?.reason,
+					wasClean: event?.wasClean,
+					event
+				});
+			},
+			error: (err) => {
+				console.error('[WebSocket] Error:', {
+					error: err,
+					message: err?.message,
+					type: err?.type,
+					target: err?.target?.url,
+					readyState: err?.target?.readyState
+				});
+			},
 			opened: (socket) => console.log('[WebSocket] Socket opened:', socket)
 		}
 	});
