@@ -667,12 +667,12 @@
 	.chat-panel {
 		position: fixed;
 		top: calc(100% + 0.5rem);
-		right: 0;
+		right: 0.5rem;
 		width: 400px;
 		max-height: 600px;
 		background: var(--color-surface);
 		backdrop-filter: blur(8px);
-		border: 1px solid var(--color-border);
+		border-bottom: 1px solid var(--color-text-primary);
 		border-radius: var(--border-radius-lg);
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 		z-index: 51;

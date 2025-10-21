@@ -87,23 +87,22 @@
 	class:request={isEditRequest || isRoleRequest}
 	class:grouped={!showHeader && !isSystemMessage}
 >
-	{#if !isSystemMessage && showHeader}
-		<div class="message-avatar">
-			{#if message.sender.avatar_url}
-				<img src={message.sender.avatar_url} alt={message.sender.display_name} />
-			{:else}
-				<div class="avatar-placeholder">
-					{message.sender.display_name?.charAt(0).toUpperCase() || '?'}
-				</div>
-			{/if}
-		</div>
-	{:else if !isSystemMessage && !showHeader}
-		<div class="message-avatar-spacer"></div>
-	{/if}
-
 	<div class="message-body">
 		{#if !isSystemMessage && showHeader}
 			<div class="message-header">
+				{#if !isSystemMessage && showHeader}
+					<div class="message-avatar">
+						{#if message.sender.avatar_url}
+							<img src={message.sender.avatar_url} alt={message.sender.display_name} />
+						{:else}
+							<div class="avatar-placeholder">
+								{message.sender.display_name?.charAt(0).toUpperCase() || '?'}
+							</div>
+						{/if}
+					</div>
+				{:else if !isSystemMessage && !showHeader}
+					<div class="message-avatar-spacer"></div>
+				{/if}
 				<span class="sender-name">{message.sender.display_name}</span>
 				<span class="message-time">{formatTimeAgo(message.created_at)}</span>
 			</div>
@@ -215,16 +214,21 @@
 	.message-item {
 		display: flex;
 		gap: 0.75rem;
-		padding: 0.75rem 0;
+		padding: 0.25rem 0;
 		animation: fadeIn 0.2s ease;
 	}
 
 	.message-item.own {
 		flex-direction: row-reverse;
+		justify-content: flex-end;
+	}
+
+	.message-item.other {
+		justify-content: flex-start;
 	}
 
 	.message-item.grouped {
-		padding: 0.25rem 0;
+		padding: 0.125rem 0;
 	}
 
 	.message-avatar-spacer {
@@ -246,20 +250,20 @@
 
 	.message-item.system {
 		justify-content: center;
-		padding: 0.5rem 0;
+		padding: 0.25rem 0;
 		width: 100%;
 	}
 
 	.message-item.system .message-body {
 		background: color-mix(in srgb, var(--color-surface) 50%, transparent);
 		border-radius: var(--border-radius-sm);
-		padding: 0.5rem 1rem;
+		padding: 0.25rem 0.75rem;
 		text-align: center;
 		width: 100%;
 	}
 
 	.message-item.system .message-content {
-		font-size: 0.625rem;
+		font-size: 0.8125rem;
 		color: var(--color-text-secondary);
 		font-style: italic;
 		text-align: center;
@@ -303,14 +307,17 @@
 		align-items: center;
 		width: 100%;
 		gap: 0.5rem;
-		margin-bottom: 0.25rem;
+		margin: 0;
+		padding: 0;
 	}
 
 	.own .message-header {
 		display: flex;
 		flex-direction: row-reverse;
-		justify-content: right;
-		/*justify-content: flex-end;*/
+	}
+
+	.other .message-header {
+		justify-content: flex-start;
 	}
 
 	.sender-name {
@@ -328,10 +335,13 @@
 		font-size: 0.9375rem;
 		color: var(--color-text-primary);
 		line-height: 1.5;
+		margin: 0;
+		padding: 0;
 	}
 
 	.message-text {
 		margin: 0;
+		padding: 0;
 		word-wrap: break-word;
 	}
 
@@ -341,6 +351,7 @@
 		text-decoration-color: currentColor;
 		text-underline-offset: 2px;
 		transition: opacity var(--transition-speed) ease;
+		overflow-wrap: anywhere;
 	}
 
 	.message-link:hover {
@@ -348,8 +359,9 @@
 	}
 
 	.message-item.own .message-link {
-		color: white;
-		text-decoration-color: rgba(255, 255, 255, 0.7);
+		color: var(--color-on-secondary);
+		text-decoration-color: currentColor;
+		opacity: 0.9;
 	}
 
 	.message-item.other .message-link {
@@ -363,21 +375,28 @@
 		align-items: flex-end;
 	}
 
+	.message-item.other .message-body {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
 	.message-item.own .message-text {
 		background: var(--color-secondary);
-		color: white;
-		padding: 0.5rem 0.75rem;
+		color: var(--color-on-secondary);
+		padding: 0.375rem 0.625rem;
 		border-radius: var(--border-radius-md);
-		max-width: 80%;
 		text-align: right;
+		margin: 0;
 	}
 
 	.message-item.other .message-text {
 		background: var(--color-surface);
-		padding: 0.5rem 0.75rem;
+		padding: 0.375rem 0.625rem;
 		border-radius: var(--border-radius-md);
 		border: 1px solid var(--color-border);
-		max-width: 80%;
+		text-align: left;
+		margin: 0;
 	}
 
 	.request-card {
