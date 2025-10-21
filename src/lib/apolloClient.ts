@@ -22,9 +22,10 @@ let wsLink: GraphQLWsLink | null = null;
 if (isBrowser) {
 	const wsClient = createClient({
 		url: `wss://${PUBLIC_NHOST_SUBDOMAIN}.graphql.${PUBLIC_NHOST_REGION}.nhost.run/v1`,
-		connectionParams: () => {
+		connectionParams: async () => {
 			const session = nhost.getUserSession();
 			const accessToken = session?.accessToken;
+			console.log('[WebSocket] Connection params - has token:', !!accessToken);
 			return accessToken
 				? {
 						headers: {
@@ -34,19 +35,27 @@ if (isBrowser) {
 				: {};
 		},
 		// Reconnect on connection loss
-		shouldRetry: () => true,
+		shouldRetry: (err) => {
+			console.log('[WebSocket] Retry check, error:', err);
+			return true;
+		},
 		retryAttempts: 15,
 		retryWait: async (retries) => {
+			console.log('[WebSocket] Retry attempt:', retries);
 			// Exponential backoff with max 30s
 			await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * 2 ** retries, 30000)));
 		},
 		// Keep connection alive with ping/pong
 		keepAlive: 10000, // Send keepalive every 10 seconds
+		// Lazy connection - don't connect until subscription is active
+		lazy: false,
 		// Log connection state for debugging
 		on: {
-			connected: () => console.log('[WebSocket] Connected'),
-			closed: () => console.log('[WebSocket] Closed'),
-			error: (err) => console.error('[WebSocket] Error:', err)
+			connected: () => console.log('[WebSocket] Connected successfully'),
+			connecting: () => console.log('[WebSocket] Connecting...'),
+			closed: (event) => console.log('[WebSocket] Closed:', event),
+			error: (err) => console.error('[WebSocket] Error:', err),
+			opened: (socket) => console.log('[WebSocket] Socket opened:', socket)
 		}
 	});
 
