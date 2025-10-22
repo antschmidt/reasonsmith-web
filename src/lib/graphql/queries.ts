@@ -1102,6 +1102,58 @@ export const UPDATE_POST_GOOD_FAITH = gql`
 	}
 `;
 
+// Mutation to update steelman scores for a post
+export const UPDATE_POST_STEELMAN_SCORES = gql`
+	mutation UpdatePostSteelmanScores(
+		$postId: uuid!
+		$steelmanScore: numeric
+		$steelmanQualityNotes: String
+		$understandingScore: numeric
+		$intellectualHumilityScore: numeric
+	) {
+		update_post_by_pk(
+			pk_columns: { id: $postId }
+			_set: {
+				steelman_score: $steelmanScore
+				steelman_quality_notes: $steelmanQualityNotes
+				understanding_score: $understandingScore
+				intellectual_humility_score: $intellectualHumilityScore
+			}
+		) {
+			id
+			steelman_score
+			steelman_quality_notes
+			understanding_score
+			intellectual_humility_score
+		}
+	}
+`;
+
+// Mutation to award XP to a contributor (calls PostgreSQL function)
+export const AWARD_XP = gql`
+	mutation AwardXP(
+		$contributorId: uuid!
+		$activityType: String!
+		$xpAmount: Int!
+		$relatedPostId: uuid
+		$notes: String
+	) {
+		award_xp(
+			args: {
+				p_contributor_id: $contributorId
+				p_activity_type: $activityType
+				p_xp_amount: $xpAmount
+				p_related_post_id: $relatedPostId
+				p_notes: $notes
+			}
+		) {
+			new_total_xp
+			new_level
+			level_up
+		}
+	}
+`;
+
 // Mutation to anonymize a post
 export const ANONYMIZE_POST = gql`
 	mutation AnonymizePost($postId: uuid!) {

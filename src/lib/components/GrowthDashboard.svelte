@@ -53,7 +53,7 @@
 	$: levelTitle = getLevelTitle(currentLevel);
 	$: xpForNextLevel = getXPForNextLevel(currentLevel);
 	$: levelProgress = getLevelProgress(totalXP);
-	$: progressPercentage = (levelProgress.currentLevelXP / levelProgress.xpNeeded) * 100;
+	$: progressPercentage = (levelProgress.currentXP / levelProgress.xpForNextLevel) * 100;
 
 	async function loadGrowthData() {
 		try {
@@ -188,9 +188,9 @@
 				</div>
 				<div class="progress-text">
 					<span
-						>{formatXP(levelProgress.currentLevelXP)} / {formatXP(levelProgress.xpNeeded)} XP</span
+						>{formatXP(levelProgress.currentXP)} / {formatXP(levelProgress.xpForNextLevel)} XP</span
 					>
-					<span>{formatXP(xpForNextLevel)} to next level</span>
+					<span>{formatXP(levelProgress.xpToNextLevel)} to next level</span>
 				</div>
 			</div>
 		</section>

@@ -1,89 +1,89 @@
 <script lang="ts">
-	import { POST_TYPE_CONFIG } from '$lib/types/writingStyle';
+	import { Shield } from 'lucide-svelte';
 
-	export let steelmanScore: number | null = null;
-	export let steelmanNotes: string | null = null;
-	export let understandingScore: number | null = null;
-	export let intellectualHumilityScore: number | null = null;
-	export let postType: string | null = null;
-	export let compact: boolean = false;
+	// Props
+	export let score: number | null | undefined;
+	export let qualityNotes: string | null | undefined = null;
+	export let size: 'small' | 'medium' | 'large' = 'medium';
+	export let showLabel: boolean = true;
+	export let showTooltip: boolean = true;
 
-	// Determine which scores to display based on post type
-	$: showSteelmanScore = steelmanScore !== null && steelmanScore > 0;
-	$: showUnderstandingScore = understandingScore !== null && understandingScore > 0;
-	$: showHumilityScore = intellectualHumilityScore !== null && intellectualHumilityScore > 0;
+	// Compute quality tier based on score
+	$: qualityTier = getQualityTier(score);
+	$: tierColor = getTierColor(qualityTier);
+	$: tierLabel = getTierLabel(qualityTier);
 
-	// Get steelman quality label
-	function getSteelmanQualityLabel(score: number): {
-		label: string;
-		color: string;
-		emoji: string;
-	} {
-		if (score >= 9) return { label: 'Exceptional', color: '#10b981', emoji: '🏆' };
-		if (score >= 7) return { label: 'Strong', color: '#3b82f6', emoji: '🛡️' };
-		if (score >= 5) return { label: 'Fair', color: '#8b5cf6', emoji: '⚖️' };
-		if (score >= 3) return { label: 'Weak', color: '#f59e0b', emoji: '⚠️' };
-		return { label: 'Poor', color: '#ef4444', emoji: '❌' };
+	function getQualityTier(score: number | null | undefined): string {
+		if (score === null || score === undefined) return 'none';
+		if (score >= 9) return 'exceptional';
+		if (score >= 7) return 'strong';
+		if (score >= 5) return 'good';
+		if (score >= 3) return 'fair';
+		return 'weak';
 	}
 
-	function getScoreColor(score: number): string {
-		if (score >= 8) return '#10b981'; // Green
-		if (score >= 6) return '#3b82f6'; // Blue
-		if (score >= 4) return '#f59e0b'; // Orange
-		return '#ef4444'; // Red
+	function getTierColor(tier: string): string {
+		const colors: Record<string, string> = {
+			exceptional: '#059669', // green
+			strong: '#0891b2', // cyan
+			good: '#0284c7', // blue
+			fair: '#6366f1', // indigo
+			weak: '#64748b', // slate
+			none: '#9ca3af' // gray
+		};
+		return colors[tier] || colors.none;
 	}
 
-	// Get post type icon and label
-	$: postTypeConfig = postType ? POST_TYPE_CONFIG[postType as keyof typeof POST_TYPE_CONFIG] : null;
+	function getTierLabel(tier: string): string {
+		const labels: Record<string, string> = {
+			exceptional: 'Exceptional Steelman',
+			strong: 'Strong Steelman',
+			good: 'Good Steelman',
+			fair: 'Fair Steelman',
+			weak: 'Weak Steelman',
+			none: 'Not Scored'
+		};
+		return labels[tier] || labels.none;
+	}
+
+	function getIconSize(): number {
+		const sizes = { small: 14, medium: 18, large: 24 };
+		return sizes[size];
+	}
+
+	function getBadgeSize(): string {
+		const sizes = {
+			small: 'padding: 0.25rem 0.5rem; font-size: 0.75rem;',
+			medium: 'padding: 0.375rem 0.75rem; font-size: 0.875rem;',
+			large: 'padding: 0.5rem 1rem; font-size: 1rem;'
+		};
+		return sizes[size];
+	}
 </script>
 
-{#if showSteelmanScore || showUnderstandingScore || showHumilityScore}
-	<div class="steelman-badge" class:compact>
-		{#if showSteelmanScore && steelmanScore}
-			{@const quality = getSteelmanQualityLabel(steelmanScore)}
-			<div class="score-item steelman" title={steelmanNotes || 'Steelman Quality'}>
-				<span class="emoji">{quality.emoji}</span>
-				<div class="score-details">
-					<div class="score-label">Steelman</div>
-					<div class="score-value" style="color: {quality.color}">
-						{steelmanScore.toFixed(1)}/10
-						<span class="quality-label">{quality.label}</span>
-					</div>
-					{#if steelmanNotes && !compact}
-						<div class="score-notes">{steelmanNotes}</div>
-					{/if}
+{#if score !== null && score !== undefined}
+	<div
+		class="steelman-badge"
+		class:has-tooltip={showTooltip && qualityNotes}
+		style="background-color: {tierColor}15; border-color: {tierColor}50; {getBadgeSize()}"
+		title={showTooltip && qualityNotes ? qualityNotes : tierLabel}
+	>
+		<div class="badge-icon" style="color: {tierColor}">
+			<Shield size={getIconSize()} strokeWidth={2} />
+		</div>
+		<div class="badge-content" style="color: {tierColor}">
+			<span class="score-value">{score.toFixed(1)}</span>
+			{#if showLabel}
+				<span class="score-label">/10</span>
+			{/if}
+		</div>
+		{#if showTooltip && qualityNotes}
+			<div class="tooltip">
+				<div class="tooltip-header">
+					<strong>{tierLabel}</strong>
+					<span class="tooltip-score">{score.toFixed(1)}/10</span>
 				</div>
-			</div>
-		{/if}
-
-		{#if showUnderstandingScore && understandingScore}
-			<div class="score-item understanding" title="Understanding of opposing views">
-				<span class="emoji">🧠</span>
-				<div class="score-details">
-					<div class="score-label">Understanding</div>
-					<div class="score-value" style="color: {getScoreColor(understandingScore)}">
-						{understandingScore.toFixed(1)}/10
-					</div>
-				</div>
-			</div>
-		{/if}
-
-		{#if showHumilityScore && intellectualHumilityScore}
-			<div class="score-item humility" title="Intellectual humility">
-				<span class="emoji">🤝</span>
-				<div class="score-details">
-					<div class="score-label">Humility</div>
-					<div class="score-value" style="color: {getScoreColor(intellectualHumilityScore)}">
-						{intellectualHumilityScore.toFixed(1)}/10
-					</div>
-				</div>
-			</div>
-		{/if}
-
-		{#if postTypeConfig && (postType === 'steelman' || postType === 'synthesis' || postType === 'acknowledgment')}
-			<div class="post-type-badge" style="background-color: {postTypeConfig.color}10; color: {postTypeConfig.color}">
-				<span class="post-type-icon">{postTypeConfig.icon}</span>
-				<span class="post-type-label">{postTypeConfig.label}</span>
+				<p class="tooltip-notes">{qualityNotes}</p>
 			</div>
 		{/if}
 	</div>
@@ -91,128 +91,109 @@
 
 <style>
 	.steelman-badge {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.75rem;
-		padding: 0.75rem;
-		background: #f8f9fa;
-		border-radius: 6px;
-		border-left: 3px solid var(--color-primary, #007bff);
-		margin-top: 0.5rem;
-	}
-
-	.steelman-badge.compact {
-		padding: 0.5rem;
-		gap: 0.5rem;
-		flex-direction: row;
-		align-items: center;
-	}
-
-	.score-item {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.5rem;
-	}
-
-	.steelman-badge.compact .score-item {
-		align-items: center;
-	}
-
-	.emoji {
-		font-size: 1.25rem;
-		flex-shrink: 0;
-	}
-
-	.steelman-badge.compact .emoji {
-		font-size: 1rem;
-	}
-
-	.score-details {
-		display: flex;
-		flex-direction: column;
-		gap: 0.125rem;
-	}
-
-	.steelman-badge.compact .score-details {
-		flex-direction: row;
-		align-items: center;
-		gap: 0.25rem;
-	}
-
-	.score-label {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: var(--color-text-secondary, #666);
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-	}
-
-	.steelman-badge.compact .score-label {
-		display: none;
-	}
-
-	.score-value {
-		font-size: 0.875rem;
-		font-weight: 700;
-		display: flex;
-		align-items: center;
-		gap: 0.25rem;
-	}
-
-	.quality-label {
-		font-size: 0.75rem;
-		font-weight: 600;
-		opacity: 0.8;
-	}
-
-	.steelman-badge.compact .quality-label {
-		display: none;
-	}
-
-	.score-notes {
-		font-size: 0.75rem;
-		color: var(--color-text-tertiary, #999);
-		font-style: italic;
-		margin-top: 0.25rem;
-		line-height: 1.4;
-	}
-
-	.post-type-badge {
-		display: flex;
+		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
-		padding: 0.375rem 0.75rem;
-		border-radius: 4px;
-		font-size: 0.875rem;
+		border-radius: var(--border-radius-md);
+		border: 1px solid;
 		font-weight: 600;
+		font-family: var(--font-family-sans);
+		transition: all 0.2s ease;
+		position: relative;
 		white-space: nowrap;
 	}
 
-	.post-type-icon {
-		font-size: 1rem;
+	.steelman-badge.has-tooltip {
+		cursor: help;
 	}
 
-	.steelman-badge.compact .post-type-badge {
-		padding: 0.25rem 0.5rem;
-		font-size: 0.75rem;
+	.steelman-badge.has-tooltip:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 	}
 
-	.steelman-badge.compact .post-type-icon {
+	.badge-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.badge-content {
+		display: flex;
+		align-items: baseline;
+		gap: 0.125rem;
+		line-height: 1;
+	}
+
+	.score-value {
+		font-weight: 700;
+	}
+
+	.score-label {
+		font-weight: 500;
+		opacity: 0.7;
+		font-size: 0.85em;
+	}
+
+	/* Tooltip */
+	.tooltip {
+		position: absolute;
+		bottom: calc(100% + 8px);
+		left: 50%;
+		transform: translateX(-50%);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-md);
+		padding: var(--space-sm);
+		min-width: 200px;
+		max-width: 300px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.2s ease;
+		z-index: 1000;
+	}
+
+	.steelman-badge.has-tooltip:hover .tooltip {
+		opacity: 1;
+		pointer-events: auto;
+	}
+
+	.tooltip::after {
+		content: '';
+		position: absolute;
+		top: 100%;
+		left: 50%;
+		transform: translateX(-50%);
+		border: 6px solid transparent;
+		border-top-color: var(--color-surface);
+	}
+
+	.tooltip-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: var(--space-xs);
+		padding-bottom: var(--space-xs);
+		border-bottom: 1px solid var(--color-border-light);
+	}
+
+	.tooltip-header strong {
+		color: var(--color-text-primary);
 		font-size: 0.875rem;
 	}
 
-	.steelman-badge.compact .post-type-label {
-		display: none;
+	.tooltip-score {
+		color: var(--color-text-secondary);
+		font-size: 0.75rem;
+		font-weight: 600;
 	}
 
-	/* Responsive */
-	@media (max-width: 640px) {
-		.steelman-badge {
-			flex-direction: column;
-		}
-
-		.quality-label {
-			display: none;
-		}
+	.tooltip-notes {
+		margin: 0;
+		font-size: 0.8125rem;
+		line-height: 1.5;
+		color: var(--color-text-secondary);
 	}
 </style>
