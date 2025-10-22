@@ -218,7 +218,7 @@ export interface Achievement {
 export function checkAchievementProgress(
 	achievement: Achievement,
 	userStats: {
-		steemanCount?: number;
+		steelmanCount?: number;
 		steelmanQualityAvg?: number;
 		synthesisCount?: number;
 		acknowledgmentCount?: number;
@@ -239,7 +239,7 @@ export function checkAchievementProgress(
 		case 'steel_journeyman':
 		case 'steel_sharpener':
 		case 'steel_master':
-			progress = userStats.steemanCount || 0;
+			progress = userStats.steelmanCount || 0;
 			break;
 
 		case 'charitable_reader':

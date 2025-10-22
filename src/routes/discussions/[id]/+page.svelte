@@ -3250,13 +3250,6 @@
 	}
 
 	/* Audio Upload & Player Styles */
-	.audio-section {
-		margin-top: 2rem;
-		padding: 1.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: var(--border-radius-lg);
-	}
 
 	.audio-admin-section {
 		display: flex;
@@ -3298,12 +3291,6 @@
 	.remove-audio-button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
-	}
-
-	.audio-upload-hint {
-		font-size: 0.9rem;
-		color: var(--color-text-secondary);
-		margin: 0;
 	}
 
 	.audio-upload-label {
