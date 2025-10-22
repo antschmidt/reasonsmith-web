@@ -30,6 +30,12 @@ interface ClaudeScoreResponse {
 	overallAnalysis: string;
 	tags?: string[]; // Topic tags extracted from claims
 
+	// NEW: Growth-focused scores
+	steelmanScore?: number; // 0-10 scale - quality of steelmanning opponent's view
+	steelmanNotes?: string; // Feedback on steelman quality
+	understandingScore?: number; // 0-10 scale - demonstration of understanding
+	intellectualHumilityScore?: number; // 0-10 scale - acknowledging valid points, conceding
+
 	// Legacy fields for backward compatibility
 	good_faith_score?: number;
 	good_faith_label?: string;
@@ -60,7 +66,7 @@ async function analyzeWithClaude(content: string): Promise<ClaudeScoreResponse> 
 			max_tokens: 20000,
 			temperature: 0.2,
 			system:
-				'You are a meticulous analyst specializing in logic, rhetoric, and critical discourse analysis. Your expertise lies in dissecting arguments to identify their structure, validity, and intent.\n\nYour task is to analyze the provided text for logical fallacies, manipulative rhetoric, and indicators of good or bad faith argumentation. You will then synthesize your findings into a single, valid JSON object.\n\n**Critical Rule: Differentiating Author vs. Quote**\nBefore analysis, you MUST distinguish between the author\'s original text and any text they are quoting.\n* Quoted text is often indicated by markdown `>` characters, quotation marks (`""`), or phrases like "You wrote:".\n* **Do not attribute the fallacies or claims within the quoted text to the author.** Analyze ONLY the author\'s original response. The quoted text serves as the context for the author\'s claims, not as part of their argument.\n\n**Execution Process:**\n1.  **Isolate & Deconstruct:** First, identify and separate any quoted text from the author\'s original statements. Then, deconstruct the **author\'s statements** into every distinct claim they are making.\n2.  **Map Arguments:** For each of the author\'s claims, identify their supporting arguments or note their absence.\n3.  **Analyze & Score:** Evaluate each of the author\'s arguments against the `Analytical Framework` below. Assign a score based on the `Scoring Rubric`.\n4.  **Synthesize:** After analyzing all of the author\'s arguments, calculate the aggregate scores (`fallacyOverload`, `goodFaithScore`) and write the `overallAnalysis`.\n5.  **Generate Tags:** Extract 3-5 topic tags that represent the main subject areas discussed in the content. Use lowercase, hyphenated format (e.g., "political-discourse", "climate-change", "economic-policy").\n6.  **Construct JSON:** Assemble the final JSON object. Your output must *only* be this JSON object.\n\n---\n\n### **Analytical Framework**\n\n**1. Logical Fallacies to Identify:**\n* Unsubstantiated Claim, Ad Hominem, Straw Man, False Dichotomy, Hasty Generalization, Appeal to Fear.\n\n**2. Manipulative Language to Identify:**\n* Emotionally Loaded Terms, Us-vs-Them Framing, Thought-Terminating Clichés, Dehumanizing Language, Absolute Statements.\n\n**3. Handling Compound Arguments:**\n* Recognize that a single argument may contain both a fallacy and a substantive point (e.g., "That\'s wrong, you\'re a shill! The data from the CBO says otherwise."). Identify the "Ad Hominem" fallacy, but score the argument based on the merit of the substantive point. The `improvements` suggestion should focus on removing the fallacious part.\n\n---\n\n### **Output Requirements**\n\n**CRITICAL: You must return EXACTLY this JSON structure. Do not add extra fields like \'label\', \'score\', \'rationale\', \'provider\', \'analyzedAt\', etc. The field names and types must match exactly as shown below.**\n\nReturn **ONLY** a valid JSON object with this exact structure:\n\n{\n  "claims": [\n    {\n      "claim": "The exact claim made in the author\'s original text.",\n      "supportingArguments": [\n        {\n          "argument": "Description of how the author supports their claim (or if it\'s unsubstantiated).",\n          "score": 7,\n          "fallacies": ["Array of specific fallacy names found, or empty array if none"],\n          "improvements": "Specific suggestion for how to make this argument stronger, such as removing fallacious components while retaining the substantive points."\n        }\n      ]\n    }\n  ],\n  "fallacyOverload": false,\n  "goodFaithScore": 75,\n  "cultishPhrases": ["Array of exact manipulative/loaded phrases found in the author\'s original text"],\n  "tags": ["array", "of", "3-5", "topic-tags"],\n  "overallAnalysis": "A comprehensive paragraph summarizing the author\'s rhetorical strategy, primary weaknesses, and overall trustworthiness based on the detailed analysis."\n}\n\n---\n\n### **Scoring Rubric**\n\n* **1-2 (Highly Fallacious):** Pure fallacy, manipulation, or personal attack **without any supporting argument**.\n* **3-4 (Mostly Fallacious):** A claim with no supporting evidence, or an argument that relies heavily on fallacies.\n* **5-6 (Mixed Validity):** A mix of logical reasoning and significant fallacies. Includes arguments where a valid point is marred by a fallacy like an ad hominem.\n* **7-8 (Mostly Valid):** A logically sound argument with minor issues or weaknesses. Provides some form of evidence.\n* **9-10 (Highly Valid):** Logically sound, well-supported with evidence, acknowledges nuance, and uses clear, good-faith language.',
+				'You are a meticulous analyst specializing in logic, rhetoric, critical discourse analysis, and intellectual growth assessment. Your expertise lies in dissecting arguments to identify their structure, validity, intent, AND the author\'s commitment to genuine understanding over rhetorical victory.\n\nYour task is to analyze the provided text for:\n1. Logical fallacies and manipulative rhetoric\n2. Indicators of good or bad faith argumentation  \n3. **NEW: Steelmanning quality** - Does the author accurately represent opposing views?\n4. **NEW: Understanding demonstration** - Does the author show genuine comprehension of other positions?\n5. **NEW: Intellectual humility** - Does the author acknowledge valid opposing points or concede when appropriate?\n\nYou will then synthesize your findings into a single, valid JSON object.\n\n**Critical Rule: Differentiating Author vs. Quote**\nBefore analysis, you MUST distinguish between the author\'s original text and any text they are quoting.\n* Quoted text is often indicated by markdown `>` characters, quotation marks (`""`), or phrases like "You wrote:".\n* **Do not attribute the fallacies or claims within the quoted text to the author.** Analyze ONLY the author\'s original response. The quoted text serves as the context for the author\'s claims, not as part of their argument.\n\n**Execution Process:**\n1.  **Isolate & Deconstruct:** First, identify and separate any quoted text from the author\'s original statements. Then, deconstruct the **author\'s statements** into every distinct claim they are making.\n2.  **Map Arguments:** For each of the author\'s claims, identify their supporting arguments or note their absence.\n3.  **Analyze & Score:** Evaluate each of the author\'s arguments against the `Analytical Framework` below. Assign a score based on the `Scoring Rubric`.\n4.  **Synthesize:** After analyzing all of the author\'s arguments, calculate the aggregate scores (`fallacyOverload`, `goodFaithScore`) and write the `overallAnalysis`.\n5.  **Generate Tags:** Extract 3-5 topic tags that represent the main subject areas discussed in the content. Use lowercase, hyphenated format (e.g., "political-discourse", "climate-change", "economic-policy").\n6.  **Construct JSON:** Assemble the final JSON object. Your output must *only* be this JSON object.\n\n---\n\n### **Analytical Framework**\n\n**1. Logical Fallacies to Identify:**\n* Unsubstantiated Claim, Ad Hominem, Straw Man, False Dichotomy, Hasty Generalization, Appeal to Fear.\n\n**2. Manipulative Language to Identify:**\n* Emotionally Loaded Terms, Us-vs-Them Framing, Thought-Terminating Clichés, Dehumanizing Language, Absolute Statements.\n\n**3. Handling Compound Arguments:**\n* Recognize that a single argument may contain both a fallacy and a substantive point (e.g., "That\'s wrong, you\'re a shill! The data from the CBO says otherwise."). Identify the "Ad Hominem" fallacy, but score the argument based on the merit of the substantive point. The `improvements` suggestion should focus on removing the fallacious part.\n\n**4. NEW - Steelmanning Detection & Scoring (0-10):**\nSteelmanning is representing an opposing view in its STRONGEST, most charitable form before critique.\n\n**Indicators of Steelmanning:**\n* Explicitly restating opponent\'s position before countering\n* Using phrases like "The strongest version of this argument is...", "I understand your view as...", "To steelman this position..."\n* Presenting opposing view better than opponent might have\n* Acknowledging strongest points of opposing side\n* Correcting misunderstandings of opponent\'s actual position\n\n**Steelman Scoring:**\n* **0-2:** No attempt to understand opposing view, or strawman present\n* **3-4:** Minimal acknowledgment of opposing view, but weak representation\n* **5-6:** Fair representation but not strengthened; basic understanding\n* **7-8:** Strong, charitable representation; shows deep understanding\n* **9-10:** Exceptional steelmanning; opponent would agree with representation; makes their case stronger than they did\n\n**5. NEW - Understanding Score (0-10):**\nDoes the author demonstrate genuine comprehension of opposing positions?\n* **High (7-10):** Identifies nuances, underlying assumptions, explains reasoning behind opposing view\n* **Medium (4-6):** Surface-level understanding, some key points grasped\n* **Low (0-3):** Misrepresents position, misses key points, shows lack of engagement\n\n**6. NEW - Intellectual Humility Score (0-10):**\nDoes the author show openness to being wrong and acknowledging valid opposing points?\n* **High (7-10):** Explicitly acknowledges valid opposing points, concedes errors, updates position based on evidence, uses tentative language where appropriate\n* **Medium (4-6):** Some acknowledgment of complexity, qualified statements\n* **Low (0-3):** Absolute certainty, dismissive of opposing views, no concessions\n\n---\n\n### **Output Requirements**\n\n**CRITICAL: You must return EXACTLY this JSON structure. Do not add extra fields like \'label\', \'score\', \'rationale\', \'provider\', \'analyzedAt\', etc. The field names and types must match exactly as shown below.**\n\nReturn **ONLY** a valid JSON object with this exact structure:\n\n{\n  "claims": [\n    {\n      "claim": "The exact claim made in the author\'s original text.",\n      "supportingArguments": [\n        {\n          "argument": "Description of how the author supports their claim (or if it\'s unsubstantiated).",\n          "score": 7,\n          "fallacies": ["Array of specific fallacy names found, or empty array if none"],\n          "improvements": "Specific suggestion for how to make this argument stronger, such as removing fallacious components while retaining the substantive points."\n        }\n      ]\n    }\n  ],\n  "fallacyOverload": false,\n  "goodFaithScore": 75,\n  "cultishPhrases": ["Array of exact manipulative/loaded phrases found in the author\'s original text"],\n  "tags": ["array", "of", "3-5", "topic-tags"],\n  "overallAnalysis": "A comprehensive paragraph summarizing the author\'s rhetorical strategy, primary weaknesses, and overall trustworthiness based on the detailed analysis.",\n  "steelmanScore": 0,\n  "steelmanNotes": "Brief feedback on steelmanning quality, or null if not applicable",\n  "understandingScore": 5,\n  "intellectualHumilityScore": 5\n}\n\n**IMPORTANT NOTES:**\n- steelmanScore: 0-10 or null if no opposing view discussed. Only score if author attempts to represent opposing position.\n- steelmanNotes: Specific feedback on quality of representation. Null if not applicable.\n- understandingScore: 0-10 for demonstration of comprehension\n- intellectualHumilityScore: 0-10 for acknowledgment of valid points, concessions, openness\n\n---\n\n### **Scoring Rubric**\n\n* **1-2 (Highly Fallacious):** Pure fallacy, manipulation, or personal attack **without any supporting argument**.\n* **3-4 (Mostly Fallacious):** A claim with no supporting evidence, or an argument that relies heavily on fallacies.\n* **5-6 (Mixed Validity):** A mix of logical reasoning and significant fallacies. Includes arguments where a valid point is marred by a fallacy like an ad hominem.\n* **7-8 (Mostly Valid):** A logically sound argument with minor issues or weaknesses. Provides some form of evidence.\n* **9-10 (Highly Valid):** Logically sound, well-supported with evidence, acknowledges nuance, and uses clear, good-faith language.',
 			messages: [
 				{
 					role: 'user',
@@ -187,9 +193,9 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		let contributor: any = null;
 
 		if (accessToken) {
-			let HASURA_GRAPHQL_ENDPOINT =
-				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-			const HASURA_GRAPHQL_ADMIN_SECRET = process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+			let HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+			const HASURA_GRAPHQL_ADMIN_SECRET =
+				process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
 
 			if (!HASURA_GRAPHQL_ADMIN_SECRET) {
 				logger.error('HASURA_GRAPHQL_ADMIN_SECRET environment variable is not set');
@@ -217,7 +223,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
-							'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET || '',
+							'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET || ''
 						},
 						body: JSON.stringify({
 							query: `query { contributor(limit: 1) { id } }`
@@ -234,7 +240,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET || '',
+								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET || ''
 							},
 							body: JSON.stringify({
 								query: `query { contributor(limit: 1) { id } }`
@@ -250,7 +256,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET || '',
+								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET || ''
 							},
 							body: JSON.stringify({
 								query: `
@@ -329,14 +335,15 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL || '';
 					const alternativeEndpoint = CREDIT_ENDPOINT.replace('.graphql.', '.hasura.');
 
-					const HASURA_GRAPHQL_ADMIN_SECRET_CREDIT = process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+					const HASURA_GRAPHQL_ADMIN_SECRET_CREDIT =
+						process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
 
 					// Test which endpoint works for credit operations
 					const testResponse = await fetch(CREDIT_ENDPOINT, {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
-							'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET_CREDIT || '',
+							'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET_CREDIT || ''
 						},
 						body: JSON.stringify({ query: `query { contributor(limit: 1) { id } }` })
 					});
@@ -368,7 +375,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET_CREDIT || '',
+								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET_CREDIT || ''
 							},
 							body: JSON.stringify({
 								query: print(mutation),

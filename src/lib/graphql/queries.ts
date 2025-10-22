@@ -20,6 +20,15 @@ const CONTRIBUTOR_FIELDS = gql`
 		subscription_tier
 		avatar_url
 		account_disabled
+		total_xp
+		current_level
+		steelman_count
+		steelman_quality_avg
+		synthesis_count
+		acknowledgment_count
+		positions_changed_count
+		clarifying_questions_count
+		minds_opened_count
 	}
 `;
 
@@ -40,6 +49,10 @@ const POST_FIELDS = gql`
 		style_metadata
 		style_word_count
 		style_requirements_met
+		steelman_score
+		steelman_quality_notes
+		understanding_score
+		intellectual_humility_score
 		contributor {
 			...ContributorFields
 		}
@@ -1994,6 +2007,212 @@ export const DELETE_SECURITY_KEY = gql`
 			id
 		}
 	}
+`;
+
+// ============================================
+// Growth Gamification - Achievements and XP
+
+const ACHIEVEMENT_FIELDS = gql`
+	fragment AchievementFields on achievement {
+		id
+		key
+		name
+		description
+		category
+		tier
+		requirement_type
+		requirement_value
+		icon_name
+		created_at
+	}
+`;
+
+const CONTRIBUTOR_ACHIEVEMENT_FIELDS = gql`
+	fragment ContributorAchievementFields on contributor_achievement {
+		id
+		contributor_id
+		achievement_id
+		earned_at
+		achievement {
+			...AchievementFields
+		}
+	}
+	${ACHIEVEMENT_FIELDS}
+`;
+
+const XP_ACTIVITY_FIELDS = gql`
+	fragment XPActivityFields on xp_activity {
+		id
+		contributor_id
+		activity_type
+		xp_earned
+		related_post_id
+		related_discussion_id
+		notes
+		created_at
+	}
+`;
+
+// Get all available achievements
+export const GET_ALL_ACHIEVEMENTS = gql`
+	query GetAllAchievements {
+		achievement(order_by: [{ category: asc }, { tier: asc }, { requirement_value: asc }]) {
+			...AchievementFields
+		}
+	}
+	${ACHIEVEMENT_FIELDS}
+`;
+
+// Get contributor's earned achievements
+export const GET_CONTRIBUTOR_ACHIEVEMENTS = gql`
+	query GetContributorAchievements($contributorId: uuid!) {
+		contributor_achievement(
+			where: { contributor_id: { _eq: $contributorId } }
+			order_by: { earned_at: desc }
+		) {
+			...ContributorAchievementFields
+		}
+	}
+	${CONTRIBUTOR_ACHIEVEMENT_FIELDS}
+`;
+
+// Get contributor's XP activity history
+export const GET_CONTRIBUTOR_XP_ACTIVITY = gql`
+	query GetContributorXPActivity($contributorId: uuid!, $limit: Int = 50) {
+		xp_activity(
+			where: { contributor_id: { _eq: $contributorId } }
+			order_by: { created_at: desc }
+			limit: $limit
+		) {
+			...XPActivityFields
+			post {
+				id
+				content
+				discussion_id
+			}
+			discussion {
+				id
+				discussion_versions(
+					where: { version_type: { _eq: "published" } }
+					order_by: { version_number: desc }
+					limit: 1
+				) {
+					title
+				}
+			}
+		}
+	}
+	${XP_ACTIVITY_FIELDS}
+`;
+
+// Get contributor's growth metrics (comprehensive view)
+export const GET_CONTRIBUTOR_GROWTH_METRICS = gql`
+	query GetContributorGrowthMetrics($contributorId: uuid!) {
+		contributor_by_pk(id: $contributorId) {
+			id
+			total_xp
+			current_level
+			steelman_count
+			steelman_quality_avg
+			synthesis_count
+			acknowledgment_count
+			positions_changed_count
+			clarifying_questions_count
+			minds_opened_count
+		}
+
+		# Get earned achievements
+		contributor_achievement(
+			where: { contributor_id: { _eq: $contributorId } }
+			order_by: { earned_at: desc }
+		) {
+			...ContributorAchievementFields
+		}
+
+		# Get recent XP activity
+		xp_activity(
+			where: { contributor_id: { _eq: $contributorId } }
+			order_by: { created_at: desc }
+			limit: 10
+		) {
+			...XPActivityFields
+		}
+	}
+	${CONTRIBUTOR_ACHIEVEMENT_FIELDS}
+	${XP_ACTIVITY_FIELDS}
+`;
+
+// Award an achievement to a contributor
+export const AWARD_ACHIEVEMENT = gql`
+	mutation AwardAchievement($contributorId: uuid!, $achievementId: uuid!) {
+		insert_contributor_achievement_one(
+			object: { contributor_id: $contributorId, achievement_id: $achievementId }
+		) {
+			...ContributorAchievementFields
+		}
+	}
+	${CONTRIBUTOR_ACHIEVEMENT_FIELDS}
+`;
+
+// Mutation to update post steelman scores (called after Claude analysis)
+export const UPDATE_POST_STEELMAN_SCORES = gql`
+	mutation UpdatePostSteelmanScores(
+		$postId: uuid!
+		$steelmanScore: numeric
+		$steelmanNotes: String
+		$understandingScore: numeric
+		$intellectualHumilityScore: numeric
+	) {
+		update_post_by_pk(
+			pk_columns: { id: $postId }
+			_set: {
+				steelman_score: $steelmanScore
+				steelman_quality_notes: $steelmanNotes
+				understanding_score: $understandingScore
+				intellectual_humility_score: $intellectualHumilityScore
+			}
+		) {
+			id
+			steelman_score
+			steelman_quality_notes
+			understanding_score
+			intellectual_humility_score
+		}
+	}
+`;
+
+// Mutation to update contributor growth metrics (typically called by database triggers or serverless functions)
+export const UPDATE_CONTRIBUTOR_GROWTH_METRICS = gql`
+	mutation UpdateContributorGrowthMetrics(
+		$contributorId: uuid!
+		$totalXP: Int
+		$currentLevel: Int
+		$steelmanCount: Int
+		$steelmanQualityAvg: numeric
+		$synthesisCount: Int
+		$acknowledgmentCount: Int
+		$positionsChangedCount: Int
+		$clarifyingQuestionsCount: Int
+		$mindsOpenedCount: Int
+	) {
+		update_contributor_by_pk(
+			pk_columns: { id: $contributorId }
+			_set: {
+				total_xp: $totalXP
+				current_level: $currentLevel
+				steelman_count: $steelmanCount
+				steelman_quality_avg: $steelmanQualityAvg
+				synthesis_count: $synthesisCount
+				acknowledgment_count: $acknowledgmentCount
+				positions_changed_count: $positionsChangedCount
+				clarifying_questions_count: $clarifyingQuestionsCount
+				minds_opened_count: $mindsOpenedCount
+			}
+		) {
+			...ContributorFields
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
 `;
 
 // ============================================

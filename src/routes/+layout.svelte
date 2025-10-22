@@ -9,6 +9,7 @@
 	import { page } from '$app/stores';
 	import InstallPrompt from '$lib/components/ui/InstallPrompt.svelte';
 	import ContributorChat from '$lib/components/ui/ContributorChat.svelte';
+	import { Sun, Moon } from '@lucide/svelte';
 
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = nhost.auth.getUser();
@@ -183,7 +184,11 @@
 						aria-label="Toggle theme"
 						class="theme-toggle"
 					>
-						{currentTheme === 'light' ? '🌙' : '☀️'}
+						{#if currentTheme === 'light'}
+							<Moon />
+						{:else}
+							<Sun />
+						{/if}
 					</button>
 					<span class="user-email-nav">{user.email}</span>
 					<button type="button" onclick={logout} class="logout-button-nav">Logout</button>

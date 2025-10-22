@@ -2,7 +2,16 @@
 
 export type WritingStyle = 'quick_point' | 'journalistic' | 'academic';
 
-export type PostType = 'response' | 'counter_argument' | 'supporting_evidence' | 'question';
+export type PostType =
+	| 'response'
+	| 'counter_argument'
+	| 'supporting_evidence'
+	| 'question'
+	| 'steelman' // NEW: Understanding opponent's strongest argument
+	| 'synthesis' // NEW: Finding common ground between views
+	| 'acknowledgment' // NEW: Conceding a point or changing position
+	| 'clarifying_question' // NEW: Question focused on understanding
+	| 'counter_with_steelman'; // NEW: Counter after demonstrating understanding
 
 export interface DiscussionSection {
 	id: string;
@@ -58,29 +67,81 @@ export interface StyleMetadata {
 
 // Post type configurations
 export const POST_TYPE_CONFIG = {
+	// Growth-focused types (NEW - highest XP value)
+	steelman: {
+		label: 'Steelman',
+		description: 'Represent the strongest version of an opposing view before critiquing',
+		icon: '🛡️',
+		color: 'gold',
+		xp: 30,
+		category: 'understanding'
+	},
+	synthesis: {
+		label: 'Synthesis',
+		description: 'Find common ground or bridge between opposing viewpoints',
+		icon: '🌉',
+		color: 'purple',
+		xp: 50,
+		category: 'understanding'
+	},
+	acknowledgment: {
+		label: 'Acknowledgment',
+		description: 'Acknowledge a valid point or update your position based on new information',
+		icon: '🤝',
+		color: 'teal',
+		xp: 25,
+		category: 'humility'
+	},
+	counter_with_steelman: {
+		label: 'Thoughtful Counter',
+		description: 'Counter-argument that first demonstrates understanding of the opposing view',
+		icon: '⚖️',
+		color: 'orange',
+		xp: 20,
+		category: 'reasoning'
+	},
+	clarifying_question: {
+		label: 'Clarifying Question',
+		description: 'Ask questions to better understand the position or reasoning',
+		icon: '❓',
+		color: 'blue',
+		xp: 15,
+		category: 'understanding'
+	},
+
+	// Standard types (maintained for compatibility)
 	response: {
 		label: 'Response',
 		description: 'General response or comment to the discussion',
 		icon: '💬',
-		color: 'blue'
+		color: 'gray',
+		xp: 5,
+		category: 'engagement'
 	},
 	counter_argument: {
 		label: 'Counter-Argument',
-		description: 'Present an opposing viewpoint or challenge the main argument',
-		icon: '⚖️',
-		color: 'orange'
+		description: 'Present an opposing viewpoint (consider using Thoughtful Counter instead)',
+		icon: '🗡️',
+		color: 'red',
+		xp: 10,
+		category: 'reasoning'
 	},
 	supporting_evidence: {
-		label: 'Supporting Evidence',
+		label: 'Evidence',
 		description: 'Provide additional evidence, data, or sources',
 		icon: '📊',
-		color: 'green'
+		color: 'green',
+		xp: 15,
+		category: 'evidence'
 	},
 	question: {
 		label: 'Question',
-		description: 'Ask for clarification or explore a related point',
-		icon: '❓',
-		color: 'purple'
+		description:
+			'Ask a question about the topic (use Clarifying Question for understanding-focused queries)',
+		icon: '❔',
+		color: 'indigo',
+		xp: 5,
+		category: 'engagement'
 	}
 } as const;
 
