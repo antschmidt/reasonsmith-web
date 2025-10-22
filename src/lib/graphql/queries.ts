@@ -279,7 +279,6 @@ export const GET_DISCUSSION_DETAILS = gql`
 			}
 		}
 	}
-	${CONTRIBUTOR_FIELDS}
 	${POST_FIELDS}
 `;
 
