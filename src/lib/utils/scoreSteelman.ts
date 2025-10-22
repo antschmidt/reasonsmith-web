@@ -53,7 +53,7 @@ export async function scoreAndAwardSteelman(
 			variables: {
 				postId,
 				steelmanScore: result.steelman_score,
-				steelmanQualityNotes: result.steelman_quality_notes,
+				steelmanNotes: result.steelman_quality_notes,
 				understandingScore: result.understanding_score,
 				intellectualHumilityScore: result.intellectual_humility_score
 			}
@@ -88,8 +88,7 @@ export function buildDiscussionContext(discussion: any): string {
 	if (!discussion) return '';
 
 	const title = discussion.current_version?.[0]?.title || discussion.title || '';
-	const description =
-		discussion.current_version?.[0]?.description || discussion.description || '';
+	const description = discussion.current_version?.[0]?.description || discussion.description || '';
 
 	return `Discussion Title: ${title}\n\nDiscussion Description: ${description}`;
 }
