@@ -1,4 +1,4 @@
-import { apolloClient } from '$lib/nhostClient';
+import { nhost } from '$lib/nhostClient';
 import { UPDATE_POST_STEELMAN_SCORES, AWARD_XP } from '$lib/graphql/queries';
 
 interface SteelmanScoreResult {
@@ -48,28 +48,22 @@ export async function scoreAndAwardSteelman(
 		const result: SteelmanScoreResult = await response.json();
 
 		// Update the post with the scores
-		await apolloClient.mutate({
-			mutation: UPDATE_POST_STEELMAN_SCORES,
-			variables: {
-				postId,
-				steelmanScore: result.steelman_score,
-				steelmanNotes: result.steelman_quality_notes,
-				understandingScore: result.understanding_score,
-				intellectualHumilityScore: result.intellectual_humility_score
-			}
+		await nhost.graphql.request(UPDATE_POST_STEELMAN_SCORES, {
+			postId,
+			steelmanScore: result.steelman_score,
+			steelmanNotes: result.steelman_quality_notes,
+			understandingScore: result.understanding_score,
+			intellectualHumilityScore: result.intellectual_humility_score
 		});
 
 		// Award XP if the score is > 0
 		if (result.xp_awarded > 0) {
-			await apolloClient.mutate({
-				mutation: AWARD_XP,
-				variables: {
-					contributorId,
-					activityType: 'steelman_quality',
-					xpAmount: result.xp_awarded,
-					relatedPostId: postId,
-					notes: `Steelman score: ${result.steelman_score}/10 - ${result.steelman_quality_notes.substring(0, 100)}`
-				}
+			await nhost.graphql.request(AWARD_XP, {
+				contributorId,
+				activityType: 'steelman_quality',
+				xpAmount: result.xp_awarded,
+				relatedPostId: postId,
+				notes: `Steelman score: ${result.steelman_score}/10 - ${result.steelman_quality_notes.substring(0, 100)}`
 			});
 		}
 

@@ -260,6 +260,11 @@ export const GET_DISCUSSION_DETAILS = gql`
 				good_faith_label
 				good_faith_last_evaluated
 				good_faith_analysis
+				import_source
+				import_url
+				import_content
+				import_author
+				import_date
 			}
 			draft_version: discussion_versions(
 				where: { version_type: { _eq: "draft" } }
@@ -300,6 +305,11 @@ const DISCUSSION_VERSION_FIELDS = gql`
 		good_faith_label
 		good_faith_last_evaluated
 		good_faith_analysis
+		import_source
+		import_url
+		import_content
+		import_author
+		import_date
 		created_at
 		created_by
 	}
@@ -315,6 +325,11 @@ export const CREATE_DISCUSSION_WITH_VERSION = gql`
 		$claims: jsonb = []
 		$citations: jsonb = []
 		$createdBy: uuid!
+		$importSource: String
+		$importUrl: String
+		$importContent: String
+		$importAuthor: String
+		$importDate: timestamptz
 	) {
 		insert_discussion_one(
 			object: {
@@ -331,6 +346,11 @@ export const CREATE_DISCUSSION_WITH_VERSION = gql`
 						version_number: 1
 						version_type: "draft"
 						created_by: $createdBy
+						import_source: $importSource
+						import_url: $importUrl
+						import_content: $importContent
+						import_author: $importAuthor
+						import_date: $importDate
 					}
 				}
 			}
@@ -356,6 +376,11 @@ export const CREATE_DISCUSSION_VERSION = gql`
 		$claims: jsonb = []
 		$citations: jsonb = []
 		$createdBy: uuid!
+		$importSource: String
+		$importUrl: String
+		$importContent: String
+		$importAuthor: String
+		$importDate: timestamptz
 	) {
 		insert_discussion_version_one(
 			object: {
@@ -369,6 +394,11 @@ export const CREATE_DISCUSSION_VERSION = gql`
 				version_type: "draft"
 				created_by: $createdBy
 				version_number: 1 # This will be calculated properly in the database trigger
+				import_source: $importSource
+				import_url: $importUrl
+				import_content: $importContent
+				import_author: $importAuthor
+				import_date: $importDate
 			}
 		) {
 			...DiscussionVersionFields
@@ -411,6 +441,11 @@ export const UPDATE_DISCUSSION_VERSION = gql`
 		$sections: jsonb
 		$claims: jsonb
 		$citations: jsonb
+		$importSource: String
+		$importUrl: String
+		$importContent: String
+		$importAuthor: String
+		$importDate: timestamptz
 	) {
 		update_discussion_version_by_pk(
 			pk_columns: { id: $versionId }
@@ -421,6 +456,11 @@ export const UPDATE_DISCUSSION_VERSION = gql`
 				sections: $sections
 				claims: $claims
 				citations: $citations
+				import_source: $importSource
+				import_url: $importUrl
+				import_content: $importContent
+				import_author: $importAuthor
+				import_date: $importDate
 			}
 		) {
 			...DiscussionVersionFields
