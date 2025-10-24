@@ -4,7 +4,6 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { nhost } from '$lib/nhostClient';
-	import DOMPurify from 'isomorphic-dompurify';
 	import { getCuratorName, type EditorsDeskPick } from '$lib/utils/editorsDeskUtils';
 	import SaveButton from './SaveButton.svelte';
 
@@ -23,8 +22,23 @@
 
 	const sanitizeMultiline = (value?: string | null) => {
 		if (!value) return '';
-		// Replace newlines with <br /> tags, then sanitize
+		// Replace newlines with <br /> tags
 		const withBreaks = value.replace(/(?:\r\n|\r|\n)/g, '<br />');
+
+		// Skip sanitization during SSR to avoid DOMPurify issues
+		if (typeof window === 'undefined') {
+			// Simple escaping for SSR - only allow <br /> tags
+			return withBreaks
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;')
+				.replace(/&lt;br \/&gt;/g, '<br />');
+		}
+
+		// Use DOMPurify on client side only
+		// Lazy load DOMPurify only on client
+		const DOMPurify = (window as any).__DOMPurify;
+		if (!DOMPurify) return withBreaks;
+
 		return DOMPurify.sanitize(withBreaks, {
 			ALLOWED_TAGS: ['br'],
 			ALLOWED_ATTR: []
@@ -55,7 +69,8 @@
 	};
 
 	const updateScrollState = () => {
-		if (!viewport) return;
+		// Guard against SSR and null viewport
+		if (typeof window === 'undefined' || !viewport) return;
 		const { scrollLeft, scrollWidth, clientWidth } = viewport;
 		atStart = scrollLeft <= 4;
 		atEnd = scrollLeft + clientWidth >= scrollWidth - 4;
@@ -67,7 +82,13 @@
 		viewport.scrollBy({ left: direction === 'next' ? amount : -amount, behavior: 'smooth' });
 	};
 
-	onMount(() => {
+	onMount(async () => {
+		// Load DOMPurify dynamically on client side only
+		if (!(window as any).__DOMPurify) {
+			const DOMPurifyModule = await import('isomorphic-dompurify');
+			(window as any).__DOMPurify = DOMPurifyModule.default;
+		}
+
 		const handle = () => updateScrollState();
 		handle();
 		const observer = new ResizeObserver(handle);

@@ -38,8 +38,11 @@
 	let editorsDeskError = $state<string | null>(null);
 
 	$effect(() => {
-		showcaseItems = data?.showcaseItems ?? [];
-		showcaseError = data?.showcaseError ?? null;
+		// Only run on client side
+		if (typeof window !== 'undefined') {
+			showcaseItems = data?.showcaseItems ?? [];
+			showcaseError = data?.showcaseError ?? null;
+		}
 	});
 
 	async function fetchEditorsDeskPicks() {
@@ -56,7 +59,7 @@
 			}
 			editorsDeskPicks = (data as any)?.editors_desk_pick ?? [];
 		} catch (e: any) {
-			editorsDeskError = e.message ?? 'Failed to load Editors\' Desk picks';
+			editorsDeskError = e.message ?? "Failed to load Editors' Desk picks";
 			console.error('Error loading editors desk picks:', e);
 		} finally {
 			editorsDeskLoading = false;
@@ -69,7 +72,7 @@
 </script>
 
 <div class="landing-shell">
-	<LandingHero editorsDeskPicks={editorsDeskPicks} />
+	<LandingHero {editorsDeskPicks} />
 
 	<LandingFeatures />
 	<LandingShowcase error={showcaseError} items={showcaseItems} />
