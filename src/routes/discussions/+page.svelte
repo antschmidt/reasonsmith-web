@@ -667,7 +667,7 @@
 	}
 
 	.discussions-main {
-		padding: clamp(3rem, 6vw, 4.5rem) clamp(1.5remj, 5vw, 4.5rem);
+		padding: clamp(3rem, 6vw, 4.5rem) clamp(1.5rem, 5vw, 4.5rem);
 	}
 
 	.article-list {
