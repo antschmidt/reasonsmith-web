@@ -8,9 +8,13 @@
 	import type { PageData } from './$types';
 
 	let { data } = $props<{ data: PageData }>();
-	let user = $state(nhost.auth.getUser());
+	// Don't get user during SSR - always show landing page on server
+	let user = $state(typeof window !== 'undefined' ? nhost.auth.getUser() : null);
 
 	onMount(() => {
+		// Update user on mount
+		user = nhost.auth.getUser();
+
 		nhost.auth.onAuthStateChanged((_event: string) => {
 			user = nhost.auth.getUser();
 		});
