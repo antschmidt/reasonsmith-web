@@ -18,6 +18,7 @@
 	import { COMMON_DISCUSSION_TAGS, normalizeTag } from '$lib/types/writingStyle';
 	import { canCurateEditorsDesk } from '$lib/utils/editorsDeskUtils';
 	import type { PageData } from './$types';
+	import { LampDesk } from '@lucide/svelte';
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -448,11 +449,29 @@
 								onkeydown={(e) => e.key === 'Enter' && goto(`/discussions/${d.id}`)}
 							>
 								<header class="discussion-header">
-									{#if d.current_version?.[0]}
-										<h2>{@html highlight(d.current_version[0].title, q)}</h2>
-									{:else}
-										<h2>Discussion</h2>
-									{/if}
+									<span class="discussion-header-head">
+										{#if d.current_version?.[0]}
+											<h2>{@html highlight(d.current_version[0].title, q)}</h2>
+										{:else}
+											<h2>Discussion</h2>
+										{/if}
+										<div class="card-actions">
+											{#if canCurate}
+												<button
+													class="editors-desk-button"
+													onclick={(e) => {
+														e.stopPropagation();
+														openPicker(d);
+													}}
+													title="Add to Editors' Desk"
+													aria-label="Add to Editors' Desk"
+												>
+													<LampDesk size={16} strokeWidth={2} />
+												</button>
+											{/if}
+											<SaveButton discussionId={d.id} size="small" />
+										</div>
+									</span>
 									{#if d.current_version?.[0]?.description}
 										<p class="deck">
 											{@html highlight(createSummary(d.current_version[0].description, 180), q)}
@@ -479,27 +498,6 @@
 									{:else}
 										<span>Unknown author</span>
 									{/if}
-									<div class="card-actions">
-										<SaveButton discussionId={d.id} size="small" />
-										{#if canCurate}
-											<button
-												class="editors-desk-button"
-												onclick={(e) => {
-													e.stopPropagation();
-													openPicker(d);
-												}}
-												title="Add to Editors' Desk"
-												aria-label="Add to Editors' Desk"
-											>
-												<img
-													src="/editors-desk-button-transparent.png"
-													alt="Editors' Desk"
-													width="24"
-													height="24"
-												/>
-											</button>
-										{/if}
-									</div>
 									<time
 										>{new Date(d.created_at).toLocaleDateString('en-US', {
 											year: 'numeric',
@@ -669,18 +667,19 @@
 	}
 
 	.discussions-main {
-		padding: clamp(3rem, 6vw, 4.5rem) clamp(1.5rem, 5vw, 4.5rem);
+		padding: clamp(3rem, 6vw, 4.5rem) clamp(1.5remj, 5vw, 4.5rem);
 	}
 
 	.article-list {
 		display: flex;
 		flex-direction: column;
-		gap: clamp(1.75rem, 4vw, 2.5rem);
+		gap: clamp(1rem, 4vw, 1rem);
 	}
 
 	@media (min-width: 1024px) {
 		.article-list {
 			grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+			background: var(--color-surface);
 		}
 	}
 
@@ -688,7 +687,7 @@
 		background: var(--color-surface);
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
 		border-radius: var(--border-radius-xl);
-		padding: var(--space-fluid-md);
+		padding: var(--space-fluid-sm);
 		box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
 		cursor: pointer;
 		transition:
@@ -705,11 +704,11 @@
 		left: 0;
 		width: 6px;
 		height: 100%;
-		background: linear-gradient(
+		/*background: linear-gradient(
 			180deg,
 			var(--color-primary),
 			color-mix(in srgb, var(--color-accent) 75%, var(--color-primary))
-		);
+		);*/
 		opacity: 0.8;
 	}
 
@@ -769,16 +768,23 @@
 	}
 
 	.card-byline {
-		margin-top: clamp(1.25rem, 3vw, 1.75rem);
+		/*margin-bottom: clamp(1.25rem, 3vw, 1.25rem);*/
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		flex-wrap: wrap;
 		gap: 0.75rem;
-		padding-top: 1rem;
-		border-top: 1px solid var(--color-border);
+		padding-bottom: 1rem;
+		border-bottom: 1px solid var(--color-border);
 		color: var(--color-text-secondary);
 		font-size: 0.9rem;
+	}
+
+	.discussion-header-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 1rem;
 	}
 
 	.card-byline a {

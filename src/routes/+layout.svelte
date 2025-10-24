@@ -158,6 +158,8 @@
 	$: isProfilePage = $page.url.pathname === '/profile';
 	// Check if we're on the login page
 	$: isLoginPage = $page.url.pathname === '/login';
+	// Check if we're on the dashboard (home page)
+	$: isDashboard = $page.url.pathname === '/';
 </script>
 
 {#if user}
@@ -175,6 +177,18 @@
 				/></svg
 			>
 		</a>
+		{#if isDashboard}
+			<a href="/discussions/new" class="new-discussion-button" aria-label="Start new discussion">
+				<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" focusable="false">
+					<path
+						fill-rule="evenodd"
+						d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+						clip-rule="evenodd"
+					/>
+				</svg>
+				<span>New Discussion</span>
+			</a>
+		{/if}
 		<div class="nav-spacer">
 			{#if isProfilePage}
 				<div class="profile-nav-controls">
@@ -499,5 +513,57 @@
 	.login-button:hover {
 		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
 		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+	}
+
+	/* New Discussion Button - Editorial Theme */
+	.new-discussion-button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.625rem 1.25rem;
+		background: transparent;
+		color: var(--color-text-primary);
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-md);
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all var(--transition-speed) ease;
+		text-decoration: none;
+		white-space: nowrap;
+		font-family: var(--font-family-ui);
+	}
+
+	.new-discussion-button svg {
+		width: 18px;
+		height: 18px;
+		flex-shrink: 0;
+		opacity: 0.85;
+		transition: opacity var(--transition-speed) ease;
+	}
+
+	.new-discussion-button:hover {
+		color: var(--color-primary);
+		border-color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
+		text-decoration: none;
+	}
+
+	.new-discussion-button:hover svg {
+		opacity: 1;
+	}
+
+	.new-discussion-button:active {
+		transform: scale(0.98);
+	}
+
+	@media (max-width: 768px) {
+		.new-discussion-button span {
+			display: none;
+		}
+		.new-discussion-button {
+			padding: 0.625rem;
+			border-radius: var(--border-radius-sm);
+		}
 	}
 </style>

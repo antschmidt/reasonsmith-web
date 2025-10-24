@@ -2473,6 +2473,25 @@ export const REMOVE_COLLABORATOR = gql`
 	}
 `;
 
+export const REINVITE_COLLABORATOR = gql`
+	mutation ReinviteCollaborator(
+		$collaboratorId: uuid!
+		$role: String!
+		$invitedBy: uuid!
+		$now: timestamptz!
+	) {
+		update_post_collaborator_by_pk(
+			pk_columns: { id: $collaboratorId }
+			_set: { status: "pending", role: $role, invited_by: $invitedBy, invited_at: $now }
+		) {
+			id
+			status
+			role
+			invited_at
+		}
+	}
+`;
+
 export const CHECK_POST_EDIT_PERMISSION = gql`
 	query CheckPostEditPermission($postId: uuid!, $userId: uuid!) {
 		post_by_pk(id: $postId) {

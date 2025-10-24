@@ -192,7 +192,7 @@
 
 	.carousel-card {
 		scroll-snap-align: start;
-		min-width: clamp(280px, 45vw, 380px);
+		min-width: clamp(280px, 45vw, 480px);
 		position: relative;
 		border-radius: var(--border-radius-xl);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
@@ -418,11 +418,11 @@
 
 	@media (max-width: 768px) {
 		.carousel-card {
-			min-width: clamp(250px, 85vw, 320px);
+			min-width: 90vw; /* clamp(250px, 85vw, 420px); */
 		}
 
 		.card-link {
-			padding: 1.5rem;
+			padding: 1rem;
 		}
 
 		.card-header h3 {
@@ -454,7 +454,7 @@
 		}
 
 		.carousel-card {
-			min-width: clamp(240px, 80vw, 300px);
+			min-width: clamp(240px, 80vw, 460px);
 		}
 	}
 </style>

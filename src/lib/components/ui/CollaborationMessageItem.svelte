@@ -392,7 +392,7 @@
 
 	.message-item.other .message-text {
 		background: var(--color-surface);
-		padding: 0.375rem 0.625rem;
+		padding-left: 40px;
 		border-radius: var(--border-radius-md);
 		border: 1px solid var(--color-border);
 		text-align: left;

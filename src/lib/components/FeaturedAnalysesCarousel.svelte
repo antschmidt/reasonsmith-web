@@ -175,7 +175,7 @@
 
 	.carousel-card {
 		scroll-snap-align: start;
-		min-width: clamp(280px, 45vw, 350px);
+		min-width: clamp(1280px, 45vw, 25vw);
 		position: relative;
 		border-radius: var(--border-radius-xl);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
@@ -189,7 +189,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
-		padding: 2rem;
+		padding: 1rem;
 		color: inherit;
 		text-decoration: none;
 	}
@@ -346,8 +346,8 @@
 
 	@media (max-width: 768px) {
 		.carousel-card {
-			min-width: clamp(250px, 85vw, 320px);
-			padding: 1.5rem;
+			min-width: 90vw; /* clamp(250px, 85vw, 320px); */
+			padding: 1rem;
 		}
 
 		.card-header h3 {
@@ -364,7 +364,7 @@
 	@media (max-width: 640px) {
 		.featured-carousel {
 			grid-template-columns: 1fr;
-			gap: 1rem;
+			gap: 0.5rem;
 		}
 
 		.nav-button {
@@ -379,7 +379,7 @@
 		}
 
 		.carousel-card {
-			min-width: clamp(240px, 80vw, 300px);
+			min-width: 75vw; /* clamp(240px, 80vw, 300px); */
 		}
 	}
 </style>
