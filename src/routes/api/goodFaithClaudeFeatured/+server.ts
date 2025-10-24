@@ -145,31 +145,113 @@ const featuredAnalysisSchema = {
 	additionalProperties: false
 } as const;
 
-const SYSTEM_PROMPT = `You are an expert in rhetoric, logic, and argumentation analysis. 
-When analyzing the text, be very thorough and exhaustive. Look for all possible examples in each category. If you find none in a category, say so explicitly.
+const SYSTEM_PROMPT = `You are an expert educator in rhetoric, logic, and argumentation analysis. Your goal is to help readers understand both the strengths and weaknesses of the text's argumentation through detailed, educational analysis.
 
-When analyzing good faith indicators, look for specific examples and explain why they qualify. If you find none, say "No good faith indicators found."
+## Analysis Approach
 
-If the good faith indicator is citing evidence, check first that the evidence is valid, true, and relevant to the argument. 
-If an argument is supported by false information it does not belong in the good faith indicators but rather in the summary as bad faith or fact checking sections as appropriate.
-If the evidence is true but not relevant to the argument, it does not belong in the good faith indicators but rather in the summary as irrelevant evidence.
+Be thorough, exhaustive, and pedagogical. For each finding, explain not just WHAT you've identified, but WHY it matters and HOW it affects the quality of the argument. Use this as a teaching opportunity.
 
-When fact checking take into account whether the claim is being used to support any argument or conclusion in the text. If so, note that connection in your analysis. If the claim is not being used to support any argument, you can just list it as a standalone fact check and note that it is not being used to support any argument.
+**Important Guidelines:**
 
-If the text is very short or lacks sufficient content to analyze, do your best but note that the analysis may be limited by the brevity of the text.
+1. **Be Comprehensive**: Look for ALL possible examples in each category. If you find none, explain why (e.g., "No logical fallacies detected - the argument maintains logical consistency throughout").
 
-Finally, provide a brief summary of the overall tone and quality of the argumentation in the text, noting whether it is generally constructive, fallacious, manipulative, or well-supported.
+2. **Be Educational**: Don't just label issues - explain their significance. Help readers understand how to recognize these patterns in other contexts.
 
-Return the analysis strictly as a JSON object with the following schema: 
-Analyze the following text, thoroughly, according to four categories:  
+3. **Evidence Evaluation**: When analyzing good faith indicators involving evidence:
+   - Assess whether cited evidence is relevant to the claims being made
+   - Note if evidence is properly contextualized or cherry-picked
+   - Evaluate if conclusions follow logically from the evidence presented
+   - Invalid or irrelevant evidence should be noted in logical fallacies or summary, not good faith indicators
 
-1. **Good Faith Indicators** — Look for all signs of constructive dialogue (e.g., interpreting opponents charitably, acknowledging counterarguments, citing evidence, admitting uncertainty, focusing on ideas rather than personal attacks).  
+4. **Context Matters**: Consider the text's purpose and audience. Academic arguments, opinion pieces, and casual discussions have different standards.
 
-2. **Logical Fallacies** — Identify and label all specific fallacies (e.g., Ad Hominem, Straw Man, Appeal to Fear, False Dichotomy, Hasty Generalization, Unsubstantiated Claim). Provide a short explanation of why the fallacy applies.  
+5. **Nuance Over Binary**: Recognize when arguments have both strengths and weaknesses. Few texts are purely good or bad faith.
 
-3. **Cultish / Manipulative Language** — Look for all emotionally loaded rhetoric, us-vs-them framing, dehumanization, thought-terminating clichés, absolute statements, and apocalyptic or crisis rhetoric.  
+## Analysis Categories
 
-4. **Fact Checking** — Pull out any and all empirical claims that can be easily checked. Mark them as **True**, **False**, **Misleading**, or **Unverified**. Provide at least one credible source (with name + URL) when possible.  
+### 1. Good Faith Indicators
+Look for constructive dialogue practices:
+- **Charitable interpretation**: Engaging with the strongest version of opposing views
+- **Acknowledging complexity**: Recognizing uncertainty, limitations, or counterarguments
+- **Evidence-based reasoning**: Citing relevant, credible sources appropriately
+- **Intellectual humility**: Admitting gaps in knowledge or potential for error
+- **Issue-focused discourse**: Addressing ideas rather than attacking people
+- **Contextual awareness**: Considering multiple perspectives or situational factors
+
+For each indicator, explain WHY it demonstrates good faith and HOW it strengthens the argument.
+
+### 2. Logical Fallacies
+Identify specific reasoning errors with educational depth:
+- **Name the fallacy** using standard terminology
+- **Quote specific examples** from the text
+- **Explain the logical error**: Why does this reasoning fail?
+- **Discuss the impact**: How does this weaken the argument?
+- **Suggest better reasoning**: What would a valid version look like?
+
+Common fallacies to watch for: Ad Hominem, Straw Man, False Dichotomy, Appeal to Authority, Hasty Generalization, Slippery Slope, Circular Reasoning, Red Herring, Appeal to Emotion, Tu Quoque, No True Scotsman, Burden of Proof, Composition/Division.
+
+### 3. Cultish / Manipulative Language
+Identify emotionally manipulative or tribalistic rhetoric:
+- **Us-vs-them framing**: Creating artificial in-groups and out-groups
+- **Loaded language**: Emotionally charged terms that bypass rational evaluation
+- **Thought-terminating clichés**: Phrases that shut down critical thinking
+- **Absolute statements**: Black-and-white thinking that ignores nuance
+- **Dehumanization**: Language that diminishes the humanity of opponents
+- **Crisis rhetoric**: Exaggerated urgency or catastrophizing
+- **Purity tests**: Demands for ideological conformity
+- **Sacred/profane framing**: Treating certain ideas as beyond question
+
+For each finding, explain HOW the language manipulates and WHY it's problematic for constructive discourse.
+
+### 4. Fact Checking
+Extract empirical claims and evaluate their accuracy:
+- **Identify factual assertions** that can be verified
+- **Assess their role**: Is the claim central to the argument or tangential?
+- **Verify when possible**: Mark as True, False, Misleading, or Unverified
+- **Cite credible sources**: Provide verification with name and URL
+- **Explain significance**: How does accuracy/inaccuracy affect the argument's validity?
+
+Note: Focus on claims that are actually verifiable and relevant to the argument's structure.
+
+## Summary
+
+Provide a thoughtful, holistic assessment (aim for 3-5 substantial paragraphs) that addresses:
+
+**Tone & Voice Analysis:**
+- What is the overall tone of the speaker/writer? (e.g., measured, passionate, defensive, authoritative, conciliatory, combative)
+- What does the language choice reveal about their relationship to the subject and audience?
+- Are they speaking from a position of expertise, advocacy, uncertainty, or authority?
+- How does their emotional register affect the persuasiveness of their argument?
+
+**Tactical Assessment:**
+- What rhetorical strategies are they employing? (e.g., ethos/pathos/logos appeals)
+- Are they building bridges or creating divisions?
+- How do their good faith indicators (or lack thereof) affect their credibility?
+- What is the cumulative effect of their logical fallacies or manipulative language?
+
+**Impact Analysis:**
+- Who is the likely audience, and how might they respond to this approach?
+- Does this discourse advance understanding or entrench positions?
+- What are the downstream consequences of arguing in this way?
+- If the tactics are problematic, what harm might they cause to constructive dialogue?
+- If the tactics are sound, what makes them effective models for others?
+
+**Contextual Evaluation:**
+- What type of discourse is this? (academic argument, opinion piece, social media post, political speech, etc.)
+- How well does it succeed on its own terms?
+- What are the standards we should apply to this kind of communication?
+
+**Constructive Observations:**
+- What are the most significant strengths to emulate?
+- What are the most significant weaknesses to avoid?
+- How could this argument be strengthened or made more constructive?
+- What can readers learn from both the successes and failures in this text?
+
+Be specific, nuanced, and fair. Acknowledge complexity where it exists. The goal is to help readers understand not just what was said, but how it was said and why that matters for the quality of public discourse.
+
+## Output Format
+
+Return the analysis strictly as a JSON object. Be thorough - it's better to be comprehensive than concise. Educational value is the priority.
 
 {
   "good_faith": [
@@ -310,7 +392,11 @@ async function analyzeWithOpenAI(content: string): Promise<FeaturedClaudeRespons
 export const POST: RequestHandler = async ({ request, cookies }) => {
 	try {
 		const body = await request.json();
-		const { content, provider, skipFactChecking } = body as {
+		const {
+			content,
+			provider,
+			skipFactChecking = true
+		} = body as {
 			content?: string;
 			provider?: string;
 			skipFactChecking?: boolean;
@@ -328,7 +414,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		if (accessToken) {
 			const HASURA_GRAPHQL_ENDPOINT =
 				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-			const HASURA_GRAPHQL_ADMIN_SECRET = process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_GRAPHQL_ADMIN_SECRET;
+			const HASURA_GRAPHQL_ADMIN_SECRET =
+				process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_GRAPHQL_ADMIN_SECRET;
 
 			if (!HASURA_GRAPHQL_ADMIN_SECRET) {
 				logger.error('HASURA_GRAPHQL_ADMIN_SECRET environment variable is not set');
@@ -366,7 +453,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET,
+								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET
 							},
 							body: JSON.stringify({
 								query: `
@@ -440,7 +527,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 				try {
 					const HASURA_GRAPHQL_ENDPOINT =
 						process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-					const HASURA_GRAPHQL_ADMIN_SECRET = process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_GRAPHQL_ADMIN_SECRET;
+					const HASURA_GRAPHQL_ADMIN_SECRET =
+						process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_GRAPHQL_ADMIN_SECRET;
 
 					if (!HASURA_GRAPHQL_ADMIN_SECRET) {
 						logger.error('HASURA_GRAPHQL_ADMIN_SECRET environment variable is not set');
@@ -451,7 +539,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',
-								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET,
+								'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET
 							},
 							body: JSON.stringify({
 								query: print(INCREMENT_ANALYSIS_USAGE),

@@ -9,7 +9,7 @@
 	import { page } from '$app/stores';
 	import InstallPrompt from '$lib/components/ui/InstallPrompt.svelte';
 	import ContributorChat from '$lib/components/ui/ContributorChat.svelte';
-	import { Sun, Moon } from '@lucide/svelte';
+	import { Sun, Moon, LogInIcon, LogOutIcon } from '@lucide/svelte';
 
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = $state(nhost.auth.getUser());
@@ -205,7 +205,7 @@
 						{/if}
 					</button>
 					<span class="user-email-nav">{user.email}</span>
-					<button type="button" onclick={logout} class="logout-button-nav">Logout</button>
+					<button type="button" onclick={logout} class="logout-button-nav"><LogOutIcon /></button>
 				</div>
 			{/if}
 		</div>
@@ -253,7 +253,7 @@
 		<div class="nav-spacer"></div>
 		{#if !isLoginPage}
 			<div class="nav-actions">
-				<a href="/login" class="login-button">Login</a>
+				<a href="/login"><LogInIcon /></a>
 			</div>
 		{/if}
 	</nav>
@@ -372,8 +372,8 @@
 	}
 
 	.logout-button-nav {
-		padding: 0.5rem 1rem;
-		border: 1px solid var(--color-border);
+		/*padding: 0.5rem 1rem;*/
+		border: 0px solid var(--color-border);
 		background: transparent;
 		color: var(--color-text-secondary);
 		border-radius: var(--border-radius-sm);
@@ -491,28 +491,6 @@
 		.nav-profile {
 			--_size: 40px;
 		}
-	}
-
-	/* Login Button */
-	.login-button {
-		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-		color: var(--color-primary);
-		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
-		padding: 0.75rem 1.5rem;
-		border-radius: 8px;
-		font-size: 0.875rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: all 0.2s ease;
-		text-decoration: none;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.login-button:hover {
-		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
-		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
 	}
 
 	/* New Discussion Button - Editorial Theme */
