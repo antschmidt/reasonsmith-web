@@ -2,14 +2,15 @@
 	// Component to display active collaborators in a real-time editing session
 	// Shows avatars, names, and online status of all connected users
 
-	export let collaborators: Array<{
-		id: string;
-		name: string;
-		color: string;
-		isOnline: boolean;
-	}> = [];
-
-	export let connectionStatus: 'connected' | 'connecting' | 'disconnected' = 'disconnected';
+	let { collaborators = [], connectionStatus = 'disconnected' } = $props<{
+		collaborators?: Array<{
+			id: string;
+			name: string;
+			color: string;
+			isOnline: boolean;
+		}>;
+		connectionStatus?: 'connected' | 'connecting' | 'disconnected';
+	}>();
 </script>
 
 <div class="collaboration-presence">

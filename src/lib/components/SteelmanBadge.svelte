@@ -2,16 +2,24 @@
 	import { Shield } from '@lucide/svelte';
 
 	// Props
-	export let score: number | null | undefined;
-	export let qualityNotes: string | null | undefined = null;
-	export let size: 'small' | 'medium' | 'large' = 'medium';
-	export let showLabel: boolean = true;
-	export let showTooltip: boolean = true;
+	let {
+		score,
+		qualityNotes = null,
+		size = 'medium',
+		showLabel = true,
+		showTooltip = true
+	} = $props<{
+		score: number | null | undefined;
+		qualityNotes?: string | null | undefined;
+		size?: 'small' | 'medium' | 'large';
+		showLabel?: boolean;
+		showTooltip?: boolean;
+	}>();
 
 	// Compute quality tier based on score
-	$: qualityTier = getQualityTier(score);
-	$: tierColor = getTierColor(qualityTier);
-	$: tierLabel = getTierLabel(qualityTier);
+	const qualityTier = $derived(getQualityTier(score));
+	const tierColor = $derived(getTierColor(qualityTier));
+	const tierLabel = $derived(getTierLabel(qualityTier));
 
 	function getQualityTier(score: number | null | undefined): string {
 		if (score === null || score === undefined) return 'none';

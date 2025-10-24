@@ -4,18 +4,26 @@
 	import StarterKit from '@tiptap/starter-kit';
 	import Placeholder from '@tiptap/extension-placeholder';
 	import { createDraftAutosaver, type DraftAutosaver } from '$lib';
+
 	// Initial HTML to load into the editor
-	export let content: string = '';
-	export let postId: string | null = null; // when provided, enables autosave
-	export let autosave: boolean = true;
-	export let autosaveDelay = 800; // debounce ms
-	export let autosaveMinInterval = 2500; // min interval ms
+	let {
+		content = '',
+		postId = null, // when provided, enables autosave
+		autosave = true,
+		autosaveDelay = 800, // debounce ms
+		autosaveMinInterval = 2500, // min interval ms
+		onUpdate = () => {} // Parent can still supply onUpdate if desired (raw change stream)
+	} = $props<{
+		content?: string;
+		postId?: string | null;
+		autosave?: boolean;
+		autosaveDelay?: number;
+		autosaveMinInterval?: number;
+		onUpdate?: (html: string) => void;
+	}>();
 
 	// Fired after a successful autosave
 	const dispatch = createEventDispatcher<{ saved: { at: number } }>();
-
-	// Parent can still supply onUpdate if desired (raw change stream)
-	export let onUpdate: (html: string) => void = () => {};
 
 	let element: HTMLDivElement;
 	let editor: Editor;

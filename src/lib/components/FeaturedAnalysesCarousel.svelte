@@ -1,5 +1,3 @@
-<svelte:options runes={true} />
-
 <script lang="ts">
 	import { onMount } from 'svelte';
 
@@ -175,7 +173,7 @@
 
 	.carousel-card {
 		scroll-snap-align: start;
-		min-width: clamp(1280px, 45vw, 25vw);
+		min-width: clamp(280px, 33vw, 680px);
 		position: relative;
 		border-radius: var(--border-radius-xl);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);

@@ -52,7 +52,6 @@
 
 		// Load profile data when auth state becomes available, but avoid duplicate loading
 		if (user && !fetching) {
-			profilePath = `/u/${user.id}`;
 			await loadProfile();
 			// loadAuthProviders is now called inside loadProfile after contributor is set
 		}
@@ -111,7 +110,7 @@
 
 	let editing = false;
 
-	let contributor: any = null;
+	let contributor = $state<any>(null);
 	let discussions: any[] = [];
 	let posts: any[] = [];
 	let stats: UserStats = {
@@ -126,7 +125,7 @@
 	let displayName = '';
 	let bio = '';
 	let website = '';
-	let handle = '';
+	let handle = $state('');
 	let social = {
 		twitter: '',
 		github: '',
@@ -299,8 +298,6 @@
     }
   `;
 
-	let profilePath = user ? `/u/${user.id}` : '';
-
 	function normalizeDiscussions(list: any[] | null | undefined) {
 		if (!Array.isArray(list)) return [];
 		return list.map((d) => {
@@ -392,14 +389,13 @@
 	onMount(async () => {
 		user = nhost.auth.getUser();
 		authEmail = user?.email || authEmail;
-		profilePath = user ? `/u/${user.id}` : '';
 		if (!user) return;
 		await loadProfile();
 		await loadSecurityKeys();
 		await loadSecurityKeys();
 	});
 
-	$: profilePath = handle ? `/u/${handle}` : user ? `/u/${user.id}` : '';
+	const profilePath = $derived(handle ? `/u/${handle}` : user ? `/u/${user.id}` : '');
 
 	function extractGqlError(err: any): string {
 		if (!err) return 'Unknown error';

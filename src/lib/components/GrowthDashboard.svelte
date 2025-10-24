@@ -26,8 +26,10 @@
 	} from '@lucide/svelte';
 
 	// Props
-	export let contributorId: string;
-	export let compact: boolean = false; // Compact mode for sidebar/profile
+	let { contributorId, compact = false } = $props<{
+		contributorId: string;
+		compact?: boolean; // Compact mode for sidebar/profile
+	}>();
 
 	// State
 	let loading = true;
@@ -50,10 +52,12 @@
 	let recentXPActivity: any[] = [];
 
 	// Computed values
-	$: levelTitle = getLevelTitle(currentLevel);
-	$: xpForNextLevel = getXPForNextLevel(currentLevel);
-	$: levelProgress = getLevelProgress(totalXP);
-	$: progressPercentage = (levelProgress.currentXP / levelProgress.xpForNextLevel) * 100;
+	const levelTitle = $derived(getLevelTitle(currentLevel));
+	const xpForNextLevel = $derived(getXPForNextLevel(currentLevel));
+	const levelProgress = $derived(getLevelProgress(totalXP));
+	const progressPercentage = $derived(
+		(levelProgress.currentXP / levelProgress.xpForNextLevel) * 100
+	);
 
 	async function loadGrowthData() {
 		try {
@@ -106,18 +110,20 @@
 	});
 
 	// Group achievements by category
-	$: achievementsByCategory = allAchievements.reduce(
-		(acc, achievement) => {
-			if (!acc[achievement.category]) {
-				acc[achievement.category] = [];
-			}
-			acc[achievement.category].push(achievement);
-			return acc;
-		},
-		{} as Record<string, any[]>
+	const achievementsByCategory = $derived(
+		allAchievements.reduce(
+			(acc, achievement) => {
+				if (!acc[achievement.category]) {
+					acc[achievement.category] = [];
+				}
+				acc[achievement.category].push(achievement);
+				return acc;
+			},
+			{} as Record<string, any[]>
+		)
 	);
 
-	$: earnedAchievementIds = new Set(earnedAchievements.map((ea) => ea.achievement_id));
+	const earnedAchievementIds = $derived(new Set(earnedAchievements.map((ea) => ea.achievement_id)));
 
 	function isAchievementEarned(achievementId: string): boolean {
 		return earnedAchievementIds.has(achievementId);

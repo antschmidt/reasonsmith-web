@@ -12,14 +12,14 @@
 	import { Sun, Moon } from '@lucide/svelte';
 
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
-	let user = nhost.auth.getUser();
-	let hasAdminAccess = false;
-	let contributor: {
+	let user = $state(nhost.auth.getUser());
+	let hasAdminAccess = $state(false);
+	let contributor = $state<{
 		role: string;
 		avatar_url?: string;
 		display_name?: string;
 		handle?: string;
-	} | null = null;
+	} | null>(null);
 
 	// Subscribe to contributor store for avatar updates
 	contributorStore.subscribe((data) => {
@@ -155,11 +155,11 @@
 	}
 
 	// Check if we're on the profile page
-	$: isProfilePage = $page.url.pathname === '/profile';
+	const isProfilePage = $derived($page.url.pathname === '/profile');
 	// Check if we're on the login page
-	$: isLoginPage = $page.url.pathname === '/login';
+	const isLoginPage = $derived($page.url.pathname === '/login');
 	// Check if we're on the dashboard (home page)
-	$: isDashboard = $page.url.pathname === '/';
+	const isDashboard = $derived($page.url.pathname === '/');
 </script>
 
 {#if user}

@@ -673,7 +673,7 @@
 	.article-list {
 		display: flex;
 		flex-direction: column;
-		gap: clamp(1rem, 4vw, 1rem);
+		gap: clamp(0.5rem, 4vw, 1.5rem);
 	}
 
 	@media (min-width: 1024px) {
