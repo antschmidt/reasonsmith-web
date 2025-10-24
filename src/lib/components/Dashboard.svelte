@@ -197,8 +197,11 @@
 	}
 
 	$effect(() => {
-		loadData();
-		fetchSavedItems();
+		// Only run on client side
+		if (typeof window !== 'undefined') {
+			loadData();
+			fetchSavedItems();
+		}
 	});
 
 	function getDraftHref(d: {
