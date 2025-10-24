@@ -3,9 +3,10 @@
 	import {
 		SEARCH_USERS_FOR_COLLABORATION,
 		ADD_POST_COLLABORATOR,
-		GET_POST_COLLABORATORS
+		GET_POST_COLLABORATORS,
+		REINVITE_COLLABORATOR
 	} from '$lib/graphql/queries';
-	import { X, Search, UserPlus, Loader2 } from '@lucide/svelte';
+	import { X, Search, UserPlus, Loader2, RefreshCw } from '@lucide/svelte';
 
 	interface Props {
 		postId: string;
@@ -21,8 +22,10 @@
 	let searchQuery = $state('');
 	let searchResults = $state<any[]>([]);
 	let existingCollaborators = $state<any[]>([]);
+	let declinedCollaborators = $state<any[]>([]);
 	let isSearching = $state(false);
 	let isInviting = $state(false);
+	let isReinviting = $state(false);
 	let selectedRole = $state<'editor' | 'viewer' | 'co-author'>('editor');
 	let errorMessage = $state('');
 	let successMessage = $state('');
@@ -50,7 +53,11 @@
 				return;
 			}
 
-			existingCollaborators = result.data?.post_collaborator || [];
+			const allCollaborators = result.data?.post_collaborator || [];
+
+			// Separate declined collaborators from active/pending ones
+			existingCollaborators = allCollaborators.filter((c: any) => c.status !== 'declined');
+			declinedCollaborators = allCollaborators.filter((c: any) => c.status === 'declined');
 		} catch (error) {
 			console.error('Error in loadExistingCollaborators:', error);
 		}
@@ -75,7 +82,8 @@
 				errorMessage = 'Error searching for users';
 				searchResults = [];
 			} else {
-				// Filter out the post owner and existing collaborators
+				// Filter out the post owner and existing active/pending collaborators
+				// But DO include declined collaborators since they can be re-invited
 				const allUsers = result.data?.contributor || [];
 				const existingIds = new Set([
 					ownerId,
@@ -132,6 +140,47 @@
 			errorMessage = 'Error sending invitation';
 		} finally {
 			isInviting = false;
+		}
+	}
+
+	async function reinviteCollaborator(collaboratorRecordId: string, contributorId: string) {
+		isReinviting = true;
+		errorMessage = '';
+		successMessage = '';
+
+		try {
+			const userId = nhost.auth.getUser()?.id;
+			if (!userId) {
+				errorMessage = 'You must be logged in to re-invite collaborators';
+				return;
+			}
+
+			const result = await nhost.graphql.request(REINVITE_COLLABORATOR, {
+				collaboratorId: collaboratorRecordId,
+				role: selectedRole,
+				invitedBy: userId,
+				now: new Date().toISOString()
+			});
+
+			if (result.error) {
+				console.error('Re-invite error:', result.error);
+				errorMessage = 'Error re-sending invitation';
+			} else {
+				successMessage = 'Invitation re-sent successfully!';
+				// Refresh collaborators list
+				await loadExistingCollaborators();
+				onInviteSent?.();
+
+				// Clear success message after 3 seconds
+				setTimeout(() => {
+					successMessage = '';
+				}, 3000);
+			}
+		} catch (error) {
+			console.error('Re-invite error:', error);
+			errorMessage = 'Error re-sending invitation';
+		} finally {
+			isReinviting = false;
 		}
 	}
 
@@ -251,6 +300,50 @@
 					</div>
 				{:else if searchQuery.trim().length >= 2 && !isSearching}
 					<div class="no-results">No users found matching "{searchQuery}"</div>
+				{/if}
+
+				<!-- Previously Declined Users -->
+				{#if declinedCollaborators.length > 0}
+					<div class="declined-section">
+						<h3>Previously Declined</h3>
+						<p class="section-description">
+							These users previously declined your invitation. You can re-invite them with a new
+							role.
+						</p>
+						<ul class="user-list">
+							{#each declinedCollaborators as declined}
+								<li class="user-item declined">
+									<div class="user-info">
+										<div class="user-name">
+											{declined.contributor.display_name ||
+												declined.contributor.handle ||
+												'Anonymous'}
+										</div>
+										{#if declined.contributor.handle}
+											<div class="user-handle">@{declined.contributor.handle}</div>
+										{/if}
+										<div class="declined-note">
+											Declined on {new Date(declined.responded_at).toLocaleDateString()}
+										</div>
+									</div>
+									<button
+										class="reinvite-button"
+										onclick={() => reinviteCollaborator(declined.id, declined.contributor_id)}
+										disabled={isReinviting}
+										aria-label="Re-invite {declined.contributor.display_name ||
+											declined.contributor.handle}"
+									>
+										{#if isReinviting}
+											<Loader2 size="16" class="spinning" />
+										{:else}
+											<RefreshCw size="16" />
+										{/if}
+										Re-invite
+									</button>
+								</li>
+							{/each}
+						</ul>
+					</div>
 				{/if}
 
 				<!-- Existing Collaborators Info -->
@@ -522,11 +615,80 @@
 		animation: spin 1s linear infinite;
 	}
 
+	.reinvite-button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.5rem 0.875rem;
+		background: var(--secondary-color, #f59e0b);
+		color: white;
+		border: none;
+		border-radius: 6px;
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.reinvite-button:hover:not(:disabled) {
+		background: var(--secondary-hover, #d97706);
+		transform: translateY(-1px);
+	}
+
+	.reinvite-button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	.reinvite-button :global(.spinning) {
+		animation: spin 1s linear infinite;
+	}
+
 	.no-results {
 		padding: 2rem;
 		text-align: center;
 		color: var(--text-secondary);
 		font-size: 0.875rem;
+	}
+
+	.declined-section {
+		margin-top: 1.5rem;
+		padding-top: 1.5rem;
+		border-top: 1px solid var(--border-color);
+	}
+
+	.declined-section h3 {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: 0.5rem;
+	}
+
+	.section-description {
+		font-size: 0.8125rem;
+		color: var(--text-secondary);
+		margin-bottom: 0.75rem;
+		line-height: 1.5;
+	}
+
+	.user-item.declined {
+		background: color-mix(in srgb, var(--hover-bg) 50%, transparent);
+		border-color: var(--border-color);
+	}
+
+	.user-item.declined:hover {
+		background: var(--hover-bg);
+		border-color: var(--secondary-color, #f59e0b);
+	}
+
+	.declined-note {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+		margin-top: 0.25rem;
+		font-style: italic;
 	}
 
 	.existing-collaborators-info {

@@ -21,8 +21,10 @@
 		updated_at: string;
 	};
 
-	export let item: Partial<ShowcaseItem> | null = null;
-	export let saving = false;
+	let { item = null, saving = false } = $props<{
+		item?: Partial<ShowcaseItem> | null;
+		saving?: boolean;
+	}>();
 
 	// Form fields
 	let title = item?.title || '';

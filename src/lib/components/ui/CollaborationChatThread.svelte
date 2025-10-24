@@ -344,7 +344,7 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		max-height: 500px;
+		overflow: hidden;
 	}
 
 	.thread-header {
@@ -418,8 +418,8 @@
 
 	.thread-input {
 		display: flex;
-		gap: 0.75rem;
-		padding: 1rem 1.25rem;
+		/*gap: 0.75rem;*/
+		/*padding: 1rem 1.25rem;*/
 		border-top: 1px solid var(--color-border);
 		background: var(--color-surface);
 	}
@@ -430,12 +430,12 @@
 		max-height: 120px;
 		padding: 0.625rem 0.75rem;
 		border: 1px solid var(--color-border);
-		border-radius: var(--border-radius-md);
+		/*border-radius: var(--border-radius-md);*/
 		background: var(--color-background);
 		color: var(--color-text-primary);
 		font-family: inherit;
 		font-size: 0.9375rem;
-		line-height: 1.5;
+		line-height: 2.5;
 		resize: none;
 		transition: border-color var(--transition-speed) ease;
 	}

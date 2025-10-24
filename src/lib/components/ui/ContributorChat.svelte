@@ -79,6 +79,139 @@
 	let viewMode = $state<'list' | 'thread'>('list');
 	let selectedChat = $state<ChatSummary | null>(null);
 
+	// Position and size state for draggable/resizable panel
+	let panelPosition = $state({ x: 0, y: 0 });
+	let panelSize = $state({ width: 400, height: 600 });
+	let isDragging = $state(false);
+	let isResizing = $state(false);
+	let dragStart = $state({ x: 0, y: 0 });
+	let resizeStart = $state({ x: 0, y: 0, width: 0, height: 0 });
+	let resizeDirection = $state<string>('');
+
+	// Load saved position/size from localStorage
+	function loadPanelSettings() {
+		if (typeof window === 'undefined') return;
+
+		const saved = localStorage.getItem('chat-panel-settings');
+		if (saved) {
+			try {
+				const settings = JSON.parse(saved);
+				if (settings.position) panelPosition = settings.position;
+				if (settings.size) panelSize = settings.size;
+			} catch (e) {
+				console.error('Failed to load panel settings:', e);
+			}
+		}
+	}
+
+	// Save position/size to localStorage
+	function savePanelSettings() {
+		if (typeof window === 'undefined') return;
+
+		localStorage.setItem(
+			'chat-panel-settings',
+			JSON.stringify({
+				position: panelPosition,
+				size: panelSize
+			})
+		);
+	}
+
+	// Handle drag start
+	function handleDragStart(e: MouseEvent) {
+		isDragging = true;
+		dragStart = {
+			x: e.clientX - panelPosition.x,
+			y: e.clientY - panelPosition.y
+		};
+	}
+
+	// Handle drag move
+	function handleDragMove(e: MouseEvent) {
+		if (!isDragging) return;
+
+		const newX = e.clientX - dragStart.x;
+		const newY = e.clientY - dragStart.y;
+
+		// Keep panel within viewport bounds
+		const maxX = window.innerWidth - panelSize.width;
+		const maxY = window.innerHeight - panelSize.height;
+
+		panelPosition = {
+			x: Math.max(0, Math.min(newX, maxX)),
+			y: Math.max(0, Math.min(newY, maxY))
+		};
+	}
+
+	// Handle drag end
+	function handleDragEnd() {
+		if (isDragging) {
+			isDragging = false;
+			savePanelSettings();
+		}
+	}
+
+	// Handle resize start
+	function handleResizeStart(e: MouseEvent, direction: string) {
+		e.stopPropagation();
+		isResizing = true;
+		resizeDirection = direction;
+		resizeStart = {
+			x: e.clientX,
+			y: e.clientY,
+			width: panelSize.width,
+			height: panelSize.height
+		};
+	}
+
+	// Handle resize move
+	function handleResizeMove(e: MouseEvent) {
+		if (!isResizing) return;
+
+		const deltaX = e.clientX - resizeStart.x;
+		const deltaY = e.clientY - resizeStart.y;
+
+		let newWidth = panelSize.width;
+		let newHeight = panelSize.height;
+		let newX = panelPosition.x;
+		let newY = panelPosition.y;
+
+		// Handle different resize directions
+		if (resizeDirection.includes('e')) {
+			newWidth = Math.max(300, Math.min(800, resizeStart.width + deltaX));
+		}
+		if (resizeDirection.includes('w')) {
+			const proposedWidth = Math.max(300, Math.min(800, resizeStart.width - deltaX));
+			const widthDiff = proposedWidth - panelSize.width;
+			newWidth = proposedWidth;
+			newX = Math.max(0, panelPosition.x - widthDiff);
+		}
+		if (resizeDirection.includes('s')) {
+			newHeight = Math.max(
+				400,
+				Math.min(window.innerHeight - panelPosition.y, resizeStart.height + deltaY)
+			);
+		}
+		if (resizeDirection.includes('n')) {
+			const proposedHeight = Math.max(400, Math.min(800, resizeStart.height - deltaY));
+			const heightDiff = proposedHeight - panelSize.height;
+			newHeight = proposedHeight;
+			newY = Math.max(0, panelPosition.y - heightDiff);
+		}
+
+		panelSize = { width: newWidth, height: newHeight };
+		panelPosition = { x: newX, y: newY };
+	}
+
+	// Handle resize end
+	function handleResizeEnd() {
+		if (isResizing) {
+			isResizing = false;
+			resizeDirection = '';
+			savePanelSettings();
+		}
+	}
+
 	// Total unread count for badge (messages + notifications)
 	const totalUnreadCount = $derived(chatUnreadCount + notificationUnreadCount);
 
@@ -253,6 +386,13 @@
 			// Reset to list view when opening
 			viewMode = 'list';
 			selectedChat = null;
+
+			// If no saved position, set default position (bottom right with some margin)
+			if (panelPosition.x === 0 && panelPosition.y === 0) {
+				const defaultX = Math.max(0, window.innerWidth - panelSize.width - 16);
+				const defaultY = Math.max(0, window.innerHeight - panelSize.height - 16);
+				panelPosition = { x: defaultX, y: defaultY };
+			}
 		}
 	}
 
@@ -488,10 +628,30 @@
 
 	onMount(() => {
 		loadAll();
+		loadPanelSettings();
 
 		// Poll for updates every 30 seconds
 		const interval = setInterval(loadAll, 30000);
-		return () => clearInterval(interval);
+
+		// Add global mouse event listeners for dragging and resizing
+		const handleGlobalMouseMove = (e: MouseEvent) => {
+			handleDragMove(e);
+			handleResizeMove(e);
+		};
+
+		const handleGlobalMouseUp = () => {
+			handleDragEnd();
+			handleResizeEnd();
+		};
+
+		window.addEventListener('mousemove', handleGlobalMouseMove);
+		window.addEventListener('mouseup', handleGlobalMouseUp);
+
+		return () => {
+			clearInterval(interval);
+			window.removeEventListener('mousemove', handleGlobalMouseMove);
+			window.removeEventListener('mouseup', handleGlobalMouseUp);
+		};
 	});
 </script>
 
@@ -518,7 +678,34 @@
 
 	<!-- Chat Dropdown Panel -->
 	{#if isOpen}
-		<div class="chat-panel">
+		<div
+			class="chat-panel"
+			style="left: {panelPosition.x}px; top: {panelPosition.y}px; width: {panelSize.width}px; height: {panelSize.height}px;"
+		>
+			<!-- Resize Handles -->
+			<div class="resize-handle resize-n" onmousedown={(e) => handleResizeStart(e, 'n')}></div>
+			<div class="resize-handle resize-ne" onmousedown={(e) => handleResizeStart(e, 'ne')}></div>
+			<div class="resize-handle resize-e" onmousedown={(e) => handleResizeStart(e, 'e')}></div>
+			<div class="resize-handle resize-se" onmousedown={(e) => handleResizeStart(e, 'se')}></div>
+			<div class="resize-handle resize-s" onmousedown={(e) => handleResizeStart(e, 's')}></div>
+			<div class="resize-handle resize-sw" onmousedown={(e) => handleResizeStart(e, 'sw')}></div>
+			<div class="resize-handle resize-w" onmousedown={(e) => handleResizeStart(e, 'w')}></div>
+			<div class="resize-handle resize-nw" onmousedown={(e) => handleResizeStart(e, 'nw')}></div>
+
+			<!-- Drag Handle -->
+			<div class="chat-header" onmousedown={handleDragStart}>
+				<div class="drag-indicator">
+					<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+						<circle cx="4" cy="8" r="1.5" />
+						<circle cx="8" cy="8" r="1.5" />
+						<circle cx="12" cy="8" r="1.5" />
+					</svg>
+				</div>
+				<button type="button" class="close-button" onclick={closeChat} aria-label="Close chat">
+					×
+				</button>
+			</div>
+
 			<!-- Tabs Header -->
 			<div class="chat-tabs">
 				<button
@@ -736,20 +923,18 @@
 
 	.chat-panel {
 		position: fixed;
-		top: calc(100% + 0.5rem);
-		right: 0.5rem;
-		width: 400px;
-		max-height: 600px;
 		background: var(--color-surface);
 		backdrop-filter: blur(8px);
-		border-bottom: 1px solid var(--color-text-primary);
-		border-radius: var(--border-radius-lg);
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		border: 1px solid var(--color-border);
+		/*border-radius: var(--border-radius-lg);*/
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 		z-index: 51;
 		display: flex;
 		flex-direction: column;
 		animation: slideDown 0.2s ease;
 		overflow: hidden;
+		min-width: 300px;
+		min-height: 400px;
 	}
 
 	@keyframes slideDown {
@@ -763,13 +948,130 @@
 		}
 	}
 
+	/* Resize Handles */
+	.resize-handle {
+		position: absolute;
+		z-index: 10;
+	}
+
+	.resize-n,
+	.resize-s {
+		left: 0;
+		right: 0;
+		height: 6px;
+		cursor: ns-resize;
+	}
+
+	.resize-n {
+		top: 0;
+	}
+	.resize-s {
+		bottom: 0;
+	}
+
+	.resize-e,
+	.resize-w {
+		top: 0;
+		bottom: 0;
+		width: 6px;
+		cursor: ew-resize;
+	}
+
+	.resize-e {
+		right: 0;
+	}
+	.resize-w {
+		left: 0;
+	}
+
+	.resize-ne,
+	.resize-nw,
+	.resize-se,
+	.resize-sw {
+		width: 12px;
+		height: 12px;
+	}
+
+	.resize-ne {
+		top: 0;
+		right: 0;
+		cursor: nesw-resize;
+	}
+
+	.resize-nw {
+		top: 0;
+		left: 0;
+		cursor: nwse-resize;
+	}
+
+	.resize-se {
+		bottom: 0;
+		right: 0;
+		cursor: nwse-resize;
+	}
+
+	.resize-sw {
+		bottom: 0;
+		left: 0;
+		cursor: nesw-resize;
+	}
+
+	/* Drag Header */
+	.chat-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.5rem 1rem;
+		background: var(--color-surface-alt);
+		border-bottom: 1px solid var(--color-border);
+		cursor: move;
+		user-select: none;
+	}
+
+	.drag-indicator {
+		color: var(--color-text-secondary);
+		display: flex;
+		align-items: center;
+		opacity: 0.6;
+	}
+
+	.close-button {
+		background: transparent;
+		border: none;
+		color: var(--color-text-secondary);
+		font-size: 1.5rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0;
+		width: 24px;
+		height: 24px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--border-radius-sm);
+		transition: all var(--transition-speed) ease;
+	}
+
+	.close-button:hover {
+		background: var(--color-error);
+		color: white;
+	}
+
 	@media (max-width: 768px) {
 		.chat-panel {
 			position: fixed;
-			top: 60px;
-			right: 1rem;
-			left: 1rem;
-			width: auto;
+			top: 60px !important;
+			right: 1rem !important;
+			left: 1rem !important;
+			width: auto !important;
+		}
+
+		.resize-handle {
+			display: none;
+		}
+
+		.chat-header {
+			cursor: default;
 		}
 	}
 

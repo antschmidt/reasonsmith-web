@@ -120,8 +120,12 @@
 		onCancelCitationEdit,
 		onInsertCitationReference,
 		onOpenCitationPicker,
+		onTestGoodFaith,
+		onTestGoodFaithClaude,
 		onPublish,
 		onClearReplying,
+		discussionPosts = [],
+		selectedContextCommentIds = $bindable([]),
 		getStyleConfig,
 		getPostTypeConfig,
 		getAnalysisLimitText,
@@ -166,8 +170,12 @@
 		onCancelCitationEdit?: () => void;
 		onInsertCitationReference?: (id: string) => void;
 		onOpenCitationPicker?: () => void;
+		onTestGoodFaith?: () => void;
+		onTestGoodFaithClaude?: () => void;
 		onPublish?: () => void;
 		onClearReplying?: () => void;
+		discussionPosts?: any[];
+		selectedContextCommentIds?: string[];
 		getStyleConfig: (style: string) => { label: string };
 		getPostTypeConfig: (type: PostType) => { icon: string; label: string; description: string };
 		getAnalysisLimitText: () => string;
@@ -181,6 +189,35 @@
 	let lockError = $state<string | null>(null);
 	let draftUpdateSubscription: ObservableSubscription | null = null;
 	let lockStatusSubscription: ObservableSubscription | null = null;
+
+	// Context selection state
+	let contextSelectionExpanded = $state(false);
+
+	// Helper functions for context selection
+	function toggleContextComment(postId: string) {
+		if (selectedContextCommentIds.includes(postId)) {
+			selectedContextCommentIds = selectedContextCommentIds.filter((id) => id !== postId);
+		} else {
+			selectedContextCommentIds = [...selectedContextCommentIds, postId];
+		}
+	}
+
+	function selectAllComments() {
+		selectedContextCommentIds = discussionPosts.map((p) => p.id);
+	}
+
+	function clearAllComments() {
+		selectedContextCommentIds = [];
+	}
+
+	function truncateContent(content: string, maxLength: number = 100): string {
+		const stripped = content
+			.replace(/<[^>]*>/g, '')
+			.replace(/\n/g, ' ')
+			.trim();
+		if (stripped.length <= maxLength) return stripped;
+		return stripped.substring(0, maxLength) + '...';
+	}
 
 	// Derived state
 	const isAuthor = $derived(draftPostId && user?.id && editLockStatus?.author_id === user.id);
@@ -687,6 +724,92 @@
 				</div>
 			{/if}
 
+			<!-- Context Selection for Analysis -->
+			{#if contributor && discussionPosts && discussionPosts.length > 0}
+				<div class="context-selection-section">
+					<button
+						type="button"
+						class="context-selection-toggle"
+						onclick={() => (contextSelectionExpanded = !contextSelectionExpanded)}
+					>
+						<span class="toggle-icon" class:expanded={contextSelectionExpanded}>▶</span>
+						<span>Add Context for Analysis</span>
+						{#if selectedContextCommentIds.length > 0}
+							<span class="context-count-badge">{selectedContextCommentIds.length} selected</span>
+						{/if}
+						<span
+							class="context-info-icon"
+							title="Select comments you're responding to for better context-aware analysis"
+							>ℹ️</span
+						>
+					</button>
+
+					{#if contextSelectionExpanded}
+						<div class="context-selection-content">
+							<div class="context-actions">
+								<button type="button" class="btn-link" onclick={selectAllComments}
+									>Select All</button
+								>
+								<button type="button" class="btn-link" onclick={clearAllComments}>Clear All</button>
+							</div>
+							<div class="context-comment-list">
+								{#each discussionPosts as post}
+									<label class="context-comment-item">
+										<input
+											type="checkbox"
+											checked={selectedContextCommentIds.includes(post.id)}
+											onchange={() => toggleContextComment(post.id)}
+										/>
+										<div class="comment-preview">
+											<div class="comment-meta">
+												<span class="comment-author">
+													{#if post.is_anonymous}
+														Anonymous
+													{:else}
+														{post.contributor?.display_name || 'User'}
+													{/if}
+												</span>
+												<span class="comment-date">
+													{new Date(post.created_at).toLocaleDateString()}
+												</span>
+											</div>
+											<div class="comment-excerpt">
+												{truncateContent(post.content)}
+											</div>
+										</div>
+									</label>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			<!-- Good Faith Test Buttons -->
+			{#if contributor}
+				<div
+					class="good-faith-test-buttons"
+					style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.5rem 0;"
+				>
+					<button
+						type="button"
+						class="good-faith-test-btn openai"
+						onclick={onTestGoodFaith}
+						disabled={!comment.trim() || !heuristicPassed}
+					>
+						🤔 OpenAI Test
+					</button>
+					<button
+						type="button"
+						class="good-faith-test-btn claude"
+						onclick={onTestGoodFaithClaude}
+						disabled={!comment.trim() || !heuristicPassed}
+					>
+						🧠 Claude Test
+					</button>
+				</div>
+			{/if}
+
 			{#if showAdvancedFeatures}
 				<!-- Insert Citation Reference Button -->
 				<button type="button" class="insert-citation-btn" onclick={onOpenCitationPicker}>
@@ -1159,6 +1282,188 @@
 
 	.insert-citation-btn:hover {
 		opacity: 0.8;
+	}
+
+	/* Good Faith Test Buttons */
+	.good-faith-test-btn {
+		border: none;
+		padding: 0.5rem 1rem;
+		border-radius: var(--border-radius-sm);
+		font-size: 0.9rem;
+		cursor: pointer;
+		transition: all 0.2s;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		color: white;
+		font-family: inherit;
+	}
+
+	.good-faith-test-btn.openai {
+		background: #3b82f6;
+	}
+
+	.good-faith-test-btn.openai:hover:not(:disabled) {
+		background: #2563eb;
+	}
+
+	.good-faith-test-btn.claude {
+		background: #d97706;
+	}
+
+	.good-faith-test-btn.claude:hover:not(:disabled) {
+		background: #b45309;
+	}
+
+	.good-faith-test-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	/* Context Selection Styles */
+	.context-selection-section {
+		margin: 0.5rem 0;
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-sm);
+		background: var(--color-surface-alt);
+	}
+
+	.context-selection-toggle {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem;
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		font-size: 0.9rem;
+		font-weight: 500;
+		color: var(--color-text-primary);
+		font-family: inherit;
+		text-align: left;
+		transition: background 0.2s;
+	}
+
+	.context-selection-toggle:hover {
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+	}
+
+	.toggle-icon {
+		display: inline-block;
+		transition: transform 0.2s;
+		color: var(--color-text-secondary);
+		font-size: 0.8rem;
+	}
+
+	.toggle-icon.expanded {
+		transform: rotate(90deg);
+	}
+
+	.context-count-badge {
+		padding: 0.2rem 0.5rem;
+		background: var(--color-primary);
+		color: white;
+		border-radius: 999px;
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+
+	.context-info-icon {
+		margin-left: auto;
+		font-size: 0.9rem;
+		opacity: 0.6;
+		cursor: help;
+	}
+
+	.context-selection-content {
+		padding: 0 0.75rem 0.75rem 0.75rem;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.context-actions {
+		display: flex;
+		gap: 1rem;
+		margin: 0.75rem 0 0.5rem 0;
+		padding-bottom: 0.5rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.btn-link {
+		background: none;
+		border: none;
+		color: var(--color-primary);
+		cursor: pointer;
+		font-size: 0.85rem;
+		font-weight: 500;
+		padding: 0.25rem 0.5rem;
+		font-family: inherit;
+		transition: opacity 0.2s;
+	}
+
+	.btn-link:hover {
+		opacity: 0.7;
+		text-decoration: underline;
+	}
+
+	.context-comment-list {
+		max-height: 300px;
+		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+
+	.context-comment-item {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		padding: 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-sm);
+		cursor: pointer;
+		transition: all 0.2s;
+		background: var(--color-surface);
+	}
+
+	.context-comment-item:hover {
+		background: var(--color-surface-alt);
+		border-color: var(--color-primary);
+	}
+
+	.context-comment-item input[type='checkbox'] {
+		margin-top: 0.25rem;
+		cursor: pointer;
+	}
+
+	.comment-preview {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.comment-meta {
+		display: flex;
+		gap: 0.75rem;
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+	}
+
+	.comment-author {
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.comment-date {
+		font-style: italic;
+	}
+
+	.comment-excerpt {
+		font-size: 0.85rem;
+		line-height: 1.4;
+		color: var(--color-text-secondary);
 	}
 
 	/* Citation Picker Modal */

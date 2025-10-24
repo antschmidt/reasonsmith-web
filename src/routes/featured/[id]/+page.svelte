@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 
-	export let data: PageData;
+	let { data } = $props<{ data: PageData }>();
 
 	const { item, structuredAnalysis } = data;
 	const metaDescription = item.summary

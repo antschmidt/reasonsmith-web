@@ -144,5 +144,7 @@
 		index = (index - 1 + (slides.length || 1)) % (slides.length || 1);
 	}
 
-	$: if (!loading && slides.length > 1) startTimer();
+	$effect(() => {
+		if (!loading && slides.length > 1) startTimer();
+	});
 </script>

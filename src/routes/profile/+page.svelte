@@ -14,6 +14,20 @@
 	import { env as publicEnv } from '$env/dynamic/public';
 	import { getOAuthRedirectURL, isStandalone } from '$lib/utils/pwa';
 	import ProfilePhotoUpload from '$lib/components/ProfilePhotoUpload.svelte';
+	import GrowthDashboard from '$lib/components/GrowthDashboard.svelte';
+	import {
+		Mail,
+		Lock,
+		Key,
+		Check,
+		Circle,
+		Crown,
+		KeyRound,
+		Star,
+		PersonStanding,
+		Infinity,
+		CircleSlash
+	} from '@lucide/svelte';
 
 	const SITE_URL = publicEnv.PUBLIC_SITE_URL;
 
@@ -38,7 +52,6 @@
 
 		// Load profile data when auth state becomes available, but avoid duplicate loading
 		if (user && !fetching) {
-			profilePath = `/u/${user.id}`;
 			await loadProfile();
 			// loadAuthProviders is now called inside loadProfile after contributor is set
 		}
@@ -97,7 +110,7 @@
 
 	let editing = false;
 
-	let contributor: any = null;
+	let contributor = $state<any>(null);
 	let discussions: any[] = [];
 	let posts: any[] = [];
 	let stats: UserStats = {
@@ -112,7 +125,7 @@
 	let displayName = '';
 	let bio = '';
 	let website = '';
-	let handle = '';
+	let handle = $state('');
 	let social = {
 		twitter: '',
 		github: '',
@@ -285,8 +298,6 @@
     }
   `;
 
-	let profilePath = user ? `/u/${user.id}` : '';
-
 	function normalizeDiscussions(list: any[] | null | undefined) {
 		if (!Array.isArray(list)) return [];
 		return list.map((d) => {
@@ -378,14 +389,13 @@
 	onMount(async () => {
 		user = nhost.auth.getUser();
 		authEmail = user?.email || authEmail;
-		profilePath = user ? `/u/${user.id}` : '';
 		if (!user) return;
 		await loadProfile();
 		await loadSecurityKeys();
 		await loadSecurityKeys();
 	});
 
-	$: profilePath = handle ? `/u/${handle}` : user ? `/u/${user.id}` : '';
+	const profilePath = $derived(handle ? `/u/${handle}` : user ? `/u/${user.id}` : '');
 
 	function extractGqlError(err: any): string {
 		if (!err) return 'Unknown error';
@@ -1735,6 +1745,14 @@
 					{/if}
 				</div>
 
+				<!-- Growth & Achievement Dashboard -->
+				{#if contributor?.id}
+					<div class="profile-card growth-section">
+						<h2>Progress & Achievements</h2>
+						<GrowthDashboard contributorId={contributor.id} />
+					</div>
+				{/if}
+
 				<div class="profile-card account-section">
 					<h3 class="section-title">Account Details</h3>
 					<div class="account-details">
@@ -1768,7 +1786,9 @@
 								aria-controls="email-auth-panel"
 								type="button"
 							>
-								<div class="security-icon">📧</div>
+								<div class="security-icon">
+									<Mail size={24} strokeWidth={1.5} />
+								</div>
 								<div class="security-details">
 									<h4>Email Address</h4>
 									<div class="current-email">
@@ -1812,7 +1832,9 @@
 
 									{#if emailChangeSuccess}
 										<div class="success-message verification-notice">
-											<div class="notice-icon">✉️</div>
+											<div class="notice-icon">
+												<Mail size={20} strokeWidth={1.5} />
+											</div>
 											<div class="notice-content">
 												{emailChangeSuccess}
 											</div>
@@ -1855,18 +1877,24 @@
 								aria-expanded={expandedPasswordAuth}
 								aria-controls="password-auth-panel"
 							>
-								<div class="security-icon">🔐</div>
+								<div class="security-icon">
+									<Lock size={24} strokeWidth={1.5} />
+								</div>
 								<div class="security-details">
 									<h4>Email/Password Authentication</h4>
 									<div class="auth-methods-list">
 										{#if authProviders.includes('email-password')}
 											<div class="auth-method">
-												<span class="method-icon">✓</span>
+												<span class="method-icon">
+													<Check size={16} strokeWidth={2} />
+												</span>
 												<span class="method-name">Enabled</span>
 											</div>
 										{:else}
 											<div class="auth-method">
-												<span class="method-icon">○</span>
+												<span class="method-icon">
+													<Circle size={16} strokeWidth={2} />
+												</span>
 												<span class="method-name">Not set up</span>
 											</div>
 										{/if}
@@ -2066,20 +2094,26 @@
 								aria-controls="security-keys-panel"
 								type="button"
 							>
-								<div class="security-icon">🔑</div>
+								<div class="security-icon">
+									<Key size={24} strokeWidth={1.5} />
+								</div>
 								<div class="security-details">
 									<h4>Security Keys</h4>
 									<div class="auth-methods-list">
 										{#if securityKeys.length > 0}
 											<div class="auth-method">
-												<span class="method-icon">🔐</span>
+												<span class="method-icon">
+													<Key size={16} strokeWidth={2} />
+												</span>
 												<span class="method-name"
 													>{securityKeys.length} key{securityKeys.length !== 1 ? 's' : ''} registered</span
 												>
 											</div>
 										{:else}
 											<div class="auth-method">
-												<span class="method-icon">○</span>
+												<span class="method-icon">
+													<Circle size={16} strokeWidth={2} />
+												</span>
 												<span class="method-name">No keys registered</span>
 											</div>
 										{/if}
@@ -2111,7 +2145,9 @@
 															aria-controls={`key-actions-${key.id}`}
 															type="button"
 														>
-															<span class="key-icon">🔐</span>
+															<span class="key-icon">
+																<Key size={20} strokeWidth={1.5} />
+															</span>
 															<div class="key-details">
 																<strong>{key.nickname || `Security Key #${index + 1}`}</strong>
 																<small class="credential-id"
@@ -2201,7 +2237,7 @@
 						<!-- Multi-Factor Authentication Section -->
 						<div class="security-info">
 							<div class="security-item">
-								<div class="security-icon">🔐</div>
+								<div class="security-icon"><KeyRound size={24} strokeWidth={1.5} /></div>
 								<div class="security-details">
 									<h4>Multi-Factor Authentication</h4>
 									<p class="security-description">
@@ -2352,7 +2388,7 @@
 						<h3 class="section-title" hidden>Analysis Access</h3>
 						<div class="credits-info">
 							<div class="credit-status unlimited">
-								<div class="status-icon">🌟</div>
+								<div class="status-icon"><Star /></div>
 								<div class="status-text">
 									<div class="status-label">Root Administrator</div>
 									<div class="status-description">
@@ -2368,7 +2404,7 @@
 						<h3 class="section-title" hidden>Analysis Access</h3>
 						<div class="credits-info">
 							<div class="credit-status unlimited">
-								<div class="status-icon">👑</div>
+								<div class="status-icon"><Crown /></div>
 								<div class="status-text">
 									<div class="status-label">Site Manager</div>
 									<div class="status-description">
@@ -2385,7 +2421,7 @@
 						<div class="credits-info">
 							{#if !contributor?.analysis_enabled}
 								<div class="credit-status disabled">
-									<div class="status-icon">🚫</div>
+									<div class="status-icon"><CircleSlash /></div>
 									<div class="status-text">
 										<div class="status-label">Analysis Disabled</div>
 										<div class="status-description">
@@ -2395,7 +2431,7 @@
 								</div>
 							{:else if contributor?.analysis_limit === null}
 								<div class="credit-status unlimited">
-									<div class="status-icon">∞</div>
+									<div class="status-icon"><Infinity /></div>
 									<div class="status-text">
 										<div class="status-label">Unlimited Access</div>
 										<div class="status-description">You have unlimited analysis credits.</div>
@@ -2403,7 +2439,7 @@
 								</div>
 							{:else}
 								<div class="credit-status limited">
-									<div class="status-icon">🔢</div>
+									<div class="status-icon"><PersonStanding /></div>
 									<div class="status-text">
 										<!-- Monthly Credits -->
 										<div class="credit-tier">
@@ -2654,6 +2690,7 @@
 
 	/* Profile card styling - sleek glassmorphism design */
 	.profile-card {
+		text-align: center;
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		backdrop-filter: blur(20px) saturate(1.2);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
@@ -2738,12 +2775,14 @@
 
 	.handle {
 		font-size: 0.95rem;
+		text-align: left;
 		color: var(--color-text-secondary);
 		margin: 0;
 		font-weight: 500;
 	}
 
 	.bio {
+		text-align: left;
 		font-size: 0.95rem;
 		line-height: 1.5;
 		color: var(--color-text-secondary);
@@ -3320,129 +3359,10 @@
 	}
 
 	/* Analysis Credits Section */
-	.analysis-credits-section,
-	.admin-credit-management-section {
+	.analysis-credits-section {
 		padding: 1.5rem;
 		position: relative;
 		overflow: hidden;
-	}
-
-	.admin-credit-management-section .section-description {
-		color: var(--color-text-secondary);
-		margin-bottom: 1rem;
-		font-size: 0.9rem;
-	}
-
-	.user-search-results {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		margin: 1rem 0;
-		max-height: 300px;
-		overflow-y: auto;
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		padding: 0.5rem;
-		background: var(--color-surface);
-	}
-
-	.user-search-result {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 0.75rem;
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		background: var(--color-surface);
-		cursor: pointer;
-		transition: all 0.2s ease;
-		text-align: left;
-		width: 100%;
-	}
-
-	.user-search-result:hover {
-		background: var(--color-surface-alt);
-		border-color: var(--color-primary);
-		transform: translateX(4px);
-	}
-
-	.user-search-result.selected {
-		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-		border-color: var(--color-primary);
-	}
-
-	.user-info {
-		flex: 1;
-	}
-
-	.user-name {
-		font-weight: 600;
-		color: var(--color-text-primary);
-		margin-bottom: 0.25rem;
-	}
-
-	.user-email {
-		font-size: 0.875rem;
-		color: var(--color-text-secondary);
-	}
-
-	.user-credits {
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-	}
-
-	.credits-label {
-		font-size: 0.875rem;
-		color: var(--color-text-secondary);
-	}
-
-	.credits-value {
-		font-weight: 700;
-		color: var(--color-primary);
-	}
-
-	.selected-user-card {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 1rem;
-		border: 2px solid var(--color-primary);
-		border-radius: 8px;
-		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
-		margin-bottom: 1rem;
-	}
-
-	.selected-user-info {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-
-	.user-email-small {
-		font-size: 0.875rem;
-		color: var(--color-text-secondary);
-	}
-
-	.current-credits {
-		font-size: 0.875rem;
-		font-weight: 600;
-		color: var(--color-primary);
-	}
-
-	.btn-text-danger {
-		color: var(--color-danger);
-		background: transparent;
-		border: none;
-		padding: 0.5rem 1rem;
-		border-radius: 6px;
-		cursor: pointer;
-		font-size: 0.875rem;
-		transition: all 0.2s ease;
-	}
-
-	.btn-text-danger:hover {
-		background: color-mix(in srgb, var(--color-danger) 10%, transparent);
 	}
 
 	.credits-info {
@@ -4561,5 +4481,38 @@
 	.btn-text-danger:hover {
 		background: color-mix(in srgb, #ef4444 10%, transparent);
 		border-color: #ef4444;
+	}
+
+	/* Icon styles for Lucide icons */
+	.security-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-primary);
+		flex-shrink: 0;
+	}
+
+	.method-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-accent);
+		flex-shrink: 0;
+	}
+
+	.notice-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-accent);
+		flex-shrink: 0;
+	}
+
+	.key-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-primary);
+		flex-shrink: 0;
 	}
 </style>

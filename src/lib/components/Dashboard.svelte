@@ -2,15 +2,8 @@
 	import type { User } from '@nhost/nhost-js';
 	// Avoid importing gql to prevent type resolution issues; use plain strings
 	import { nhost } from '$lib/nhostClient';
-	import {
-		GET_DASHBOARD_DATA,
-		GET_EDITORS_DESK_PICKS,
-		DELETE_EDITORS_DESK_PICK,
-		GET_SAVED_ITEMS,
-		REMOVE_SAVED_ITEM
-	} from '$lib/graphql/queries';
-	import Notifications from './ui/Notifications.svelte';
-	import EditorsDeskCarousel from './EditorsDeskCarousel.svelte';
+	import { GET_DASHBOARD_DATA, GET_SAVED_ITEMS, REMOVE_SAVED_ITEM } from '$lib/graphql/queries';
+	import DashboardNotifications from './ui/DashboardNotifications.svelte';
 	import CollaborationInvites from './CollaborationInvites.svelte';
 
 	let { user } = $props<{ user: User }>();
@@ -40,10 +33,6 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
-	// Editors' Desk state
-	let editorsDeskPicks = $state<any[]>([]);
-	let editorsDeskLoading = $state(false);
-
 	// Saved Items state
 	let savedItems = $state<any[]>([]);
 	let savedItemsLoading = $state(false);
@@ -51,47 +40,6 @@
 	// Collaboration state
 	let collaborationInvites = $state<any[]>([]);
 	let collaborativeDrafts = $state<any[]>([]);
-
-	async function fetchEditorsDeskPicks() {
-		editorsDeskLoading = true;
-		try {
-			const { data, error: gqlError } = await nhost.graphql.request(GET_EDITORS_DESK_PICKS, {
-				publishedOnly: true
-			});
-			if (gqlError) {
-				console.error('Error loading editors desk picks:', gqlError);
-			} else {
-				editorsDeskPicks = (data as any)?.editors_desk_pick ?? [];
-			}
-		} catch (e: any) {
-			console.error("Failed to load Editors' Desk picks:", e);
-		} finally {
-			editorsDeskLoading = false;
-		}
-	}
-
-	async function handleRemovePick(pickId: string) {
-		if (!confirm("Remove this item from Editors' Desk?")) {
-			return;
-		}
-
-		try {
-			const result = await nhost.graphql.request(DELETE_EDITORS_DESK_PICK, {
-				pickId
-			});
-
-			if (result.error) {
-				console.error('Error removing pick:', result.error);
-				alert("Failed to remove item from Editors' Desk");
-			} else {
-				// Remove from local state
-				editorsDeskPicks = editorsDeskPicks.filter((pick) => pick.id !== pickId);
-			}
-		} catch (e: any) {
-			console.error('Failed to remove pick:', e);
-			alert("Failed to remove item from Editors' Desk");
-		}
-	}
 
 	async function fetchSavedItems() {
 		if (!user?.id) return;
@@ -250,7 +198,6 @@
 
 	$effect(() => {
 		loadData();
-		fetchEditorsDeskPicks();
 		fetchSavedItems();
 	});
 
@@ -363,8 +310,8 @@
 	<div class="dashboard-grid">
 		<!-- Sidebar (Right Column) -->
 		<aside class="sidebar">
-			<!-- Notifications -->
-			<Notifications userId={user.id as unknown as string} />
+			<!-- Notifications & Messages -->
+			<DashboardNotifications userId={user.id as unknown as string} />
 
 			<!-- Collaboration Invites -->
 			{#if collaborationInvites.length > 0}
@@ -373,32 +320,11 @@
 				</section>
 			{/if}
 
-			<!-- Single Action: New Discussion -->
-			<section class="card quick-discussion">
-				<a href="/discussions/new" class="btn btn-secondary btn-sm">
-					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
-						><path
-							fill-rule="evenodd"
-							d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-							clip-rule="evenodd"
-						/></svg
-					>
-					New Discussion
-				</a>
-			</section>
-
 			<!-- Pinned Threads, Leaderboard remain placeholders for now -->
 			<!-- ...existing code... -->
 		</aside>
 		<!-- Main Content (Left Column) -->
 		<main class="main-content">
-			{#if editorsDeskPicks.length > 0}
-				<section class="editors-desk-section">
-					<h3 class="subsection-title">Editors' Desk</h3>
-					<EditorsDeskCarousel items={editorsDeskPicks} {canCurate} onRemove={handleRemovePick} />
-				</section>
-			{/if}
-
 			{#if savedItemsLoading}
 				<section class="saved-items-section">
 					<h3 class="subsection-title">Saved for Later</h3>

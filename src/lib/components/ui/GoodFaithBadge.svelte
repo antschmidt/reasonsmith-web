@@ -20,16 +20,68 @@
 		default: 'size-default',
 		lg: 'size-lg'
 	};
+
+	// Map descriptors to color themes based on sentiment
+	function getColorClass(descriptor: string | null): string {
+		if (!descriptor) return 'neutral';
+
+		const lower = descriptor.toLowerCase();
+
+		// Positive/Constructive descriptors
+		if (
+			lower.includes('constructive') ||
+			lower.includes('thoughtful') ||
+			lower.includes('evidence') ||
+			lower.includes('respectful') ||
+			lower.includes('exemplary') ||
+			lower.includes('nuanced')
+		) {
+			return 'positive';
+		}
+
+		// Negative/Hostile descriptors
+		if (
+			lower.includes('hostile') ||
+			lower.includes('inflammatory') ||
+			lower.includes('manipulative') ||
+			lower.includes('combative') ||
+			lower.includes('aggressive')
+		) {
+			return 'negative';
+		}
+
+		// Warning/Questionable descriptors
+		if (
+			lower.includes('questionable') ||
+			lower.includes('dismissive') ||
+			lower.includes('tangent') ||
+			lower.includes('deflecting')
+		) {
+			return 'warning';
+		}
+
+		// Off-topic gets special treatment
+		if (lower.includes('off-topic') || lower.includes('offtopic')) {
+			return 'off-topic';
+		}
+
+		// Default to neutral
+		return 'neutral';
+	}
+
+	const colorClass = $derived(getColorClass(label));
 </script>
 
 {#if score != null && label}
 	<button
 		type="button"
-		class="good-faith-badge {label} {sizeClasses[size]}"
+		class="good-faith-badge {colorClass} {sizeClasses[size]}"
 		class:interactive
 		disabled={!interactive}
-		onclick={onclick}
-		title={interactive ? 'View Good Faith Analysis' : `Good Faith Score: ${(score * 100).toFixed(0)}%`}
+		{onclick}
+		title={interactive
+			? 'View Good Faith Analysis'
+			: `Good Faith Score: ${(score * 100).toFixed(0)}%`}
 	>
 		{#if showPercentage}
 			<span class="badge-score">{(score * 100).toFixed(0)}%</span>
@@ -77,9 +129,8 @@
 		gap: 0.5rem;
 	}
 
-	/* Label color variants */
-	.good-faith-badge.constructive,
-	.good-faith-badge.exemplary {
+	/* Color variants based on sentiment */
+	.good-faith-badge.positive {
 		color: var(--color-success, #10b981);
 		border-color: color-mix(in srgb, var(--color-success, #10b981) 30%, transparent);
 		background: color-mix(in srgb, var(--color-success, #10b981) 8%, transparent);
@@ -91,16 +142,22 @@
 		background: color-mix(in srgb, var(--color-warning, #f59e0b) 8%, transparent);
 	}
 
-	.good-faith-badge.questionable {
+	.good-faith-badge.warning {
 		color: #f97316;
 		border-color: color-mix(in srgb, #f97316 30%, transparent);
 		background: color-mix(in srgb, #f97316 8%, transparent);
 	}
 
-	.good-faith-badge.hostile {
+	.good-faith-badge.negative {
 		color: var(--color-error, #ef4444);
 		border-color: color-mix(in srgb, var(--color-error, #ef4444) 30%, transparent);
 		background: color-mix(in srgb, var(--color-error, #ef4444) 8%, transparent);
+	}
+
+	.good-faith-badge.off-topic {
+		color: #9333ea;
+		border-color: color-mix(in srgb, #9333ea 30%, transparent);
+		background: color-mix(in srgb, #9333ea 8%, transparent);
 	}
 
 	.badge-score {

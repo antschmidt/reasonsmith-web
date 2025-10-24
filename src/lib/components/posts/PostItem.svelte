@@ -2,6 +2,7 @@
 	import { scale } from 'svelte/transition';
 	import GoodFaithBadge from '../ui/GoodFaithBadge.svelte';
 	import SaveButton from '../SaveButton.svelte';
+	import SteelmanBadge from '../SteelmanBadge.svelte';
 
 	type Contributor = {
 		id: string;
@@ -44,6 +45,10 @@
 		good_faith_score?: number | null;
 		good_faith_label?: string | null;
 		style_metadata?: StyleMetadata | null;
+		steelman_score?: number | null;
+		steelman_quality_notes?: string | null;
+		understanding_score?: number | null;
+		intellectual_humility_score?: number | null;
 	};
 
 	type HistoricalVersion = {
@@ -313,6 +318,17 @@
 
 		<!-- Post Badges Container (lower right) -->
 		<div class="post-badges-container">
+			<!-- Steelman Badge -->
+			{#if post.steelman_score !== null && post.steelman_score !== undefined}
+				<SteelmanBadge
+					score={post.steelman_score}
+					qualityNotes={post.steelman_quality_notes}
+					size="small"
+					showLabel={true}
+					showTooltip={true}
+				/>
+			{/if}
+
 			<!-- Writing Style Badge -->
 			<span
 				class="writing-style-badge"

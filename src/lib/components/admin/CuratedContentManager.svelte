@@ -26,7 +26,7 @@
 		updated_at: string;
 	};
 
-	export let userRole: string;
+	let { userRole } = $props<{ userRole: string }>();
 
 	let items: ShowcaseItem[] = [];
 	let loading = false;

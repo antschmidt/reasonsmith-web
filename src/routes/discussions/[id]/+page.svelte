@@ -48,9 +48,11 @@
 		getDiscussionGoodFaithAnalysis
 	} from '$lib/utils/discussionHelpers';
 	import DiscussionReferencesDisplay from '$lib/components/discussion/DiscussionReferencesDisplay.svelte';
+	import { scoreAndAwardSteelman, buildDiscussionContext } from '$lib/utils/scoreSteelman';
 	import DiscussionGoodFaithBadge from '$lib/components/discussion/DiscussionGoodFaithBadge.svelte';
 	import DiscussionHeader from '$lib/components/discussion/DiscussionHeader.svelte';
 	import PostItem from '$lib/components/posts/PostItem.svelte';
+	import SocialMediaImportDisplay from '$lib/components/SocialMediaImportDisplay.svelte';
 	import CommentComposer from '$lib/components/posts/CommentComposer.svelte';
 	import DiscussionEditForm from '$lib/components/discussion/DiscussionEditForm.svelte';
 	import GoodFaithModal from '$lib/components/ui/GoodFaithModal.svelte';
@@ -94,6 +96,7 @@
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
 	let showOutOfCreditsModal = $state(false);
+	let selectedContextCommentIds = $state<string[]>([]);
 	let user = $state(nhost.auth.getUser());
 	nhost.auth.onAuthStateChanged(() => {
 		user = nhost.auth.getUser();
@@ -683,6 +686,19 @@
 
 			if (error) throw error;
 
+			// Score the post for steelman quality and award XP (async, don't block UI)
+			if (draftPostId && user?.id) {
+				scoreAndAwardSteelman(
+					draftPostId,
+					user.id,
+					newComment, // Use original content without citation/reply metadata
+					buildDiscussionContext(discussion)
+				).catch((err) => {
+					console.error('Failed to score steelman:', err);
+					// Don't show error to user - this is a background operation
+				});
+			}
+
 			// Clear composer & reload posts
 			newComment = '';
 			draftAutosaver?.destroy();
@@ -880,6 +896,11 @@
 							good_faith_label
 							good_faith_last_evaluated
 							good_faith_analysis
+							import_source
+							import_url
+							import_content
+							import_author
+							import_date
 						}
 						draft_version: discussion_versions(
 							where: {
@@ -936,6 +957,15 @@
 			if (!discussionData) {
 				throw new Error('Discussion not found');
 			}
+
+			// Debug: Check import data
+			console.log('[Discussion Load] Import data:', {
+				hasCurrentVersion: !!discussionData.current_version?.[0],
+				import_source: discussionData.current_version?.[0]?.import_source,
+				import_content: discussionData.current_version?.[0]?.import_content,
+				import_author: discussionData.current_version?.[0]?.import_author,
+				fullCurrentVersion: discussionData.current_version?.[0]
+			});
 
 			discussion = discussionData;
 
@@ -1205,15 +1235,37 @@
 			const existingDraft = existingDraftCheck.data?.discussion_by_pk?.discussion_versions?.[0];
 
 			if (existingDraft) {
+				// Get import data from published version
+				const publishedVersion = discussion.current_version?.[0];
+				const importSource = publishedVersion?.import_source || null;
+				const importUrl = publishedVersion?.import_url || null;
+				const importContent = publishedVersion?.import_content || null;
+				const importAuthor = publishedVersion?.import_author || null;
+				const importDate = publishedVersion?.import_date || null;
+
 				// Update existing draft instead of creating new one
 				const updateResult = await nhost.graphql.request(
 					`
-					mutation UpdateExistingDraft($draftId: uuid!, $title: String!, $description: String!) {
+					mutation UpdateExistingDraft(
+						$draftId: uuid!
+						$title: String!
+						$description: String!
+						$importSource: String
+						$importUrl: String
+						$importContent: String
+						$importAuthor: String
+						$importDate: timestamptz
+					) {
 						update_discussion_version_by_pk(
 							pk_columns: { id: $draftId }
 							_set: {
 								title: $title
 								description: $description
+								import_source: $importSource
+								import_url: $importUrl
+								import_content: $importContent
+								import_author: $importAuthor
+								import_date: $importDate
 							}
 						) {
 							id
@@ -1225,13 +1277,23 @@
 							good_faith_score
 							good_faith_label
 							good_faith_last_evaluated
+							import_source
+							import_url
+							import_content
+							import_author
+							import_date
 						}
 					}
 				`,
 					{
 						draftId: existingDraft.id,
 						title: editTitle,
-						description: editDescription
+						description: editDescription,
+						importSource,
+						importUrl,
+						importContent,
+						importAuthor,
+						importDate
 					}
 				);
 
@@ -1316,10 +1378,29 @@
 				versionQuery.data?.discussion_by_pk?.discussion_versions?.[0]?.version_number || 0;
 			const nextVersionNumber = maxVersion + 1;
 
+			// Get import data from published version
+			const publishedVersion = discussion.current_version?.[0];
+			const importSource = publishedVersion?.import_source || null;
+			const importUrl = publishedVersion?.import_url || null;
+			const importContent = publishedVersion?.import_content || null;
+			const importAuthor = publishedVersion?.import_author || null;
+			const importDate = publishedVersion?.import_date || null;
+
 			// Create a draft version in the database
 			const result = await nhost.graphql.request(
 				`
-				mutation CreateDiscussionDraft($discussionId: uuid!, $userId: uuid!, $title: String!, $description: String!, $versionNumber: Int!) {
+				mutation CreateDiscussionDraft(
+					$discussionId: uuid!
+					$userId: uuid!
+					$title: String!
+					$description: String!
+					$versionNumber: Int!
+					$importSource: String
+					$importUrl: String
+					$importContent: String
+					$importAuthor: String
+					$importDate: timestamptz
+				) {
 					insert_discussion_version_one(object: {
 						discussion_id: $discussionId
 						created_by: $userId
@@ -1327,6 +1408,11 @@
 						description: $description
 						version_type: "draft"
 						version_number: $versionNumber
+						import_source: $importSource
+						import_url: $importUrl
+						import_content: $importContent
+						import_author: $importAuthor
+						import_date: $importDate
 					}) {
 						id
 						title
@@ -1337,6 +1423,11 @@
 						good_faith_score
 						good_faith_label
 						good_faith_last_evaluated
+						import_source
+						import_url
+						import_content
+						import_author
+						import_date
 					}
 				}
 			`,
@@ -1345,7 +1436,12 @@
 					userId: user.id,
 					title: editTitle,
 					description: editDescription,
-					versionNumber: nextVersionNumber
+					versionNumber: nextVersionNumber,
+					importSource,
+					importUrl,
+					importContent,
+					importAuthor,
+					importDate
 				}
 			);
 
@@ -2698,6 +2794,249 @@
 		}
 	}
 
+	// Comment good faith testing function (OpenAI)
+	async function testCommentGoodFaith() {
+		if (!newComment.trim()) {
+			commentGoodFaithError = 'Please enter some content to test';
+			return;
+		}
+
+		// Check analysis limits
+		if (!contributor || !canUseAnalysis(contributor)) {
+			commentGoodFaithError = getAnalysisLimitText() || 'Analysis not available';
+			return;
+		}
+
+		// Check cache first
+		const cachedResult = await getCachedAnalysis(discussion?.id || null, newComment, 'openai');
+		if (cachedResult) {
+			commentGoodFaithResult = { ...cachedResult, fromCache: true };
+			return;
+		}
+
+		const goodFaithTesting = true; // Local flag for UI
+		commentGoodFaithError = null;
+		commentGoodFaithResult = null;
+
+		try {
+			// Build context payload
+			const discussionContext: any = {
+				discussion: {
+					title: getDiscussionTitle(discussion),
+					description: getDiscussionDescription(discussion)
+				}
+			};
+
+			// Add citations if they exist
+			if (discussion?.current_version?.[0]) {
+				const currentVersion = discussion.current_version[0];
+				const extraction = extractCitationData(getDiscussionDescription(discussion));
+				const jsonCitations = extraction.citationData?.style_metadata?.citations || [];
+				const tableCitations = currentVersion.citationsFromTable || [];
+				const versionCitations = currentVersion.citations || [];
+				const allCitations = [...tableCitations, ...versionCitations, ...jsonCitations];
+
+				if (allCitations.length > 0) {
+					discussionContext.discussion.citations = allCitations;
+				}
+
+				// Add social media import data if present
+				if (
+					currentVersion.import_content &&
+					currentVersion.import_source &&
+					currentVersion.import_author
+				) {
+					discussionContext.importData = {
+						source: currentVersion.import_source,
+						url: currentVersion.import_url,
+						content: currentVersion.import_content,
+						author: currentVersion.import_author,
+						date: currentVersion.import_date
+					};
+				}
+			}
+
+			// Add selected comments as context
+			if (selectedContextCommentIds.length > 0 && discussion?.posts) {
+				discussionContext.selectedComments = discussion.posts
+					.filter((p: any) => selectedContextCommentIds.includes(p.id))
+					.map((p: any) => ({
+						id: p.id,
+						content: p.content,
+						author: p.is_anonymous ? 'Anonymous' : p.contributor?.display_name || 'User',
+						created_at: p.created_at,
+						is_anonymous: p.is_anonymous
+					}));
+			}
+
+			// Use local API route during development, Vercel function in production
+			const endpoint = import.meta.env.DEV ? '/api/goodFaith' : '/functions/goodFaith';
+
+			const response = await fetch(endpoint, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					postId: 'test-comment',
+					content: newComment,
+					discussionContext
+				})
+			});
+
+			if (!response.ok) {
+				throw new Error(`HTTP error! status: ${response.status}`);
+			}
+
+			const data = await response.json();
+
+			if (data.error) {
+				throw new Error(data.error);
+			}
+
+			commentGoodFaithResult = {
+				good_faith_score: data.good_faith_score,
+				good_faith_label: data.good_faith_label,
+				rationale: data.rationale,
+				claims: data.claims,
+				cultishPhrases: data.cultishPhrases
+			};
+
+			// Cache the result
+			await cacheAnalysis(discussion?.id || null, newComment, 'openai', commentGoodFaithResult);
+
+			// Consume the appropriate credit (monthly or purchased)
+			await consumeAnalysisCredit();
+		} catch (error: any) {
+			commentGoodFaithError = error.message || 'Failed to analyze comment';
+		}
+	}
+
+	// Comment good faith testing function (Claude)
+	async function testCommentGoodFaithClaude() {
+		if (!newComment.trim()) {
+			commentGoodFaithError = 'Please enter some content to test';
+			return;
+		}
+
+		// Check analysis limits
+		if (!contributor || !canUseAnalysis(contributor)) {
+			commentGoodFaithError = getAnalysisLimitText() || 'Analysis not available';
+			return;
+		}
+
+		// Check cache first
+		const cachedResult = await getCachedAnalysis(discussion?.id || null, newComment, 'claude');
+		if (cachedResult) {
+			commentGoodFaithResult = { ...cachedResult, fromCache: true };
+			return;
+		}
+
+		const claudeGoodFaithTesting = true; // Local flag for UI
+		commentGoodFaithError = null;
+		commentGoodFaithResult = null;
+
+		try {
+			// Build context payload (same as OpenAI version)
+			const discussionContext: any = {
+				discussion: {
+					title: getDiscussionTitle(discussion),
+					description: getDiscussionDescription(discussion)
+				}
+			};
+
+			// Add citations if they exist
+			if (discussion?.current_version?.[0]) {
+				const currentVersion = discussion.current_version[0];
+				const extraction = extractCitationData(getDiscussionDescription(discussion));
+				const jsonCitations = extraction.citationData?.style_metadata?.citations || [];
+				const tableCitations = currentVersion.citationsFromTable || [];
+				const versionCitations = currentVersion.citations || [];
+				const allCitations = [...tableCitations, ...versionCitations, ...jsonCitations];
+
+				if (allCitations.length > 0) {
+					discussionContext.discussion.citations = allCitations;
+				}
+
+				// Add social media import data if present
+				if (
+					currentVersion.import_content &&
+					currentVersion.import_source &&
+					currentVersion.import_author
+				) {
+					discussionContext.importData = {
+						source: currentVersion.import_source,
+						url: currentVersion.import_url,
+						content: currentVersion.import_content,
+						author: currentVersion.import_author,
+						date: currentVersion.import_date
+					};
+				}
+			}
+
+			// Add selected comments as context
+			if (selectedContextCommentIds.length > 0 && discussion?.posts) {
+				discussionContext.selectedComments = discussion.posts
+					.filter((p: any) => selectedContextCommentIds.includes(p.id))
+					.map((p: any) => ({
+						id: p.id,
+						content: p.content,
+						author: p.is_anonymous ? 'Anonymous' : p.contributor?.display_name || 'User',
+						created_at: p.created_at,
+						is_anonymous: p.is_anonymous
+					}));
+			}
+
+			const accessToken = nhost.auth.getAccessToken();
+			const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+			if (accessToken) {
+				headers['Authorization'] = `Bearer ${accessToken}`;
+			}
+			const response = await fetch('/api/goodFaithClaude', {
+				method: 'POST',
+				headers,
+				body: JSON.stringify({
+					postId: 'test-comment-claude',
+					content: newComment,
+					discussionContext
+				})
+			});
+
+			if (!response.ok) {
+				throw new Error(`HTTP error! status: ${response.status}`);
+			}
+
+			const data = await response.json();
+
+			// Check if this was a real Claude analysis or heuristic fallback
+			if (data.usedClaude === false) {
+				throw new Error(
+					'Claude API is not available. Heuristic scoring cannot be used for publishing.'
+				);
+			}
+
+			if (data.error) {
+				throw new Error(data.error);
+			}
+
+			commentGoodFaithResult = {
+				good_faith_score: data.good_faith_score,
+				good_faith_label: data.good_faith_label,
+				rationale: data.rationale,
+				claims: data.claims,
+				cultishPhrases: data.cultishPhrases
+			};
+
+			// Cache the result
+			await cacheAnalysis(discussion?.id || null, newComment, 'claude', commentGoodFaithResult);
+
+			// Consume the appropriate credit (monthly or purchased)
+			await consumeAnalysisCredit();
+		} catch (error: any) {
+			commentGoodFaithError = error.message || 'Failed to analyze comment with Claude';
+		}
+	}
+
 	// Save good faith analysis to database
 	async function saveGoodFaithAnalysisToDatabase(result: any, provider: 'openai' | 'claude') {
 		if (!discussion || !result) return;
@@ -2880,6 +3219,20 @@
 				content: updated
 			});
 			if (error) throw error;
+
+			// Re-score the edited post for steelman quality (async, don't block UI)
+			if (post.id && post.contributor?.id) {
+				scoreAndAwardSteelman(
+					post.id,
+					post.contributor.id,
+					editingPostContent.trim(), // Use original content without metadata
+					buildDiscussionContext(discussion)
+				).catch((err) => {
+					console.error('Failed to re-score edited post:', err);
+					// Don't show error to user - this is a background operation
+				});
+			}
+
 			// Update local post
 			post.content = updated;
 			cancelEditPost();
@@ -2972,6 +3325,19 @@
 					{assessContentQuality}
 				/>
 			{/if}
+
+			<!-- Social Media Import Display -->
+			{#if discussion?.current_version?.[0]?.import_content && discussion?.current_version?.[0]?.import_source && discussion?.current_version?.[0]?.import_author}
+				{@const currentVersion = discussion.current_version[0]}
+				<SocialMediaImportDisplay
+					source={currentVersion.import_source}
+					url={currentVersion.import_url}
+					content={currentVersion.import_content}
+					author={currentVersion.import_author}
+					date={currentVersion.import_date}
+				/>
+			{/if}
+
 			{#if getDiscussionDescription(discussion)}
 				{@const extraction = extractCitationData(getDiscussionDescription(discussion))}
 				{@const jsonCitations = extraction.citationData?.style_metadata?.citations || []}
@@ -3114,6 +3480,8 @@
 			{submitting}
 			discussionId={discussion?.id}
 			discussionTitle={discussion ? getDiscussionTitle(discussion) : 'Discussion'}
+			discussionPosts={discussion?.posts || []}
+			bind:selectedContextCommentIds
 			onInput={onCommentInput}
 			onFocus={loadExistingDraft}
 			onAddCitation={addCommentCitation}
@@ -3121,6 +3489,8 @@
 			onCancelCitationEdit={cancelCommentCitationEdit}
 			onInsertCitationReference={insertCommentCitationReference}
 			onOpenCitationPicker={openCommentCitationPicker}
+			onTestGoodFaith={testCommentGoodFaith}
+			onTestGoodFaithClaude={testCommentGoodFaithClaude}
 			onPublish={publishDraft}
 			onClearReplying={clearReplying}
 			getStyleConfig={(style: string) => getStyleConfig(style as WritingStyle)}
@@ -3250,13 +3620,6 @@
 	}
 
 	/* Audio Upload & Player Styles */
-	.audio-section {
-		margin-top: 2rem;
-		padding: 1.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: var(--border-radius-lg);
-	}
 
 	.audio-admin-section {
 		display: flex;
@@ -3298,12 +3661,6 @@
 	.remove-audio-button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
-	}
-
-	.audio-upload-hint {
-		font-size: 0.9rem;
-		color: var(--color-text-secondary);
-		margin: 0;
 	}
 
 	.audio-upload-label {

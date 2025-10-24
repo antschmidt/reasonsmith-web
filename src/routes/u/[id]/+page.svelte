@@ -5,22 +5,21 @@
 	import { GET_USER_STATS } from '$lib/graphql/queries';
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
 
-	let userId = '';
-	let loading = true;
-	let error: string | null = null;
+	let loading = $state(true);
+	let error = $state<string | null>(null);
 
-	let contributor: any = null;
-	let discussions: any[] = [];
-	let posts: any[] = [];
-	let stats: UserStats = {
+	let contributor = $state<any>(null);
+	let discussions = $state<any[]>([]);
+	let posts = $state<any[]>([]);
+	let stats = $state<UserStats>({
 		goodFaithRate: 0,
 		sourceAccuracy: 0,
 		reputationScore: 0,
 		totalPosts: 0,
 		totalDiscussions: 0,
 		participatedDiscussions: 0
-	};
-	let statsLoading = true;
+	});
+	let statsLoading = $state(true);
 
 	const GET_PUBLIC_PROFILE = `
     query GetPublicProfile($id: uuid!) {
@@ -98,8 +97,8 @@
 		return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned;
 	}
 
-	$: userId = $page.params.id as string;
-	$: byHandle = !!userId && !/^[0-9a-fA-F-]{36}$/.test(userId);
+	const userId = $derived($page.params.id as string);
+	const byHandle = $derived(!!userId && !/^[0-9a-fA-F-]{36}$/.test(userId));
 
 	function getSocialLink(platform: string, value: string): string | null {
 		if (!value) return null;
@@ -184,14 +183,7 @@
 		error = null;
 		try {
 			// Check if user is authenticated
-			let isAuthenticated = false;
-			try {
-				isAuthenticated = await nhost.auth.isAuthenticatedAsync();
-			} catch (authError) {
-				console.warn('Authentication check failed:', authError);
-				// Fall back to checking current user state
-				isAuthenticated = !!nhost.auth.getUser();
-			}
+			const isAuthenticated = !!nhost.auth.getUser();
 
 			if (!isAuthenticated) {
 				// Redirect to login page if not authenticated
@@ -247,7 +239,13 @@
 		}
 	}
 
-	onMount(load);
+	// Load profile when userId changes
+	$effect(() => {
+		// Access userId to establish the dependency
+		if (userId) {
+			load();
+		}
+	});
 </script>
 
 <div class="profile-public-container">

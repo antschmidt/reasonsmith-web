@@ -33,6 +33,8 @@
 	} from '$lib/creditUtils';
 	import { INCREMENT_PURCHASED_CREDITS_USED } from '$lib/graphql/queries';
 	import RichTextEditor from '$lib/components/RichTextEditor.svelte';
+	import SocialMediaImportForm from '$lib/components/SocialMediaImportForm.svelte';
+	import SocialMediaImportDisplay from '$lib/components/SocialMediaImportDisplay.svelte';
 
 	// Get parameters
 	const discussionId = $page.params.id;
@@ -72,6 +74,13 @@
 	// Form data
 	let title = $state('');
 	let description = $state('');
+
+	// Social media import data
+	let importSource = $state<string | null>(null);
+	let importUrl = $state<string | null>(null);
+	let importContent = $state<string | null>(null);
+	let importAuthor = $state<string | null>(null);
+	let importDate = $state<string | null>(null);
 
 	// Writing style and citation state
 	let selectedStyle = $state<WritingStyle>('journalistic');
@@ -198,6 +207,11 @@
 							good_faith_analysis
 							edited_at
 							created_at
+							import_source
+							import_url
+							import_content
+							import_author
+							import_date
 						}
 					}
 				`,
@@ -270,6 +284,13 @@
 			// Initialize form
 			title = draft.title || '';
 			description = draft.description || '';
+
+			// Initialize import data
+			importSource = draft.import_source || null;
+			importUrl = draft.import_url || null;
+			importContent = draft.import_content || null;
+			importAuthor = draft.import_author || null;
+			importDate = draft.import_date || null;
 
 			// Initialize autosave tracking
 			lastSavedTitle = title;
@@ -442,19 +463,39 @@
 			// First, update the draft title and description
 			const result = await nhost.graphql.request(
 				`
-				mutation UpdateDraft($draftId: uuid!, $title: String!, $description: String!, $editedAt: timestamptz!) {
+				mutation UpdateDraft(
+					$draftId: uuid!
+					$title: String!
+					$description: String!
+					$editedAt: timestamptz!
+					$importSource: String
+					$importUrl: String
+					$importContent: String
+					$importAuthor: String
+					$importDate: timestamptz
+				) {
 					update_discussion_version_by_pk(
 						pk_columns: { id: $draftId }
 						_set: {
 							title: $title
 							description: $description
 							edited_at: $editedAt
+							import_source: $importSource
+							import_url: $importUrl
+							import_content: $importContent
+							import_author: $importAuthor
+							import_date: $importDate
 						}
 					) {
 						id
 						title
 						description
 						edited_at
+						import_source
+						import_url
+						import_content
+						import_author
+						import_date
 					}
 				}
 			`,
@@ -462,7 +503,12 @@
 					draftId: draft.id,
 					title: title.trim(),
 					description: description.trim(),
-					editedAt: new Date().toISOString()
+					editedAt: new Date().toISOString(),
+					importSource: importSource || null,
+					importUrl: importUrl || null,
+					importContent: importContent || null,
+					importAuthor: importAuthor || null,
+					importDate: importDate || null
 				}
 			);
 
@@ -621,6 +667,18 @@
 					});
 				}
 
+				// Build import data object if import fields are populated
+				const hasImport = importContent && importSource && importAuthor;
+				const importDataPayload = hasImport
+					? {
+							source: importSource,
+							url: importUrl || undefined,
+							content: importContent,
+							author: importAuthor,
+							date: importDate || undefined
+						}
+					: undefined;
+
 				// Get the access token for authentication
 				const accessToken = nhost.auth.getAccessToken();
 				const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -632,7 +690,8 @@
 					method: 'POST',
 					headers,
 					body: JSON.stringify({
-						content: content
+						content: content,
+						importData: importDataPayload
 					})
 				});
 
@@ -1310,6 +1369,17 @@
 				</div>
 			{/if}
 
+			<!-- Social Media Import Display (read-only, shown when data exists) -->
+			{#if importContent && importSource && importAuthor}
+				<SocialMediaImportDisplay
+					source={importSource}
+					url={importUrl || ''}
+					content={importContent}
+					author={importAuthor}
+					date={importDate || ''}
+				/>
+			{/if}
+
 			<form
 				class="editor-form"
 				onsubmit={(e) => {
@@ -1339,6 +1409,32 @@
 						showToolbar={!(isAnalyzing || goodFaithTesting)}
 					/>
 				</div>
+
+				<!-- Social Media Import Form (for adding/editing) -->
+				<SocialMediaImportForm
+					initialData={{
+						source: importSource || '',
+						url: importUrl || '',
+						content: importContent || '',
+						author: importAuthor || '',
+						date: importDate || ''
+					}}
+					onSubmit={(data) => {
+						importSource = data.source;
+						importUrl = data.url;
+						importContent = data.content;
+						importAuthor = data.author;
+						importDate = data.date;
+					}}
+					onCancel={() => {
+						importSource = null;
+						importUrl = null;
+						importContent = null;
+						importAuthor = null;
+						importDate = null;
+					}}
+					disabled={isAnalyzing || goodFaithTesting}
+				/>
 
 				<!-- Citations Section -->
 				<div class="form-group">
