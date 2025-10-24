@@ -239,10 +239,10 @@
 		}
 	}
 
-	// Load profile when userId changes
+	// Load profile when userId changes (client-side only)
 	$effect(() => {
-		// Access userId to establish the dependency
-		if (userId) {
+		// Only run on client side
+		if (typeof window !== 'undefined' && userId) {
 			load();
 		}
 	});

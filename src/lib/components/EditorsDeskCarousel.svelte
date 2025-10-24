@@ -55,7 +55,8 @@
 	};
 
 	const updateScrollState = () => {
-		if (!viewport) return;
+		// Guard against SSR and null viewport
+		if (typeof window === 'undefined' || !viewport) return;
 		const { scrollLeft, scrollWidth, clientWidth } = viewport;
 		atStart = scrollLeft <= 4;
 		atEnd = scrollLeft + clientWidth >= scrollWidth - 4;

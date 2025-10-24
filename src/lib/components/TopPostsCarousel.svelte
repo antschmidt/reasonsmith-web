@@ -145,6 +145,9 @@
 	}
 
 	$effect(() => {
-		if (!loading && slides.length > 1) startTimer();
+		// Only run timer on client side
+		if (typeof window !== 'undefined' && !loading && slides.length > 1) {
+			startTimer();
+		}
 	});
 </script>
