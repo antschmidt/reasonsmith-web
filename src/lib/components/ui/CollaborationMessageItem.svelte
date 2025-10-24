@@ -343,6 +343,7 @@
 		margin: 0;
 		padding: 0;
 		word-wrap: break-word;
+		white-space: pre-wrap;
 	}
 
 	.message-link {

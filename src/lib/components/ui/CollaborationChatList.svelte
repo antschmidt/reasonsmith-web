@@ -81,8 +81,9 @@
 <style>
 	.chat-list {
 		overflow-y: auto;
-		max-height: 500px;
-		padding-bottom: 2rem;
+		height: 100%;
+		display: flex;
+		flex-direction: column;
 	}
 
 	.chat-list-message,
