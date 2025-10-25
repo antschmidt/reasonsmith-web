@@ -273,7 +273,7 @@
 		display: flex;
 		align-items: center;
 		gap: 1rem;
-		padding: 1rem 2rem;
+		padding: 0.25rem;
 		background: #fafafa; /* Solid background for light mode */
 		border-bottom: 1px solid var(--color-border);
 		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -282,7 +282,7 @@
 
 	@media (max-width: 768px) {
 		.top-nav {
-			padding: 0.75rem 1rem;
+			padding: 0.25rem;
 		}
 	}
 	:global([data-theme='dark']) .top-nav {

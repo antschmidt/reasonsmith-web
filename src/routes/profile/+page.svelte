@@ -2694,7 +2694,6 @@
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		backdrop-filter: blur(20px) saturate(1.2);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 24px;
 		box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 8%, transparent);
 		position: relative;
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
