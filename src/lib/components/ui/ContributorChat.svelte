@@ -92,6 +92,14 @@
 	function loadPanelSettings() {
 		if (typeof window === 'undefined') return;
 
+		// On mobile, always position at right edge
+		const isMobile = window.innerWidth <= 768;
+		if (isMobile) {
+			panelPosition = { x: 0, y: 0 };
+			panelSize = { width: window.innerWidth, height: window.innerHeight };
+			return;
+		}
+
 		const saved = localStorage.getItem('chat-panel-settings');
 		if (saved) {
 			try {
@@ -386,13 +394,6 @@
 			// Reset to list view when opening
 			viewMode = 'list';
 			selectedChat = null;
-
-			// If no saved position, set default position (bottom right with some margin)
-			if (panelPosition.x === 0 && panelPosition.y === 0) {
-				const defaultX = Math.max(0, window.innerWidth - panelSize.width - 16);
-				const defaultY = Math.max(0, window.innerHeight - panelSize.height - 16);
-				panelPosition = { x: defaultX, y: defaultY };
-			}
 		}
 	}
 
@@ -644,13 +645,24 @@
 			handleResizeEnd();
 		};
 
+		// Reset position on resize if switching to/from mobile
+		const handleResize = () => {
+			const isMobile = window.innerWidth <= 768;
+			if (isMobile && isOpen) {
+				panelPosition = { x: 0, y: 0 };
+				panelSize = { width: window.innerWidth, height: window.innerHeight };
+			}
+		};
+
 		window.addEventListener('mousemove', handleGlobalMouseMove);
 		window.addEventListener('mouseup', handleGlobalMouseUp);
+		window.addEventListener('resize', handleResize);
 
 		return () => {
 			clearInterval(interval);
 			window.removeEventListener('mousemove', handleGlobalMouseMove);
 			window.removeEventListener('mouseup', handleGlobalMouseUp);
+			window.removeEventListener('resize', handleResize);
 		};
 	});
 </script>
@@ -680,7 +692,10 @@
 	{#if isOpen}
 		<div
 			class="chat-panel"
-			style="left: {panelPosition.x}px; top: {panelPosition.y}px; width: {panelSize.width}px; height: {panelSize.height}px;"
+			class:mobile-panel={typeof window !== 'undefined' && window.innerWidth <= 768}
+			style={typeof window !== 'undefined' && window.innerWidth > 768
+				? `left: ${panelPosition.x}px; top: ${panelPosition.y}px; width: ${panelSize.width}px; height: ${panelSize.height}px;`
+				: ''}
 		>
 			<!-- Resize Handles -->
 			<div class="resize-handle resize-n" onmousedown={(e) => handleResizeStart(e, 'n')}></div>
@@ -926,7 +941,7 @@
 		background: var(--color-surface);
 		backdrop-filter: blur(8px);
 		border: 1px solid var(--color-border);
-		/*border-radius: var(--border-radius-lg);*/
+		border-radius: var(--border-radius-lg);
 		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 		z-index: 51;
 		display: flex;
@@ -1058,20 +1073,52 @@
 	}
 
 	@media (max-width: 768px) {
-		.chat-panel {
-			position: fixed;
-			top: 60px !important;
-			right: 1rem !important;
-			left: 1rem !important;
-			width: auto !important;
+		/* Override all positioning for mobile */
+		.chat-panel,
+		.chat-panel[style],
+		.mobile-panel,
+		.mobile-panel[style] {
+			position: fixed !important;
+			top: var(--nav-height, 88px) !important;
+			right: 0 !important;
+			bottom: 0 !important;
+			left: 0 !important;
+			width: 100vw !important;
+			max-width: 100vw !important;
+			height: calc(100vh - var(--nav-height, 88px)) !important;
+			height: calc(100dvh - var(--nav-height, 88px)) !important;
+			min-width: unset !important;
+			min-height: unset !important;
+			margin: 0 !important;
+			padding: 0 !important;
+			border-radius: 0 !important;
+			border: none !important;
+			z-index: 40 !important;
+			display: flex !important;
+			flex-direction: column !important;
+			overflow: hidden !important;
+			transform: none !important;
 		}
 
 		.resize-handle {
-			display: none;
+			display: none !important;
 		}
 
 		.chat-header {
 			cursor: default;
+			flex-shrink: 0 !important;
+		}
+
+		.chat-tabs {
+			flex-shrink: 0 !important;
+		}
+
+		/* Make chat content areas fill remaining space */
+		.chat-panel > :global(.notifications-content),
+		.chat-panel > :global([class*='collaboration']) {
+			flex: 1 !important;
+			min-height: 0 !important;
+			overflow: hidden !important;
 		}
 	}
 
