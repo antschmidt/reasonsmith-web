@@ -21,6 +21,11 @@
 	import CollaborationChatList from './CollaborationChatList.svelte';
 	import CollaborationChatThread from './CollaborationChatThread.svelte';
 
+	// Navigation height constants (must match CSS)
+	const NAV_HEIGHT_MOBILE = 88;
+	const NAV_HEIGHT_DESKTOP = 96;
+	const MOBILE_BREAKPOINT = 768;
+
 	let { userId } = $props<{ userId: string }>();
 
 	type Notification = {
@@ -93,7 +98,7 @@
 		if (typeof window === 'undefined') return;
 
 		// On mobile, always position at right edge
-		const isMobile = window.innerWidth <= 768;
+		const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
 		if (isMobile) {
 			panelPosition = { x: 0, y: 0 };
 			panelSize = { width: window.innerWidth, height: window.innerHeight };
@@ -146,7 +151,8 @@
 
 		const defaultWidth = 400;
 		const defaultHeight = 600;
-		const navHeight = window.innerWidth <= 768 ? 88 : 96;
+		const navHeight =
+			window.innerWidth <= MOBILE_BREAKPOINT ? NAV_HEIGHT_MOBILE : NAV_HEIGHT_DESKTOP;
 
 		panelSize = {
 			width: Math.min(defaultWidth, window.innerWidth - 40),
@@ -696,7 +702,7 @@
 
 		// Reset position on resize if switching to/from mobile
 		const handleResize = () => {
-			const isMobile = window.innerWidth <= 768;
+			const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
 			if (isMobile && isOpen) {
 				panelPosition = { x: 0, y: 0 };
 				panelSize = { width: window.innerWidth, height: window.innerHeight };
@@ -741,8 +747,8 @@
 	{#if isOpen}
 		<div
 			class="chat-panel"
-			class:mobile-panel={typeof window !== 'undefined' && window.innerWidth <= 768}
-			style={typeof window !== 'undefined' && window.innerWidth > 768
+			class:mobile-panel={typeof window !== 'undefined' && window.innerWidth <= MOBILE_BREAKPOINT}
+			style={typeof window !== 'undefined' && window.innerWidth > MOBILE_BREAKPOINT
 				? `left: ${panelPosition.x}px; top: ${panelPosition.y}px; width: ${panelSize.width}px; height: ${panelSize.height}px;`
 				: ''}
 		>
@@ -1121,21 +1127,23 @@
 		color: white;
 	}
 
+	/* Mobile breakpoint - must match MOBILE_BREAKPOINT constant (768px) */
 	@media (max-width: 768px) {
 		/* Override all positioning for mobile */
+		/* Nav height - must match NAV_HEIGHT_MOBILE constant (88px) */
 		.chat-panel,
 		.chat-panel[style],
 		.mobile-panel,
 		.mobile-panel[style] {
 			position: fixed !important;
-			top: var(--nav-height, 88px) !important;
+			top: 88px !important;
 			right: 0 !important;
 			bottom: 0 !important;
 			left: 0 !important;
 			width: 100vw !important;
 			max-width: 100vw !important;
-			height: calc(100vh - var(--nav-height, 88px)) !important;
-			height: calc(100dvh - var(--nav-height, 88px)) !important;
+			height: calc(100vh - 88px) !important;
+			height: calc(100dvh - 88px) !important;
 			min-width: unset !important;
 			min-height: unset !important;
 			margin: 0 !important;
