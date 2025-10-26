@@ -110,17 +110,26 @@
 			try {
 				const settings = JSON.parse(saved);
 
-				// Check if screen size has changed significantly since last save
-				const savedScreenWidth = settings.screenWidth || 0;
-				const savedScreenHeight = settings.screenHeight || 0;
-				const currentScreenWidth = window.innerWidth;
-				const currentScreenHeight = window.innerHeight;
-
-				// Prevent division by zero
-				if (savedScreenWidth === 0 || savedScreenHeight === 0) {
+				// Validate settings structure before attempting calculations
+				if (
+					!settings ||
+					typeof settings.screenWidth !== 'number' ||
+					typeof settings.screenHeight !== 'number' ||
+					settings.screenWidth <= 0 ||
+					settings.screenHeight <= 0 ||
+					!settings.position ||
+					!settings.size
+				) {
+					// Invalid or incomplete settings - reset to default
 					resetPanelPosition();
 					return;
 				}
+
+				// Check if screen size has changed significantly since last save
+				const savedScreenWidth = settings.screenWidth;
+				const savedScreenHeight = settings.screenHeight;
+				const currentScreenWidth = window.innerWidth;
+				const currentScreenHeight = window.innerHeight;
 
 				// If screen dimensions changed by more than 10%, reset position
 				const widthChange = Math.abs(currentScreenWidth - savedScreenWidth) / savedScreenWidth;
@@ -133,8 +142,8 @@
 				}
 
 				// Screen size is similar, load saved position
-				if (settings.position) panelPosition = settings.position;
-				if (settings.size) panelSize = settings.size;
+				panelPosition = settings.position;
+				panelSize = settings.size;
 			} catch (e) {
 				console.error('Failed to load panel settings:', e);
 				resetPanelPosition();
