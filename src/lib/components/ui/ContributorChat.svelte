@@ -1136,14 +1136,13 @@
 		.mobile-panel,
 		.mobile-panel[style] {
 			position: fixed !important;
-			top: 88px !important;
+			top: var(--nav-height, 88px) !important;
 			right: 0 !important;
 			bottom: 0 !important;
 			left: 0 !important;
 			width: 100vw !important;
 			max-width: 100vw !important;
-			height: calc(100vh - 88px) !important;
-			height: calc(100dvh - 88px) !important;
+			height: calc(100vh - var(--nav-height, 88px)) !important;
 			min-width: unset !important;
 			min-height: unset !important;
 			margin: 0 !important;
