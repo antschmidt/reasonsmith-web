@@ -104,15 +104,56 @@
 		if (saved) {
 			try {
 				const settings = JSON.parse(saved);
+
+				// Check if screen size has changed significantly since last save
+				const savedScreenWidth = settings.screenWidth || 0;
+				const savedScreenHeight = settings.screenHeight || 0;
+				const currentScreenWidth = window.innerWidth;
+				const currentScreenHeight = window.innerHeight;
+
+				// If screen dimensions changed by more than 10%, reset position
+				const widthChange = Math.abs(currentScreenWidth - savedScreenWidth) / savedScreenWidth;
+				const heightChange = Math.abs(currentScreenHeight - savedScreenHeight) / savedScreenHeight;
+
+				if (widthChange > 0.1 || heightChange > 0.1 || !savedScreenWidth) {
+					// Screen size changed significantly - reset to default position
+					resetPanelPosition();
+					return;
+				}
+
+				// Screen size is similar, load saved position
 				if (settings.position) panelPosition = settings.position;
 				if (settings.size) panelSize = settings.size;
 			} catch (e) {
 				console.error('Failed to load panel settings:', e);
+				resetPanelPosition();
 			}
+		} else {
+			// No saved settings - use default position
+			resetPanelPosition();
 		}
 	}
 
-	// Save position/size to localStorage
+	// Reset panel to default position (right side, below nav)
+	function resetPanelPosition() {
+		if (typeof window === 'undefined') return;
+
+		const defaultWidth = 400;
+		const defaultHeight = 600;
+		const navHeight = window.innerWidth <= 768 ? 88 : 96;
+
+		panelSize = {
+			width: Math.min(defaultWidth, window.innerWidth - 40),
+			height: Math.min(defaultHeight, window.innerHeight - navHeight - 40)
+		};
+
+		panelPosition = {
+			x: window.innerWidth - panelSize.width - 20,
+			y: navHeight + 20
+		};
+	}
+
+	// Save position/size to localStorage with current screen dimensions
 	function savePanelSettings() {
 		if (typeof window === 'undefined') return;
 
@@ -120,7 +161,9 @@
 			'chat-panel-settings',
 			JSON.stringify({
 				position: panelPosition,
-				size: panelSize
+				size: panelSize,
+				screenWidth: window.innerWidth,
+				screenHeight: window.innerHeight
 			})
 		);
 	}
