@@ -111,11 +111,17 @@
 				const currentScreenWidth = window.innerWidth;
 				const currentScreenHeight = window.innerHeight;
 
+				// Prevent division by zero
+				if (savedScreenWidth === 0 || savedScreenHeight === 0) {
+					resetPanelPosition();
+					return;
+				}
+
 				// If screen dimensions changed by more than 10%, reset position
 				const widthChange = Math.abs(currentScreenWidth - savedScreenWidth) / savedScreenWidth;
 				const heightChange = Math.abs(currentScreenHeight - savedScreenHeight) / savedScreenHeight;
 
-				if (widthChange > 0.1 || heightChange > 0.1 || !savedScreenWidth) {
+				if (widthChange > 0.1 || heightChange > 0.1) {
 					// Screen size changed significantly - reset to default position
 					resetPanelPosition();
 					return;
