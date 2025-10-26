@@ -503,6 +503,9 @@
 		// Calculate word count for comments
 		commentWordCount = newComment.trim() ? newComment.trim().split(/\s+/).length : 0;
 
+		// Validate content quality and update heuristic scores
+		validateCommentContent();
+
 		// Show citation reminder for comments with substantial content but no citations
 		const hasNoCitations =
 			!commentStyleMetadata.citations || commentStyleMetadata.citations.length === 0;
