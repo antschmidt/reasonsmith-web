@@ -32,24 +32,24 @@
 	}>();
 
 	// State
-	let loading = true;
-	let error: string | null = null;
+	let loading = $state(true);
+	let error = $state<string | null>(null);
 
 	// Growth data
-	let totalXP = 0;
-	let currentLevel = 1;
-	let steelmanCount = 0;
-	let steelmanQualityAvg: number | null = null;
-	let synthesisCount = 0;
-	let acknowledgmentCount = 0;
-	let positionsChangedCount = 0;
-	let clarifyingQuestionsCount = 0;
-	let mindsOpenedCount = 0;
+	let totalXP = $state(0);
+	let currentLevel = $state(1);
+	let steelmanCount = $state(0);
+	let steelmanQualityAvg = $state<number | null>(null);
+	let synthesisCount = $state(0);
+	let acknowledgmentCount = $state(0);
+	let positionsChangedCount = $state(0);
+	let clarifyingQuestionsCount = $state(0);
+	let mindsOpenedCount = $state(0);
 
 	// Achievements
-	let earnedAchievements: any[] = [];
-	let allAchievements: any[] = [];
-	let recentXPActivity: any[] = [];
+	let earnedAchievements = $state<any[]>([]);
+	let allAchievements = $state<any[]>([]);
+	let recentXPActivity = $state<any[]>([]);
 
 	// Computed values
 	const levelTitle = $derived(getLevelTitle(currentLevel));

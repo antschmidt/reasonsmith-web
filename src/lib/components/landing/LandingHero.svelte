@@ -9,19 +9,21 @@
 <section class="landing-hero hero-grid">
 	<div class="hero-primary">
 		<p class="editorial-masthead">ReasonSmith Journal</p>
-		<h1>Argue with structure. Publish with confidence.</h1>
+		<h1>Where arguments become understanding.</h1>
 		<p class="editorial-lede hero-lede">
-			ReasonSmith is a writing desk for public argument: layered citations, transparent revisions,
-			and good-faith scoring that keeps debate sharp yet civil.
+			ReasonSmith is a platform for rigorous public discourse. Write arguments backed by evidence,
+			collaborate with others to refine ideas, and engage in discussions where good-faith reasoning
+			is recognized and rewarded.
 		</p>
 		<div class="hero-actions">
-			<a class="cta-button" href="/login"> Begin Writing </a>
-			<a class="secondary-cta" href="/discussions">Browse Discussions</a>
+			<a class="cta-button" href="/login"> Start Writing </a>
+			<a class="secondary-cta" href="/discussions">Explore Discussions</a>
 		</div>
 		<ul class="hero-pillars">
-			<li>Structured claims &amp; citations</li>
-			<li>Editorial moderation with AI scoring</li>
-			<li>Collaborative revisions and published versions</li>
+			<li>AI-powered analysis identifies logical fallacies and good-faith indicators</li>
+			<li>Steelmanning rewards understanding opposing viewpoints charitably</li>
+			<li>Citation tracking ensures claims are backed by credible sources</li>
+			<li>Collaborative editing creates stronger, more nuanced arguments</li>
 		</ul>
 	</div>
 	<aside class="hero-spotlight" aria-label="Featured discussions">

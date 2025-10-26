@@ -21,6 +21,11 @@
 	import CollaborationChatList from './CollaborationChatList.svelte';
 	import CollaborationChatThread from './CollaborationChatThread.svelte';
 
+	// Navigation height constants (must match CSS)
+	const NAV_HEIGHT_MOBILE = 88;
+	const NAV_HEIGHT_DESKTOP = 96;
+	const MOBILE_BREAKPOINT = 768;
+
 	let { userId } = $props<{ userId: string }>();
 
 	type Notification = {
@@ -93,7 +98,7 @@
 		if (typeof window === 'undefined') return;
 
 		// On mobile, always position at right edge
-		const isMobile = window.innerWidth <= 768;
+		const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
 		if (isMobile) {
 			panelPosition = { x: 0, y: 0 };
 			panelSize = { width: window.innerWidth, height: window.innerHeight };
@@ -104,15 +109,72 @@
 		if (saved) {
 			try {
 				const settings = JSON.parse(saved);
-				if (settings.position) panelPosition = settings.position;
-				if (settings.size) panelSize = settings.size;
+
+				// Validate settings structure before attempting calculations
+				if (
+					!settings ||
+					typeof settings.screenWidth !== 'number' ||
+					typeof settings.screenHeight !== 'number' ||
+					settings.screenWidth <= 0 ||
+					settings.screenHeight <= 0 ||
+					!settings.position ||
+					!settings.size
+				) {
+					// Invalid or incomplete settings - reset to default
+					resetPanelPosition();
+					return;
+				}
+
+				// Check if screen size has changed significantly since last save
+				const savedScreenWidth = settings.screenWidth;
+				const savedScreenHeight = settings.screenHeight;
+				const currentScreenWidth = window.innerWidth;
+				const currentScreenHeight = window.innerHeight;
+
+				// If screen dimensions changed by more than 10%, reset position
+				const widthChange = Math.abs(currentScreenWidth - savedScreenWidth) / savedScreenWidth;
+				const heightChange = Math.abs(currentScreenHeight - savedScreenHeight) / savedScreenHeight;
+
+				if (widthChange > 0.1 || heightChange > 0.1) {
+					// Screen size changed significantly - reset to default position
+					resetPanelPosition();
+					return;
+				}
+
+				// Screen size is similar, load saved position
+				panelPosition = settings.position;
+				panelSize = settings.size;
 			} catch (e) {
 				console.error('Failed to load panel settings:', e);
+				resetPanelPosition();
 			}
+		} else {
+			// No saved settings - use default position
+			resetPanelPosition();
 		}
 	}
 
-	// Save position/size to localStorage
+	// Reset panel to default position (right side, below nav)
+	function resetPanelPosition() {
+		if (typeof window === 'undefined') return;
+
+		const defaultWidth = 400;
+		const defaultHeight = 600;
+		const navHeight =
+			window.innerWidth <= MOBILE_BREAKPOINT ? NAV_HEIGHT_MOBILE : NAV_HEIGHT_DESKTOP;
+
+		panelSize = {
+			width: Math.min(defaultWidth, window.innerWidth - 40),
+			height: Math.min(defaultHeight, window.innerHeight - navHeight - 40)
+		};
+
+		panelPosition = {
+			x: window.innerWidth - panelSize.width - 20,
+			y: navHeight + 20
+		};
+	}
+
+	// Save position/size to localStorage with current screen dimensions
 	function savePanelSettings() {
 		if (typeof window === 'undefined') return;
 
@@ -120,7 +182,9 @@
 			'chat-panel-settings',
 			JSON.stringify({
 				position: panelPosition,
-				size: panelSize
+				size: panelSize,
+				screenWidth: window.innerWidth,
+				screenHeight: window.innerHeight
 			})
 		);
 	}
@@ -647,7 +711,7 @@
 
 		// Reset position on resize if switching to/from mobile
 		const handleResize = () => {
-			const isMobile = window.innerWidth <= 768;
+			const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
 			if (isMobile && isOpen) {
 				panelPosition = { x: 0, y: 0 };
 				panelSize = { width: window.innerWidth, height: window.innerHeight };
@@ -692,8 +756,8 @@
 	{#if isOpen}
 		<div
 			class="chat-panel"
-			class:mobile-panel={typeof window !== 'undefined' && window.innerWidth <= 768}
-			style={typeof window !== 'undefined' && window.innerWidth > 768
+			class:mobile-panel={typeof window !== 'undefined' && window.innerWidth <= MOBILE_BREAKPOINT}
+			style={typeof window !== 'undefined' && window.innerWidth > MOBILE_BREAKPOINT
 				? `left: ${panelPosition.x}px; top: ${panelPosition.y}px; width: ${panelSize.width}px; height: ${panelSize.height}px;`
 				: ''}
 		>
@@ -1072,8 +1136,10 @@
 		color: white;
 	}
 
+	/* Mobile breakpoint - must match MOBILE_BREAKPOINT constant (768px) */
 	@media (max-width: 768px) {
 		/* Override all positioning for mobile */
+		/* Nav height - must match NAV_HEIGHT_MOBILE constant (88px) */
 		.chat-panel,
 		.chat-panel[style],
 		.mobile-panel,
@@ -1086,7 +1152,6 @@
 			width: 100vw !important;
 			max-width: 100vw !important;
 			height: calc(100vh - var(--nav-height, 88px)) !important;
-			height: calc(100dvh - var(--nav-height, 88px)) !important;
 			min-width: unset !important;
 			min-height: unset !important;
 			margin: 0 !important;

@@ -352,6 +352,10 @@
 						discussion_id
 						author_id
 						post_type
+						good_faith_score
+						good_faith_label
+						good_faith_last_evaluated
+						good_faith_analysis
 					}
 				}`,
 				{ id: replyDraftParam, authorId: user.id, discussionId }
@@ -371,6 +375,17 @@
 						commentPostType = candidate.post_type;
 						postTypeExpanded = false; // Keep the post type collapsed since it's already selected
 					}
+
+					// Load existing good faith analysis if available
+					if (candidate.good_faith_score !== null && candidate.good_faith_score !== undefined) {
+						draftGoodFaithAnalysis = {
+							good_faith_score: candidate.good_faith_score,
+							good_faith_label: candidate.good_faith_label,
+							good_faith_last_evaluated: candidate.good_faith_last_evaluated,
+							good_faith_analysis: candidate.good_faith_analysis
+						};
+					}
+
 					initAutosaver();
 					focusReplyOnMount = true;
 					commentFormExpanded = true; // Expand the comment form
@@ -487,6 +502,9 @@
 
 		// Calculate word count for comments
 		commentWordCount = newComment.trim() ? newComment.trim().split(/\s+/).length : 0;
+
+		// Validate content quality and update heuristic scores
+		validateCommentContent();
 
 		// Show citation reminder for comments with substantial content but no citations
 		const hasNoCitations =
