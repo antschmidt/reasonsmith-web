@@ -385,8 +385,8 @@
 			<span class="editorial-masthead">Journal Debates</span>
 			<h1>Discussions</h1>
 			<p class="editorial-lede">
-				Browse active arguments, track evolving drafts, and join conversations that value citations
-				as much as persuasion.
+				Explore thoughtful discussions, learn from constructive disagreement, and join conversations
+				where understanding matters more than winning.
 			</p>
 		</div>
 		<section class="search-card" aria-labelledby="discussion-search">

@@ -4,6 +4,7 @@
 	import { GET_EDITORS_DESK_PICKS } from '$lib/graphql/queries';
 	import LandingHero from './LandingHero.svelte';
 	import LandingFeatures from './LandingFeatures.svelte';
+	import LandingLearningPath from './LandingLearningPath.svelte';
 	import LandingShowcase from './LandingShowcase.svelte';
 	import LandingResources from './LandingResources.svelte';
 	import LandingFooter from './LandingFooter.svelte';
@@ -75,6 +76,7 @@
 	<LandingHero {editorsDeskPicks} />
 
 	<LandingFeatures />
+	<LandingLearningPath />
 	<LandingShowcase error={showcaseError} items={showcaseItems} />
 	<LandingResources />
 	<LandingFooter />

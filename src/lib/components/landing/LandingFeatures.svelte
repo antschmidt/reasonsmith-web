@@ -1,28 +1,28 @@
 <section class="landing-features">
 	<div class="section-heading">
 		<span class="editorial-kicker">Why ReasonSmith</span>
-		<h2>Required tools for productive discourse.</h2>
+		<h2>Build skills for constructive dialogue.</h2>
 	</div>
 	<div class="feature-columns">
 		<article>
-			<h3>Editorial workflow</h3>
+			<h3>Learn to reason better</h3>
 			<p>
-				Draft, revise, and publish with version control that mirrors a newsroom bullpen. Every
-				change is tracked, every claim can be annotated.
+				Get real-time feedback on logical fallacies, tone, and reasoning quality. Improve your
+				critical thinking through iterative refinement and AI-guided analysis.
 			</p>
 		</article>
 		<article>
-			<h3>Good-faith guardrails</h3>
+			<h3>Understand opposing views</h3>
 			<p>
-				AI-assisted scoring spots fallacies, hostile tone, and citation gaps so moderators can
-				focus on judgment rather than triage.
+				Practice steelmanning to develop intellectual empathy. Learn to articulate perspectives you
+				disagree with accurately, strengthening your own reasoning in the process.
 			</p>
 		</article>
 		<article>
-			<h3>Public conversation</h3>
+			<h3>Build research skills</h3>
 			<p>
-				Discussions feel like well-produced features—complete with context, sources, and a readable
-				archive for readers who arrive later.
+				Develop citation habits that support credible discourse. Track sources, evaluate evidence,
+				and learn to distinguish strong claims from weak ones.
 			</p>
 		</article>
 	</div>
