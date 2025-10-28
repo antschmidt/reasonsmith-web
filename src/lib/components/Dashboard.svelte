@@ -609,7 +609,7 @@
 <style>
 	.dashboard-container {
 		padding: 2rem 1rem;
-		max-width: 1200px;
+		max-width: 96vw;
 		margin: 0 auto;
 		background: var(--color-surface-alt);
 		min-height: 100vh;

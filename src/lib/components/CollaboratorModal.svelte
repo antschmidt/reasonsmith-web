@@ -113,6 +113,13 @@
 				return;
 			}
 
+			console.log('Attempting to invite with params:', {
+				postId,
+				contributorId,
+				role: selectedRole,
+				invitedBy: userId
+			});
+
 			const result = await nhost.graphql.request(ADD_POST_COLLABORATOR, {
 				postId,
 				contributorId,
@@ -120,9 +127,25 @@
 				invitedBy: userId
 			});
 
+			console.log('GraphQL result:', result);
+
 			if (result.error) {
 				console.error('Invite error:', result.error);
-				errorMessage = 'Error sending invitation';
+				console.error('Error type:', typeof result.error);
+				console.error('Error keys:', Object.keys(result.error));
+				console.error('Full error details:', JSON.stringify(result.error, null, 2));
+
+				// Try to extract more detailed error information
+				let errorDetails = 'Unknown error';
+				if (Array.isArray(result.error)) {
+					errorDetails = result.error.map((e) => e.message || e).join(', ');
+				} else if (result.error.message) {
+					errorDetails = result.error.message;
+				} else if (typeof result.error === 'string') {
+					errorDetails = result.error;
+				}
+
+				errorMessage = `Error sending invitation: ${errorDetails}`;
 			} else {
 				successMessage = 'Invitation sent successfully!';
 				// Refresh collaborators list and search results
@@ -135,9 +158,17 @@
 					successMessage = '';
 				}, 3000);
 			}
-		} catch (error) {
-			console.error('Invite error:', error);
-			errorMessage = 'Error sending invitation';
+		} catch (error: any) {
+			console.error('Invite error (caught exception):', error);
+			console.error('Error type:', typeof error);
+			console.error('Error message:', error?.message);
+			console.error('Error stack:', error?.stack);
+			console.error(
+				'Full error object:',
+				JSON.stringify(error, Object.getOwnPropertyNames(error), 2)
+			);
+
+			errorMessage = error?.message || 'Error sending invitation';
 		} finally {
 			isInviting = false;
 		}

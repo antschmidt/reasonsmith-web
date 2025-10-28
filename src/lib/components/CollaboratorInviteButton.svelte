@@ -24,6 +24,7 @@
 </script>
 
 <button
+	type="button"
 	class="collaborator-invite-button"
 	onclick={handleClick}
 	{disabled}
