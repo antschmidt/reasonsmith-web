@@ -385,7 +385,7 @@
 	.message-item.own .message-text {
 		background: var(--color-secondary);
 		color: var(--color-on-secondary);
-		padding: 0.375rem 0.625rem;
+		padding-right: 40px;
 		border-radius: var(--border-radius-md);
 		text-align: right;
 		margin: 0;
@@ -394,8 +394,6 @@
 	.message-item.other .message-text {
 		background: var(--color-surface);
 		padding-left: 40px;
-		border-radius: var(--border-radius-md);
-		border: 1px solid var(--color-border);
 		text-align: left;
 		margin: 0;
 	}

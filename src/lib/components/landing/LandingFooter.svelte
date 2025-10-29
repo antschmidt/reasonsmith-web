@@ -1,5 +1,6 @@
 <footer class="landing-footer">
 	<nav aria-label="Legal links">
+		<a href="/resources/our-story">Our Story</a>
 		<a href="/terms">Terms</a>
 		<a href="/privacy">Privacy</a>
 		<a href="/resources/community-guidelines">Guidelines</a>

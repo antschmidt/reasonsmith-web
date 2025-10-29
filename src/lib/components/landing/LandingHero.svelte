@@ -176,7 +176,7 @@
 		border-radius: 24px;
 		padding: clamp(1.5rem, 4vw, 2.5rem);
 		box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
-		height: 100%;
+		height: 90%;
 		display: flex;
 		flex-direction: column;
 		gap: 1.5rem;

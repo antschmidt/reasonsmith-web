@@ -6,6 +6,7 @@
 	import EditorsDeskCarousel from '$lib/components/EditorsDeskCarousel.svelte';
 	import EditorsDeskPicker from '$lib/components/EditorsDeskPicker.svelte';
 	import SaveButton from '$lib/components/SaveButton.svelte';
+	import LandingFooter from '$lib/components/landing/LandingFooter.svelte';
 	import {
 		LIST_PUBLISHED_DISCUSSIONS,
 		SEARCH_PUBLISHED_DISCUSSIONS,
@@ -382,16 +383,17 @@
 <div class="page-container">
 	<header class="page-hero">
 		<div class="hero-body">
-			<span class="editorial-masthead">Journal Debates</span>
-			<h1>Discussions</h1>
+			<span class="editorial-masthead">Learning Through Dialogue</span>
+			<h1>Explore Discussions</h1>
 			<p class="editorial-lede">
-				Explore thoughtful discussions, learn from constructive disagreement, and join conversations
-				where understanding matters more than winning.
+				Discover thoughtful conversations where people engage constructively with different
+				viewpoints. Learn from examples of good-faith reasoning, steelmanning, and evidence-based
+				dialogue.
 			</p>
 		</div>
 		<section class="search-card" aria-labelledby="discussion-search">
-			<h2 id="discussion-search">Search the archive</h2>
-			<p>Filter by title, author, or keywords to surface the discourse you need.</p>
+			<h2 id="discussion-search">Find discussions by topic</h2>
+			<p>Search by title, author, or keywords to discover conversations that interest you.</p>
 			<div class="search-controls">
 				<input
 					id="search"
@@ -411,10 +413,11 @@
 		<section class="analysis-section editors-desk-section">
 			<header class="analysis-header">
 				<span class="editorial-kicker">Editors' Desk</span>
-				<h2>Featured by our curators</h2>
+				<h2>Learn from exemplary discussions</h2>
 				<p>
-					Exceptional contributions selected by our editorial team for their insight, clarity, and
-					constructive engagement.
+					Our editorial team highlights conversations that demonstrate strong reasoning,
+					intellectual humility, and constructive engagement. Study these examples to improve your
+					own dialogue skills.
 				</p>
 			</header>
 			{#if editorsDeskLoading}
@@ -530,10 +533,11 @@
 		<section class="analysis-section">
 			<header class="analysis-header">
 				<span class="editorial-kicker">Curated Analyses</span>
-				<h2>Editors' briefing room</h2>
+				<h2>Educational case studies</h2>
 				<p>
-					Explore highlighted evaluations of noteworthy rhetoric selected for teaching clear
-					sourcing and constructive tone.
+					Detailed analyses of public discourse that demonstrate how to identify logical fallacies,
+					evaluate evidence quality, and recognize good-faith versus bad-faith argumentation. Learn
+					critical thinking skills through real examples.
 				</p>
 			</header>
 			{#if showcaseLoading}
@@ -548,6 +552,8 @@
 		</section>
 	{/if}
 </div>
+
+<LandingFooter />
 
 <!-- EditorsDeskPicker Dialog -->
 <EditorsDeskPicker
