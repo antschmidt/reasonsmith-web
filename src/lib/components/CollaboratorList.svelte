@@ -195,7 +195,7 @@
 		padding: 1rem;
 		background: var(--card-bg);
 		border: 1px solid var(--border-color);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		transition: all 0.2s ease;
 	}
 
@@ -232,7 +232,7 @@
 	.role-badge {
 		display: inline-block;
 		padding: 0.25rem 0.625rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		font-size: 0.75rem;
 		font-weight: 500;
 		text-transform: capitalize;
@@ -245,7 +245,7 @@
 		padding: 0.5rem;
 		background: transparent;
 		border: 1px solid var(--border-color);
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		color: var(--text-secondary);
 		cursor: pointer;
 		transition: all 0.2s ease;

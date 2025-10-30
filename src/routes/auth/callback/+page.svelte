@@ -201,7 +201,7 @@
 		color: var(--color-primary);
 		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 		padding: 1rem 2rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		font-size: 1rem;
 		font-weight: 600;
 		cursor: pointer;

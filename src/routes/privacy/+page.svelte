@@ -558,7 +558,7 @@
 		width: 100%;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		padding: 3rem;
 		box-shadow: 0 12px 40px color-mix(in srgb, var(--color-primary) 15%, transparent);
 	}

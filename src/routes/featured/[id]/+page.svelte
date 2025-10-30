@@ -281,7 +281,7 @@
 		text-decoration: none;
 		font-weight: 600;
 		padding: 0.75rem 1.5rem;
-		border-radius: 20px;
+		border-radius: var(--border-radius-lg);
 		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
 		backdrop-filter: blur(10px);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
@@ -371,7 +371,7 @@
 	.tag-list li {
 		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
-		border-radius: 20px;
+		border-radius: var(--border-radius-lg);
 		padding: 0.5rem 1rem;
 		font-size: 0.85rem;
 		font-weight: 600;
@@ -424,7 +424,7 @@
 		font-weight: 600;
 		padding: 0.25rem 0.75rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
 	}
 
@@ -445,7 +445,7 @@
 	}
 
 	.summary-card {
-		border-radius: 20px;
+		border-radius: var(--border-radius-lg);
 		padding: 1.5rem;
 		display: flex;
 		align-items: center;
@@ -495,7 +495,7 @@
 
 	.insight-card {
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 20px;
+		border-radius: var(--border-radius-lg);
 		padding: 2rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		backdrop-filter: blur(15px) saturate(1.1);
@@ -516,7 +516,7 @@
 		right: 0;
 		height: 3px;
 		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-		border-radius: 20px 20px 0 0;
+		border-radius: var(--border-radius-lg) 20px 0 0;
 	}
 
 	.insight-card:hover {
@@ -578,7 +578,7 @@
 	}
 
 	.fact-card {
-		border-radius: 20px;
+		border-radius: var(--border-radius-lg);
 		padding: 2rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		backdrop-filter: blur(15px) saturate(1.1);
@@ -600,7 +600,7 @@
 		right: 0;
 		height: 3px;
 		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-		border-radius: 20px 20px 0 0;
+		border-radius: var(--border-radius-lg) 20px 0 0;
 	}
 
 	.fact-card:hover {
@@ -744,7 +744,7 @@
 
 		.analysis-card {
 			padding: 2rem 1.5rem;
-			border-radius: 24px;
+			border-radius: var(--border-radius-xl);
 		}
 
 		.analysis-header h1 {
@@ -805,7 +805,7 @@
 		font-weight: 600;
 		text-decoration: none;
 		padding: 1rem 2rem;
-		border-radius: 20px;
+		border-radius: var(--border-radius-lg);
 		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);

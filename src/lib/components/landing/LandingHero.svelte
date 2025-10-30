@@ -129,7 +129,7 @@
 		align-items: center;
 		gap: 0.35rem;
 		padding: 0.85rem 1.5rem;
-		border-radius: 999px;
+		border-radius: var(--border-radius-full);
 		border: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
 		text-decoration: none;
 		font-weight: 600;
@@ -165,7 +165,7 @@
 		content: '';
 		width: 8px;
 		height: 8px;
-		border-radius: 999px;
+		border-radius: var(--border-radius-full);
 		background: var(--color-primary);
 		flex-shrink: 0;
 	}
@@ -173,7 +173,7 @@
 	.hero-spotlight {
 		background: color-mix(in srgb, var(--color-surface) 85%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		padding: clamp(1.5rem, 4vw, 2.5rem);
 		box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
 		height: 90%;

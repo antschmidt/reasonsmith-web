@@ -387,7 +387,7 @@
 	.modal-content {
 		background: color-mix(in srgb, var(--card-bg) 80%, transparent);
 		backdrop-filter: blur(8px);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		width: 100%;
 		max-width: 600px;
 		max-height: 90vh;
@@ -420,7 +420,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		transition: all 0.2s ease;
 	}
 
@@ -451,7 +451,7 @@
 		width: 100%;
 		padding: 0.625rem;
 		border: 1px solid var(--border-color);
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		background: var(--input-bg);
 		color: var(--text-color);
 		font-size: 0.875rem;
@@ -463,7 +463,7 @@
 		margin-bottom: 0;
 		padding: 0.625rem;
 		background: var(--hover-bg);
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.8125rem;
 		line-height: 1.5;
 		color: var(--text-secondary);
@@ -490,7 +490,7 @@
 		width: 100%;
 		padding: 0.75rem 0.875rem 0.75rem 2.75rem;
 		border: 1px solid var(--border-color);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		background: var(--input-bg);
 		color: var(--text-color);
 		font-size: 0.875rem;
@@ -521,7 +521,7 @@
 	.error-message,
 	.success-message {
 		padding: 0.75rem;
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		margin-bottom: 1rem;
 		font-size: 0.875rem;
 	}
@@ -563,7 +563,7 @@
 		justify-content: space-between;
 		padding: 0.875rem;
 		border: 1px solid var(--border-color);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		margin-bottom: 0.5rem;
 		transition: all 0.2s ease;
 	}
@@ -596,7 +596,7 @@
 		background: var(--primary-color);
 		color: white;
 		border: none;
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.875rem;
 		font-weight: 500;
 		cursor: pointer;
@@ -626,7 +626,7 @@
 		background: var(--secondary-color, #f59e0b);
 		color: white;
 		border: none;
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.875rem;
 		font-weight: 500;
 		cursor: pointer;
@@ -698,7 +698,7 @@
 		margin-top: 1.5rem;
 		padding: 0.875rem;
 		background: var(--hover-bg);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		text-align: center;
 	}
 

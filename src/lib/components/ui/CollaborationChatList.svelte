@@ -155,7 +155,7 @@
 		padding: 0 6px;
 		background: var(--color-primary);
 		color: white;
-		border-radius: 10px;
+		border-radius: var(--border-radius-md);
 		font-size: 0.75rem;
 		font-weight: 700;
 		line-height: 1;

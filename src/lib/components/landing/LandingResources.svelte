@@ -24,7 +24,7 @@
 		margin: 0 auto;
 		background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		padding: clamp(2rem, 5vw, 3rem);
 		box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
 		text-align: center;
@@ -54,7 +54,7 @@
 		align-items: center;
 		justify-content: center;
 		padding: 0.75rem 1.25rem;
-		border-radius: 999px;
+		border-radius: var(--border-radius-full);
 		border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
 		text-decoration: none;
 		font-size: 0.95rem;

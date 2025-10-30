@@ -224,7 +224,7 @@
 	.citation-card {
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		padding: 1rem;
 		transition: box-shadow 0.2s ease;
 	}
@@ -311,7 +311,7 @@
 	.related-card {
 		background: var(--color-surface-alt);
 		border: 1px solid var(--color-border);
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		padding: 0.75rem;
 		transition: background-color 0.2s ease;
 	}

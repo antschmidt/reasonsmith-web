@@ -59,7 +59,7 @@
 	.feature-columns article {
 		background: color-mix(in srgb, var(--color-surface-alt) 70%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
-		border-radius: 18px;
+		border-radius: var(--border-radius-lg);
 		padding: clamp(1.5rem, 4vw, 2.5rem);
 		box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
 	}

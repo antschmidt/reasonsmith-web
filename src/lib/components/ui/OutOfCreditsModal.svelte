@@ -50,7 +50,7 @@
 	.blocked-details {
 		background: var(--color-bg-secondary);
 		border: 1px solid var(--color-border);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		padding: 1rem;
 	}
 

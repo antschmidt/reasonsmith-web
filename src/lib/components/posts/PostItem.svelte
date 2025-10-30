@@ -781,7 +781,7 @@
 	.writing-style-badge {
 		font-size: 0.75rem;
 		padding: 0.5rem 0.875rem;
-		border-radius: 999px;
+		border-radius: var(--border-radius-full);
 		background: var(--color-surface);
 		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 	}
@@ -801,7 +801,7 @@
 	.post-version-link {
 		font-size: 0.75rem;
 		padding: 0.5rem 0.875rem;
-		border-radius: 999px;
+		border-radius: var(--border-radius-full);
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
 		color: var(--color-text-secondary);
@@ -840,7 +840,7 @@
 		padding: 0.5rem 0.875rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
-		border-radius: 999px;
+		border-radius: var(--border-radius-full);
 		cursor: pointer;
 		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 		box-shadow:
@@ -865,7 +865,7 @@
 	.good-faith-pill {
 		font-weight: 600;
 		padding: 0.125rem 0.5rem;
-		border-radius: 999px;
+		border-radius: var(--border-radius-full);
 		font-size: 0.7rem;
 	}
 

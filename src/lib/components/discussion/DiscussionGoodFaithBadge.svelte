@@ -29,7 +29,7 @@
 	.good-faith-pill {
 		display: inline-block;
 		padding: 0.25rem 0.75rem;
-		border-radius: 999px;
+		border-radius: var(--border-radius-full);
 		font-weight: 600;
 		font-size: 0.875rem;
 		letter-spacing: 0.025em;
@@ -79,7 +79,7 @@
 		padding: 0.625rem 1rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
-		border-radius: 999px;
+		border-radius: var(--border-radius-full);
 		cursor: pointer;
 		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 		font-size: 0.875rem;

@@ -95,7 +95,7 @@
 	.modal-content {
 		background: color-mix(in srgb, var(--color-bg-primary) 80%, transparent);
 		backdrop-filter: blur(8px);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
 		width: 90%;
 		max-height: 80vh;
@@ -144,7 +144,7 @@
 		color: var(--color-text-secondary);
 		cursor: pointer;
 		padding: 0.25rem;
-		border-radius: 4px;
+		border-radius: var(--border-radius-sm);
 		line-height: 1;
 		transition: all 0.2s ease;
 		flex-shrink: 0;

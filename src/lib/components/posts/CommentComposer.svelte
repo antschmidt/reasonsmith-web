@@ -1132,7 +1132,7 @@
 		background: var(--color-surface);
 		color: var(--color-text-primary);
 		border: 1px solid var(--color-border);
-		border-radius: 3px;
+		border-radius: var(--border-radius-sm);
 		font-size: 1rem;
 		font-weight: 500;
 		cursor: pointer;
@@ -1364,7 +1364,7 @@
 		padding: 0.2rem 0.5rem;
 		background: var(--color-primary);
 		color: white;
-		border-radius: 999px;
+		border-radius: var(--border-radius-full);
 		font-size: 0.75rem;
 		font-weight: 600;
 	}
@@ -1580,7 +1580,7 @@
 	.quality-progress {
 		height: 8px;
 		background: var(--color-surface);
-		border-radius: 4px;
+		border-radius: var(--border-radius-sm);
 		overflow: hidden;
 		margin-bottom: 0.5rem;
 	}
@@ -1790,7 +1790,7 @@
 	.analysis-blocked-message {
 		background: #fef2f2;
 		border: 1px solid #fecaca;
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		padding: 12px;
 	}
 
@@ -1930,7 +1930,7 @@
 	/* Draft Preview Styles */
 	.draft-preview {
 		border: 1px solid var(--color-border);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		background: var(--color-background-secondary);
 		overflow: hidden;
 	}

@@ -620,7 +620,7 @@
 		width: 100%;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		box-shadow: 0 12px 40px color-mix(in srgb, var(--color-primary) 15%, transparent);
 		overflow: hidden;
 	}
@@ -680,7 +680,7 @@
 		gap: 0;
 		margin-bottom: 1rem;
 		border: 1px solid var(--color-border);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		overflow: hidden;
 		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
 	}
@@ -751,7 +751,7 @@
 		background: var(--color-primary);
 		color: white;
 		border: none;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		font-size: 1rem;
 		font-weight: 600;
 		cursor: pointer;
@@ -793,14 +793,14 @@
 		gap: 1rem;
 		padding: 1rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		border: 1px solid var(--color-border);
 	}
 
 	.auth-input {
 		padding: 0.75rem 1rem;
 		border: 1px solid var(--color-border);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		font-size: 1rem;
 		background: var(--color-surface);
 		color: var(--color-text-primary);
@@ -818,7 +818,7 @@
 		background: var(--color-primary);
 		color: white;
 		border: none;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		font-size: 1rem;
 		font-weight: 600;
 		cursor: pointer;
@@ -839,7 +839,7 @@
 		background: transparent;
 		color: var(--color-text-secondary);
 		border: 1px solid var(--color-border);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		font-size: 1rem;
 		font-weight: 500;
 		cursor: pointer;
@@ -857,7 +857,7 @@
 		border: 1px solid color-mix(in srgb, #10b981 30%, transparent);
 		color: #059669;
 		padding: 0.75rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.875rem;
 		margin: 0;
 		text-align: center;
@@ -868,7 +868,7 @@
 		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
 		color: #dc2626;
 		padding: 1rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.875rem;
 		margin: 1rem 0 0 0;
 	}

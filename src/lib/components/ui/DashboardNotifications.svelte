@@ -19,30 +19,9 @@
 	import { goto } from '$app/navigation';
 	import CollaborationChatList from './CollaborationChatList.svelte';
 	import CollaborationChatThread from './CollaborationChatThread.svelte';
+	import { getNotificationMessage, type Notification } from '$lib/utils/notificationHelpers';
 
 	let { userId } = $props<{ userId: string }>();
-
-	type Notification = {
-		id: string;
-		type: string;
-		discussion_id: string;
-		post_id: string | null;
-		actor_id: string | null;
-		read: boolean;
-		created_at: string;
-		metadata?: any;
-		discussion: {
-			discussion_versions: Array<{ title: string }>;
-		};
-		post: {
-			content: string;
-			post_collaborators?: Array<{
-				id: string;
-				contributor_id: string;
-				role: string;
-			}>;
-		} | null;
-	};
 
 	type ChatSummary = {
 		postId: string;
@@ -237,39 +216,6 @@
 		viewMode = 'list';
 		selectedChat = null;
 		loadChats();
-	}
-
-	function getNotificationMessage(notification: Notification): string {
-		const discussionTitle =
-			notification.discussion?.discussion_versions?.[0]?.title || 'a discussion';
-
-		switch (notification.type) {
-			case 'new_comment_on_my_discussion':
-				return `New comment on your discussion "${discussionTitle}"`;
-			case 'new_comment_on_participated_discussion':
-				return `New comment on "${discussionTitle}"`;
-			case 'reply_to_my_comment':
-				return `New reply to your comment in "${discussionTitle}"`;
-			case 'collaboration_invite':
-				return `You've been invited to collaborate on "${notification.metadata?.discussion_title || discussionTitle}" as ${notification.metadata?.role || 'editor'}`;
-			case 'edit_control_request':
-				const isForAuthor = notification.metadata?.current_holder_id !== userId;
-				if (isForAuthor) {
-					return `Edit control request for "${notification.metadata?.discussion_title || discussionTitle}"`;
-				} else {
-					return `Someone is requesting edit control`;
-				}
-			case 'role_upgrade_request':
-				return `Role upgrade request for "${notification.metadata?.discussion_title || discussionTitle}"`;
-			case 'editors_desk_approval_request':
-				return `Your discussion "${discussionTitle}" has been submitted for editorial review`;
-			case 'editors_desk_approved':
-				return `Your discussion "${discussionTitle}" has been featured on the Editors' Desk!`;
-			case 'editors_desk_rejected':
-				return `Your discussion "${discussionTitle}" was not selected for featuring`;
-			default:
-				return `New activity on "${discussionTitle}"`;
-		}
 	}
 
 	function formatTimeAgo(dateString: string): string {
@@ -525,7 +471,7 @@
 							>
 								<div class="notification-content">
 									<p class="notification-message">
-										{getNotificationMessage(notification)}
+										{getNotificationMessage(notification, userId)}
 									</p>
 									<span class="notification-time">{formatTimeAgo(notification.created_at)}</span>
 								</div>
@@ -668,7 +614,7 @@
 		padding: 0.125rem 0.5rem;
 		background: var(--color-primary);
 		color: white;
-		border-radius: 999px;
+		border-radius: var(--border-radius-full);
 		font-size: 0.75rem;
 		font-weight: 600;
 		min-width: 1.25rem;

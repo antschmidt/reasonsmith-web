@@ -509,7 +509,7 @@
 		padding: 1rem;
 		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 	}
 
 	.import-section h4 {
@@ -537,7 +537,7 @@
 		flex: 1;
 		padding: 0.75rem;
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
 		color: var(--color-text-primary);
 		font-size: 0.9rem;
@@ -563,7 +563,7 @@
 		padding: 0.5rem;
 		background: color-mix(in srgb, #ef4444 10%, transparent);
 		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		color: #ef4444;
 		font-size: 0.85rem;
 	}
@@ -580,7 +580,7 @@
 	.form-section {
 		padding: 1rem;
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
 	}
 
@@ -614,7 +614,7 @@
 	.form-textarea {
 		padding: 0.75rem;
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
 		color: var(--color-text-primary);
 		font-size: 0.9rem;
@@ -671,7 +671,7 @@
 	.btn-primary,
 	.btn-secondary {
 		padding: 0.75rem 1.5rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		cursor: pointer;
 		font-weight: 600;
 		font-size: 0.9rem;

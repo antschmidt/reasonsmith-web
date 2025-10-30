@@ -2814,7 +2814,7 @@
 	.links .link.icon {
 		width: 40px;
 		height: 40px;
-		border-radius: 20px;
+		border-radius: var(--border-radius-lg);
 		justify-content: center;
 		background: color-mix(in srgb, var(--color-primary) 15%, transparent);
 		backdrop-filter: blur(10px);
@@ -2909,7 +2909,7 @@
 		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
 		backdrop-filter: blur(10px);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 20px;
+		border-radius: var(--border-radius-lg);
 		padding: 0.5rem;
 		max-width: 8rem;
 		text-align: center;
@@ -2980,7 +2980,7 @@
 		padding: 1rem;
 		background: color-mix(in srgb, var(--color-surface) 50%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
@@ -3053,7 +3053,7 @@
 	.field textarea {
 		padding: 1rem;
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
 		backdrop-filter: blur(10px);
 		color: var(--color-text-primary);
@@ -3119,7 +3119,7 @@
 		color: var(--color-text-primary);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
 		padding: 0.5rem 1rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		font-weight: 600;
 		font-size: 0.875rem;
 		cursor: pointer;
@@ -3146,7 +3146,7 @@
 		color: var(--color-text-primary);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
 		padding: 0.5rem 1rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		font-weight: 600;
 		font-size: 0.875rem;
 		cursor: pointer;
@@ -3222,7 +3222,7 @@
 		border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
 		color: var(--color-accent);
 		padding: 1rem 1.5rem;
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		font-weight: 500;
 		text-align: center;
 		backdrop-filter: blur(10px);
@@ -3331,7 +3331,7 @@
 
 	@media (max-width: 480px) {
 		.profile-card {
-			border-radius: 20px;
+			border-radius: var(--border-radius-lg);
 		}
 
 		.profile-header,
@@ -3373,7 +3373,7 @@
 		align-items: center;
 		gap: 1rem;
 		padding: 1.25rem;
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
 		backdrop-filter: blur(10px);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
@@ -3573,7 +3573,7 @@
 		width: 100%;
 		font-weight: 500;
 		transition: all 0.2s ease;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 	}
 
 	.toggle-auth-mode:hover {
@@ -3587,7 +3587,7 @@
 		background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
 		color: var(--color-surface);
 		border: none;
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		font-size: 1rem;
 		font-weight: 600;
 		font-family: var(--font-family-display);
@@ -3633,7 +3633,7 @@
 		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
 		backdrop-filter: blur(10px);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		font-size: 1.5rem;
 		color: var(--color-text-secondary);
 		cursor: pointer;
@@ -3656,7 +3656,7 @@
 		justify-content: center;
 		gap: 0.75rem;
 		padding: 1rem 1.5rem;
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		cursor: pointer;
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
@@ -3752,7 +3752,7 @@
 	.login-container input {
 		padding: 1rem;
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
 		backdrop-filter: blur(10px);
 		color: var(--color-text-primary);
@@ -3808,7 +3808,7 @@
 		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 		padding: 0.5rem;
 		margin: -0.5rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 	}
 
 	.security-item.clickable:hover {
@@ -3853,7 +3853,7 @@
 		padding: 0.75rem 1rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.9375rem;
 	}
 
@@ -3900,7 +3900,7 @@
 		padding: 1.5rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 20%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 	}
 
 	.add-password-form h4 {
@@ -3943,7 +3943,7 @@
 		padding: 0.75rem 1rem;
 		background: color-mix(in srgb, #ef4444 10%, transparent);
 		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		color: #dc2626;
 		font-size: 0.875rem;
 		margin-top: 1rem;
@@ -3953,7 +3953,7 @@
 		padding: 0.75rem 1rem;
 		background: color-mix(in srgb, #10b981 10%, transparent);
 		border: 1px solid color-mix(in srgb, #10b981 30%, transparent);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		color: #059669;
 		font-size: 0.875rem;
 		margin-top: 1rem;
@@ -3967,7 +3967,7 @@
 		padding: 0.75rem 1rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		margin-top: 1rem;
 	}
 
@@ -3988,7 +3988,7 @@
 		padding: 1.5rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 20%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 	}
 
 	.change-email-form h4 {
@@ -4075,7 +4075,7 @@
 		padding: 0.75rem 1rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		transition: all 0.2s ease;
 	}
 
@@ -4098,7 +4098,7 @@
 		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 		padding: 0.5rem;
 		margin: -0.5rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 	}
 
 	.key-info.clickable:hover {
@@ -4136,7 +4136,7 @@
 		background: transparent;
 		color: var(--color-error, #dc2626);
 		border: 1px solid color-mix(in srgb, var(--color-error, #dc2626) 40%, transparent);
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		cursor: pointer;
 		transition: all 0.2s ease;
 	}
@@ -4161,7 +4161,7 @@
 	.mfa-status {
 		margin: 0;
 		padding: 0.375rem 0.625rem;
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.8125rem;
 		font-weight: 600;
 		display: inline-block;
@@ -4182,7 +4182,7 @@
 	.btn-small {
 		padding: 0.25rem 0.625rem;
 		font-size: 0.75rem;
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		font-weight: 600;
 		cursor: pointer;
 		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -4214,7 +4214,7 @@
 		max-width: 256px;
 		height: auto;
 		border: 1px solid var(--color-border);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		padding: 1rem;
 		background: white;
 	}
@@ -4224,7 +4224,7 @@
 		padding: 1rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
 		border: 1px solid var(--color-border);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 	}
 
 	.secret-key code {
@@ -4277,7 +4277,7 @@
 	.form-input {
 		padding: 0.625rem 0.875rem;
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.9rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
 		backdrop-filter: blur(10px);
@@ -4309,7 +4309,7 @@
 		display: flex;
 		gap: 0;
 		border: 1px solid var(--color-border);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		overflow: hidden;
 		background: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
 	}
@@ -4345,7 +4345,7 @@
 		flex-direction: column;
 		gap: 0;
 		border: 1px solid var(--color-border);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		overflow: hidden;
 		max-height: 300px;
 		overflow-y: auto;
@@ -4422,7 +4422,7 @@
 		padding: 1rem;
 		background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
 		border: 2px solid var(--color-primary);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 	}
 
 	.selected-user-info {
@@ -4452,7 +4452,7 @@
 		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
 		color: #dc2626;
 		padding: 0.875rem 1rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.875rem;
 	}
 
@@ -4461,7 +4461,7 @@
 		border: 1px solid color-mix(in srgb, #10b981 30%, transparent);
 		color: #059669;
 		padding: 0.875rem 1rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.875rem;
 	}
 
@@ -4470,7 +4470,7 @@
 		background: transparent;
 		color: #dc2626;
 		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.875rem;
 		font-weight: 600;
 		cursor: pointer;

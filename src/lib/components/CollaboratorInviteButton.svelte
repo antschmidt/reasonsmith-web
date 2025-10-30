@@ -52,7 +52,7 @@
 		padding: 0.5rem 1rem;
 		background: transparent;
 		border: 1px solid var(--border-color);
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		color: var(--text-color);
 		font-size: 0.875rem;
 		font-weight: 500;

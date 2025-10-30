@@ -182,7 +182,7 @@
 	.modal-content {
 		background: color-mix(in srgb, var(--card-bg) 80%, transparent);
 		backdrop-filter: blur(8px);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		width: 100%;
 		max-width: 500px;
 		box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
@@ -224,7 +224,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		transition: all 0.2s ease;
 	}
 
@@ -239,7 +239,7 @@
 
 	.error-message {
 		padding: 0.75rem;
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		margin-bottom: 1rem;
 		font-size: 0.875rem;
 		background: #fee;
@@ -264,7 +264,7 @@
 		font-style: italic;
 		padding: 1rem;
 		background: var(--hover-bg);
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		border-left: 3px solid var(--color-primary);
 	}
 
