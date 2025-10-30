@@ -49,7 +49,6 @@
 			});
 
 			if (result.error) {
-				console.error('Error loading collaborators:', result.error);
 				return;
 			}
 
@@ -59,7 +58,7 @@
 			existingCollaborators = allCollaborators.filter((c: any) => c.status !== 'declined');
 			declinedCollaborators = allCollaborators.filter((c: any) => c.status === 'declined');
 		} catch (error) {
-			console.error('Error in loadExistingCollaborators:', error);
+			// Silently fail - UI will show empty state
 		}
 	}
 
@@ -78,7 +77,6 @@
 			});
 
 			if (result.error) {
-				console.error('Search error:', result.error);
 				errorMessage = 'Error searching for users';
 				searchResults = [];
 			} else {
@@ -93,7 +91,6 @@
 				searchResults = allUsers.filter((user: any) => !existingIds.has(user.id));
 			}
 		} catch (error) {
-			console.error('Search error:', error);
 			errorMessage = 'Error searching for users';
 			searchResults = [];
 		} finally {
@@ -113,13 +110,6 @@
 				return;
 			}
 
-			console.log('Attempting to invite with params:', {
-				postId,
-				contributorId,
-				role: selectedRole,
-				invitedBy: userId
-			});
-
 			const result = await nhost.graphql.request(ADD_POST_COLLABORATOR, {
 				postId,
 				contributorId,
@@ -127,15 +117,8 @@
 				invitedBy: userId
 			});
 
-			console.log('GraphQL result:', result);
-
 			if (result.error) {
-				console.error('Invite error:', result.error);
-				console.error('Error type:', typeof result.error);
-				console.error('Error keys:', Object.keys(result.error));
-				console.error('Full error details:', JSON.stringify(result.error, null, 2));
-
-				// Try to extract more detailed error information
+				// Extract error message for user display
 				let errorDetails = 'Unknown error';
 				if (Array.isArray(result.error)) {
 					errorDetails = result.error.map((e) => e.message || e).join(', ');
@@ -159,15 +142,6 @@
 				}, 3000);
 			}
 		} catch (error: any) {
-			console.error('Invite error (caught exception):', error);
-			console.error('Error type:', typeof error);
-			console.error('Error message:', error?.message);
-			console.error('Error stack:', error?.stack);
-			console.error(
-				'Full error object:',
-				JSON.stringify(error, Object.getOwnPropertyNames(error), 2)
-			);
-
 			errorMessage = error?.message || 'Error sending invitation';
 		} finally {
 			isInviting = false;
@@ -194,7 +168,6 @@
 			});
 
 			if (result.error) {
-				console.error('Re-invite error:', result.error);
 				errorMessage = 'Error re-sending invitation';
 			} else {
 				successMessage = 'Invitation re-sent successfully!';
@@ -208,7 +181,6 @@
 				}, 3000);
 			}
 		} catch (error) {
-			console.error('Re-invite error:', error);
 			errorMessage = 'Error re-sending invitation';
 		} finally {
 			isReinviting = false;
