@@ -1,9 +1,9 @@
 <script lang="ts">
-	// Our Story page - the origin and purpose of ReasonSmith
+	// Origins page - the origin and purpose of ReasonSmith
 </script>
 
 <svelte:head>
-	<title>Our Story - ReasonSmith</title>
+	<title>Origins - ReasonSmith</title>
 	<meta
 		name="description"
 		content="The story behind ReasonSmith: reclaiming the original promise of internet connection and open knowledge through evidence-based, collaborative discourse."
@@ -303,9 +303,10 @@
 
 	.cta-actions {
 		display: flex;
+		flex-direction: row;
 		gap: 1rem;
 		justify-content: center;
-		flex-wrap: wrap;
+		/*flex-wrap: wrap;*/
 		margin-top: 2rem;
 	}
 
@@ -353,7 +354,9 @@
 		}
 
 		.cta-button {
+			align-self: center;
 			width: 100%;
+			max-width: 80%;
 		}
 	}
 </style>

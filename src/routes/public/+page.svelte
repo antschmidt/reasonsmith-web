@@ -157,6 +157,15 @@
 					? new Error(gqlError.map((e: any) => e.message).join('; '))
 					: gqlError;
 			items = (data as any)?.public_showcase_item ?? [];
+			// Sort by display_order, then by created_at
+			items.sort((a, b) => {
+				if (a.display_order !== null && b.display_order !== null) {
+					return a.display_order - b.display_order;
+				}
+				if (a.display_order !== null) return -1;
+				if (b.display_order !== null) return 1;
+				return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+			});
 		} catch (e: any) {
 			error = e?.message ?? 'Failed to load showcase items.';
 		} finally {
