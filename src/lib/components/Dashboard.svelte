@@ -3,7 +3,6 @@
 	// Avoid importing gql to prevent type resolution issues; use plain strings
 	import { nhost } from '$lib/nhostClient';
 	import { GET_DASHBOARD_DATA, GET_SAVED_ITEMS, REMOVE_SAVED_ITEM } from '$lib/graphql/queries';
-	import DashboardNotifications from './ui/DashboardNotifications.svelte';
 	import CollaborationInvites from './CollaborationInvites.svelte';
 	import { BookOpen, Link2, Users } from '@lucide/svelte';
 
@@ -314,9 +313,6 @@
 	<div class="dashboard-grid">
 		<!-- Sidebar (Right Column) -->
 		<aside class="sidebar">
-			<!-- Notifications & Messages -->
-			<DashboardNotifications userId={user.id as unknown as string} />
-
 			<!-- Collaboration Invites -->
 			{#if collaborationInvites.length > 0}
 				<section class="card collaboration-section">
