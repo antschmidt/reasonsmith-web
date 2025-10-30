@@ -11,6 +11,7 @@
 		DELETE_PUBLIC_SHOWCASE_ITEM
 	} from '$lib/graphql/queries';
 	import AnimatedLogo from '$lib/components/ui/AnimatedLogo.svelte';
+	import { collectRoles } from '$lib/utils/authHelpers';
 
 	type ShowcaseItem = {
 		id: string;
@@ -77,24 +78,6 @@
 	let analysisProvider = $state<'claude' | 'openai'>('claude');
 	let skipFactChecking = $state(false);
 
-	function collectRoles(u: any): string[] {
-		if (!u) return [];
-		const roles = new Set<string>();
-		const direct = (u as any).roles;
-		if (Array.isArray(direct)) direct.forEach((r) => typeof r === 'string' && roles.add(r));
-		const defaultRole = (u as any).defaultRole ?? (u as any).default_role;
-		if (typeof defaultRole === 'string') roles.add(defaultRole);
-		const metadataRoles = (u as any).metadata?.roles;
-		if (Array.isArray(metadataRoles))
-			metadataRoles.forEach((r: any) => typeof r === 'string' && roles.add(r));
-		const appMetadataRoles = (u as any).app_metadata?.roles;
-		if (Array.isArray(appMetadataRoles))
-			appMetadataRoles.forEach((r: any) => typeof r === 'string' && roles.add(r));
-		const userRole = (u as any).role;
-		if (typeof userRole === 'string') roles.add(userRole);
-		return Array.from(roles);
-	}
-
 	async function ensureAuth() {
 		try {
 			await nhost.auth.isAuthenticatedAsync();
@@ -157,6 +140,15 @@
 					? new Error(gqlError.map((e: any) => e.message).join('; '))
 					: gqlError;
 			items = (data as any)?.public_showcase_item ?? [];
+			// Sort by display_order, then by created_at
+			items.sort((a, b) => {
+				if (a.display_order !== null && b.display_order !== null) {
+					return a.display_order - b.display_order;
+				}
+				if (a.display_order !== null) return -1;
+				if (b.display_order !== null) return 1;
+				return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+			});
 		} catch (e: any) {
 			error = e?.message ?? 'Failed to load showcase items.';
 		} finally {
@@ -766,7 +758,7 @@
 		gap: 1rem;
 		margin-bottom: 2rem;
 		padding: 2rem;
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
@@ -800,7 +792,7 @@
 	}
 	.list-panel {
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		backdrop-filter: blur(20px) saturate(1.2);
 		padding: 1.5rem;
@@ -816,7 +808,7 @@
 		right: 0;
 		height: 3px;
 		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-		border-radius: 24px 24px 0 0;
+		border-radius: var(--border-radius-xl) 24px 0 0;
 	}
 	.panel-header {
 		display: flex;
@@ -843,7 +835,7 @@
 		display: flex;
 		align-items: stretch;
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		overflow: hidden;
 		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
 		backdrop-filter: blur(10px);
@@ -915,7 +907,7 @@
 	}
 	.form-panel {
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		backdrop-filter: blur(20px) saturate(1.2);
 		padding: 2rem;
@@ -931,7 +923,7 @@
 		right: 0;
 		height: 3px;
 		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-		border-radius: 24px 24px 0 0;
+		border-radius: var(--border-radius-xl) 24px 0 0;
 	}
 	.form-panel h2 {
 		margin-top: 0;
@@ -961,7 +953,7 @@
 	input[type='date'],
 	textarea {
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		padding: 0.75rem 1rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
 		backdrop-filter: blur(10px);
@@ -986,7 +978,7 @@
 	}
 	.analysis-generator {
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		padding: 1.5rem;
 		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
 		backdrop-filter: blur(15px);
@@ -1111,7 +1103,7 @@
 		color: white;
 		border: none;
 		padding: 0.75rem 1.5rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		cursor: pointer;
 		font-weight: 600;
 		font-size: 0.95rem;
@@ -1133,7 +1125,7 @@
 		color: var(--color-text-primary);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
 		padding: 0.7rem 1.4rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		cursor: pointer;
 		font-weight: 600;
 		font-size: 0.95rem;

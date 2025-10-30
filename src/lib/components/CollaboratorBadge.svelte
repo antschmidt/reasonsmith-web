@@ -40,7 +40,7 @@
 		background: var(--primary-color);
 		color: white;
 		border: none;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		font-size: 0.75rem;
 		font-weight: 500;
 		transition: all 0.2s ease;

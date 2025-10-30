@@ -207,7 +207,7 @@
 		text-align: center;
 		background: var(--card-bg);
 		border: 1px solid var(--border-color);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 	}
 
 	.empty-state p {
@@ -228,7 +228,7 @@
 		padding: 1rem;
 		background: var(--card-bg);
 		border: 1px solid var(--border-color);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		transition: all 0.2s ease;
 	}
 
@@ -245,7 +245,7 @@
 		height: 40px;
 		background: var(--color-link);
 		color: white;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		flex-shrink: 0;
 	}
 
@@ -306,7 +306,7 @@
 	.role-badge {
 		display: inline-block;
 		padding: 0.25rem 0.625rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		font-size: 0.75rem;
 		font-weight: 500;
 		text-transform: capitalize;
@@ -392,7 +392,7 @@
 		gap: 0.375rem;
 		padding: 0.5rem 0.875rem;
 		border: 1px solid;
-		border-radius: 6px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.875rem;
 		font-weight: 500;
 		cursor: pointer;

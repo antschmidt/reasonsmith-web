@@ -304,7 +304,7 @@
 		text-decoration: none;
 		background: color-mix(in srgb, var(--color-surface) 90%, transparent);
 		padding: 0.25rem 0.5rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		backdrop-filter: blur(10px);
 	}
 

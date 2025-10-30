@@ -58,7 +58,7 @@
 		width: 100%;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		padding: 3rem;
 		text-align: center;
 		box-shadow: 0 12px 40px color-mix(in srgb, var(--color-primary) 15%, transparent);
@@ -107,7 +107,7 @@
 		color: var(--color-primary);
 		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 		padding: 1rem 2rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		font-size: 1rem;
 		font-weight: 600;
 		cursor: pointer;
@@ -135,7 +135,7 @@
 	.offline-tips {
 		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
 		border: 1px solid var(--color-border);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		padding: 1.5rem;
 		text-align: left;
 	}

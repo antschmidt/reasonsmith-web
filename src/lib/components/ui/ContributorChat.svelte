@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getNotificationMessage, type Notification } from '$lib/utils/notificationHelpers';
 	import { nhost } from '$lib/nhostClient';
 	import {
 		GET_NOTIFICATIONS,
@@ -485,39 +486,6 @@
 		loadChats();
 	}
 
-	function getNotificationMessage(notification: Notification): string {
-		const discussionTitle =
-			notification.discussion?.discussion_versions?.[0]?.title || 'a discussion';
-
-		switch (notification.type) {
-			case 'new_comment_on_my_discussion':
-				return `New comment on your discussion "${discussionTitle}"`;
-			case 'new_comment_on_participated_discussion':
-				return `New comment on "${discussionTitle}"`;
-			case 'reply_to_my_comment':
-				return `New reply to your comment in "${discussionTitle}"`;
-			case 'collaboration_invite':
-				return `You've been invited to collaborate on "${notification.metadata?.discussion_title || discussionTitle}" as ${notification.metadata?.role || 'editor'}`;
-			case 'edit_control_request':
-				const isForAuthor = notification.metadata?.current_holder_id !== userId;
-				if (isForAuthor) {
-					return `Edit control request for "${notification.metadata?.discussion_title || discussionTitle}"`;
-				} else {
-					return `Someone is requesting edit control`;
-				}
-			case 'role_upgrade_request':
-				return `Role upgrade request for "${notification.metadata?.discussion_title || discussionTitle}"`;
-			case 'editors_desk_approval_request':
-				return `Your discussion "${discussionTitle}" has been submitted for editorial review`;
-			case 'editors_desk_approved':
-				return `Your discussion "${discussionTitle}" has been featured on the Editors' Desk!`;
-			case 'editors_desk_rejected':
-				return `Your discussion "${discussionTitle}" was not selected for featuring`;
-			default:
-				return `New activity on "${discussionTitle}"`;
-		}
-	}
-
 	function formatTimeAgo(dateString: string): string {
 		const date = new Date(dateString);
 		const now = new Date();
@@ -868,7 +836,9 @@
 									class:disabled={processingNotificationId === notification.id}
 								>
 									<div class="notification-content">
-										<p class="notification-message">{getNotificationMessage(notification)}</p>
+										<p class="notification-message">
+											{getNotificationMessage(notification, userId)}
+										</p>
 										<span class="notification-time">{formatTimeAgo(notification.created_at)}</span>
 
 										{#if notification.type === 'edit_control_request'}
@@ -993,7 +963,7 @@
 		right: 6px;
 		background: var(--color-error);
 		color: white;
-		border-radius: 10px;
+		border-radius: var(--border-radius-md);
 		min-width: 18px;
 		height: 18px;
 		padding: 0 4px;
@@ -1157,7 +1127,7 @@
 			left: 0 !important;
 			width: 100vw !important;
 			max-width: 100vw !important;
-			height: calc(100vh - var(--nav-height, 88px)) !important;
+			height: calc(100dvh - var(--nav-height, 88px)) !important;
 			min-width: unset !important;
 			min-height: unset !important;
 			margin: 0 !important;
@@ -1243,7 +1213,7 @@
 		padding: 0 5px;
 		background: var(--color-primary);
 		color: white;
-		border-radius: 9px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.7rem;
 		font-weight: 700;
 	}

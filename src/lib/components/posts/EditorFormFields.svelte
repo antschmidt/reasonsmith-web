@@ -79,7 +79,7 @@
 		padding: 0.875rem 1rem;
 		width: 95%;
 		border: 1px solid var(--color-border);
-		border-radius: 3px;
+		border-radius: var(--border-radius-sm);
 		background: var(--color-input-bg);
 		color: var(--color-text-primary);
 		font-family: inherit;

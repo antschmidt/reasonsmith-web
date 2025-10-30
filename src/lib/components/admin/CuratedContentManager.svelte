@@ -310,7 +310,7 @@
 		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
 		backdrop-filter: blur(10px);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 	}
 
 	.manager-header h2 {
@@ -336,7 +336,7 @@
 		color: white;
 		border: none;
 		padding: 0.75rem 1.5rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		cursor: pointer;
 		font-weight: 600;
 		font-size: 0.9rem;
@@ -361,7 +361,7 @@
 		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
 		backdrop-filter: blur(15px);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		box-shadow: 0 4px 16px color-mix(in srgb, var(--color-primary) 10%, transparent);
 	}
 
@@ -375,7 +375,7 @@
 	.error-message,
 	.success-message {
 		padding: 1rem 1.5rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		margin-bottom: 1.5rem;
 		font-weight: 600;
 	}
@@ -403,7 +403,7 @@
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		backdrop-filter: blur(20px) saturate(1.2);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		box-shadow: 0 8px 24px color-mix(in srgb, var(--color-primary) 8%, transparent);
 		overflow: hidden;
 	}
@@ -466,7 +466,7 @@
 	.status-badge {
 		display: inline-block;
 		padding: 0.35rem 0.75rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		font-size: 0.8rem;
 		font-weight: 600;
 		text-transform: uppercase;
@@ -499,7 +499,7 @@
 	.btn-secondary,
 	.btn-danger {
 		padding: 0.4rem 0.8rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		cursor: pointer;
 		font-weight: 500;
 		font-size: 0.8rem;

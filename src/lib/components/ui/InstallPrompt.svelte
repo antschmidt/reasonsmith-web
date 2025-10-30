@@ -102,7 +102,7 @@
 	.install-content {
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		padding: 1.5rem;
 		box-shadow: 0 12px 40px color-mix(in srgb, var(--color-primary) 20%, transparent);
 		display: grid;
@@ -117,7 +117,7 @@
 		width: 48px;
 		height: 48px;
 		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -158,7 +158,7 @@
 		color: var(--color-primary);
 		border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 		padding: 0.625rem 1.25rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		font-size: 0.875rem;
 		font-weight: 600;
 		cursor: pointer;
@@ -194,7 +194,7 @@
 		}
 
 		.install-content {
-			border-radius: 16px 16px 0 0;
+			border-radius: var(--border-radius-lg) 16px 0 0;
 			grid-template-columns: 1fr;
 			gap: 1rem;
 		}

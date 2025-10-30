@@ -47,6 +47,7 @@
 	let processingMessageId = $state<string | null>(null);
 	let subscription: any = null;
 	let messagesContainer: HTMLDivElement;
+	let textareaElement: HTMLTextAreaElement;
 	let pollingInterval: ReturnType<typeof setInterval> | null = null;
 	let subscriptionActive = $state(false);
 
@@ -113,8 +114,13 @@
 		if (!newMessage.trim() || sending) return;
 
 		const messageContent = newMessage.trim();
-		newMessage = '';
 		sending = true;
+
+		// Clear the textarea value directly to avoid triggering reactivity/re-render
+		if (textareaElement) {
+			textareaElement.value = '';
+		}
+		newMessage = '';
 
 		try {
 			const result = await nhost.graphql.request(SEND_COLLABORATION_MESSAGE, {
@@ -127,6 +133,9 @@
 			if (result.error) {
 				console.error('Error sending message:', result.error);
 				newMessage = messageContent; // Restore message on error
+				if (textareaElement) {
+					textareaElement.value = messageContent;
+				}
 			} else if (result.data?.insert_collaboration_message_one) {
 				// Optimistically add the message to the UI immediately
 				const newMsg = result.data.insert_collaboration_message_one;
@@ -143,6 +152,9 @@
 		} catch (err) {
 			console.error('Error sending message:', err);
 			newMessage = messageContent; // Restore message on error
+			if (textareaElement) {
+				textareaElement.value = messageContent;
+			}
 		} finally {
 			sending = false;
 		}
@@ -152,6 +164,18 @@
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
 			sendMessage();
+		}
+	}
+
+	function handleInputFocus(event: FocusEvent) {
+		// On mobile, scroll the input into view when focused
+		if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+			setTimeout(() => {
+				(event.target as HTMLElement).scrollIntoView({
+					behavior: 'smooth',
+					block: 'nearest'
+				});
+			}, 300); // Delay to allow keyboard animation
 		}
 	}
 
@@ -321,8 +345,10 @@
 
 	<div class="thread-input">
 		<textarea
+			bind:this={textareaElement}
 			bind:value={newMessage}
 			onkeydown={handleKeydown}
+			onfocus={handleInputFocus}
 			placeholder="Type a message..."
 			rows="1"
 			disabled={sending}
@@ -418,10 +444,11 @@
 
 	.thread-input {
 		display: flex;
-		/*gap: 0.75rem;*/
-		/*padding: 1rem 1.25rem;*/
+		gap: 0.75rem;
+		padding: 1rem 1.25rem;
 		border-top: 1px solid var(--color-border);
 		background: var(--color-surface);
+		flex-shrink: 0;
 	}
 
 	.thread-input textarea {
@@ -474,5 +501,27 @@
 	.send-button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	/* Mobile keyboard fix */
+	@media (max-width: 768px) {
+		.chat-thread {
+			/* Ensure proper flex behavior */
+			min-height: 0;
+		}
+
+		.thread-messages {
+			/* Allow messages to scroll independently */
+			flex: 1 1 auto;
+			min-height: 0;
+			overflow-y: auto;
+			-webkit-overflow-scrolling: touch;
+		}
+
+		.thread-input {
+			/* Keep input at bottom, prevent shrinking */
+			flex-shrink: 0;
+			flex-grow: 0;
+		}
 	}
 </style>

@@ -451,7 +451,7 @@
 		width: 100%;
 		height: 24px;
 		background: var(--color-surface-alt);
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		overflow: hidden;
 		border: 1px solid var(--color-border-light);
 	}

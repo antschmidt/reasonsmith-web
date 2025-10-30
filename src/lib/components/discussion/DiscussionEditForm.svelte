@@ -980,7 +980,7 @@
 		color: var(--color-text-secondary);
 		font-size: 1rem;
 		padding: 0.25rem;
-		border-radius: 4px;
+		border-radius: var(--border-radius-sm);
 		transition: color 0.2s;
 	}
 
@@ -1124,7 +1124,7 @@
 	.quality-progress {
 		height: 8px;
 		background: var(--color-surface);
-		border-radius: 4px;
+		border-radius: var(--border-radius-sm);
 		overflow: hidden;
 		margin-bottom: 0.5rem;
 	}

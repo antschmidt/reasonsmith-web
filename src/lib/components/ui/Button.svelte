@@ -59,13 +59,13 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		gap: 0.5rem;
+		gap: var(--space-xs);
 		font-family: var(--font-family-ui);
 		font-weight: 500;
 		letter-spacing: 0.025em;
-		border-radius: 3px;
+		border-radius: var(--border-radius-sm);
 		cursor: pointer;
-		transition: all 0.15s ease;
+		transition: all var(--transition-speed) ease;
 		text-decoration: none;
 		white-space: nowrap;
 		border: 1px solid transparent;
@@ -119,27 +119,27 @@
 	.btn-accent {
 		background: transparent;
 		color: var(--color-text-primary);
-		border-color: #10b981;
-		box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+		border-color: var(--color-success);
+		box-shadow: 0 0 8px color-mix(in srgb, var(--color-success) 30%, transparent);
 	}
 
 	.btn-accent:hover:not(:disabled) {
-		background: rgba(16, 185, 129, 0.05);
-		border-color: #10b981;
-		color: #10b981;
-		box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+		background: color-mix(in srgb, var(--color-success) 5%, transparent);
+		border-color: var(--color-success);
+		color: var(--color-success);
+		box-shadow: 0 0 12px color-mix(in srgb, var(--color-success) 40%, transparent);
 	}
 
 	.btn-danger {
 		background: transparent;
-		color: #ef4444;
+		color: var(--color-error);
 		border-color: var(--color-border);
 	}
 
 	.btn-danger:hover:not(:disabled) {
-		background: rgba(239, 68, 68, 0.05);
-		border-color: #ef4444;
-		color: #ef4444;
+		background: color-mix(in srgb, var(--color-error) 5%, transparent);
+		border-color: var(--color-error);
+		color: var(--color-error);
 	}
 
 	.btn-ghost {
@@ -158,7 +158,7 @@
 		background: var(--color-surface);
 		color: var(--color-text-secondary);
 		border-color: var(--color-border);
-		padding: 0.5rem;
+		padding: var(--space-xs);
 		width: 42px;
 		height: 42px;
 	}

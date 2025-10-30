@@ -292,7 +292,7 @@
 	.form-field textarea {
 		padding: 0.875rem 1rem;
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 16px;
+		border-radius: var(--border-radius-lg);
 		font: inherit;
 		background: color-mix(in srgb, var(--color-input-bg) 60%, transparent);
 		color: var(--color-text-primary);

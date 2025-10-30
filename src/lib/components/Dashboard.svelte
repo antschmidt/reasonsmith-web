@@ -1251,7 +1251,7 @@
 		margin-bottom: 2rem;
 		padding: 1.5rem;
 		background: var(--color-surface);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		border: 1px solid var(--color-border);
 	}
 
@@ -1265,7 +1265,7 @@
 		margin-bottom: 2rem;
 		padding: 1.5rem;
 		background: var(--color-surface);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		border: 1px solid var(--color-border);
 	}
 

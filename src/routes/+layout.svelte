@@ -10,6 +10,7 @@
 	import InstallPrompt from '$lib/components/ui/InstallPrompt.svelte';
 	import ContributorChat from '$lib/components/ui/ContributorChat.svelte';
 	import { Sun, Moon, LogInIcon, LogOutIcon } from '@lucide/svelte';
+	import { collectRoles, getUserInitials } from '$lib/utils/authHelpers';
 
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = $state(nhost.auth.getUser());
@@ -27,31 +28,6 @@
 			contributor.avatar_url = data.avatar_url;
 		}
 	});
-
-	function collectRoles(u: any): string[] {
-		if (!u) return [];
-		const roles = new Set<string>();
-		if (Array.isArray(u?.roles)) u.roles.forEach((r: any) => typeof r === 'string' && roles.add(r));
-		const defaultRole = u?.defaultRole ?? u?.default_role;
-		if (typeof defaultRole === 'string') roles.add(defaultRole);
-		if (Array.isArray(u?.metadata?.roles))
-			u.metadata.roles.forEach((r: any) => typeof r === 'string' && roles.add(r));
-		if (Array.isArray(u?.app_metadata?.roles))
-			u.app_metadata.roles.forEach((r: any) => typeof r === 'string' && roles.add(r));
-		if (typeof u?.role === 'string') roles.add(u.role);
-		return Array.from(roles);
-	}
-
-	function getNavInitials(name: string | undefined): string {
-		if (!name) return '?';
-		return name
-			.trim()
-			.split(' ')
-			.map((n: string) => n[0])
-			.join('')
-			.slice(0, 2)
-			.toUpperCase();
-	}
 
 	async function checkAdminAccess() {
 		if (!user) {
@@ -235,7 +211,7 @@
 				{:else}
 					<div class="nav-avatar-placeholder">
 						<span class="nav-initials"
-							>{getNavInitials(contributor?.display_name || user?.email)}</span
+							>{getUserInitials(contributor?.display_name || user?.email)}</span
 						>
 					</div>
 				{/if}
@@ -274,7 +250,7 @@
 		align-items: center;
 		gap: 1rem;
 		padding: 0.25rem;
-		background: #fafafa; /* Solid background for light mode */
+		background: var(--color-nav-bg);
 		border-bottom: 1px solid var(--color-border);
 		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 		backdrop-filter: blur(10px);
@@ -286,8 +262,6 @@
 		}
 	}
 	:global([data-theme='dark']) .top-nav {
-		background: #1a1a1a; /* Solid background for dark mode */
-		border-bottom-color: var(--color-border);
 		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 	}
 	.brand {

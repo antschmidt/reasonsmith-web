@@ -9,6 +9,7 @@
 		ANONYMIZE_AND_DELETE_USER
 	} from '$lib/graphql/queries';
 	import { refreshUserRole, debugAdminRequest, debugCurrentRole } from '$lib/nhostClient';
+	import { collectRoles } from '$lib/utils/authHelpers';
 
 	type Contributor = {
 		id: string;
@@ -60,24 +61,6 @@
       }
     }
   `;
-
-	function collectRoles(u: any): string[] {
-		if (!u) return [];
-		const roles = new Set<string>();
-		const direct = (u as any).roles;
-		if (Array.isArray(direct)) direct.forEach((r) => typeof r === 'string' && roles.add(r));
-		const defaultRole = (u as any).defaultRole ?? (u as any).default_role;
-		if (typeof defaultRole === 'string') roles.add(defaultRole);
-		const metadataRoles = (u as any).metadata?.roles;
-		if (Array.isArray(metadataRoles))
-			metadataRoles.forEach((r: any) => typeof r === 'string' && roles.add(r));
-		const appMetadataRoles = (u as any).app_metadata?.roles;
-		if (Array.isArray(appMetadataRoles))
-			appMetadataRoles.forEach((r: any) => typeof r === 'string' && roles.add(r));
-		const userRole = (u as any).role;
-		if (typeof userRole === 'string') roles.add(userRole);
-		return Array.from(roles);
-	}
 
 	async function checkAccess() {
 		try {
@@ -617,14 +600,14 @@
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		backdrop-filter: blur(20px) saturate(1.2);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 8%, transparent);
 	}
 
 	.admin-header {
 		margin-bottom: 2rem;
 		padding: 2rem;
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
@@ -657,7 +640,7 @@
 		min-width: 300px;
 		max-width: 500px;
 		padding: 1rem 1.5rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		font-weight: 600;
 		box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
 		animation: slideIn 0.3s ease-out;
@@ -713,7 +696,7 @@
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		backdrop-filter: blur(20px) saturate(1.2);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 24px;
+		border-radius: var(--border-radius-xl);
 		box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 8%, transparent);
 		overflow: hidden;
 	}
@@ -800,7 +783,7 @@
 	.role-badge {
 		display: inline-block;
 		padding: 0.35rem 0.75rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		font-size: 0.8rem;
 		font-weight: 600;
 		text-transform: uppercase;
@@ -827,7 +810,7 @@
 	.subscription-badge {
 		display: inline-block;
 		padding: 0.35rem 0.75rem;
-		border-radius: 12px;
+		border-radius: var(--border-radius-md);
 		font-size: 0.8rem;
 		font-weight: 600;
 		text-transform: capitalize;
@@ -888,7 +871,7 @@
 		max-width: 80px;
 		padding: 0.4rem 0.6rem;
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
 		backdrop-filter: blur(10px);
 		color: var(--color-text-primary);
@@ -914,7 +897,7 @@
 	.role-select {
 		padding: 0.5rem 0.75rem;
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
 		color: var(--color-text-primary);
 		font-size: 0.85rem;
@@ -991,7 +974,7 @@
 		max-width: 100px;
 		padding: 0.5rem 0.75rem;
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
 		backdrop-filter: blur(10px);
 		color: var(--color-text-primary);
@@ -1036,7 +1019,7 @@
 		color: var(--color-text-primary);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
 		padding: 0.5rem 1rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		cursor: pointer;
 		font-weight: 600;
 		font-size: 0.85rem;
@@ -1061,7 +1044,7 @@
 		color: #ef4444;
 		border: 1px solid color-mix(in srgb, #ef4444 40%, transparent);
 		padding: 0.5rem 1rem;
-		border-radius: 8px;
+		border-radius: var(--border-radius-sm);
 		cursor: pointer;
 		font-weight: 600;
 		font-size: 0.85rem;
