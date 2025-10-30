@@ -229,6 +229,13 @@
 		productively in ReasonSmith discussions.
 	</p>
 
+	<section class="principles-section">
+		<h2 class="section-title">Ten Principles for Better Discussion</h2>
+		<p class="section-subtitle">
+			These aren't rigid rules—they're flexible guidelines to help you engage more thoughtfully.
+		</p>
+	</section>
+
 	<ol class="principles">
 		<li>
 			<h2>1. Clarify the Claim</h2>
@@ -323,7 +330,11 @@ Open Questions: &lt;areas needing clarification or data&gt;</code
 	</section>
 
 	<section class="fallacies">
-		<h2>Common Logical Fallacies (Recognize & Avoid)</h2>
+		<h2>Common Logical Fallacies</h2>
+		<p class="section-intro">
+			Recognize these reasoning errors in others' arguments—and catch yourself before you use them.
+			Click the info icon for simple explanations and examples.
+		</p>
 		<ul class="grid-list">
 			<li>
 				<div class="item-content">
@@ -681,90 +692,187 @@ Open Questions: &lt;areas needing clarification or data&gt;</code
 
 <style>
 	.guide-container {
-		max-width: 900px;
-		margin: 2rem auto;
-		padding: 2rem;
+		max-width: 1100px;
+		margin: 0 auto;
+		padding: clamp(2rem, 5vw, 4rem) clamp(1.5rem, 5vw, 3rem);
+		background: var(--color-surface-alt);
 	}
+
 	.guide-title {
-		font-size: 2.25rem;
+		font-size: clamp(2rem, 5vw, 3rem);
 		font-weight: 700;
 		font-family: var(--font-family-display);
-		margin-bottom: 1rem;
+		margin-bottom: 1.5rem;
+		text-align: center;
+		letter-spacing: -0.02em;
+		color: var(--color-text-primary);
 	}
+
 	.intro {
-		font-size: 1.05rem;
+		font-size: 1.15rem;
 		color: var(--color-text-secondary);
-		margin-bottom: 2rem;
-		line-height: 1.5;
+		margin-bottom: 4rem;
+		line-height: 1.7;
+		text-align: center;
+		max-width: 800px;
+		margin-left: auto;
+		margin-right: auto;
 	}
+
+	.principles-section {
+		text-align: center;
+		margin-bottom: 2.5rem;
+	}
+
+	.section-title {
+		font-size: 1.75rem;
+		font-weight: 700;
+		font-family: var(--font-family-display);
+		color: var(--color-text-primary);
+		margin-bottom: 0.75rem;
+	}
+
+	.section-subtitle {
+		font-size: 1rem;
+		color: var(--color-text-secondary);
+		line-height: 1.6;
+		max-width: 600px;
+		margin: 0 auto;
+	}
+
 	.principles {
 		list-style: none;
 		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 1.75rem;
-		margin: 0 0 2.5rem;
+		display: grid;
+		gap: 1.5rem;
+		margin: 0 0 4rem;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 	}
+
+	.principles li {
+		background: var(--color-surface);
+		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+		border-radius: var(--border-radius-lg);
+		padding: 1.5rem;
+		transition: all 0.3s ease;
+		box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+	}
+
+	.principles li:hover {
+		transform: translateY(-4px);
+		box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+		border-color: var(--color-primary);
+	}
+
 	.principles h2 {
-		font-size: 1.1rem;
+		font-size: 1.15rem;
 		font-weight: 600;
-		margin-bottom: 0.4rem;
+		margin-bottom: 0.75rem;
+		color: var(--color-primary);
+		font-family: var(--font-family-display);
 	}
+
 	.principles p {
 		margin: 0;
-		line-height: 1.5;
+		line-height: 1.6;
+		color: var(--color-text-secondary);
 	}
-	.framework {
-		margin-bottom: 2.5rem;
+
+	.framework,
+	.checklist {
+		background: var(--color-surface);
+		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+		border-radius: var(--border-radius-xl);
+		padding: 2rem;
+		margin-bottom: 3rem;
+		box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
 	}
+
 	.framework h2,
 	.checklist h2,
 	.fallacies h2,
 	.cult-language h2 {
-		font-size: 1.25rem;
-		font-weight: 600;
-		margin-bottom: 0.75rem;
+		font-size: 1.75rem;
+		font-weight: 700;
+		margin-bottom: 1.5rem;
+		font-family: var(--font-family-display);
+		color: var(--color-text-primary);
 	}
+
 	.snippet {
-		background: var(--color-surface);
-		padding: 1rem;
-		border: 1px solid var(--color-border);
+		background: color-mix(in srgb, var(--color-surface-alt) 70%, transparent);
+		padding: 1.5rem;
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 		border-radius: var(--border-radius-md);
 		overflow-x: auto;
-		font-size: 0.85rem;
-		line-height: 1.4;
+		font-size: 0.9rem;
+		line-height: 1.6;
+		font-family: 'Monaco', 'Courier New', monospace;
 	}
+
 	.checklist ul {
-		list-style: disc;
-		padding-left: 1.25rem;
+		list-style: none;
+		padding: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 1rem;
 	}
+
+	.checklist li {
+		padding-left: 2rem;
+		position: relative;
+		line-height: 1.6;
+	}
+
+	.checklist li::before {
+		content: '✓';
+		position: absolute;
+		left: 0;
+		color: var(--color-primary);
+		font-weight: bold;
+		font-size: 1.2rem;
+	}
+
 	.fallacies,
 	.cult-language {
-		margin-top: 2.5rem;
+		margin-top: 4rem;
+		padding: 3rem 2rem;
+		background: var(--color-surface);
+		border-radius: var(--border-radius-xl);
+		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+		box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
 	}
+
 	.grid-list {
 		list-style: none;
 		padding: 0;
 		display: grid;
-		gap: 0.75rem;
+		gap: 1rem;
 		grid-template-columns: 1fr;
 		margin: 0 0 1.5rem;
 	}
+
 	@media (min-width: 720px) {
 		.grid-list {
-			grid-template-columns: 1fr 1fr;
+			grid-template-columns: repeat(2, 1fr);
 		}
 	}
+
 	.grid-list li {
+		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		padding: 1rem 1.25rem;
+		border-radius: var(--border-radius-lg);
+		font-size: 0.9rem;
+		line-height: 1.5;
+		transition: all 0.25s ease;
+	}
+
+	.grid-list li:hover {
 		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		padding: 0.75rem 0.9rem;
-		border-radius: var(--border-radius-sm);
-		font-size: 0.85rem;
-		line-height: 1.35;
+		border-color: var(--color-primary);
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
 	}
 
 	/* Item content with button layout */
@@ -931,14 +1039,21 @@ Open Questions: &lt;areas needing clarification or data&gt;</code
 	}
 
 	.section-intro {
-		font-size: 0.95rem;
+		font-size: 1.05rem;
 		color: var(--color-text-secondary);
-		margin-bottom: 0.75rem;
+		margin-bottom: 1.5rem;
+		line-height: 1.6;
+		text-align: center;
 	}
 	.tip {
-		font-size: 0.85rem;
+		font-size: 0.95rem;
 		color: var(--color-text-secondary);
-		margin-top: -0.5rem;
+		margin-top: 1rem;
+		padding: 1rem 1.5rem;
+		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+		border-left: 3px solid var(--color-primary);
+		border-radius: var(--border-radius-md);
+		line-height: 1.6;
 	}
 	@media (max-width: 640px) {
 		.guide-container {

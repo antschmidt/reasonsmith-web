@@ -9,21 +9,21 @@
 <section class="landing-hero hero-grid">
 	<div class="hero-primary">
 		<p class="editorial-masthead">ReasonSmith Journal</p>
-		<h1>Where arguments become understanding.</h1>
+		<h1>Learn through thoughtful disagreement.</h1>
 		<p class="editorial-lede hero-lede">
-			ReasonSmith is a platform for rigorous public discourse. Write arguments backed by evidence,
-			collaborate with others to refine ideas, and engage in discussions where good-faith reasoning
-			is recognized and rewarded.
+			ReasonSmith is a platform for developing critical thinking skills through constructive
+			dialogue. Explore ideas through evidence-based discussion, learn to understand perspectives
+			you disagree with, and build stronger reasoning through collaborative refinement.
 		</p>
 		<div class="hero-actions">
-			<a class="cta-button" href="/login"> Start Writing </a>
+			<a class="cta-button" href="/login"> Start Learning </a>
 			<a class="secondary-cta" href="/discussions">Explore Discussions</a>
 		</div>
 		<ul class="hero-pillars">
-			<li>AI-powered analysis identifies logical fallacies and good-faith indicators</li>
-			<li>Steelmanning rewards understanding opposing viewpoints charitably</li>
-			<li>Citation tracking ensures claims are backed by credible sources</li>
-			<li>Collaborative editing creates stronger, more nuanced arguments</li>
+			<li>AI analysis helps you strengthen reasoning and avoid logical pitfalls</li>
+			<li>Steelmanning teaches you to understand views you disagree with</li>
+			<li>Citation practice builds research literacy and critical thinking</li>
+			<li>Collaborative editing refines ideas through diverse perspectives</li>
 		</ul>
 	</div>
 	<aside class="hero-spotlight" aria-label="Featured discussions">
@@ -176,7 +176,7 @@
 		border-radius: 24px;
 		padding: clamp(1.5rem, 4vw, 2.5rem);
 		box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
-		height: 100%;
+		height: 90%;
 		display: flex;
 		flex-direction: column;
 		gap: 1.5rem;

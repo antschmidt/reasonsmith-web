@@ -108,7 +108,7 @@
 	let expandedSecurityKeysSection = false; // Whether the security keys section is expanded
 	let expandedSecurityKeys: string[] = []; // Array of expanded key IDs
 
-	let editing = false;
+	let editing = $state(false);
 
 	let contributor = $state<any>(null);
 	let discussions: any[] = [];

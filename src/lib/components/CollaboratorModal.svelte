@@ -49,7 +49,6 @@
 			});
 
 			if (result.error) {
-				console.error('Error loading collaborators:', result.error);
 				return;
 			}
 
@@ -59,7 +58,7 @@
 			existingCollaborators = allCollaborators.filter((c: any) => c.status !== 'declined');
 			declinedCollaborators = allCollaborators.filter((c: any) => c.status === 'declined');
 		} catch (error) {
-			console.error('Error in loadExistingCollaborators:', error);
+			// Silently fail - UI will show empty state
 		}
 	}
 
@@ -78,7 +77,6 @@
 			});
 
 			if (result.error) {
-				console.error('Search error:', result.error);
 				errorMessage = 'Error searching for users';
 				searchResults = [];
 			} else {
@@ -93,7 +91,6 @@
 				searchResults = allUsers.filter((user: any) => !existingIds.has(user.id));
 			}
 		} catch (error) {
-			console.error('Search error:', error);
 			errorMessage = 'Error searching for users';
 			searchResults = [];
 		} finally {
@@ -121,8 +118,17 @@
 			});
 
 			if (result.error) {
-				console.error('Invite error:', result.error);
-				errorMessage = 'Error sending invitation';
+				// Extract error message for user display
+				let errorDetails = 'Unknown error';
+				if (Array.isArray(result.error)) {
+					errorDetails = result.error.map((e) => e.message || e).join(', ');
+				} else if (result.error.message) {
+					errorDetails = result.error.message;
+				} else if (typeof result.error === 'string') {
+					errorDetails = result.error;
+				}
+
+				errorMessage = `Error sending invitation: ${errorDetails}`;
 			} else {
 				successMessage = 'Invitation sent successfully!';
 				// Refresh collaborators list and search results
@@ -135,9 +141,8 @@
 					successMessage = '';
 				}, 3000);
 			}
-		} catch (error) {
-			console.error('Invite error:', error);
-			errorMessage = 'Error sending invitation';
+		} catch (error: any) {
+			errorMessage = error?.message || 'Error sending invitation';
 		} finally {
 			isInviting = false;
 		}
@@ -163,7 +168,6 @@
 			});
 
 			if (result.error) {
-				console.error('Re-invite error:', result.error);
 				errorMessage = 'Error re-sending invitation';
 			} else {
 				successMessage = 'Invitation re-sent successfully!';
@@ -177,7 +181,6 @@
 				}, 3000);
 			}
 		} catch (error) {
-			console.error('Re-invite error:', error);
 			errorMessage = 'Error re-sending invitation';
 		} finally {
 			isReinviting = false;

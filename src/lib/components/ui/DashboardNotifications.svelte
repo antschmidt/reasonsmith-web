@@ -106,8 +106,7 @@
 			}
 
 			if (countResult.data) {
-				notificationUnreadCount =
-					countResult.data.notification_aggregate?.aggregate?.count || 0;
+				notificationUnreadCount = countResult.data.notification_aggregate?.aggregate?.count || 0;
 			}
 		} catch (err) {
 			console.error('Error loading notifications:', err);
@@ -250,7 +249,7 @@
 			case 'new_comment_on_participated_discussion':
 				return `New comment on "${discussionTitle}"`;
 			case 'reply_to_my_comment':
-				return `New reply to your comment`;
+				return `New reply to your comment in "${discussionTitle}"`;
 			case 'collaboration_invite':
 				return `You've been invited to collaborate on "${notification.metadata?.discussion_title || discussionTitle}" as ${notification.metadata?.role || 'editor'}`;
 			case 'edit_control_request':
@@ -262,8 +261,14 @@
 				}
 			case 'role_upgrade_request':
 				return `Role upgrade request for "${notification.metadata?.discussion_title || discussionTitle}"`;
+			case 'editors_desk_approval_request':
+				return `Your discussion "${discussionTitle}" has been submitted for editorial review`;
+			case 'editors_desk_approved':
+				return `Your discussion "${discussionTitle}" has been featured on the Editors' Desk!`;
+			case 'editors_desk_rejected':
+				return `Your discussion "${discussionTitle}" was not selected for featuring`;
 			default:
-				return 'New notification';
+				return `New activity on "${discussionTitle}"`;
 		}
 	}
 
@@ -623,7 +628,7 @@
 		display: flex;
 		flex-direction: column;
 		height: fit-content;
-		max-height: 600px;
+		max-height: 80vh;
 	}
 
 	.tabs-header {
@@ -673,7 +678,7 @@
 	.tab-content {
 		flex: 1;
 		overflow-y: auto;
-		max-height: 550px;
+		max-height: 80vh;
 	}
 
 	.notifications-content {
@@ -813,7 +818,7 @@
 
 	@media (max-width: 768px) {
 		.dashboard-notifications-panel {
-			max-height: 500px;
+			max-height: 80vh;
 		}
 
 		.tab-content {

@@ -5,6 +5,7 @@
 	import { GET_DASHBOARD_DATA, GET_SAVED_ITEMS, REMOVE_SAVED_ITEM } from '$lib/graphql/queries';
 	import DashboardNotifications from './ui/DashboardNotifications.svelte';
 	import CollaborationInvites from './CollaborationInvites.svelte';
+	import { BookOpen, Link2, Users } from '@lucide/svelte';
 
 	let { user } = $props<{ user: User }>();
 
@@ -434,17 +435,29 @@
 			{:else if error}
 				<p style="color: var(--color-accent)">{error}</p>
 			{:else if drafts.length === 0 && collaborativeDrafts.length === 0}
-				<div class="card" style="margin-bottom: 1rem;">
-					<p>
-						No active drafts. <a href="/discussions/new">Start a new discussion</a> or join an existing
-						conversation.
+				<div class="welcome-card">
+					<h3 class="welcome-title">Ready to practice constructive dialogue?</h3>
+					<p class="welcome-text">
+						Start by exploring discussions to see examples of good-faith reasoning, or jump in and
+						begin crafting your own contribution.
 					</p>
+					<div class="welcome-actions">
+						<a href="/discussions" class="welcome-button primary">Explore Discussions</a>
+						<a href="/discussions/new" class="welcome-button secondary">Start a Discussion</a>
+					</div>
+					<div class="welcome-resources">
+						<p class="resources-intro">New to constructive dialogue?</p>
+						<a href="/resources/good-faith-arguments" class="resource-link"
+							>→ Learn the fundamentals</a
+						>
+					</div>
 				</div>
 			{:else if drafts.length > 0 || collaborativeDrafts.length > 0}
 				<div class="drafts-focus">
-					<h3 class="subsection-title">Continue Working</h3>
+					<h3 class="subsection-title">Your Active Work</h3>
 					<p class="section-description">
-						Pick up where you left off on your drafts and active discussions.
+						Continue developing your arguments, refining your reasoning, and practicing constructive
+						dialogue.
 					</p>
 				</div>
 
@@ -597,11 +610,40 @@
 
 	<!-- Learning & Resources -->
 	<footer class="dashboard-footer">
-		<h2 class="section-title">Learning & Resources</h2>
+		<div class="footer-header">
+			<h3 class="footer-title">Develop Your Skills</h3>
+			<p class="footer-subtitle">
+				Master the art of constructive dialogue through our educational resources.
+			</p>
+		</div>
 		<div class="footer-links">
-			<a href="/resources/good-faith-arguments">How to Craft Good-Faith Arguments</a>
-			<a href="/resources/citation-best-practices">Citation Best Practices</a>
-			<a href="/resources/community-guidelines">Community Guidelines</a>
+			<a href="/resources/good-faith-arguments" class="resource-card">
+				<div class="resource-icon">
+					<BookOpen size={28} strokeWidth={1.5} />
+				</div>
+				<div class="resource-info">
+					<strong>Good-Faith Arguments</strong>
+					<span>Learn to reason better and avoid logical fallacies</span>
+				</div>
+			</a>
+			<a href="/resources/citation-best-practices" class="resource-card">
+				<div class="resource-icon">
+					<Link2 size={28} strokeWidth={1.5} />
+				</div>
+				<div class="resource-info">
+					<strong>Citation Best Practices</strong>
+					<span>Build research skills with proper sourcing</span>
+				</div>
+			</a>
+			<a href="/resources/community-guidelines" class="resource-card">
+				<div class="resource-icon">
+					<Users size={28} strokeWidth={1.5} />
+				</div>
+				<div class="resource-info">
+					<strong>Community Guidelines</strong>
+					<span>Understand our principles for respectful dialogue</span>
+				</div>
+			</a>
 		</div>
 	</footer>
 </div>
@@ -609,7 +651,7 @@
 <style>
 	.dashboard-container {
 		padding: 2rem 1rem;
-		max-width: 1200px;
+		max-width: 96vw;
 		margin: 0 auto;
 		background: var(--color-surface-alt);
 		min-height: 100vh;
@@ -787,40 +829,181 @@
 		width: 100%;
 	}
 
+	/* Welcome Card (Empty State) */
+	.welcome-card {
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)),
+			color-mix(in srgb, var(--color-accent) 3%, var(--color-surface))
+		);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: var(--border-radius-xl);
+		padding: clamp(2rem, 5vw, 3rem);
+		margin-bottom: 2rem;
+		text-align: center;
+	}
+
+	.welcome-title {
+		font-size: clamp(1.5rem, 3vw, 2rem);
+		font-weight: 700;
+		font-family: var(--font-family-display);
+		color: var(--color-text-primary);
+		margin-bottom: 1rem;
+	}
+
+	.welcome-text {
+		font-size: 1.05rem;
+		color: var(--color-text-secondary);
+		line-height: 1.6;
+		margin-bottom: 2rem;
+		max-width: 600px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
+	.welcome-actions {
+		display: flex;
+		gap: 1rem;
+		justify-content: center;
+		flex-wrap: wrap;
+		margin-bottom: 2rem;
+	}
+
+	.welcome-button {
+		padding: 0.875rem 1.75rem;
+		border-radius: var(--border-radius-md);
+		font-weight: 600;
+		text-decoration: none;
+		transition: all 0.3s ease;
+		display: inline-block;
+	}
+
+	.welcome-button.primary {
+		background: var(--color-primary);
+		color: white;
+		border: 1px solid var(--color-primary);
+	}
+
+	.welcome-button.primary:hover {
+		background: color-mix(in srgb, var(--color-primary) 90%, black);
+		transform: translateY(-2px);
+		box-shadow: 0 8px 20px color-mix(in srgb, var(--color-primary) 25%, transparent);
+	}
+
+	.welcome-button.secondary {
+		background: transparent;
+		color: var(--color-text-primary);
+		border: 1px solid var(--color-border);
+	}
+
+	.welcome-button.secondary:hover {
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+	}
+
+	.welcome-resources {
+		padding-top: 1.5rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+	}
+
+	.resources-intro {
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		margin-bottom: 0.5rem;
+	}
+
+	.resource-link {
+		color: var(--color-primary);
+		text-decoration: none;
+		font-weight: 500;
+		transition: color 0.2s ease;
+	}
+
+	.resource-link:hover {
+		color: var(--color-accent);
+	}
+
 	/* Footer */
 	.dashboard-footer {
 		margin-top: var(--space-2xl);
-		padding: var(--space-lg);
-		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
-		backdrop-filter: blur(20px);
+		padding: clamp(2rem, 4vw, 3rem);
+		background: var(--color-surface);
 		border-radius: var(--border-radius-xl);
-		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
-		box-shadow: 0 8px 25px color-mix(in srgb, var(--color-primary) 8%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		box-shadow: 0 8px 25px rgba(15, 23, 42, 0.08);
 	}
+
+	.footer-header {
+		text-align: center;
+		margin-bottom: 2rem;
+	}
+
+	.footer-title {
+		font-size: 1.75rem;
+		font-weight: 700;
+		font-family: var(--font-family-display);
+		color: var(--color-text-primary);
+		margin-bottom: 0.5rem;
+	}
+
+	.footer-subtitle {
+		font-size: 1rem;
+		color: var(--color-text-secondary);
+		line-height: 1.6;
+		margin: 0;
+	}
+
 	.footer-links {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-		text-align: center;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		gap: 1.5rem;
+	}
+
+	.resource-card {
+		display: flex;
+		align-items: flex-start;
 		gap: 1rem;
-	}
-	.footer-links a {
-		color: var(--color-primary);
-		text-decoration: none;
-		padding: var(--space-sm) var(--space-md);
-		background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+		padding: 1.5rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
 		border-radius: var(--border-radius-lg);
-		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		font-weight: 500;
-		display: block;
-		backdrop-filter: blur(5px);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		text-decoration: none;
+		transition: all 0.3s ease;
 	}
-	.footer-links a:hover {
-		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-		border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
-		color: var(--color-accent);
-		transform: translateY(-2px);
-		box-shadow: 0 6px 20px color-mix(in srgb, var(--color-primary) 12%, transparent);
+
+	.resource-card:hover {
+		background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
+		border-color: var(--color-primary);
+		transform: translateY(-4px);
+		box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+	}
+
+	.resource-icon {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-primary);
+	}
+
+	.resource-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.resource-info strong {
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		display: block;
+	}
+
+	.resource-info span {
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+		line-height: 1.5;
 	}
 
 	/* Editorial-Style Drafts List (Foreign Affairs inspired) */
