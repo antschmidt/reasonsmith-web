@@ -45,7 +45,7 @@
 	let notificationUnreadCount = $state(0);
 	let chats = $state<Array<ChatSummary>>([]);
 	let chatUnreadCount = $state(0);
-	let loading = $state(true);
+	let initialLoading = $state(true);
 	let error = $state<string | null>(null);
 	let processingNotificationId = $state<string | null>(null);
 
@@ -143,7 +143,6 @@
 	}
 
 	async function loadAll() {
-		loading = true;
 		error = null;
 
 		try {
@@ -152,7 +151,7 @@
 			error = 'Failed to load messages';
 			console.error('Error loading:', err);
 		} finally {
-			loading = false;
+			initialLoading = false;
 		}
 	}
 
@@ -453,7 +452,7 @@
 				</div>
 
 				<div class="notifications-list">
-					{#if loading}
+					{#if initialLoading}
 						<div class="loading-state">Loading notifications...</div>
 					{:else if error}
 						<div class="error-state">{error}</div>
@@ -551,7 +550,12 @@
 		{:else}
 			<!-- Messages Tab -->
 			{#if viewMode === 'list'}
-				<CollaborationChatList {chats} {loading} {error} onSelectChat={handleSelectChat} />
+				<CollaborationChatList
+					{chats}
+					loading={initialLoading}
+					{error}
+					onSelectChat={handleSelectChat}
+				/>
 			{:else if viewMode === 'thread' && selectedChat}
 				<CollaborationChatThread
 					postId={selectedChat.postId}
