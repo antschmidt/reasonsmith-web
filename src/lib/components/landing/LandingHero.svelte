@@ -174,18 +174,29 @@
 		background: color-mix(in srgb, var(--color-surface) 85%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
 		border-radius: var(--border-radius-xl);
-		padding: clamp(1.5rem, 4vw, 2.5rem);
+		padding: 1.5rem;
 		box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
-		height: 90%;
 		display: flex;
 		flex-direction: column;
-		gap: 1.5rem;
+		gap: 1rem;
+		align-self: start;
+		min-width: 0;
+		overflow: hidden;
+	}
+
+	.hero-spotlight :global(.editors-desk-carousel) {
+		min-width: 0;
+	}
+
+	.spotlight-header {
+		flex-shrink: 0;
 	}
 
 	.spotlight-header h2 {
 		margin: 0;
-		font-size: clamp(1.35rem, 3vw, 1.75rem);
+		font-size: clamp(1.25rem, 2.5vw, 1.5rem);
 		font-family: var(--font-family-display);
+		line-height: 1.2;
 	}
 
 	/* Responsive Design */
