@@ -10,7 +10,8 @@ import { print, type DocumentNode } from 'graphql';
  */
 const getHasuraConfig = () => {
 	const endpoint = privateEnv.GRAPHQL_URL || privateEnv.HASURA_GRAPHQL_ENDPOINT || '';
-	const adminSecret = privateEnv.HASURA_GRAPHQL_ADMIN_SECRET || '';
+	const adminSecret =
+		privateEnv.HASURA_GRAPHQL_ADMIN_SECRET || privateEnv.HASURA_ADMIN_SECRET || '';
 	return { endpoint, adminSecret };
 };
 
@@ -39,6 +40,11 @@ export async function fetchHasura<T = any>(
 	const { endpoint, adminSecret } = getHasuraConfig();
 
 	if (!endpoint || !adminSecret) {
+		console.error('[hasuraFetch] Missing config:', {
+			hasEndpoint: !!endpoint,
+			hasAdminSecret: !!adminSecret,
+			secretLength: adminSecret?.length
+		});
 		return { error: 'Service temporarily unavailable.' };
 	}
 
@@ -59,11 +65,13 @@ export async function fetchHasura<T = any>(
 		const json = await response.json();
 
 		if (json.errors) {
+			console.error('[hasuraFetch] GraphQL errors:', json.errors);
 			return { error: json.errors[0]?.message || 'Failed to fetch data.' };
 		}
 
 		return { data: json.data };
 	} catch (err: any) {
+		console.error('[hasuraFetch] Exception:', err);
 		return { error: err?.message || 'Failed to fetch data.' };
 	}
 }

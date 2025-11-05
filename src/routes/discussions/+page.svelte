@@ -14,7 +14,8 @@
 		GET_DISCUSSION_TAGS,
 		ADVANCED_SEARCH_DISCUSSIONS,
 		GET_EDITORS_DESK_PICKS,
-		GET_CONTRIBUTOR
+		GET_CONTRIBUTOR,
+		DELETE_EDITORS_DESK_PICK
 	} from '$lib/graphql/queries';
 	import { COMMON_DISCUSSION_TAGS, normalizeTag } from '$lib/types/writingStyle';
 	import { canCurateEditorsDesk } from '$lib/utils/editorsDeskUtils';
@@ -267,6 +268,29 @@
 		pickerOpen = true;
 	}
 
+	async function handleRemoveEditorsPick(pickId: string) {
+		if (!confirm("Are you sure you want to remove this item from the Editors' Desk?")) {
+			return;
+		}
+
+		try {
+			const { error: deleteError } = await nhost.graphql.request(DELETE_EDITORS_DESK_PICK, {
+				pickId
+			});
+
+			if (deleteError) {
+				throw Array.isArray(deleteError)
+					? new Error(deleteError.map((e: any) => e.message).join('; '))
+					: deleteError;
+			}
+
+			// Refresh the picks list
+			await fetchEditorsDeskPicks();
+		} catch (e: any) {
+			alert('Failed to remove pick: ' + (e.message ?? 'Unknown error'));
+		}
+	}
+
 	function closePicker() {
 		pickerOpen = false;
 		selectedDiscussion = null;
@@ -427,7 +451,11 @@
 			{:else if editorsDeskPicks.length === 0}
 				<p class="status-message">Featured picks will appear here as they are published.</p>
 			{:else}
-				<EditorsDeskCarousel items={editorsDeskPicks} />
+				<EditorsDeskCarousel
+					items={editorsDeskPicks}
+					{canCurate}
+					onRemove={handleRemoveEditorsPick}
+				/>
 			{/if}
 		</section>
 	{/if}

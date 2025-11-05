@@ -7,8 +7,10 @@
 	const currentYear = new Date().getFullYear();
 	let showReturnButton = $state(false);
 	let isSignedIn = $state(false);
+	let isMounted = $state(false);
 
 	onMount(() => {
+		isMounted = true;
 		let unsubscribe: Function | undefined;
 		let redirectTimeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -70,7 +72,7 @@
 			}
 
 			// Give Nhost SDK a moment to process session
-			await new Promise(resolve => setTimeout(resolve, 500));
+			await new Promise((resolve) => setTimeout(resolve, 500));
 
 			// First, check if already authenticated
 			const alreadyAuthenticated = await checkAuthAndRedirect();
@@ -112,52 +114,54 @@
 	}
 </script>
 
-<div class="auth-page" aria-busy="true">
-	<header class="auth-masthead">
-		<a class="auth-brand" href="/" aria-label="Return to ReasonSmith home">ReasonSmith</a>
-		<p>Journal of Constructive Argument</p>
-	</header>
+{#if isMounted}
+	<div class="auth-page" aria-busy="true">
+		<header class="auth-masthead">
+			<a class="auth-brand" href="/" aria-label="Return to ReasonSmith home">ReasonSmith</a>
+			<p>Journal of Constructive Argument</p>
+		</header>
 
-	<main class="auth-main">
-		<div class="auth-panel">
-			<section class="auth-card auth-card--status" aria-live="polite">
-				{#if showReturnButton && isSignedIn}
-					<div class="auth-success-icon">
-						<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-							<path
-								d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"
-								fill="currentColor"
-							/>
-						</svg>
-					</div>
-					<h1>Signed in successfully!</h1>
-					<p>You can now return to the ReasonSmith app.</p>
-					<button type="button" class="return-button" onclick={handleReturnToApp}>
-						Return to App
-					</button>
-					<p class="auto-redirect-note">Redirecting automatically in a few seconds...</p>
-				{:else}
-					<h1>Signing you in…</h1>
-					<p>We are finalizing your session. This will only take a moment.</p>
-					<div class="auth-progress" role="status" aria-hidden="true">
-						<span class="progress-dot"></span>
-						<span class="progress-dot"></span>
-						<span class="progress-dot"></span>
-					</div>
-				{/if}
-			</section>
-		</div>
-	</main>
+		<main class="auth-main">
+			<div class="auth-panel">
+				<section class="auth-card auth-card--status" aria-live="polite">
+					{#if showReturnButton && isSignedIn}
+						<div class="auth-success-icon">
+							<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+								<path
+									d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"
+									fill="currentColor"
+								/>
+							</svg>
+						</div>
+						<h1>Signed in successfully!</h1>
+						<p>You can now return to the ReasonSmith app.</p>
+						<button type="button" class="return-button" onclick={handleReturnToApp}>
+							Return to App
+						</button>
+						<p class="auto-redirect-note">Redirecting automatically in a few seconds...</p>
+					{:else}
+						<h1>Signing you in…</h1>
+						<p>We are finalizing your session. This will only take a moment.</p>
+						<div class="auth-progress" role="status" aria-hidden="true">
+							<span class="progress-dot"></span>
+							<span class="progress-dot"></span>
+							<span class="progress-dot"></span>
+						</div>
+					{/if}
+				</section>
+			</div>
+		</main>
 
-	<footer class="auth-footer">
-		<nav aria-label="Legal links">
-			<a href="/terms">Terms</a>
-			<a href="/privacy">Privacy</a>
-			<a href="/resources/community-guidelines">Guidelines</a>
-		</nav>
-		<span>© {currentYear} ReasonSmith Media</span>
-	</footer>
-</div>
+		<footer class="auth-footer">
+			<nav aria-label="Legal links">
+				<a href="/terms">Terms</a>
+				<a href="/privacy">Privacy</a>
+				<a href="/resources/community-guidelines">Guidelines</a>
+			</nav>
+			<span>© {currentYear} ReasonSmith Media</span>
+		</footer>
+	</div>
+{/if}
 
 <style>
 	.auth-card--status {

@@ -6,6 +6,7 @@
 	import RichTextEditor from '../RichTextEditor.svelte';
 	import CollaboratorInviteButton from '../CollaboratorInviteButton.svelte';
 	import CollaborationControls from '../CollaborationControls.svelte';
+	import EventList from '../EventList.svelte';
 	import { nhost } from '$lib/nhostClient';
 	import {
 		GET_EDIT_LOCK_STATUS,
@@ -656,6 +657,7 @@
 					<CollaborationControls
 						lockStatus={editLockStatus}
 						currentUserId={user.id}
+						contributorId={contributor?.id}
 						{isAuthor}
 						postId={draftPostId}
 						{discussionId}
@@ -666,6 +668,9 @@
 						onUpdate={loadEditLockStatus}
 						isLoading={isLoadingLock}
 					/>
+
+					<!-- Show events for this draft post -->
+					<EventList postId={draftPostId} currentUserId={contributor?.id} />
 				{:else}
 					<div class="loading-collaboration">Loading collaboration status...</div>
 				{/if}

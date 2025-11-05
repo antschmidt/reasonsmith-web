@@ -11,10 +11,14 @@
 	import ContributorChat from '$lib/components/ui/ContributorChat.svelte';
 	import { Sun, Moon, LogInIcon, LogOutIcon } from '@lucide/svelte';
 	import { collectRoles, getUserInitials } from '$lib/utils/authHelpers';
+	import type { Snippet } from 'svelte';
+
+	let { children }: { children: Snippet } = $props();
 
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = $state(nhost.auth.getUser());
 	let hasAdminAccess = $state(false);
+	let isMounted = $state(false);
 	let contributor = $state<{
 		role: string;
 		avatar_url?: string;
@@ -110,13 +114,14 @@
 
 	refreshUser();
 	if (typeof window !== 'undefined') {
+		isMounted = true;
 		nhost.auth.onAuthStateChanged(() => {
 			refreshUser();
 		});
 	}
 
 	// Initialize theme immediately on page load
-	let currentTheme: string = 'dark';
+	let currentTheme = $state<string>('dark');
 	theme.subscribe((value) => {
 		currentTheme = value;
 		if (typeof window !== 'undefined') {
@@ -187,7 +192,7 @@
 		</div>
 		<div class="nav-actions" role="group" aria-label="Primary actions">
 			<ContributorChat userId={user.id} />
-			{#if hasAdminAccess}
+			{#if isMounted && hasAdminAccess}
 				<a href="/admin" class="nav-icon" aria-label="User management">
 					<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
 						<path
@@ -236,7 +241,7 @@
 {/if}
 
 <div class="app-shell">
-	<slot />
+	{@render children()}
 </div>
 
 <InstallPrompt />

@@ -2,7 +2,6 @@
 	import { Users, Lock, LockOpen, AlertCircle, Shield, Calendar } from '@lucide/svelte';
 	import Button from './ui/Button.svelte';
 	import CollaboratorContextMenu from './CollaboratorContextMenu.svelte';
-	import EventModal from './EventModal.svelte';
 	import { nhost } from '$lib/nhostClient';
 	import { CREATE_EDIT_CONTROL_REQUEST, CREATE_ROLE_UPGRADE_REQUEST } from '$lib/graphql/queries';
 
@@ -34,7 +33,6 @@
 	let {
 		lockStatus,
 		currentUserId,
-		contributorId,
 		isAuthor,
 		postId,
 		discussionId,
@@ -47,7 +45,6 @@
 	} = $props<{
 		lockStatus: EditLockStatus;
 		currentUserId: string;
-		contributorId: string;
 		isAuthor: boolean;
 		postId: string;
 		discussionId: string | null | undefined;
@@ -61,7 +58,6 @@
 
 	let selectedCollaborator = $state<PostCollaborator | null>(null);
 	let showContextMenu = $state(false);
-	let showEventModal = $state(false);
 	let requestFeedback = $state<string | null>(null);
 	let isRequestingControl = $state(false);
 	let isRequestingRoleUpgrade = $state(false);
@@ -337,12 +333,6 @@
 				Request Edit Role
 			</Button>
 		{/if}
-		{#if lockStatus.collaboration_enabled && (isAuthor || currentUserRole === 'editor' || currentUserRole === 'co-author')}
-			<Button variant="secondary" size="sm" onclick={() => (showEventModal = true)}>
-				<Calendar size={16} />
-				Add Event
-			</Button>
-		{/if}
 
 		{#if requestFeedback}
 			<div class="request-feedback">
@@ -432,18 +422,6 @@
 		{onUpdate}
 	/>
 {/if}
-
-<EventModal
-	{postId}
-	{contributorId}
-	{discussionTitle}
-	isOpen={showEventModal}
-	onClose={() => (showEventModal = false)}
-	onEventCreated={() => {
-		showEventModal = false;
-		onUpdate();
-	}}
-/>
 
 <style>
 	.collaboration-controls {
