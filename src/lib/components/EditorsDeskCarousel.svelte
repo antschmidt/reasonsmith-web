@@ -174,6 +174,8 @@
 		grid-template-columns: auto 1fr auto;
 		gap: 0.75rem;
 		align-items: center;
+		min-width: 0;
+		width: 100%;
 	}
 
 	.carousel-viewport {
@@ -181,10 +183,11 @@
 		display: flex;
 		gap: 1.5rem;
 		overflow-x: auto;
-		padding: 1rem 0.5rem;
+		padding: 0.5rem;
 		scroll-snap-type: x mandatory;
 		scroll-behavior: smooth;
 		scrollbar-width: thin;
+		min-width: 0;
 	}
 
 	.carousel-viewport::-webkit-scrollbar {
@@ -213,7 +216,9 @@
 
 	.carousel-card {
 		scroll-snap-align: start;
-		min-width: clamp(280px, 45vw, 480px);
+		min-width: min(100%, 320px);
+		max-width: 360px;
+		flex: 0 0 auto;
 		position: relative;
 		border-radius: var(--border-radius-xl);
 		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);

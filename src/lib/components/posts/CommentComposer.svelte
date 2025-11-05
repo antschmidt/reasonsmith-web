@@ -656,6 +656,7 @@
 					<CollaborationControls
 						lockStatus={editLockStatus}
 						currentUserId={user.id}
+						contributorId={contributor?.id}
 						{isAuthor}
 						postId={draftPostId}
 						{discussionId}

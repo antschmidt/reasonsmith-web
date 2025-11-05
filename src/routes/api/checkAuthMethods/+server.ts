@@ -11,11 +11,11 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	try {
 		// Query contributor table for has_password_auth
-		const response = await fetch(env.HASURA_GRAPHQL_ENDPOINT || '', {
+		const response = await fetch(process.env.HASURA_GRAPHQL_ENDPOINT || '', {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				'x-hasura-admin-secret': env.HASURA_GRAPHQL_ADMIN_SECRET || ''
+				'x-hasura-admin-secret': process.env.HASURA_GRAPHQL_ADMIN_SECRET || ''
 			},
 			body: JSON.stringify({
 				query: `

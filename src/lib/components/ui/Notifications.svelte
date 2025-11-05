@@ -47,7 +47,7 @@
 	>([]);
 
 	let unreadCount = $state(0);
-	let loading = $state(true);
+	let initialLoading = $state(true);
 	let error = $state<string | null>(null);
 
 	// Modal state for request notifications
@@ -62,7 +62,6 @@
 	}>({ isOpen: false, notification: null });
 
 	async function loadNotifications() {
-		loading = true;
 		error = null;
 
 		try {
@@ -70,7 +69,7 @@
 			const session = nhost.getUserSession();
 			if (!session || !session.user) {
 				console.log('No active session, skipping notification load');
-				loading = false;
+				initialLoading = false;
 				return;
 			}
 
@@ -90,7 +89,7 @@
 
 				if (errorMsg.includes('JWT') || errorMsg.includes('JWTExpired')) {
 					console.log('JWT expired, will retry on next load');
-					loading = false;
+					initialLoading = false;
 					return;
 				}
 
@@ -114,7 +113,7 @@
 			}
 		}
 
-		loading = false;
+		initialLoading = false;
 	}
 
 	async function markAsRead(notificationId: string) {
@@ -273,7 +272,7 @@
 		{/if}
 	</div>
 
-	{#if loading}
+	{#if initialLoading}
 		<p class="notifications-message">Loading notifications...</p>
 	{:else if error}
 		<p class="notifications-error">{error}</p>
