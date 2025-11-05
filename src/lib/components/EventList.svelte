@@ -116,7 +116,7 @@
 	}
 	.events-list {
 		display: flex;
-		flex-direction: column;
+		flex-direction: row;
 		gap: 1rem;
 	}
 	.events-loading,

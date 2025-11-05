@@ -405,8 +405,9 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 1rem;
-		background: white;
+		background: var(--card-background);
 		border-radius: 8px;
+		max-width: fit-content;
 		border: 1px solid var(--border-color);
 	}
 
@@ -418,6 +419,6 @@
 	.qr-label {
 		margin: 0;
 		font-size: 0.875rem;
-		color: var(--text-secondary);
+		color: var(--text-primary);
 	}
 </style>
