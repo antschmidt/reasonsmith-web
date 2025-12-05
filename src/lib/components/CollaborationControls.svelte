@@ -293,7 +293,8 @@
 		isLoadingEvents = true;
 		eventsError = null;
 		try {
-			const result = await nhost.graphql.request(GET_POST_EVENTS, { postId });
+			const now = new Date().toISOString();
+			const result = await nhost.graphql.request(GET_POST_EVENTS, { postId, now });
 			if (result.error) {
 				console.error('[CollaborationControls] Error loading events:', result.error);
 				eventsError = 'Failed to load events';

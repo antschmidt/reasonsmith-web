@@ -29,7 +29,8 @@
 		error = null;
 		try {
 			console.log('[EventList] Loading events for post:', postId);
-			const result = await nhost.graphql.request(GET_POST_EVENTS, { postId });
+			const now = new Date().toISOString();
+			const result = await nhost.graphql.request(GET_POST_EVENTS, { postId, now });
 			console.log('[EventList] GraphQL result:', result);
 			if (result.error) {
 				console.error('[EventList] Error:', result.error);

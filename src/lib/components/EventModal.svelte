@@ -89,7 +89,6 @@
 		try {
 			const result = await nhost.graphql.request(CREATE_EVENT, {
 				postId,
-				createdBy: contributorId,
 				title: title.trim(),
 				description: description.trim() || null,
 				startTime: startDateTime.toISOString(),

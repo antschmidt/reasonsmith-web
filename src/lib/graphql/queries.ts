@@ -3365,9 +3365,13 @@ const EVENT_FIELDS = gql`
 
 // Query to get events for a post
 export const GET_POST_EVENTS = gql`
-	query GetPostEvents($postId: uuid!) {
+	query GetPostEvents($postId: uuid!, $now: timestamptz!) {
 		event(
-			where: { post_id: { _eq: $postId }, deleted_at: { _is_null: true } }
+			where: {
+				post_id: { _eq: $postId }
+				deleted_at: { _is_null: true }
+				start_time: { _gte: $now }
+			}
 			order_by: { start_time: asc }
 		) {
 			...EventFields
@@ -3399,7 +3403,6 @@ export const GET_EVENT_BY_ID = gql`
 export const CREATE_EVENT = gql`
 	mutation CreateEvent(
 		$postId: uuid!
-		$createdBy: uuid!
 		$title: String!
 		$description: String
 		$startTime: timestamptz!
@@ -3411,7 +3414,6 @@ export const CREATE_EVENT = gql`
 		insert_event_one(
 			object: {
 				post_id: $postId
-				created_by: $createdBy
 				title: $title
 				description: $description
 				start_time: $startTime
