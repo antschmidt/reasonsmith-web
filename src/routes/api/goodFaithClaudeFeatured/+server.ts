@@ -352,7 +352,41 @@ ${content}`
 		}
 	}
 
-	return JSON.parse(cleaned) as FeaturedClaudeResponse;
+	// Attempt to parse, with repair for common JSON issues
+	try {
+		return JSON.parse(cleaned) as FeaturedClaudeResponse;
+	} catch (parseError) {
+		// Try to repair common JSON issues from LLM output
+		let repaired = cleaned
+			// Fix unescaped control characters in strings
+			.replace(/[\x00-\x1F\x7F]/g, (char) => {
+				if (char === '\n') return '\\n';
+				if (char === '\r') return '\\r';
+				if (char === '\t') return '\\t';
+				return '';
+			})
+			// Fix trailing commas before closing brackets
+			.replace(/,\s*([}\]])/g, '$1')
+			// Fix missing commas between array elements or object properties
+			.replace(/"\s*\n\s*"/g, '",\n"')
+			.replace(/}\s*\n\s*{/g, '},\n{')
+			// Fix unescaped quotes within strings (naive approach - look for patterns)
+			.replace(/: "([^"]*)"([^",}\]\n][^"]*)"([^"]*)",/g, ': "$1\\"$2\\"$3",');
+
+		try {
+			return JSON.parse(repaired) as FeaturedClaudeResponse;
+		} catch (repairError) {
+			// Log the problematic JSON for debugging
+			logger.error('Failed to parse Claude response JSON:', {
+				original: responseText.substring(0, 500),
+				cleaned: cleaned.substring(0, 500),
+				parseError: parseError instanceof Error ? parseError.message : 'Unknown parse error'
+			});
+			throw new Error(
+				`Invalid JSON response from Claude: ${parseError instanceof Error ? parseError.message : 'Parse error'}`
+			);
+		}
+	}
 }
 
 async function analyzeWithOpenAI(content: string): Promise<FeaturedClaudeResponse> {

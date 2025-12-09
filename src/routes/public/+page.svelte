@@ -81,6 +81,69 @@
 	let draggedIndex = $state<number | null>(null);
 	let savingOrder = $state(false);
 
+	const DRAFT_STORAGE_KEY = 'showcase-form-draft';
+
+	type DraftData = {
+		form: ShowcaseForm;
+		rawContent: string;
+		analysisProvider: 'claude' | 'openai';
+		enableFactChecking: boolean;
+		savedAt: string;
+	};
+
+	function saveDraft() {
+		if (typeof localStorage === 'undefined') return;
+		// Only save if there's meaningful content (not just editing an existing item)
+		if (form.id) return;
+
+		const draft: DraftData = {
+			form: { ...form },
+			rawContent,
+			analysisProvider,
+			enableFactChecking,
+			savedAt: new Date().toISOString()
+		};
+		localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+	}
+
+	function loadDraft(): DraftData | null {
+		if (typeof localStorage === 'undefined') return null;
+		try {
+			const stored = localStorage.getItem(DRAFT_STORAGE_KEY);
+			if (!stored) return null;
+			return JSON.parse(stored) as DraftData;
+		} catch {
+			return null;
+		}
+	}
+
+	function clearDraft() {
+		if (typeof localStorage === 'undefined') return;
+		localStorage.removeItem(DRAFT_STORAGE_KEY);
+	}
+
+	function restoreDraft() {
+		const draft = loadDraft();
+		if (draft) {
+			form = { ...draft.form };
+			rawContent = draft.rawContent;
+			analysisProvider = draft.analysisProvider;
+			enableFactChecking = draft.enableFactChecking;
+		}
+	}
+
+	// Auto-save draft when form changes (debounced via effect)
+	let draftSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		// Track all form-related state
+		const _ = [form, rawContent, analysisProvider, enableFactChecking];
+
+		if (draftSaveTimeout) clearTimeout(draftSaveTimeout);
+		draftSaveTimeout = setTimeout(() => {
+			saveDraft();
+		}, 1000);
+	});
+
 	async function ensureAuth() {
 		try {
 			await nhost.auth.isAuthenticatedAsync();
@@ -174,6 +237,8 @@
 
 	function openCreateForm() {
 		resetForm();
+		// Restore any saved draft
+		restoreDraft();
 		showForm = true;
 	}
 
@@ -268,6 +333,7 @@
 				const created = (data as any)?.insert_public_showcase_item_one;
 				items = [created, ...items];
 				success = 'Showcase item created.';
+				clearDraft();
 				resetForm(true);
 				showForm = false;
 			}
