@@ -26,15 +26,15 @@
 			<li>Collaborative editing refines ideas through diverse perspectives</li>
 		</ul>
 	</div>
-	<aside class="hero-spotlight" aria-label="Featured discussions">
-		<div class="spotlight-header">
-			<span class="editorial-kicker">Spotlight</span>
-			<h2>Editors' desk picks</h2>
-		</div>
-		{#if editorsDeskPicks.length > 0}
+	{#if editorsDeskPicks.length > 0}
+		<aside class="hero-spotlight" aria-label="Featured discussions">
+			<div class="spotlight-header">
+				<span class="editorial-kicker">Spotlight</span>
+				<h2>Editors' desk picks</h2>
+			</div>
 			<EditorsDeskCarousel items={editorsDeskPicks} />
-		{/if}
-	</aside>
+		</aside>
+	{/if}
 </section>
 
 <style>

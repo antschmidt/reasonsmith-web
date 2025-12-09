@@ -432,7 +432,7 @@
 		</section>
 	</header>
 
-	{#if !q.trim()}
+	{#if !q.trim() && !editorsDeskLoading && editorsDeskPicks.length > 0}
 		<!-- Editors' Desk Section -->
 		<section class="analysis-section editors-desk-section">
 			<header class="analysis-header">
@@ -444,19 +444,11 @@
 					own dialogue skills.
 				</p>
 			</header>
-			{#if editorsDeskLoading}
-				<p class="status-message">Loading featured picks…</p>
-			{:else if editorsDeskError}
-				<p class="status-message error">{editorsDeskError}</p>
-			{:else if editorsDeskPicks.length === 0}
-				<p class="status-message">Featured picks will appear here as they are published.</p>
-			{:else}
-				<EditorsDeskCarousel
-					items={editorsDeskPicks}
-					{canCurate}
-					onRemove={handleRemoveEditorsPick}
-				/>
-			{/if}
+			<EditorsDeskCarousel
+				items={editorsDeskPicks}
+				{canCurate}
+				onRemove={handleRemoveEditorsPick}
+			/>
 		</section>
 	{/if}
 
@@ -721,6 +713,9 @@
 	}
 
 	.discussion-card {
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
 		background: var(--color-surface);
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
 		border-radius: var(--border-radius-xl);
@@ -762,7 +757,7 @@
 	.discussion-header h2 {
 		margin: 0 0 0.75rem;
 		font-family: var(--font-family-display);
-		font-size: clamp(1.35rem, 3vw, 1.75rem);
+		font-size: clamp(1.35rem, 3vw, 1.5rem);
 		letter-spacing: -0.01em;
 	}
 
@@ -813,7 +808,7 @@
 		flex-wrap: wrap;
 		gap: 0.75rem;
 		padding-bottom: 1rem;
-		border-bottom: 1px solid var(--color-border);
+		border-top: 1px solid var(--color-border);
 		color: var(--color-text-secondary);
 		font-size: 0.9rem;
 	}
@@ -821,7 +816,7 @@
 	.discussion-header-head {
 		display: flex;
 		justify-content: space-between;
-		align-items: center;
+		align-items: baseline;
 		gap: 1rem;
 	}
 
