@@ -706,15 +706,18 @@
 
 	.article-list {
 		display: flex;
-		flex-direction: column;
-		gap: clamp(0.5rem, 4vw, 1.5rem);
+		flex-wrap: wrap;
+		gap: clamp(1rem, 3vw, 1.5rem);
+		justify-content: center;
 	}
 
-	@media (min-width: 1024px) {
-		.article-list {
-			grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-			background: var(--color-surface);
-		}
+	.discussion-card-wrapper {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		flex: 1 1 320px;
+		max-width: 720px;
+		min-width: 280px;
 	}
 
 	.discussion-card {
@@ -729,6 +732,7 @@
 			box-shadow 0.25s ease;
 		position: relative;
 		overflow: hidden;
+		height: 100%;
 	}
 
 	.discussion-card::before {
@@ -920,13 +924,6 @@
 			color-mix(in srgb, var(--color-accent) 3%, var(--color-surface-alt)),
 			color-mix(in srgb, var(--color-primary) 3%, var(--color-surface-alt))
 		);
-	}
-
-	.discussion-card-wrapper {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
 	}
 
 	.editors-desk-button {
