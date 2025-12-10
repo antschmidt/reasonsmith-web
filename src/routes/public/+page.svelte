@@ -76,7 +76,73 @@
 	let analysisError = $state<string | null>(null);
 	let extractedExamples = $state('');
 	let analysisProvider = $state<'claude' | 'openai'>('claude');
-	let skipFactChecking = $state(false);
+	let enableFactChecking = $state(false);
+	let showForm = $state(false);
+	let draggedIndex = $state<number | null>(null);
+	let savingOrder = $state(false);
+
+	const DRAFT_STORAGE_KEY = 'showcase-form-draft';
+
+	type DraftData = {
+		form: ShowcaseForm;
+		rawContent: string;
+		analysisProvider: 'claude' | 'openai';
+		enableFactChecking: boolean;
+		savedAt: string;
+	};
+
+	function saveDraft() {
+		if (typeof localStorage === 'undefined') return;
+		// Only save if there's meaningful content (not just editing an existing item)
+		if (form.id) return;
+
+		const draft: DraftData = {
+			form: { ...form },
+			rawContent,
+			analysisProvider,
+			enableFactChecking,
+			savedAt: new Date().toISOString()
+		};
+		localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+	}
+
+	function loadDraft(): DraftData | null {
+		if (typeof localStorage === 'undefined') return null;
+		try {
+			const stored = localStorage.getItem(DRAFT_STORAGE_KEY);
+			if (!stored) return null;
+			return JSON.parse(stored) as DraftData;
+		} catch {
+			return null;
+		}
+	}
+
+	function clearDraft() {
+		if (typeof localStorage === 'undefined') return;
+		localStorage.removeItem(DRAFT_STORAGE_KEY);
+	}
+
+	function restoreDraft() {
+		const draft = loadDraft();
+		if (draft) {
+			form = { ...draft.form };
+			rawContent = draft.rawContent;
+			analysisProvider = draft.analysisProvider;
+			enableFactChecking = draft.enableFactChecking;
+		}
+	}
+
+	// Auto-save draft when form changes (debounced via effect)
+	let draftSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		// Track all form-related state
+		const _ = [form, rawContent, analysisProvider, enableFactChecking];
+
+		if (draftSaveTimeout) clearTimeout(draftSaveTimeout);
+		draftSaveTimeout = setTimeout(() => {
+			saveDraft();
+		}, 1000);
+	});
 
 	async function ensureAuth() {
 		try {
@@ -156,7 +222,7 @@
 		}
 	}
 
-	function resetForm(keepOrder = false) {
+	function resetForm(keepOrder = false, hideForm = false) {
 		const reset = { ...blankForm };
 		if (keepOrder) reset.display_order = form.display_order;
 		form = reset;
@@ -166,6 +232,14 @@
 		analysisStatus = null;
 		analysisError = null;
 		extractedExamples = '';
+		if (hideForm) showForm = false;
+	}
+
+	function openCreateForm() {
+		resetForm();
+		// Restore any saved draft
+		restoreDraft();
+		showForm = true;
 	}
 
 	function editItem(item: ShowcaseItem) {
@@ -187,6 +261,7 @@
 		analysisStatus = null;
 		analysisError = null;
 		extractedExamples = '';
+		showForm = true;
 		if (item.analysis) {
 			try {
 				const parsed = JSON.parse(item.analysis);
@@ -213,6 +288,14 @@
 		saving = true;
 		error = null;
 		success = null;
+
+		// For new items, calculate display_order to put at front (0 or lower than current min)
+		let newDisplayOrder = form.display_order;
+		if (!form.id) {
+			const minOrder = items.length > 0 ? Math.min(...items.map((i) => i.display_order ?? 0)) : 0;
+			newDisplayOrder = minOrder > 0 ? 0 : minOrder - 1;
+		}
+
 		const payload: Record<string, any> = {
 			title: form.title.trim(),
 			subtitle: form.subtitle.trim() || null,
@@ -223,7 +306,7 @@
 			analysis: form.analysis.trim() || null,
 			tags: parseTags(form.tags),
 			date_published: form.date_published.trim() || null,
-			display_order: form.display_order ?? 0,
+			display_order: newDisplayOrder,
 			published: form.published
 		};
 		try {
@@ -250,7 +333,9 @@
 				const created = (data as any)?.insert_public_showcase_item_one;
 				items = [created, ...items];
 				success = 'Showcase item created.';
+				clearDraft();
 				resetForm(true);
+				showForm = false;
 			}
 		} catch (e: any) {
 			error = e?.message ?? 'Failed to save showcase item.';
@@ -361,7 +446,11 @@
 			const response = await fetch(`/api/goodFaithClaudeFeatured${force ? '?force=1' : ''}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ content: rawContent, provider: analysisProvider, skipFactChecking })
+				body: JSON.stringify({
+					content: rawContent,
+					provider: analysisProvider,
+					skipFactChecking: !enableFactChecking
+				})
 			});
 			if (!response.ok) {
 				const payload = await response.json().catch(() => ({}));
@@ -491,6 +580,66 @@
 	function viewDiscussions() {
 		goto('/discussions');
 	}
+
+	// Drag and drop handlers
+	function handleDragStart(index: number) {
+		draggedIndex = index;
+	}
+
+	function handleDragOver(event: DragEvent, index: number) {
+		event.preventDefault();
+		if (draggedIndex === null || draggedIndex === index) return;
+
+		// Reorder items in memory
+		const newItems = [...items];
+		const [draggedItem] = newItems.splice(draggedIndex, 1);
+		newItems.splice(index, 0, draggedItem);
+		items = newItems;
+		draggedIndex = index;
+	}
+
+	async function handleDragEnd() {
+		if (draggedIndex !== null) {
+			draggedIndex = null;
+			await saveOrder();
+		}
+	}
+
+	async function saveOrder() {
+		if (!hasAccess || savingOrder) return;
+		savingOrder = true;
+		error = null;
+		success = null;
+
+		try {
+			// Update display_order for all items based on their current position
+			const updates = items.map((item, index) => ({
+				id: item.id,
+				display_order: index
+			}));
+
+			// Update each item's display_order
+			for (const update of updates) {
+				const { error: gqlError } = await nhost.graphql.request(UPDATE_PUBLIC_SHOWCASE_ITEM, {
+					id: update.id,
+					changes: { display_order: update.display_order, updated_at: new Date().toISOString() }
+				});
+				if (gqlError) {
+					throw Array.isArray(gqlError)
+						? new Error(gqlError.map((e: any) => e.message).join('; '))
+						: gqlError;
+				}
+			}
+
+			// Update local items with new display_order values
+			items = items.map((item, index) => ({ ...item, display_order: index }));
+			success = 'Order saved successfully.';
+		} catch (e: any) {
+			error = e?.message ?? 'Failed to save order.';
+		} finally {
+			savingOrder = false;
+		}
+	}
 </script>
 
 {#if checkingAuth}
@@ -528,24 +677,37 @@
 			<aside class="list-panel">
 				<div class="panel-header">
 					<h2>Existing Entries</h2>
-					<button type="button" class="btn-secondary" onclick={() => resetForm()}>New Item</button>
 				</div>
 				{#if loading}
 					<p>Loading showcase items…</p>
-				{:else if error}
+				{:else if error && !showForm}
 					<p class="error">{error}</p>
 				{:else if items.length === 0}
-					<p>No showcase items yet. Create your first entry using the form.</p>
+					<p>No showcase items yet. Create your first entry using the button below.</p>
 				{:else}
+					<p class="drag-hint">Drag items to reorder</p>
 					<ul class="item-list">
-						{#each items as item}
-							<li class:inactive={!item.published}>
+						{#each items as item, index}
+							<li
+								class:inactive={!item.published}
+								class:dragging={draggedIndex === index}
+								draggable="true"
+								ondragstart={() => handleDragStart(index)}
+								ondragover={(e) => handleDragOver(e, index)}
+								ondragend={handleDragEnd}
+							>
+								<div class="drag-handle" aria-label="Drag to reorder">
+									<svg viewBox="0 0 24 24" fill="currentColor">
+										<path
+											d="M8 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm8-16a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"
+										/>
+									</svg>
+								</div>
 								<button type="button" class="item-button" onclick={() => editItem(item)}>
 									<div class="item-title">{item.title}</div>
 									<div class="item-meta">
 										{#if item.media_type}<span>{item.media_type}</span>{/if}
 										{#if item.creator}<span>{item.creator}</span>{/if}
-										<span>Order: {item.display_order}</span>
 										<span>{item.published ? 'Published' : 'Hidden'}</span>
 									</div>
 								</button>
@@ -566,182 +728,291 @@
 						{/each}
 					</ul>
 				{/if}
+				<div class="create-button-container">
+					<button type="button" class="btn-primary" onclick={openCreateForm}>
+						Create Showcase Item
+					</button>
+				</div>
+				{#if success && !showForm}<p class="success">{success}</p>{/if}
 			</aside>
 
-			<section class="form-panel">
-				<h2>{form.id ? 'Edit Showcase Item' : 'Create Showcase Item'}</h2>
-				<form
-					onsubmit={(event) => {
-						event.preventDefault();
-						saveForm();
-					}}
-				>
-					<div class="form-grid">
-						<label>
-							<span>Title *</span>
-							<input type="text" bind:value={form.title} required />
-						</label>
-						<label>
-							<span>Subtitle</span>
-							<input type="text" bind:value={form.subtitle} />
-						</label>
-						<label>
-							<span>Media Type</span>
-							<input
-								type="text"
-								bind:value={form.media_type}
-								placeholder="Speech, Podcast, Essay…"
-							/>
-						</label>
-						<label>
-							<span>Creator / Speaker</span>
-							<input
-								type="text"
-								bind:value={form.creator}
-								placeholder="Name of the author or speaker"
-							/>
-						</label>
-						<label>
-							<span>Date Published (optional)</span>
-							<input
-								type="date"
-								bind:value={form.date_published}
-								placeholder="When was the source material originally published?"
-							/>
-						</label>
-						<label>
-							<span>Source URL</span>
-							<input type="url" bind:value={form.source_url} placeholder="https://" />
-						</label>
-						<label>
-							<span>Display Order</span>
-							<input type="number" bind:value={form.display_order} min="0" />
-						</label>
-						<label class="checkbox">
-							<input type="checkbox" bind:checked={form.published} />
-							<span>Published</span>
-						</label>
-					</div>
-
-					<section class="analysis-generator">
-						<div class="analysis-header">
-							<h3>Generate Featured Analysis</h3>
-							<p>
-								Paste relevant excerpts or notes and let Claude produce the structured assessment.
-							</p>
-						</div>
-						<textarea
-							id="analysis-input"
-							rows="30"
-							bind:value={rawContent}
-							placeholder="Paste transcript excerpts, statements, or notes to analyze…"
-						></textarea>
-						<div class="analysis-provider" role="group" aria-label="Choose analysis model">
-							<span class="provider-label">Model</span>
-							<label class={`provider-option ${analysisProvider === 'claude' ? 'is-active' : ''}`}>
-								<input
-									type="radio"
-									value="claude"
-									bind:group={analysisProvider}
-									disabled={analyzing}
-								/>
-								<span>Claude</span>
-							</label>
-							<label class={`provider-option ${analysisProvider === 'openai' ? 'is-active' : ''}`}>
-								<input
-									type="radio"
-									value="openai"
-									bind:group={analysisProvider}
-									disabled={analyzing}
-								/>
-								<span>OpenAI</span>
-							</label>
-						</div>
-						<div class="analysis-options">
-							<label class="fact-check-toggle">
-								<input type="checkbox" bind:checked={skipFactChecking} disabled={analyzing} />
-								<span>Skip fact checking (recommended for current events)</span>
-							</label>
-						</div>
-						<div class="analysis-actions">
-							<button
-								type="button"
-								class="btn-secondary"
-								onclick={() => generateFeaturedAnalysis()}
-								disabled={analyzing}
-							>
-								{#if analyzing}
-									<AnimatedLogo size="20px" isAnimating={true} /> Analyzing…
-								{:else}
-									Analyze with Claude
-								{/if}
-							</button>
-							<button
-								type="button"
-								class="btn-secondary"
-								onclick={() => generateFeaturedAnalysis({ force: true })}
-								disabled={analyzing}
-							>
-								{#if analyzing}
-									<AnimatedLogo size="20px" isAnimating={true} /> Analyzing…
-								{:else}
-									Force fresh Claude run
-								{/if}
-							</button>
-							{#if analysisStatus}
-								<span class="analysis-status success">{analysisStatus}</span>
-							{:else if analysisError}
-								<span class="analysis-status error">{analysisError}</span>
-							{/if}
-						</div>
-						{#if extractedExamples}
-							<div class="analysis-examples">
-								<h4>Extracted Examples</h4>
-								<pre>{extractedExamples}</pre>
-							</div>
-						{/if}
-					</section>
-
-					<label>
-						<span>Highlights</span>
-						<textarea
-							id="highlights"
-							rows="3"
-							bind:value={form.summary}
-							placeholder="Short context for the source material."
-						></textarea>
-					</label>
-
-					<label>
-						<span>Analysis</span>
-						<textarea
-							id="analysis"
-							rows="6"
-							bind:value={form.analysis}
-							placeholder="Key findings from the good-faith analysis."
-						></textarea>
-					</label>
-
-					<label>
-						<span>Tags (comma separated)</span>
-						<input type="text" bind:value={form.tags} placeholder="ethics, policy, rhetoric" />
-					</label>
-
-					<div class="form-actions">
-						<button type="submit" class="btn-primary" disabled={saving}
-							>{saving ? 'Saving…' : form.id ? 'Update Item' : 'Create Item'}</button
-						>
+			{#if showForm}
+				<section class="form-panel">
+					<div class="form-header">
+						<h2>{form.id ? 'Edit Showcase Item' : 'Create Showcase Item'}</h2>
 						<button
 							type="button"
-							class="btn-secondary"
-							onclick={() => resetForm(true)}
-							disabled={saving}>Reset</button
+							class="close-button"
+							aria-label="Close form"
+							onclick={() => resetForm(false, true)}
 						>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M18 6L6 18M6 6l12 12" />
+							</svg>
+						</button>
 					</div>
-					{#if success}<p class="success">{success}</p>{/if}
-					{#if error && !loading}<p class="error">{error}</p>{/if}
-				</form>
-			</section>
+
+					<form
+						onsubmit={(event) => {
+							event.preventDefault();
+							saveForm();
+						}}
+					>
+						<!-- Basic Info Section -->
+						<fieldset class="form-section">
+							<legend>
+								<span class="section-number">1</span>
+								Basic Information
+							</legend>
+							<label class="field-full">
+								<span>Title <span class="required">*</span></span>
+								<input
+									type="text"
+									bind:value={form.title}
+									required
+									placeholder="Enter a descriptive title for this showcase item"
+								/>
+							</label>
+							<label class="field-full">
+								<span>Subtitle</span>
+								<input
+									type="text"
+									bind:value={form.subtitle}
+									placeholder="Optional secondary headline or context"
+								/>
+							</label>
+							<div class="field-row">
+								<label>
+									<span>Media Type</span>
+									<input
+										type="text"
+										bind:value={form.media_type}
+										placeholder="Speech, Podcast, Essay…"
+									/>
+								</label>
+								<label>
+									<span>Creator / Speaker</span>
+									<input
+										type="text"
+										bind:value={form.creator}
+										placeholder="Author or speaker name"
+									/>
+								</label>
+							</div>
+							<div class="field-row">
+								<label>
+									<span>Date Published</span>
+									<input type="date" bind:value={form.date_published} />
+								</label>
+								<label>
+									<span>Source URL</span>
+									<input
+										type="url"
+										bind:value={form.source_url}
+										placeholder="https://example.com/article"
+									/>
+								</label>
+							</div>
+						</fieldset>
+
+						<!-- AI Analysis Section -->
+						<fieldset class="form-section analysis-section">
+							<legend>
+								<span class="section-number">2</span>
+								AI Analysis
+							</legend>
+							<p class="section-description">
+								Paste source content below and generate a structured good-faith analysis using AI.
+							</p>
+
+							<label class="field-full">
+								<span>Source Content</span>
+								<textarea
+									id="analysis-input"
+									rows="12"
+									bind:value={rawContent}
+									placeholder="Paste transcript excerpts, statements, or notes to analyze…"
+								></textarea>
+							</label>
+
+							<div class="analysis-controls">
+								<div class="control-group">
+									<span class="control-label">Model</span>
+									<div class="button-toggle-group">
+										<button
+											type="button"
+											class="toggle-btn"
+											class:is-active={analysisProvider === 'claude'}
+											disabled={analyzing}
+											onclick={() => (analysisProvider = 'claude')}
+										>
+											Claude
+										</button>
+										<button
+											type="button"
+											class="toggle-btn"
+											class:is-active={analysisProvider === 'openai'}
+											disabled={analyzing}
+											onclick={() => (analysisProvider = 'openai')}
+										>
+											OpenAI
+										</button>
+									</div>
+								</div>
+
+								<div class="control-group">
+									<span class="control-label">Fact Check</span>
+									<div class="button-toggle-group">
+										<button
+											type="button"
+											class="toggle-btn"
+											class:is-active={!enableFactChecking}
+											disabled={analyzing}
+											onclick={() => (enableFactChecking = false)}
+										>
+											Off
+										</button>
+										<button
+											type="button"
+											class="toggle-btn"
+											class:is-active={enableFactChecking}
+											disabled={analyzing}
+											onclick={() => (enableFactChecking = true)}
+										>
+											On
+										</button>
+									</div>
+								</div>
+							</div>
+
+							<div class="analysis-actions">
+								<button
+									type="button"
+									class="btn-analyze"
+									onclick={() => generateFeaturedAnalysis()}
+									disabled={analyzing || !rawContent.trim()}
+								>
+									{#if analyzing}
+										<AnimatedLogo size="18px" isAnimating={true} />
+										<span>Analyzing…</span>
+									{:else}
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+										</svg>
+										<span>Generate Analysis</span>
+									{/if}
+								</button>
+								<button
+									type="button"
+									class="btn-secondary btn-small"
+									onclick={() => generateFeaturedAnalysis({ force: true })}
+									disabled={analyzing || !rawContent.trim()}
+								>
+									Force Refresh
+								</button>
+							</div>
+
+							{#if analysisStatus}
+								<div class="analysis-feedback success">
+									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+										<polyline points="22 4 12 14.01 9 11.01" />
+									</svg>
+									<span>{analysisStatus}</span>
+								</div>
+							{:else if analysisError}
+								<div class="analysis-feedback error">
+									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<circle cx="12" cy="12" r="10" />
+										<line x1="12" y1="8" x2="12" y2="12" />
+										<line x1="12" y1="16" x2="12.01" y2="16" />
+									</svg>
+									<span>{analysisError}</span>
+								</div>
+							{/if}
+
+							{#if extractedExamples}
+								<details class="analysis-examples">
+									<summary>View Extracted Examples</summary>
+									<pre>{extractedExamples}</pre>
+								</details>
+							{/if}
+						</fieldset>
+
+						<!-- Results Section -->
+						<fieldset class="form-section">
+							<legend>
+								<span class="section-number">3</span>
+								Results & Display
+							</legend>
+
+							<label class="field-full">
+								<span>Highlights</span>
+								<textarea
+									id="highlights"
+									rows="3"
+									bind:value={form.summary}
+									placeholder="Key takeaways that will be shown prominently on the card"
+								></textarea>
+							</label>
+
+							<label class="field-full">
+								<span>Full Analysis (JSON)</span>
+								<textarea
+									id="analysis"
+									rows="6"
+									bind:value={form.analysis}
+									placeholder="Detailed analysis data in JSON format"
+									class="code-textarea"
+								></textarea>
+							</label>
+
+							<label class="field-full">
+								<span>Tags</span>
+								<input
+									type="text"
+									bind:value={form.tags}
+									placeholder="Comma-separated: ethics, policy, rhetoric"
+								/>
+								<span class="field-hint">Tags help categorize and filter showcase items</span>
+							</label>
+
+							<label class="publish-toggle">
+								<span class="toggle-track" class:is-active={form.published}>
+									<span class="toggle-thumb"></span>
+								</span>
+								<input type="checkbox" bind:checked={form.published} class="sr-only" />
+								<span class="toggle-label">{form.published ? 'Published' : 'Draft'}</span>
+							</label>
+						</fieldset>
+
+						<!-- Form Actions -->
+						<div class="form-actions">
+							{#if success}<p class="success">{success}</p>{/if}
+							{#if error && !loading}<p class="error">{error}</p>{/if}
+							<div class="action-buttons">
+								<button
+									type="button"
+									class="btn-secondary"
+									onclick={() => resetForm(true)}
+									disabled={saving}
+								>
+									Reset Form
+								</button>
+								<button type="submit" class="btn-primary" disabled={saving}>
+									{#if saving}
+										Saving…
+									{:else if form.id}
+										Update Item
+									{:else}
+										Create Item
+									{/if}
+								</button>
+							</div>
+						</div>
+					</form>
+				</section>
+			{/if}
 		</section>
 	</div>
 {/if}
@@ -849,6 +1120,38 @@
 	.item-list li.inactive {
 		opacity: 0.6;
 	}
+	.item-list li.dragging {
+		opacity: 0.5;
+		background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+		border-color: var(--color-primary);
+	}
+	.drag-handle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 2rem;
+		padding: 0 0.25rem;
+		cursor: grab;
+		color: var(--color-text-secondary);
+		opacity: 0.5;
+		transition: opacity 0.2s ease;
+	}
+	.drag-handle:hover {
+		opacity: 1;
+	}
+	.drag-handle:active {
+		cursor: grabbing;
+	}
+	.drag-handle svg {
+		width: 16px;
+		height: 16px;
+	}
+	.drag-hint {
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+		margin: 0 0 0.75rem;
+		opacity: 0.7;
+	}
 	.item-button {
 		flex: 1;
 		text-align: left;
@@ -925,82 +1228,230 @@
 		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
 		border-radius: var(--border-radius-xl) 24px 0 0;
 	}
-	.form-panel h2 {
-		margin-top: 0;
+	.form-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 1rem;
+	}
+	.form-header h2 {
+		margin: 0;
 		font-size: 1.5rem;
 		font-family: var(--font-family-display);
 		font-weight: 700;
 		color: var(--color-text-primary);
 	}
+	.close-button {
+		background: transparent;
+		border: none;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		padding: 0.5rem;
+		border-radius: var(--border-radius-sm);
+		transition: all 0.2s ease;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.close-button:hover {
+		background: color-mix(in srgb, var(--color-text-secondary) 15%, transparent);
+		color: var(--color-text-primary);
+	}
+	.close-button svg {
+		width: 24px;
+		height: 24px;
+	}
+	.create-button-container {
+		margin-top: 1.5rem;
+		padding-top: 1rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+	}
+	.create-button-container .btn-primary {
+		width: 100%;
+	}
+	.btn-small {
+		padding: 0.5rem 1rem;
+		font-size: 0.85rem;
+	}
 	form {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+	}
+
+	/* Form Sections */
+	.form-section {
+		border: 1px solid color-mix(in srgb, var(--color-border) 25%, transparent);
+		border-radius: var(--border-radius-lg);
+		padding: 1.5rem;
+		margin: 0;
+		background: color-mix(in srgb, var(--color-surface) 30%, transparent);
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
 	}
+	.form-section legend {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		padding: 0 0.5rem;
+	}
+	.section-number {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.75rem;
+		height: 1.75rem;
+		background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+		color: white;
+		border-radius: 50%;
+		font-size: 0.85rem;
+		font-weight: 700;
+	}
+	.section-description {
+		margin: 0;
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		line-height: 1.5;
+	}
+	.analysis-section {
+		background: color-mix(in srgb, var(--color-primary) 3%, var(--color-surface) 30%);
+		border-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+
+	/* Field Layout */
+	.field-full {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.field-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+	}
+	@media (max-width: 600px) {
+		.field-row {
+			grid-template-columns: 1fr;
+		}
+	}
+	.field-hint {
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+		font-weight: 400;
+		margin-top: 0.25rem;
+	}
+	.required {
+		color: #ef4444;
+	}
+
+	/* Labels and Inputs */
 	label {
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
 		font-size: 0.9rem;
 	}
-	label span {
+	label > span:first-child {
 		font-weight: 600;
 		color: var(--color-text-primary);
+		font-size: 0.85rem;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
 	}
 	input[type='text'],
 	input[type='url'],
-	input[type='number'],
 	input[type='date'],
 	textarea {
-		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
 		border-radius: var(--border-radius-md);
 		padding: 0.75rem 1rem;
-		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
-		backdrop-filter: blur(10px);
+		background: color-mix(in srgb, var(--color-surface) 80%, transparent);
 		color: var(--color-text-primary);
 		box-sizing: border-box;
-		transition: all 0.3s ease;
+		transition: all 0.2s ease;
 		font-size: 0.95rem;
+	}
+	input[type='text']::placeholder,
+	input[type='url']::placeholder,
+	textarea::placeholder {
+		color: var(--color-text-secondary);
+		opacity: 0.6;
 	}
 	input[type='text']:focus,
 	input[type='url']:focus,
-	input[type='number']:focus,
 	input[type='date']:focus,
 	textarea:focus {
 		outline: none;
 		border-color: var(--color-primary);
-		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+		background: var(--color-surface);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
 	}
 	textarea {
 		min-height: 5rem;
 		resize: vertical;
+		line-height: 1.5;
 	}
-	.analysis-generator {
-		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: var(--border-radius-lg);
-		padding: 1.5rem;
-		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
-		backdrop-filter: blur(15px);
+	.code-textarea {
+		font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+		font-size: 0.85rem;
+		line-height: 1.4;
+	}
+
+	/* Analysis Controls */
+	.analysis-controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-end;
+		gap: 1.5rem;
+		padding: 0.75rem 0;
+	}
+	.control-group {
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
-		box-shadow: 0 4px 15px color-mix(in srgb, var(--color-primary) 6%, transparent);
+		gap: 0.4rem;
 	}
-	.analysis-header h3 {
-		margin: 0;
-		font-size: 1rem;
-	}
-	.analysis-header p {
-		margin: 0.35rem 0 0;
-		font-size: 0.85rem;
+	.control-label {
+		font-size: 0.8rem;
+		font-weight: 600;
 		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
 	}
-	.analysis-generator textarea {
-		min-height: 8rem;
-		resize: vertical;
-		font-size: 0.95rem;
-		padding: 0.75rem;
+	.button-toggle-group {
+		display: flex;
+		border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+		border-radius: var(--border-radius-md);
+		overflow: hidden;
+	}
+	.toggle-btn {
+		padding: 0.5rem 1rem;
+		border: none;
+		background: transparent;
+		color: var(--color-text-secondary);
+		font-size: 0.85rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+	.toggle-btn:not(:last-child) {
+		border-right: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+	}
+	.toggle-btn:hover:not(:disabled):not(.is-active) {
+		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+		color: var(--color-text-primary);
+	}
+	.toggle-btn.is-active {
+		background: var(--color-primary);
+		color: white;
+		font-weight: 600;
+	}
+	.toggle-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 	.analysis-actions {
 		display: flex;
@@ -1008,95 +1459,156 @@
 		align-items: center;
 		gap: 0.75rem;
 	}
-	.analysis-provider {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.85rem;
-	}
-	.analysis-provider .provider-label {
-		font-weight: 600;
-		margin-right: 0.25rem;
-	}
-	.provider-option {
+
+	/* Analyze Button */
+	.btn-analyze {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.35rem;
-		padding: 0.35rem 0.6rem;
-		border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
-		border-radius: var(--border-radius-sm);
-		cursor: pointer;
-		transition:
-			background 0.2s ease,
-			border-color 0.2s ease;
-	}
-	.provider-option input {
-		margin: 0;
-	}
-	.provider-option.is-active {
-		border-color: var(--color-primary);
-		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-	}
-	.provider-option input:disabled + span {
-		opacity: 0.6;
-	}
-	.analysis-options {
-		margin: 0.75rem 0;
-	}
-	.fact-check-toggle {
-		display: flex;
-		align-items: center;
 		gap: 0.5rem;
+		background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+		color: white;
+		border: none;
+		padding: 0.65rem 1.25rem;
+		border-radius: var(--border-radius-md);
+		cursor: pointer;
+		font-weight: 600;
+		font-size: 0.9rem;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 25%, transparent);
+	}
+	.btn-analyze svg {
+		width: 18px;
+		height: 18px;
+	}
+	.btn-analyze:hover:not(:disabled) {
+		transform: translateY(-2px);
+		box-shadow: 0 6px 20px color-mix(in srgb, var(--color-primary) 35%, transparent);
+	}
+	.btn-analyze:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	/* Analysis Feedback */
+	.analysis-feedback {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+		padding: 0.75rem 1rem;
+		border-radius: var(--border-radius-md);
+		font-size: 0.9rem;
+		line-height: 1.4;
+	}
+	.analysis-feedback svg {
+		width: 18px;
+		height: 18px;
+		flex-shrink: 0;
+		margin-top: 0.1rem;
+	}
+	.analysis-feedback.success {
+		background: color-mix(in srgb, #10b981 12%, transparent);
+		color: #059669;
+		border: 1px solid color-mix(in srgb, #10b981 25%, transparent);
+	}
+	.analysis-feedback.error {
+		background: color-mix(in srgb, #ef4444 12%, transparent);
+		color: #dc2626;
+		border: 1px solid color-mix(in srgb, #ef4444 25%, transparent);
+	}
+
+	/* Analysis Examples */
+	.analysis-examples {
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: var(--border-radius-md);
+		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+		overflow: hidden;
+	}
+	.analysis-examples summary {
+		padding: 0.75rem 1rem;
+		cursor: pointer;
+		font-weight: 600;
 		font-size: 0.9rem;
 		color: var(--color-text-secondary);
-		cursor: pointer;
+		transition: all 0.2s ease;
 	}
-	.fact-check-toggle input {
-		margin: 0;
-	}
-	.fact-check-toggle input:disabled + span {
-		opacity: 0.6;
-	}
-	.analysis-examples {
-		padding: 0.75rem;
-		border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
-		border-radius: var(--border-radius-sm);
-		background: color-mix(in srgb, var(--color-surface) 88%, var(--color-background));
-	}
-	.analysis-examples h4 {
-		margin: 0 0 0.5rem;
-		font-size: 0.95rem;
+	.analysis-examples summary:hover {
+		color: var(--color-text-primary);
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
 	}
 	.analysis-examples pre {
 		margin: 0;
+		padding: 1rem;
 		white-space: pre-wrap;
-		font-size: 0.75rem;
-		line-height: 1.4;
+		font-size: 0.8rem;
+		line-height: 1.5;
+		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		max-height: 300px;
+		overflow-y: auto;
 	}
-	.analysis-status {
-		font-size: 0.85rem;
-	}
-	.analysis-status.success {
-		color: color-mix(in srgb, var(--color-primary) 85%, transparent);
-	}
-	.analysis-status.error {
-		color: #ef4444;
-	}
-	.form-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-		gap: 1rem;
-	}
-	.checkbox {
-		flex-direction: row;
+
+	/* Publish Toggle */
+	.publish-toggle {
+		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.75rem;
+		cursor: pointer;
+		padding: 0.5rem 0;
 	}
+	.toggle-track {
+		position: relative;
+		width: 48px;
+		height: 26px;
+		background: color-mix(in srgb, var(--color-text-secondary) 30%, transparent);
+		border-radius: 13px;
+		transition: background 0.2s ease;
+	}
+	.toggle-track.is-active {
+		background: var(--color-primary);
+	}
+	.toggle-thumb {
+		position: absolute;
+		top: 3px;
+		left: 3px;
+		width: 20px;
+		height: 20px;
+		background: white;
+		border-radius: 50%;
+		transition: transform 0.2s ease;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+	}
+	.toggle-track.is-active .toggle-thumb {
+		transform: translateX(22px);
+	}
+	.toggle-label {
+		font-weight: 600;
+		font-size: 0.95rem;
+		color: var(--color-text-primary);
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		border: 0;
+	}
+
+	/* Form Actions */
 	.form-actions {
 		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		padding-top: 0.5rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+	}
+	.action-buttons {
+		display: flex;
+		justify-content: flex-end;
 		gap: 0.75rem;
-		flex-wrap: wrap;
 	}
 	.btn-primary {
 		background: linear-gradient(135deg, var(--color-primary), var(--color-accent));

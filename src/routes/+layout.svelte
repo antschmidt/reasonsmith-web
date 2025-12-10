@@ -11,10 +11,14 @@
 	import ContributorChat from '$lib/components/ui/ContributorChat.svelte';
 	import { Sun, Moon, LogInIcon, LogOutIcon } from '@lucide/svelte';
 	import { collectRoles, getUserInitials } from '$lib/utils/authHelpers';
+	import type { Snippet } from 'svelte';
+
+	let { children }: { children: Snippet } = $props();
 
 	injectAnalytics({ mode: dev ? 'development' : 'production' });
 	let user = $state(nhost.auth.getUser());
 	let hasAdminAccess = $state(false);
+	let isMounted = $state(false);
 	let contributor = $state<{
 		role: string;
 		avatar_url?: string;
@@ -110,13 +114,14 @@
 
 	refreshUser();
 	if (typeof window !== 'undefined') {
+		isMounted = true;
 		nhost.auth.onAuthStateChanged(() => {
 			refreshUser();
 		});
 	}
 
 	// Initialize theme immediately on page load
-	let currentTheme: string = 'dark';
+	let currentTheme = $state<string>('dark');
 	theme.subscribe((value) => {
 		currentTheme = value;
 		if (typeof window !== 'undefined') {
@@ -140,32 +145,37 @@
 
 {#if user}
 	<nav class="top-nav" aria-label="Main navigation">
+		<div class="nav-left" role="group" aria-label="Navigation">
+			<a href="/discussions" class="nav-link" aria-label="Browse all discussions">
+				<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"
+					><path
+						d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l4.25 4.25c.41.41 1.07.41 1.48 0s.41-1.07 0-1.48L15.5 14Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.505 4.505 0 0 1 9.5 14Z"
+					/></svg
+				>
+				<span class="nav-label">Discussions</span>
+			</a>
+			{#if isDashboard}
+				<a href="/discussions/new" class="new-discussion-button" aria-label="Start new discussion">
+					<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" focusable="false">
+						<path
+							fill-rule="evenodd"
+							d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+							clip-rule="evenodd"
+						/>
+					</svg>
+					<span>New Discussion</span>
+				</a>
+			{/if}
+		</div>
+
 		<a href="/" class="brand" aria-label="Go to Dashboard">
 			<span class="brand-icon">
 				<img src="/logo-only.png" alt="ReasonSmith Home" />
 			</span>
-			<span class="sr-only">Dashboard</span>
+			<span class="brand-text">ReasonSmith</span>
 		</a>
-		<a href="/discussions" class="nav-icon" aria-label="Browse all discussions">
-			<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"
-				><path
-					d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l4.25 4.25c.41.41 1.07.41 1.48 0s.41-1.07 0-1.48L15.5 14Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.505 4.505 0 0 1 9.5 14Z"
-				/></svg
-			>
-		</a>
-		{#if isDashboard}
-			<a href="/discussions/new" class="new-discussion-button" aria-label="Start new discussion">
-				<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" focusable="false">
-					<path
-						fill-rule="evenodd"
-						d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-						clip-rule="evenodd"
-					/>
-				</svg>
-				<span>New Discussion</span>
-			</a>
-		{/if}
-		<div class="nav-spacer">
+
+		<div class="nav-right">
 			{#if isProfilePage}
 				<div class="profile-nav-controls">
 					<button
@@ -184,38 +194,40 @@
 					<button type="button" onclick={logout} class="logout-button-nav"><LogOutIcon /></button>
 				</div>
 			{/if}
-		</div>
-		<div class="nav-actions" role="group" aria-label="Primary actions">
-			<ContributorChat userId={user.id} />
-			{#if hasAdminAccess}
-				<a href="/admin" class="nav-icon" aria-label="User management">
-					<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<path
-							d="M16 4c0-1.11.89-2 2-2s2 .89 2 2-.89 2-2 2-2-.89-2-2zM4 18v-1c0-2.66 5.33-4 8-4s8 1.34 8 4v1H4zM12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z"
-						/>
-					</svg>
-				</a>
-				<a href="/public" class="nav-icon" aria-label="Manage public showcase">
-					<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<path d="M6 2a2 2 0 0 0-2 2v16l8-4 8 4V4a2 2 0 0 0-2-2H6Zm0 2h12v13.17l-6-3-6 3V4Z" />
-					</svg>
-				</a>
-			{/if}
-			<a href="/profile" class="nav-profile" aria-label="Profile">
-				{#if contributor?.avatar_url}
-					<img
-						src={contributor.avatar_url}
-						alt="{contributor.display_name || 'Your'} profile photo"
-						class="nav-avatar"
-					/>
-				{:else}
-					<div class="nav-avatar-placeholder">
-						<span class="nav-initials"
-							>{getUserInitials(contributor?.display_name || user?.email)}</span
-						>
-					</div>
+			<div class="nav-actions" role="group" aria-label="Primary actions">
+				<ContributorChat userId={user.id} chatLabel="Chat" />
+				{#if isMounted && hasAdminAccess}
+					<a href="/admin" class="nav-link" aria-label="User management">
+						<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+							<path
+								d="M16 4c0-1.11.89-2 2-2s2 .89 2 2-.89 2-2 2-2-.89-2-2zM4 18v-1c0-2.66 5.33-4 8-4s8 1.34 8 4v1H4zM12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z"
+							/>
+						</svg>
+						<span class="nav-label">Users</span>
+					</a>
+					<a href="/public" class="nav-link" aria-label="Manage public showcase">
+						<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+							<path d="M6 2a2 2 0 0 0-2 2v16l8-4 8 4V4a2 2 0 0 0-2-2H6Zm0 2h12v13.17l-6-3-6 3V4Z" />
+						</svg>
+						<span class="nav-label">Showcase</span>
+					</a>
 				{/if}
-			</a>
+				<a href="/profile" class="nav-profile" aria-label="Profile">
+					{#if contributor?.avatar_url}
+						<img
+							src={contributor.avatar_url}
+							alt="{contributor.display_name || 'Your'} profile photo"
+							class="nav-avatar"
+						/>
+					{:else}
+						<div class="nav-avatar-placeholder">
+							<span class="nav-initials"
+								>{getUserInitials(contributor?.display_name || user?.email)}</span
+							>
+						</div>
+					{/if}
+				</a>
+			</div>
 		</div>
 	</nav>
 {:else if $page.url.pathname !== '/'}
@@ -236,7 +248,7 @@
 {/if}
 
 <div class="app-shell">
-	<slot />
+	{@render children()}
 </div>
 
 <InstallPrompt />
@@ -248,8 +260,9 @@
 		z-index: 50;
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
 		gap: 1rem;
-		padding: 0.25rem;
+		padding: 0.25rem 0.5rem;
 		background: var(--color-nav-bg);
 		border-bottom: 1px solid var(--color-border);
 		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -264,9 +277,26 @@
 	:global([data-theme='dark']) .top-nav {
 		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 	}
+
+	.nav-left,
+	.nav-right {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex: 1;
+	}
+
+	.nav-left {
+		justify-content: flex-start;
+	}
+
+	.nav-right {
+		justify-content: flex-end;
+	}
 	.brand {
 		display: inline-flex;
 		align-items: center;
+		gap: 0.5rem;
 		text-decoration: none;
 		color: var(--color-text-primary);
 	}
@@ -295,6 +325,17 @@
 		object-fit: contain;
 		filter: brightness(1.05) saturate(1.15);
 	}
+	.brand-text {
+		font-family: var(--font-family-display);
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+	@media (max-width: 768px) {
+		.brand-text {
+			display: none;
+		}
+	}
 	.brand:focus .brand-icon,
 	.brand:hover .brand-icon {
 		border-color: var(--color-primary);
@@ -307,17 +348,10 @@
 			height: 42px;
 		}
 	}
-	.nav-spacer {
-		margin-left: auto;
-		display: flex;
-		align-items: center;
-		width: 100%;
-	}
+
 	.profile-nav-controls {
 		display: flex;
-		width: 100%;
 		align-items: center;
-		justify-content: space-between;
 		gap: 1rem;
 	}
 	.theme-toggle {
@@ -365,36 +399,50 @@
 		align-items: center;
 		gap: 0.65rem;
 	}
-	.nav-icon {
-		--_size: 42px;
+	/* Nav links with text labels */
+	.nav-link {
 		display: inline-flex;
 		align-items: center;
-		justify-content: center;
-		width: var(--_size);
-		height: var(--_size);
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
 		border-radius: var(--border-radius-sm);
 		background: transparent;
-		border: 0px solid var(--color-border);
 		text-decoration: none;
 		transition: all var(--transition-speed) ease;
 		color: var(--color-text-secondary);
+		font-size: 0.9rem;
+		font-weight: 500;
 	}
-	.nav-icon svg {
-		width: 24px;
-		height: 24px;
+	.nav-link svg {
+		width: 20px;
+		height: 20px;
 		fill: currentColor;
-		opacity: 0.92;
+		opacity: 0.85;
+		flex-shrink: 0;
 	}
-	.nav-icon:hover,
-	.nav-icon:focus {
+	.nav-link:hover,
+	.nav-link:focus {
 		color: var(--color-primary);
-		border-color: var(--color-primary);
 		background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
 		outline: none;
 	}
-	@media (max-width: 560px) {
-		.nav-icon {
-			--_size: 40px;
+	.nav-link:hover svg,
+	.nav-link:focus svg {
+		opacity: 1;
+	}
+	.nav-label {
+		white-space: nowrap;
+	}
+	@media (max-width: 768px) {
+		.nav-label {
+			display: none;
+		}
+		.nav-link {
+			padding: 0.5rem;
+		}
+		.nav-link svg {
+			width: 24px;
+			height: 24px;
 		}
 	}
 	.sr-only {

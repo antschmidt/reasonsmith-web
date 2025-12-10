@@ -57,6 +57,7 @@
 	import DiscussionEditForm from '$lib/components/discussion/DiscussionEditForm.svelte';
 	import GoodFaithModal from '$lib/components/ui/GoodFaithModal.svelte';
 	import EditorsDeskApprovalCard from '$lib/components/EditorsDeskApprovalCard.svelte';
+	import EventList from '$lib/components/EventList.svelte';
 	import {
 		canUseAnalysis,
 		getMonthlyCreditsRemaining,
@@ -3461,6 +3462,9 @@
 					{formatChicagoCitation}
 					{getStyleConfig}
 				/>
+
+				<!-- Display events for this post -->
+				<EventList postId={post.id} />
 			{:else}
 				<p>No posts in this discussion yet. Be the first to contribute!</p>
 			{/each}

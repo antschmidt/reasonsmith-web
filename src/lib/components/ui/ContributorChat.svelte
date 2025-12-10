@@ -27,7 +27,7 @@
 	const NAV_HEIGHT_DESKTOP = 96;
 	const MOBILE_BREAKPOINT = 768;
 
-	let { userId } = $props<{ userId: string }>();
+	let { userId, chatLabel } = $props<{ userId: string; chatLabel?: string }>();
 
 	type Notification = {
 		id: string;
@@ -714,12 +714,16 @@
 <div class="chat-container">
 	<button
 		type="button"
-		class="chat-icon nav-icon"
+		class="chat-icon"
+		class:has-label={!!chatLabel}
 		onclick={toggleChat}
 		aria-label="Contributor chat"
 		aria-expanded={isOpen}
 	>
 		<MessageCircle size={20} />
+		{#if chatLabel}
+			<span class="chat-label">{chatLabel}</span>
+		{/if}
 		{#if unreadDisplay}
 			<span class="chat-badge" aria-label="{totalUnreadCount} unread messages">{unreadDisplay}</span
 			>
@@ -943,18 +947,38 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 44px;
-		height: 44px;
+		gap: 0.5rem;
+		padding: 0.5rem;
 		border-radius: var(--border-radius-sm);
 		background: transparent;
 		border: none;
-		color: var(--color-text-primary);
+		color: var(--color-text-secondary);
 		cursor: pointer;
 		transition: all var(--transition-speed) ease;
+		font-size: 0.9rem;
+		font-weight: 500;
+	}
+
+	.chat-icon.has-label {
+		padding: 0.5rem 0.75rem;
 	}
 
 	.chat-icon:hover {
-		background: var(--color-surface);
+		color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
+	}
+
+	.chat-label {
+		white-space: nowrap;
+	}
+
+	@media (max-width: 768px) {
+		.chat-label {
+			display: none;
+		}
+		.chat-icon.has-label {
+			padding: 0.5rem;
+		}
 	}
 
 	.chat-badge {

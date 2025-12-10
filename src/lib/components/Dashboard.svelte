@@ -3,7 +3,6 @@
 	// Avoid importing gql to prevent type resolution issues; use plain strings
 	import { nhost } from '$lib/nhostClient';
 	import { GET_DASHBOARD_DATA, GET_SAVED_ITEMS, REMOVE_SAVED_ITEM } from '$lib/graphql/queries';
-	import DashboardNotifications from './ui/DashboardNotifications.svelte';
 	import CollaborationInvites from './CollaborationInvites.svelte';
 	import { BookOpen, Link2, Users } from '@lucide/svelte';
 
@@ -314,9 +313,6 @@
 	<div class="dashboard-grid">
 		<!-- Sidebar (Right Column) -->
 		<aside class="sidebar">
-			<!-- Notifications & Messages -->
-			<DashboardNotifications userId={user.id as unknown as string} />
-
 			<!-- Collaboration Invites -->
 			{#if collaborationInvites.length > 0}
 				<section class="card collaboration-section">
@@ -1008,28 +1004,35 @@
 
 	/* Editorial-Style Drafts List (Foreign Affairs inspired) */
 	.drafts-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0;
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+		gap: 1.5rem;
 	}
 
 	.draft-item {
+		position: relative;
 		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: var(--space-md);
-		padding: var(--space-lg) 0;
-		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		transition: background-color 0.2s ease;
+		flex-direction: column;
+		gap: var(--space-sm);
+		padding: var(--space-lg);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-lg);
+		transition: all 0.2s ease;
+		min-height: 180px;
 	}
 
 	.draft-item:hover {
-		background-color: color-mix(in srgb, var(--color-surface-alt) 30%, transparent);
+		border-color: var(--color-primary);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 10%, transparent);
+		transform: translateY(-2px);
 	}
 
 	.draft-content {
 		flex: 1;
-		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
 	}
 
 	.draft-title {
@@ -1114,21 +1117,23 @@
 	}
 
 	.draft-delete-icon {
-		flex-shrink: 0;
-		background: transparent;
-		border: none;
+		position: absolute;
+		top: 0.75rem;
+		right: 0.75rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
 		color: var(--color-text-secondary);
 		cursor: pointer;
 		padding: 0.5rem;
 		border-radius: var(--border-radius-sm);
 		transition: all 0.2s ease;
-		opacity: 0.5;
+		opacity: 0;
 	}
 
 	.draft-delete-icon:hover {
 		color: #ef4444;
 		background: color-mix(in srgb, #ef4444 10%, transparent);
-		opacity: 1;
+		border-color: #ef4444;
 	}
 
 	.draft-item:hover .draft-delete-icon {
@@ -1144,14 +1149,39 @@
 	}
 
 	.collab-badge {
-		flex-shrink: 0;
+		align-self: flex-start;
+		margin-top: auto;
 		color: var(--color-primary);
-		padding: 0.5rem;
-		opacity: 0.7;
+		padding: 0.375rem 0.625rem;
+		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+		border-radius: var(--border-radius-sm);
+		opacity: 0.9;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
 	.collaborative-drafts-section {
 		margin-top: 2rem;
+	}
+
+	@media (max-width: 768px) {
+		.drafts-list {
+			grid-template-columns: 1fr;
+			gap: 1rem;
+		}
+
+		.draft-item {
+			min-height: 150px;
+		}
+
+		.draft-title {
+			font-size: 1.125rem;
+		}
+
+		.draft-delete-icon {
+			opacity: 1;
+		}
 	}
 
 	.section-description {

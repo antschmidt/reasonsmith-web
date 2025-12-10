@@ -14,7 +14,8 @@
 		GET_DISCUSSION_TAGS,
 		ADVANCED_SEARCH_DISCUSSIONS,
 		GET_EDITORS_DESK_PICKS,
-		GET_CONTRIBUTOR
+		GET_CONTRIBUTOR,
+		DELETE_EDITORS_DESK_PICK
 	} from '$lib/graphql/queries';
 	import { COMMON_DISCUSSION_TAGS, normalizeTag } from '$lib/types/writingStyle';
 	import { canCurateEditorsDesk } from '$lib/utils/editorsDeskUtils';
@@ -267,6 +268,29 @@
 		pickerOpen = true;
 	}
 
+	async function handleRemoveEditorsPick(pickId: string) {
+		if (!confirm("Are you sure you want to remove this item from the Editors' Desk?")) {
+			return;
+		}
+
+		try {
+			const { error: deleteError } = await nhost.graphql.request(DELETE_EDITORS_DESK_PICK, {
+				pickId
+			});
+
+			if (deleteError) {
+				throw Array.isArray(deleteError)
+					? new Error(deleteError.map((e: any) => e.message).join('; '))
+					: deleteError;
+			}
+
+			// Refresh the picks list
+			await fetchEditorsDeskPicks();
+		} catch (e: any) {
+			alert('Failed to remove pick: ' + (e.message ?? 'Unknown error'));
+		}
+	}
+
 	function closePicker() {
 		pickerOpen = false;
 		selectedDiscussion = null;
@@ -408,7 +432,7 @@
 		</section>
 	</header>
 
-	{#if !q.trim()}
+	{#if !q.trim() && !editorsDeskLoading && editorsDeskPicks.length > 0}
 		<!-- Editors' Desk Section -->
 		<section class="analysis-section editors-desk-section">
 			<header class="analysis-header">
@@ -420,15 +444,11 @@
 					own dialogue skills.
 				</p>
 			</header>
-			{#if editorsDeskLoading}
-				<p class="status-message">Loading featured picks…</p>
-			{:else if editorsDeskError}
-				<p class="status-message error">{editorsDeskError}</p>
-			{:else if editorsDeskPicks.length === 0}
-				<p class="status-message">Featured picks will appear here as they are published.</p>
-			{:else}
-				<EditorsDeskCarousel items={editorsDeskPicks} />
-			{/if}
+			<EditorsDeskCarousel
+				items={editorsDeskPicks}
+				{canCurate}
+				onRemove={handleRemoveEditorsPick}
+			/>
 		</section>
 	{/if}
 
@@ -678,18 +698,24 @@
 
 	.article-list {
 		display: flex;
-		flex-direction: column;
-		gap: clamp(0.5rem, 4vw, 1.5rem);
+		flex-wrap: wrap;
+		gap: clamp(1rem, 3vw, 1.5rem);
+		justify-content: center;
 	}
 
-	@media (min-width: 1024px) {
-		.article-list {
-			grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-			background: var(--color-surface);
-		}
+	.discussion-card-wrapper {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		flex: 1 1 320px;
+		max-width: 720px;
+		min-width: 280px;
 	}
 
 	.discussion-card {
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
 		background: var(--color-surface);
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
 		border-radius: var(--border-radius-xl);
@@ -701,6 +727,7 @@
 			box-shadow 0.25s ease;
 		position: relative;
 		overflow: hidden;
+		height: 100%;
 	}
 
 	.discussion-card::before {
@@ -730,7 +757,7 @@
 	.discussion-header h2 {
 		margin: 0 0 0.75rem;
 		font-family: var(--font-family-display);
-		font-size: clamp(1.35rem, 3vw, 1.75rem);
+		font-size: clamp(1.35rem, 3vw, 1.5rem);
 		letter-spacing: -0.01em;
 	}
 
@@ -781,7 +808,7 @@
 		flex-wrap: wrap;
 		gap: 0.75rem;
 		padding-bottom: 1rem;
-		border-bottom: 1px solid var(--color-border);
+		border-top: 1px solid var(--color-border);
 		color: var(--color-text-secondary);
 		font-size: 0.9rem;
 	}
@@ -789,7 +816,7 @@
 	.discussion-header-head {
 		display: flex;
 		justify-content: space-between;
-		align-items: center;
+		align-items: baseline;
 		gap: 1rem;
 	}
 
@@ -892,13 +919,6 @@
 			color-mix(in srgb, var(--color-accent) 3%, var(--color-surface-alt)),
 			color-mix(in srgb, var(--color-primary) 3%, var(--color-surface-alt))
 		);
-	}
-
-	.discussion-card-wrapper {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
 	}
 
 	.editors-desk-button {

@@ -1,24 +1,29 @@
 <script lang="ts">
 	import Button from '../ui/Button.svelte';
 	import { formatChicagoCitation, type Citation } from '$lib/types/writingStyle';
+	import type { Snippet } from 'svelte';
 
 	let {
 		citations = [],
 		onInsert,
 		onEdit,
-		onRemove
+		onRemove,
+		addButton
 	} = $props<{
 		citations?: Citation[];
 		onInsert?: (citationId: string) => void;
 		onEdit?: (citationId: string) => void;
 		onRemove?: (citationId: string) => void;
+		addButton?: Snippet;
 	}>();
 </script>
 
 <div class="form-group">
 	<div class="citations-header">
 		<label>Citations</label>
-		<slot name="add-button" />
+		{#if addButton}
+			{@render addButton()}
+		{/if}
 	</div>
 
 	{#if citations && citations.length > 0}
