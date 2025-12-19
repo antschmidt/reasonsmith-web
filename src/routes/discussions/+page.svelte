@@ -11,13 +11,10 @@
 		LIST_PUBLISHED_DISCUSSIONS,
 		SEARCH_PUBLISHED_DISCUSSIONS,
 		SEARCH_DISCUSSIONS_BY_TAGS,
-		GET_DISCUSSION_TAGS,
-		ADVANCED_SEARCH_DISCUSSIONS,
 		GET_EDITORS_DESK_PICKS,
 		GET_CONTRIBUTOR,
 		DELETE_EDITORS_DESK_PICK
 	} from '$lib/graphql/queries';
-	import { COMMON_DISCUSSION_TAGS, normalizeTag } from '$lib/types/writingStyle';
 	import { canCurateEditorsDesk } from '$lib/utils/editorsDeskUtils';
 	import type { PageData } from './$types';
 	import { LampDesk } from '@lucide/svelte';

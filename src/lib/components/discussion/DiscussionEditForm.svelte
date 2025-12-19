@@ -146,11 +146,7 @@
 
 	<label>
 		Description
-		<textarea
-			id="edit-description"
-			rows="30"
-			bind:value={description}
-			oninput={onDescriptionInput}
+		<textarea id="edit-description" rows="30" bind:value={description} oninput={onDescriptionInput}
 		></textarea>
 	</label>
 
@@ -199,9 +195,7 @@
 		<div class="analysis-panel">
 			<div class="analysis-summary">
 				<div class="analysis-badge {goodFaithResult.good_faith_label}">
-					<span class="analysis-score"
-						>{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span
-					>
+					<span class="analysis-score">{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span>
 					<span class="analysis-label">{goodFaithResult.good_faith_label}</span>
 				</div>
 				<div class="analysis-meta">
@@ -354,10 +348,8 @@
 				<strong>Analysis:</strong>
 				{claudeGoodFaithResult.rationale}
 			</div>
-			<button
-				type="button"
-				class="close-result-btn"
-				onclick={() => (claudeGoodFaithResult = null)}>✕</button
+			<button type="button" class="close-result-btn" onclick={() => (claudeGoodFaithResult = null)}
+				>✕</button
 			>
 		</div>
 	{/if}
@@ -366,10 +358,8 @@
 		<div class="good-faith-error">
 			<strong>Claude Error:</strong>
 			{claudeGoodFaithError}
-			<button
-				type="button"
-				class="close-result-btn"
-				onclick={() => (claudeGoodFaithError = null)}>✕</button
+			<button type="button" class="close-result-btn" onclick={() => (claudeGoodFaithError = null)}
+				>✕</button
 			>
 		</div>
 	{/if}
@@ -379,7 +369,12 @@
 		<div class="citation-header">
 			<h4>References</h4>
 			<div class="citation-buttons">
-				<Button type="button" variant="secondary" size="sm" onclick={() => (showCitationForm = true)}>
+				<Button
+					type="button"
+					variant="secondary"
+					size="sm"
+					onclick={() => (showCitationForm = true)}
+				>
 					Add Citation
 				</Button>
 			</div>
@@ -449,7 +444,7 @@
 	{#if heuristicScore < 50}
 		{@const assessment = assessContentQuality(description, title)}
 		<div class="heuristic-quality-indicator">
-			<h5>Content Quality: {heuristicScore}% (50% required)</h5>
+			<h5>Minimum Criteria: {heuristicScore}% (50% required)</h5>
 			<div class="quality-progress">
 				<div class="quality-bar" style="width: {heuristicScore}%"></div>
 			</div>
@@ -461,12 +456,12 @@
 				</ul>
 			{/if}
 			<p class="quality-note">
-				Good faith analysis and publishing are disabled until 50% quality threshold is met.
+				Good faith analysis and publishing are disabled until minimum criteria are met.
 			</p>
 		</div>
 	{:else}
 		<div class="heuristic-quality-indicator passed">
-			<h5>✅ Content Quality: {heuristicScore}% - Ready for analysis and publishing</h5>
+			<h5>✅ Minimum Criteria Met ({heuristicScore}%) - Ready for analysis and publishing</h5>
 			<div class="quality-progress">
 				<div class="quality-bar passed" style="width: {heuristicScore}%"></div>
 			</div>
@@ -496,7 +491,11 @@
 		<button
 			class="btn-primary"
 			type="submit"
-			disabled={publishLoading || !hasUnsavedChanges || (!heuristicPassed && contributor?.role !== 'slartibartfast' && contributor?.role !== 'admin')}
+			disabled={publishLoading ||
+				!hasUnsavedChanges ||
+				(!heuristicPassed &&
+					contributor?.role !== 'slartibartfast' &&
+					contributor?.role !== 'admin')}
 		>
 			{publishLoading ? 'Publishing…' : 'Publish Changes'}
 		</button>
