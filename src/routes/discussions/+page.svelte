@@ -9,11 +9,13 @@
 	import LandingFooter from '$lib/components/landing/LandingFooter.svelte';
 	import {
 		LIST_PUBLISHED_DISCUSSIONS,
+		LIST_DISCUSSIONS_FROM_FOLLOWING,
 		SEARCH_PUBLISHED_DISCUSSIONS,
 		SEARCH_DISCUSSIONS_BY_TAGS,
 		GET_EDITORS_DESK_PICKS,
 		GET_CONTRIBUTOR,
-		DELETE_EDITORS_DESK_PICK
+		DELETE_EDITORS_DESK_PICK,
+		GET_MY_FOLLOWING
 	} from '$lib/graphql/queries';
 	import { canCurateEditorsDesk } from '$lib/utils/editorsDeskUtils';
 	import type { PageData } from './$types';
@@ -26,6 +28,11 @@
 	// Simple tag filtering for existing search
 	let selectedTags = $state<string[]>([]);
 	let showTagFilter = $state(false);
+
+	// Following filter
+	let showFollowingOnly = $state(false);
+	let followingIds = $state<string[]>([]);
+	let followingLoaded = $state(false);
 	type DiscussionSummary = {
 		id: string;
 		created_at: string;
@@ -166,6 +173,22 @@
 		}, 300);
 	}
 
+	async function fetchFollowingIds() {
+		if (!user?.id || followingLoaded) return;
+		try {
+			const { data, error: gqlError } = await nhost.graphql.request(GET_MY_FOLLOWING, {
+				userId: user.id
+			});
+			if (gqlError) throw gqlError;
+			followingIds = ((data as any)?.follow ?? []).map((f: any) => f.following_id);
+			followingLoaded = true;
+		} catch (e) {
+			// Silently fail, user just won't see following filter work
+			followingIds = [];
+			followingLoaded = true;
+		}
+	}
+
 	async function fetchAll(reset = false, retry = true) {
 		if (reset) {
 			page = 0;
@@ -175,10 +198,34 @@
 		loading = true;
 		error = null;
 		try {
-			const { data, error: gqlError } = await nhost.graphql.request(LIST_PUBLISHED_DISCUSSIONS, {
-				limit: PAGE_SIZE,
-				offset: page * PAGE_SIZE
-			});
+			let data: any;
+			let gqlError: any;
+
+			if (showFollowingOnly && followingIds.length > 0) {
+				// Fetch discussions from followed users
+				const result = await nhost.graphql.request(LIST_DISCUSSIONS_FROM_FOLLOWING, {
+					authorIds: followingIds,
+					limit: PAGE_SIZE,
+					offset: page * PAGE_SIZE
+				});
+				data = result.data;
+				gqlError = result.error;
+			} else if (showFollowingOnly && followingIds.length === 0) {
+				// User is not following anyone - return empty
+				discussions = [];
+				hasMoreDiscussions = false;
+				loading = false;
+				return;
+			} else {
+				// Fetch all published discussions
+				const result = await nhost.graphql.request(LIST_PUBLISHED_DISCUSSIONS, {
+					limit: PAGE_SIZE,
+					offset: page * PAGE_SIZE
+				});
+				data = result.data;
+				gqlError = result.error;
+			}
+
 			if (gqlError)
 				throw Array.isArray(gqlError)
 					? new Error(gqlError.map((e: any) => e.message).join('; '))
@@ -295,11 +342,23 @@
 		fetchEditorsDeskPicks();
 	}
 
+	async function toggleFollowingFilter(following: boolean) {
+		showFollowingOnly = following;
+		if (following && !followingLoaded) {
+			await fetchFollowingIds();
+		}
+		await fetchAll(true);
+	}
+
 	onMount(async () => {
 		await ensureAuthReadyAndHeaders();
 		await fetchAll(true);
 		await fetchEditorsDeskPicks();
 		await fetchContributor();
+		// Pre-fetch following IDs for logged-in users
+		if (user?.id) {
+			await fetchFollowingIds();
+		}
 	});
 
 	import { onDestroy } from 'svelte';
@@ -426,6 +485,31 @@
 				/>
 				<!-- <button class="search-button" onclick={search}>Search</button> -->
 			</div>
+			{#if user}
+				<div class="filter-controls">
+					<span class="filter-label">Show:</span>
+					<div class="filter-toggle">
+						<button
+							class="filter-button"
+							class:active={!showFollowingOnly}
+							onclick={() => toggleFollowingFilter(false)}
+						>
+							All
+						</button>
+						<button
+							class="filter-button"
+							class:active={showFollowingOnly}
+							onclick={() => toggleFollowingFilter(true)}
+							disabled={!followingLoaded && showFollowingOnly}
+						>
+							Following
+							{#if followingIds.length > 0}
+								<span class="filter-count">({followingIds.length})</span>
+							{/if}
+						</button>
+					</div>
+				</div>
+			{/if}
 		</section>
 	</header>
 
@@ -539,6 +623,12 @@
 				{/if}
 			{:else if q.trim().length > 0 && !loading}
 				<p class="empty-state">No discussions match your search.</p>
+			{:else if showFollowingOnly && followingIds.length === 0 && !loading}
+				<p class="empty-state">
+					You're not following anyone yet. Follow users to see their discussions here.
+				</p>
+			{:else if showFollowingOnly && !loading}
+				<p class="empty-state">No discussions from people you follow yet.</p>
 			{:else if !loading}
 				<p class="empty-state">No discussions yet.</p>
 			{/if}
@@ -653,6 +743,59 @@
 		outline: none;
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+	}
+
+	.filter-controls {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
+	.filter-label {
+		color: var(--color-text-secondary);
+		font-size: 0.9rem;
+		font-weight: 500;
+	}
+
+	.filter-toggle {
+		display: flex;
+		gap: 0.25rem;
+		background: color-mix(in srgb, var(--color-border) 30%, transparent);
+		border-radius: 999px;
+		padding: 0.25rem;
+	}
+
+	.filter-button {
+		background: transparent;
+		border: none;
+		padding: 0.5rem 1rem;
+		border-radius: 999px;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.filter-button:hover:not(:disabled) {
+		color: var(--color-text-primary);
+	}
+
+	.filter-button.active {
+		background: var(--color-surface);
+		color: var(--color-primary);
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	}
+
+	.filter-button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.filter-count {
+		font-size: 0.75rem;
+		opacity: 0.8;
 	}
 
 	.analysis-section {

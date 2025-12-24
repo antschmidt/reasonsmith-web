@@ -546,6 +546,35 @@ export const LIST_PUBLISHED_DISCUSSIONS = gql`
 	${DISCUSSION_VERSION_FIELDS}
 `;
 
+// List discussions from followed users
+export const LIST_DISCUSSIONS_FROM_FOLLOWING = gql`
+	query ListDiscussionsFromFollowing($authorIds: [uuid!]!, $limit: Int = 20, $offset: Int = 0) {
+		discussion(
+			where: { status: { _eq: "published" }, created_by: { _in: $authorIds } }
+			order_by: { created_at: desc }
+			limit: $limit
+			offset: $offset
+		) {
+			id
+			status
+			created_at
+			is_anonymous
+			contributor {
+				...ContributorFields
+			}
+			current_version: discussion_versions(
+				where: { version_type: { _eq: "published" } }
+				order_by: { version_number: desc }
+				limit: 1
+			) {
+				...DiscussionVersionFields
+			}
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
+	${DISCUSSION_VERSION_FIELDS}
+`;
+
 // Search published discussions
 export const SEARCH_PUBLISHED_DISCUSSIONS = gql`
 	query SearchPublishedDiscussions($searchTerm: String!, $limit: Int = 20) {
@@ -3518,7 +3547,7 @@ export const FOLLOW_USER = gql`
 	mutation FollowUser($followerId: uuid!, $followingId: uuid!, $status: String!) {
 		insert_follow_one(
 			object: { follower_id: $followerId, following_id: $followingId, status: $status }
-			on_conflict: { constraint: follow_unique, update_columns: [status, created_at] }
+			on_conflict: { constraint: follow_unique, update_columns: [status] }
 		) {
 			id
 			status

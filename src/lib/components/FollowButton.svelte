@@ -168,13 +168,14 @@
 			{:else}
 				<UserMinus size={iconSizes[size]} />
 			{/if}
-			<span>
+			<span class="button-text">
 				{#if followStatus === 'none'}
 					Follow
 				{:else if followStatus === 'pending'}
 					Requested
 				{:else}
-					Following
+					<span class="default-text">Following</span>
+					<span class="hover-text">Unfollow</span>
 				{/if}
 			</span>
 		</button>
@@ -242,6 +243,22 @@
 		background: color-mix(in srgb, #ef4444 10%, transparent);
 		color: #ef4444;
 		border-color: #ef4444;
+	}
+
+	.follow-button.active .default-text {
+		display: inline;
+	}
+
+	.follow-button.active .hover-text {
+		display: none;
+	}
+
+	.follow-button.active:hover:not(:disabled) .default-text {
+		display: none;
+	}
+
+	.follow-button.active:hover:not(:disabled) .hover-text {
+		display: inline;
 	}
 
 	.follow-button.blocked {
