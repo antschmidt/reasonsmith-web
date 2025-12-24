@@ -4,6 +4,7 @@
 	import { nhost } from '$lib/nhostClient';
 	import { GET_DASHBOARD_DATA, GET_SAVED_ITEMS, REMOVE_SAVED_ITEM } from '$lib/graphql/queries';
 	import CollaborationInvites from './CollaborationInvites.svelte';
+	import NetworkingSection from './NetworkingSection.svelte';
 	import { BookOpen, Link2, Users } from '@lucide/svelte';
 
 	let { user } = $props<{ user: User }>();
@@ -318,6 +319,11 @@
 				<section class="card collaboration-section">
 					<CollaborationInvites onInviteResponded={loadData} />
 				</section>
+			{/if}
+
+			<!-- Networking Section - Contacts, Followers, etc. -->
+			{#if user?.id}
+				<NetworkingSection userId={user.id} />
 			{/if}
 
 			<!-- Pinned Threads, Leaderboard remain placeholders for now -->

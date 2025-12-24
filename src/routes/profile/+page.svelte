@@ -8,7 +8,8 @@
 		DELETE_SECURITY_KEY,
 		SEARCH_CONTRIBUTORS,
 		ADD_PURCHASED_CREDITS,
-		SET_PURCHASED_CREDITS
+		SET_PURCHASED_CREDITS,
+		UPDATE_FOLLOW_SETTINGS
 	} from '$lib/graphql/queries';
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
 	import { env as publicEnv } from '$env/dynamic/public';
@@ -26,7 +27,8 @@
 		Star,
 		PersonStanding,
 		Infinity,
-		CircleSlash
+		CircleSlash,
+		Users
 	} from '@lucide/svelte';
 
 	const SITE_URL = publicEnv.PUBLIC_SITE_URL;
@@ -156,6 +158,12 @@
 	let passwordResetSuccess: string | null = null;
 	let passwordResetError: string | null = null;
 
+	// Collaboration settings state
+	let requireFollowApproval = $state(false);
+	let savingFollowSettings = $state(false);
+	let followSettingsError = $state<string | null>(null);
+	let followSettingsSuccess = $state<string | null>(null);
+
 	// Credit management state (admin only)
 	let creditSearchTerm = '';
 	let creditSearchResults: any[] = [];
@@ -194,6 +202,7 @@
         has_password_auth
         login_providers
         security_keys
+        require_follow_approval
       }
       discussion(where: { created_by: { _eq: $id } }, order_by: { created_at: desc }) {
         id
@@ -245,6 +254,7 @@
         purchased_credits_used
         subscription_tier
         avatar_url
+        require_follow_approval
       }
       discussion(where: { created_by: { _eq: $id } }, order_by: { created_at: desc }) {
         id
@@ -426,6 +436,7 @@
 			handle = contributor.handle || '';
 			bio = contributor.bio || '';
 			website = contributor.website || '';
+			requireFollowApproval = contributor.require_follow_approval || false;
 			const links = contributor.social_links || {};
 			for (const key of Object.keys(social)) {
 				social[key] = links[key] || '';
@@ -435,6 +446,7 @@
 			handle = '';
 			bio = '';
 			website = '';
+			requireFollowApproval = false;
 			for (const key of Object.keys(social)) {
 				social[key] = '';
 			}
@@ -1422,6 +1434,41 @@
 			creditManagementLoading = false;
 		}
 	}
+
+	// Collaboration settings functions
+	async function handleFollowApprovalToggle() {
+		if (!user || !contributor) return;
+
+		savingFollowSettings = true;
+		followSettingsError = null;
+		followSettingsSuccess = null;
+
+		try {
+			const result = await nhost.graphql.request(UPDATE_FOLLOW_SETTINGS, {
+				userId: contributor.id,
+				requireApproval: requireFollowApproval
+			});
+
+			if (result.error) {
+				throw new Error(result.error.message || 'Failed to update follow settings');
+			}
+
+			followSettingsSuccess = requireFollowApproval
+				? 'Follow requests now require your approval.'
+				: 'Anyone can now follow you without approval.';
+
+			setTimeout(() => {
+				followSettingsSuccess = null;
+			}, 3000);
+		} catch (err: any) {
+			console.error('Error updating follow settings:', err);
+			followSettingsError = err?.message || 'Failed to update follow settings';
+			// Revert the toggle on error
+			requireFollowApproval = !requireFollowApproval;
+		} finally {
+			savingFollowSettings = false;
+		}
+	}
 </script>
 
 <div class="editorial-profile-page {editing ? 'editing' : ''}">
@@ -2380,6 +2427,55 @@
 								</div>
 							{/if}
 						</div>
+					</div>
+				</div>
+
+				<!-- Collaboration Settings Section -->
+				<div class="profile-card collaboration-section">
+					<h3 class="section-title">Collaboration Settings</h3>
+					<div class="collaboration-content">
+						<div class="setting-item">
+							<div class="setting-info">
+								<div class="setting-icon">
+									<Users size={24} strokeWidth={1.5} />
+								</div>
+								<div class="setting-details">
+									<h4>Require Follow Approval</h4>
+									<p class="setting-description">
+										When enabled, other users must request to follow you and you can approve or
+										reject each request. When disabled, anyone can follow you without approval.
+									</p>
+								</div>
+							</div>
+							<div class="setting-control">
+								<label class="toggle-switch">
+									<input
+										type="checkbox"
+										bind:checked={requireFollowApproval}
+										onchange={handleFollowApprovalToggle}
+										disabled={savingFollowSettings}
+									/>
+									<span class="toggle-slider"></span>
+								</label>
+								{#if savingFollowSettings}
+									<span class="saving-indicator">Saving...</span>
+								{/if}
+							</div>
+						</div>
+
+						{#if followSettingsError}
+							<div class="error-message">{followSettingsError}</div>
+						{/if}
+
+						{#if followSettingsSuccess}
+							<div class="success-message">{followSettingsSuccess}</div>
+						{/if}
+
+						<p class="section-hint">
+							Manage your contacts, followers, and blocked users from your <a href="/dashboard"
+								>Dashboard</a
+							>.
+						</p>
 					</div>
 				</div>
 
@@ -3776,6 +3872,119 @@
 	/* Security Settings Section */
 	.security-section {
 		margin-bottom: 2rem;
+	}
+
+	/* Collaboration Settings Section */
+	.collaboration-section {
+		margin-bottom: 2rem;
+	}
+
+	.collaboration-content {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+	}
+
+	.setting-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 1.5rem;
+		padding: 1rem;
+		background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+		border-radius: var(--border-radius-lg);
+	}
+
+	.setting-info {
+		display: flex;
+		gap: 1rem;
+		align-items: flex-start;
+		flex: 1;
+	}
+
+	.setting-icon {
+		flex-shrink: 0;
+		color: var(--color-primary);
+	}
+
+	.setting-details h4 {
+		margin: 0 0 0.5rem 0;
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.setting-description {
+		margin: 0;
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+		line-height: 1.5;
+	}
+
+	.setting-control {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-shrink: 0;
+	}
+
+	.saving-indicator {
+		font-size: 0.75rem;
+		color: var(--color-text-secondary);
+		font-style: italic;
+	}
+
+	/* Toggle Switch */
+	.toggle-switch {
+		position: relative;
+		display: inline-block;
+		width: 48px;
+		height: 26px;
+	}
+
+	.toggle-switch input {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.toggle-slider {
+		position: absolute;
+		cursor: pointer;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: color-mix(in srgb, var(--color-border) 60%, transparent);
+		transition: 0.3s;
+		border-radius: 26px;
+	}
+
+	.toggle-slider::before {
+		position: absolute;
+		content: '';
+		height: 20px;
+		width: 20px;
+		left: 3px;
+		bottom: 3px;
+		background-color: white;
+		transition: 0.3s;
+		border-radius: 50%;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+	}
+
+	.toggle-switch input:checked + .toggle-slider {
+		background-color: var(--color-primary);
+	}
+
+	.toggle-switch input:checked + .toggle-slider::before {
+		transform: translateX(22px);
+	}
+
+	.toggle-switch input:disabled + .toggle-slider {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.security-content {

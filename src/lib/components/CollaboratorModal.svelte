@@ -4,9 +4,11 @@
 		SEARCH_USERS_FOR_COLLABORATION,
 		ADD_POST_COLLABORATOR,
 		GET_POST_COLLABORATORS,
-		REINVITE_COLLABORATOR
+		REINVITE_COLLABORATOR,
+		GET_MY_CONTACTS,
+		GET_MY_BLOCKS
 	} from '$lib/graphql/queries';
-	import { X, Search, UserPlus, Loader2, RefreshCw } from '@lucide/svelte';
+	import { X, Search, UserPlus, Loader2, RefreshCw, Users } from '@lucide/svelte';
 
 	interface Props {
 		postId: string;
@@ -23,6 +25,8 @@
 	let searchResults = $state<any[]>([]);
 	let existingCollaborators = $state<any[]>([]);
 	let declinedCollaborators = $state<any[]>([]);
+	let myContacts = $state<any[]>([]);
+	let blockedUserIds = $state<Set<string>>(new Set());
 	let isSearching = $state(false);
 	let isInviting = $state(false);
 	let isReinviting = $state(false);
@@ -30,10 +34,11 @@
 	let errorMessage = $state('');
 	let successMessage = $state('');
 
-	// Fetch existing collaborators when modal opens
+	// Fetch existing collaborators and contacts when modal opens
 	$effect(() => {
 		if (isOpen) {
 			loadExistingCollaborators();
+			loadContactsAndBlocks();
 			// Reset state
 			searchQuery = '';
 			searchResults = [];
@@ -41,6 +46,31 @@
 			successMessage = '';
 		}
 	});
+
+	async function loadContactsAndBlocks() {
+		const userId = nhost.auth.getUser()?.id;
+		if (!userId) return;
+
+		try {
+			// Load contacts
+			const contactsResult = await nhost.graphql.request(GET_MY_CONTACTS, { userId });
+			if (contactsResult.data?.collaboration_contact) {
+				// Extract the "other" user from each contact
+				myContacts = contactsResult.data.collaboration_contact.map((c: any) => {
+					const otherUser = c.requester_id === userId ? c.target : c.requester;
+					return { ...otherUser, isContact: true };
+				});
+			}
+
+			// Load blocked users
+			const blocksResult = await nhost.graphql.request(GET_MY_BLOCKS, { userId });
+			if (blocksResult.data?.user_block) {
+				blockedUserIds = new Set(blocksResult.data.user_block.map((b: any) => b.blocked_id));
+			}
+		} catch (error) {
+			console.error('Error loading contacts/blocks:', error);
+		}
+	}
 
 	async function loadExistingCollaborators() {
 		try {
@@ -80,7 +110,7 @@
 				errorMessage = 'Error searching for users';
 				searchResults = [];
 			} else {
-				// Filter out the post owner and existing active/pending collaborators
+				// Filter out the post owner, existing active/pending collaborators, and blocked users
 				// But DO include declined collaborators since they can be re-invited
 				const allUsers = result.data?.contributor || [];
 				const existingIds = new Set([
@@ -88,7 +118,17 @@
 					...existingCollaborators.map((c: any) => c.contributor_id)
 				]);
 
-				searchResults = allUsers.filter((user: any) => !existingIds.has(user.id));
+				// Filter and mark contacts
+				const contactIds = new Set(myContacts.map((c: any) => c.id));
+				searchResults = allUsers
+					.filter((user: any) => !existingIds.has(user.id) && !blockedUserIds.has(user.id))
+					.map((user: any) => ({ ...user, isContact: contactIds.has(user.id) }))
+					.sort((a: any, b: any) => {
+						// Contacts first
+						if (a.isContact && !b.isContact) return -1;
+						if (!a.isContact && b.isContact) return 1;
+						return 0;
+					});
 			}
 		} catch (error) {
 			errorMessage = 'Error searching for users';
@@ -269,16 +309,64 @@
 					<div class="success-message">{successMessage}</div>
 				{/if}
 
+				<!-- Your Contacts (shown when no search) -->
+				{#if !searchQuery.trim() && myContacts.length > 0}
+					{@const availableContacts = myContacts.filter(
+						(c) =>
+							c.id !== ownerId && !existingCollaborators.some((ec) => ec.contributor_id === c.id)
+					)}
+					{#if availableContacts.length > 0}
+						<div class="contacts-section">
+							<h3>
+								<Users size="16" />
+								Your Contacts
+							</h3>
+							<p class="section-description">Quickly invite from your collaboration contacts.</p>
+							<ul class="user-list">
+								{#each availableContacts as contact}
+									<li class="user-item contact">
+										<div class="user-info">
+											<div class="user-name">
+												{contact.display_name || contact.handle || 'Anonymous'}
+												<span class="contact-badge">Contact</span>
+											</div>
+											{#if contact.handle}
+												<div class="user-handle">@{contact.handle}</div>
+											{/if}
+										</div>
+										<button
+											class="invite-button"
+											onclick={() => inviteCollaborator(contact.id)}
+											disabled={isInviting}
+											aria-label="Invite {contact.display_name || contact.handle}"
+										>
+											{#if isInviting}
+												<Loader2 size="16" class="spinning" />
+											{:else}
+												<UserPlus size="16" />
+											{/if}
+											Invite
+										</button>
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+				{/if}
+
 				<!-- Search Results -->
 				{#if searchResults.length > 0}
 					<div class="search-results">
 						<h3>Search Results</h3>
 						<ul class="user-list">
 							{#each searchResults as user}
-								<li class="user-item">
+								<li class="user-item" class:contact={user.isContact}>
 									<div class="user-info">
 										<div class="user-name">
 											{user.display_name || user.handle || 'Anonymous'}
+											{#if user.isContact}
+												<span class="contact-badge">Contact</span>
+											{/if}
 										</div>
 										{#if user.handle}
 											<div class="user-handle">@{user.handle}</div>
@@ -536,6 +624,47 @@
 		background: #efe;
 		color: #3a3;
 		border: 1px solid #cfc;
+	}
+
+	.contacts-section {
+		margin-bottom: 1.5rem;
+		padding-bottom: 1.5rem;
+		border-bottom: 1px solid var(--border-color);
+	}
+
+	.contacts-section h3 {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: 0.5rem;
+	}
+
+	.contact-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.125rem 0.5rem;
+		background: color-mix(in srgb, var(--primary-color) 15%, transparent);
+		color: var(--primary-color);
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		border-radius: 9999px;
+		margin-left: 0.5rem;
+	}
+
+	.user-item.contact {
+		border-color: color-mix(in srgb, var(--primary-color) 30%, var(--border-color));
+	}
+
+	.user-item.contact:hover {
+		border-color: var(--primary-color);
+		background: color-mix(in srgb, var(--primary-color) 5%, var(--hover-bg));
 	}
 
 	.search-results {
