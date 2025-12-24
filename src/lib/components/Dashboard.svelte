@@ -4,6 +4,7 @@
 	import { nhost } from '$lib/nhostClient';
 	import { GET_DASHBOARD_DATA, GET_SAVED_ITEMS, REMOVE_SAVED_ITEM } from '$lib/graphql/queries';
 	import CollaborationInvites from './CollaborationInvites.svelte';
+	import NetworkingSection from './NetworkingSection.svelte';
 	import { BookOpen, Link2, Users } from '@lucide/svelte';
 
 	let { user } = $props<{ user: User }>();
@@ -318,6 +319,11 @@
 				<section class="card collaboration-section">
 					<CollaborationInvites onInviteResponded={loadData} />
 				</section>
+			{/if}
+
+			<!-- Networking Section - Contacts, Followers, etc. -->
+			{#if user?.id}
+				<NetworkingSection userId={user.id} />
 			{/if}
 
 			<!-- Pinned Threads, Leaderboard remain placeholders for now -->
@@ -672,20 +678,24 @@
 	}
 	@media (min-width: 1024px) {
 		.dashboard-grid {
-			grid-template-columns: repeat(3, 1fr);
+			grid-template-columns: 1fr;
+		}
+		/* When sidebar has content, use 3-column layout */
+		.dashboard-grid:has(.sidebar:not(:empty)) {
+			grid-template-columns: 1fr 300px;
 		}
 		.main-content {
-			grid-column: span 2 / span 2;
+			grid-column: 1;
 			order: 1;
 		}
-		.sidebar {
-			grid-column: span 1 / span 1;
+		.sidebar:not(:empty) {
+			grid-column: 2;
 			order: 2;
 		}
 	}
 	.main-content {
 		margin-bottom: 2rem;
-		order: 1; /* Main content first on mobile */
+		order: 1;
 	}
 	@media (min-width: 1024px) {
 		.main-content {
@@ -695,7 +705,10 @@
 	.sidebar {
 		display: flex;
 		flex-direction: column;
-		order: 2; /* Sidebar second on mobile */
+		order: 2;
+	}
+	.sidebar:empty {
+		display: none;
 	}
 
 	/* Editorial Cards */
@@ -1005,8 +1018,20 @@
 	/* Editorial-Style Drafts List (Foreign Affairs inspired) */
 	.drafts-list {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+		grid-template-columns: 1fr;
 		gap: 1.5rem;
+	}
+
+	@media (min-width: 640px) {
+		.drafts-list {
+			grid-template-columns: repeat(2, 1fr);
+		}
+	}
+
+	@media (min-width: 1200px) {
+		.drafts-list {
+			grid-template-columns: repeat(3, 1fr);
+		}
 	}
 
 	.draft-item {

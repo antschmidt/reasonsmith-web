@@ -755,12 +755,12 @@
 							</div>
 							<div class="context-comment-list">
 								{#each discussionPosts as post}
-									<label class="context-comment-item">
-										<input
-											type="checkbox"
-											checked={selectedContextCommentIds.includes(post.id)}
-											onchange={() => toggleContextComment(post.id)}
-										/>
+									<button
+										type="button"
+										class="context-comment-item"
+										class:selected={selectedContextCommentIds.includes(post.id)}
+										onclick={() => toggleContextComment(post.id)}
+									>
 										<div class="comment-preview">
 											<div class="comment-meta">
 												<span class="comment-author">
@@ -778,7 +778,7 @@
 												{truncateContent(post.content)}
 											</div>
 										</div>
-									</label>
+									</button>
 								{/each}
 							</div>
 						</div>
@@ -858,7 +858,7 @@
 				{#if heuristicScore < 50}
 					{@const assessment = assessContentQuality(comment)}
 					<div class="heuristic-quality-indicator">
-						<h5>Comment Quality: {heuristicScore}% (50% required)</h5>
+						<h5>Minimum Criteria: {heuristicScore}% (50% required)</h5>
 						<div class="quality-progress">
 							<div class="quality-bar" style="width: {heuristicScore}%"></div>
 						</div>
@@ -870,12 +870,12 @@
 							</ul>
 						{/if}
 						<p class="quality-note">
-							Good faith analysis and publishing are disabled until 50% quality threshold is met.
+							Good faith analysis and publishing are disabled until minimum criteria are met.
 						</p>
 					</div>
 				{:else if heuristicScore > 0}
 					<div class="heuristic-quality-indicator passed">
-						<h5>✅ Comment Quality: {heuristicScore}% - Ready for analysis and publishing</h5>
+						<h5>✅ Minimum Criteria Met ({heuristicScore}%) - Ready for analysis and publishing</h5>
 						<div class="quality-progress">
 							<div class="quality-bar passed" style="width: {heuristicScore}%"></div>
 						</div>
@@ -1417,25 +1417,32 @@
 	}
 
 	.context-comment-item {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.75rem;
-		padding: 0.75rem;
+		display: block;
+		width: 100%;
+		text-align: left;
+		padding: 0.75rem 1rem;
 		border: 1px solid var(--color-border);
-		border-radius: var(--border-radius-sm);
+		border-radius: var(--border-radius-md);
 		cursor: pointer;
-		transition: all 0.2s;
+		transition: all 0.2s ease;
 		background: var(--color-surface);
+		font-family: inherit;
+		font-size: inherit;
 	}
 
 	.context-comment-item:hover {
-		background: var(--color-surface-alt);
-		border-color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
+		border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
 	}
 
-	.context-comment-item input[type='checkbox'] {
-		margin-top: 0.25rem;
-		cursor: pointer;
+	.context-comment-item.selected {
+		background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+	}
+
+	.context-comment-item.selected:hover {
+		background: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
 	}
 
 	.comment-preview {

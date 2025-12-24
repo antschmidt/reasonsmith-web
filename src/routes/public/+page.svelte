@@ -677,6 +677,9 @@
 			<aside class="list-panel">
 				<div class="panel-header">
 					<h2>Existing Entries</h2>
+					<button type="button" class="btn-secondary" onclick={openCreateForm}>
+						Create Showcase Item
+					</button>
 				</div>
 				{#if loading}
 					<p>Loading showcase items…</p>
@@ -687,15 +690,17 @@
 				{:else}
 					<p class="drag-hint">Drag items to reorder</p>
 					<ul class="item-list">
-						{#each items as item, index}
+						{#each [...items].reverse() as item, revIndex}
+							{@const originalIndex = items.length - 1 - revIndex}
 							<li
 								class:inactive={!item.published}
-								class:dragging={draggedIndex === index}
+								class:dragging={draggedIndex === originalIndex}
 								draggable="true"
-								ondragstart={() => handleDragStart(index)}
-								ondragover={(e) => handleDragOver(e, index)}
+								ondragstart={() => handleDragStart(originalIndex)}
+								ondragover={(e) => handleDragOver(e, originalIndex)}
 								ondragend={handleDragEnd}
 							>
+								<div class="item-number">{revIndex + 1}</div>
 								<div class="drag-handle" aria-label="Drag to reorder">
 									<svg viewBox="0 0 24 24" fill="currentColor">
 										<path
@@ -728,11 +733,6 @@
 						{/each}
 					</ul>
 				{/if}
-				<div class="create-button-container">
-					<button type="button" class="btn-primary" onclick={openCreateForm}>
-						Create Showcase Item
-					</button>
-				</div>
 				{#if success && !showForm}<p class="success">{success}</p>{/if}
 			</aside>
 
@@ -1057,8 +1057,8 @@
 		align-items: center;
 	}
 	.content {
-		display: grid;
-		grid-template-columns: minmax(280px, 350px) 1fr;
+		display: flex;
+		flex-direction: column;
 		gap: 2rem;
 	}
 	.list-panel {
@@ -1102,6 +1102,13 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
+	@media (min-width: 768px) {
+		.item-list {
+			flex-direction: row;
+			flex-wrap: wrap;
+			gap: 1rem;
+		}
+	}
 	.item-list li {
 		display: flex;
 		align-items: stretch;
@@ -1111,6 +1118,12 @@
 		background: color-mix(in srgb, var(--color-surface-alt) 40%, transparent);
 		backdrop-filter: blur(10px);
 		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+	@media (min-width: 768px) {
+		.item-list li {
+			flex: 1 1 280px;
+			max-width: 400px;
+		}
 	}
 	.item-list li:hover {
 		transform: translateY(-2px);
@@ -1124,6 +1137,18 @@
 		opacity: 0.5;
 		background: color-mix(in srgb, var(--color-primary) 15%, transparent);
 		border-color: var(--color-primary);
+	}
+	.item-number {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 2rem;
+		padding: 0 0.5rem;
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+		border-right: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 	}
 	.drag-handle {
 		display: flex;
@@ -1667,10 +1692,5 @@
 		border: 1px solid var(--color-border);
 		border-radius: var(--border-radius-md);
 		background: var(--color-surface);
-	}
-	@media (max-width: 900px) {
-		.content {
-			grid-template-columns: 1fr;
-		}
 	}
 </style>

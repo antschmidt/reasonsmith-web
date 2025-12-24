@@ -4,6 +4,9 @@
 	import { onMount } from 'svelte';
 	import { GET_USER_STATS } from '$lib/graphql/queries';
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
+	import FollowButton from '$lib/components/FollowButton.svelte';
+	import AddContactButton from '$lib/components/AddContactButton.svelte';
+	import BlockUserModal from '$lib/components/BlockUserModal.svelte';
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -11,6 +14,8 @@
 	let contributor = $state<any>(null);
 	let discussions = $state<any[]>([]);
 	let posts = $state<any[]>([]);
+	let currentUserId = $state<string | null>(null);
+	let showBlockModal = $state(false);
 	let stats = $state<UserStats>({
 		goodFaithRate: 0,
 		sourceAccuracy: 0,
@@ -183,7 +188,9 @@
 		error = null;
 		try {
 			// Check if user is authenticated
-			const isAuthenticated = !!nhost.auth.getUser();
+			const currentUser = nhost.auth.getUser();
+			const isAuthenticated = !!currentUser;
+			currentUserId = currentUser?.id || null;
 
 			if (!isAuthenticated) {
 				// Redirect to login page if not authenticated
@@ -270,6 +277,19 @@
 				</div>
 				<div class="profile-info">
 					<h1>{displayName(contributor.display_name)}</h1>
+					{#if currentUserId && contributor.id !== currentUserId}
+						<div class="profile-actions">
+							<FollowButton targetUserId={contributor.id} {currentUserId} />
+							<AddContactButton targetUserId={contributor.id} {currentUserId} />
+							<button
+								class="block-button"
+								onclick={() => (showBlockModal = true)}
+								aria-label="Block settings"
+							>
+								Block
+							</button>
+						</div>
+					{/if}
 					<div class="stats-container">
 						<div class="stat-item">
 							<h3 class="stat-title">Good-Faith Rate</h3>
@@ -390,6 +410,15 @@
 	{/if}
 </div>
 
+{#if contributor && currentUserId && contributor.id !== currentUserId}
+	<BlockUserModal
+		isOpen={showBlockModal}
+		targetUserId={contributor.id}
+		targetDisplayName={displayName(contributor.display_name)}
+		onClose={() => (showBlockModal = false)}
+	/>
+{/if}
+
 <style>
 	.profile-public-container {
 		max-width: 900px;
@@ -435,6 +464,34 @@
 	.profile-info {
 		flex: 1;
 		min-width: 0;
+	}
+
+	.profile-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin: 0.75rem 0;
+	}
+
+	.block-button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.5rem 0.875rem;
+		background: transparent;
+		color: var(--color-text-secondary);
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-sm, 4px);
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.block-button:hover {
+		background: color-mix(in srgb, var(--color-accent, #c33) 10%, transparent);
+		border-color: var(--color-accent, #c33);
+		color: var(--color-accent, #c33);
 	}
 
 	.profile-header h1 {
