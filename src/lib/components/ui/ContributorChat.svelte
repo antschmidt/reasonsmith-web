@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { getNotificationMessage, type Notification } from '$lib/utils/notificationHelpers';
+	import {
+		getNotificationMessage,
+		isSocialNotification,
+		type Notification
+	} from '$lib/utils/notificationHelpers';
 	import { nhost } from '$lib/nhostClient';
 	import {
 		GET_NOTIFICATIONS,
@@ -517,11 +521,17 @@
 		// navigate to home instead of the discussion
 		if (isActionableNotification(notification)) {
 			await goto('/');
-		} else {
+		} else if (isSocialNotification(notification.type)) {
+			// Social notifications (follow, contact) don't have a discussion - go to home
+			await goto('/');
+		} else if (notification.discussion_id) {
 			const url = `/discussions/${notification.discussion_id}${
 				notification.post_id ? `#post-${notification.post_id}` : ''
 			}`;
 			await goto(url);
+		} else {
+			// Fallback to home if no discussion
+			await goto('/');
 		}
 	}
 

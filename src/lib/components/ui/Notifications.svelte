@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { getNotificationMessage, type Notification } from '$lib/utils/notificationHelpers';
+	import {
+		getNotificationMessage,
+		isSocialNotification,
+		type Notification
+	} from '$lib/utils/notificationHelpers';
 	import { nhost } from '$lib/nhostClient';
 	import {
 		GET_NOTIFICATIONS,
@@ -220,15 +224,29 @@
 			return;
 		}
 
-		// For regular notifications, navigate to the discussion
+		// Mark as read
 		if (!notification.read) {
 			markAsRead(notification.id);
 		}
-		// Navigate to the discussion using SvelteKit navigation
-		const url = `/discussions/${notification.discussion_id}${
-			notification.post_id ? `#post-${notification.post_id}` : ''
-		}`;
-		await goto(url);
+
+		// Handle social/networking notifications - navigate to home (dashboard)
+		if (isSocialNotification(notification.type)) {
+			// For follow/contact notifications, go to the home dashboard
+			await goto('/');
+			return;
+		}
+
+		// For regular notifications, navigate to the discussion
+		// Only navigate if we have a valid discussion_id
+		if (notification.discussion_id) {
+			const url = `/discussions/${notification.discussion_id}${
+				notification.post_id ? `#post-${notification.post_id}` : ''
+			}`;
+			await goto(url);
+		} else {
+			// Fallback to home if no discussion
+			await goto('/');
+		}
 	}
 
 	function closeEditControlRequestModal() {

@@ -29,6 +29,7 @@ const CONTRIBUTOR_FIELDS = gql`
 		positions_changed_count
 		clarifying_questions_count
 		minds_opened_count
+		interests
 	}
 `;
 
@@ -3926,6 +3927,26 @@ export const UPDATE_FOLLOW_SETTINGS = gql`
 		) {
 			id
 			require_follow_approval
+		}
+	}
+`;
+
+export const UPDATE_CONTRIBUTOR_INTERESTS = gql`
+	mutation UpdateContributorInterests($userId: uuid!, $interests: _text!) {
+		update_contributor_by_pk(pk_columns: { id: $userId }, _set: { interests: $interests }) {
+			id
+			interests
+		}
+	}
+`;
+
+export const GET_ALL_TAGS = gql`
+	query GetAllTags {
+		discussion_version(
+			where: { version_type: { _eq: "published" }, tags: { _is_null: false } }
+			distinct_on: []
+		) {
+			tags
 		}
 	}
 `;

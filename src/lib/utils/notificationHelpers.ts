@@ -8,7 +8,7 @@
 export type Notification = {
 	id: string;
 	type: string;
-	discussion_id: string;
+	discussion_id: string | null;
 	post_id: string | null;
 	actor_id: string | null;
 	read: boolean;
@@ -16,13 +16,13 @@ export type Notification = {
 	metadata?: any;
 	discussion?: {
 		discussion_versions?: Array<{ title: string }>;
-	};
+	} | null;
 	post?: {
 		content: string;
 		post_collaborators?: Array<{
 			id: string;
 		}>;
-	};
+	} | null;
 };
 
 /**
@@ -69,6 +69,22 @@ export function getNotificationMessage(notification: Notification, userId?: stri
 		case 'editors_desk_rejected':
 			return `Your discussion "${discussionTitle}" was not selected for featuring`;
 
+		// Follow/Contact notifications
+		case 'new_follower':
+			return `${notification.metadata?.follower_name || 'Someone'} started following you`;
+
+		case 'follow_request':
+			return `${notification.metadata?.follower_name || 'Someone'} requested to follow you`;
+
+		case 'follow_request_approved':
+			return `Your follow request was approved`;
+
+		case 'collaboration_contact_request':
+			return `${notification.metadata?.requester_name || 'Someone'} wants to add you as a contact`;
+
+		case 'collaboration_contact_accepted':
+			return `${notification.metadata?.target_name || 'Someone'} accepted your contact request`;
+
 		default:
 			return `New activity on "${discussionTitle}"`;
 	}
@@ -99,9 +115,36 @@ export function getNotificationTypeLabel(type: string): string {
 			return 'Featured';
 		case 'editors_desk_rejected':
 			return 'Not Featured';
+		case 'new_follower':
+			return 'New Follower';
+		case 'follow_request':
+			return 'Follow Request';
+		case 'follow_request_approved':
+			return 'Approved';
+		case 'collaboration_contact_request':
+			return 'Contact Request';
+		case 'collaboration_contact_accepted':
+			return 'Contact Added';
 		default:
 			return 'Activity';
 	}
+}
+
+/**
+ * Checks if a notification is a social/networking type that doesn't link to a discussion
+ *
+ * @param type - The notification type
+ * @returns true if the notification is a social type
+ */
+export function isSocialNotification(type: string): boolean {
+	const socialTypes = [
+		'new_follower',
+		'follow_request',
+		'follow_request_approved',
+		'collaboration_contact_request',
+		'collaboration_contact_accepted'
+	];
+	return socialTypes.includes(type);
 }
 
 /**
