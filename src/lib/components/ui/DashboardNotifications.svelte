@@ -19,7 +19,11 @@
 	import { goto } from '$app/navigation';
 	import CollaborationChatList from './CollaborationChatList.svelte';
 	import CollaborationChatThread from './CollaborationChatThread.svelte';
-	import { getNotificationMessage, type Notification } from '$lib/utils/notificationHelpers';
+	import {
+		getNotificationMessage,
+		isSocialNotification,
+		type Notification
+	} from '$lib/utils/notificationHelpers';
 
 	let { userId } = $props<{ userId: string }>();
 
@@ -244,12 +248,17 @@
 
 		if (isActionableNotification(notification)) {
 			await goto('/');
-		} else {
+		} else if (isSocialNotification(notification.type)) {
+			// Social notifications don't have a discussion - go to home dashboard
+			await goto('/');
+			return;
+		} else if (notification.discussion_id) {
 			const url = `/discussions/${notification.discussion_id}${
 				notification.post_id ? `#post-${notification.post_id}` : ''
 			}`;
 			await goto(url);
 		}
+		// If no discussion_id, just mark as read and stay on dashboard
 	}
 
 	async function handleApproveEditControl(notification: Notification, event: Event) {

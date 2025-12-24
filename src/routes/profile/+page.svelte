@@ -9,7 +9,9 @@
 		SEARCH_CONTRIBUTORS,
 		ADD_PURCHASED_CREDITS,
 		SET_PURCHASED_CREDITS,
-		UPDATE_FOLLOW_SETTINGS
+		UPDATE_FOLLOW_SETTINGS,
+		UPDATE_CONTRIBUTOR_INTERESTS,
+		GET_ALL_TAGS
 	} from '$lib/graphql/queries';
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
 	import { env as publicEnv } from '$env/dynamic/public';
@@ -163,6 +165,15 @@
 	let savingFollowSettings = $state(false);
 	let followSettingsError = $state<string | null>(null);
 	let followSettingsSuccess = $state<string | null>(null);
+
+	// Interests state
+	let allTags = $state<string[]>([]);
+	let userInterests = $state<string[]>([]);
+	let selectedInterests = $state<string[]>([]);
+	let savingInterests = $state(false);
+	let interestsError = $state<string | null>(null);
+	let interestsSuccess = $state<string | null>(null);
+	let interestsLoading = $state(false);
 
 	// Credit management state (admin only)
 	let creditSearchTerm = '';
@@ -403,6 +414,7 @@
 		await loadProfile();
 		await loadSecurityKeys();
 		await loadSecurityKeys();
+		await fetchAllTags();
 	});
 
 	const profilePath = $derived(handle ? `/u/${handle}` : user ? `/u/${user.id}` : '');
@@ -437,6 +449,9 @@
 			bio = contributor.bio || '';
 			website = contributor.website || '';
 			requireFollowApproval = contributor.require_follow_approval || false;
+			// Load user interests
+			userInterests = contributor.interests || [];
+			selectedInterests = [...userInterests];
 			const links = contributor.social_links || {};
 			for (const key of Object.keys(social)) {
 				social[key] = links[key] || '';
@@ -1469,6 +1484,65 @@
 			savingFollowSettings = false;
 		}
 	}
+
+	// Interests functions
+	async function fetchAllTags() {
+		interestsLoading = true;
+		try {
+			const { data, error: gqlError } = await nhost.graphql.request(GET_ALL_TAGS);
+			if (gqlError) throw gqlError;
+			const tagArrays = ((data as any)?.discussion_version ?? []).map((dv: any) => dv.tags ?? []);
+			const flatTags = tagArrays.flat();
+			allTags = [...new Set(flatTags)].sort();
+		} catch (e) {
+			allTags = [];
+		} finally {
+			interestsLoading = false;
+		}
+	}
+
+	function toggleInterest(tag: string) {
+		if (selectedInterests.includes(tag)) {
+			selectedInterests = selectedInterests.filter((t) => t !== tag);
+		} else {
+			selectedInterests = [...selectedInterests, tag];
+		}
+	}
+
+	async function saveInterests() {
+		if (!user || !contributor) return;
+
+		savingInterests = true;
+		interestsError = null;
+		interestsSuccess = null;
+
+		try {
+			const { error: gqlError } = await nhost.graphql.request(UPDATE_CONTRIBUTOR_INTERESTS, {
+				userId: contributor.id,
+				interests: `{${selectedInterests.join(',')}}`
+			});
+
+			if (gqlError) {
+				throw new Error(
+					Array.isArray(gqlError)
+						? gqlError.map((e: any) => e.message).join('; ')
+						: gqlError.message || 'Failed to save interests'
+				);
+			}
+
+			userInterests = [...selectedInterests];
+			interestsSuccess = 'Your interests have been saved.';
+
+			setTimeout(() => {
+				interestsSuccess = null;
+			}, 3000);
+		} catch (err: any) {
+			console.error('Error saving interests:', err);
+			interestsError = err?.message || 'Failed to save interests';
+		} finally {
+			savingInterests = false;
+		}
+	}
 </script>
 
 <div class="editorial-profile-page {editing ? 'editing' : ''}">
@@ -2476,6 +2550,62 @@
 								>Dashboard</a
 							>.
 						</p>
+					</div>
+				</div>
+
+				<!-- Interests Section -->
+				<div class="profile-card collaboration-settings">
+					<h3 class="section-title">Your Interests</h3>
+					<p class="section-description">
+						Select topics you're interested in to personalize your discussions feed.
+					</p>
+
+					<div class="interests-section">
+						{#if interestsLoading}
+							<p class="interests-loading">Loading available topics...</p>
+						{:else if allTags.length > 0}
+							<div class="interests-tags">
+								{#each allTags as tag}
+									<button
+										class="interest-tag"
+										class:selected={selectedInterests.includes(tag)}
+										onclick={() => toggleInterest(tag)}
+									>
+										{tag}
+									</button>
+								{/each}
+							</div>
+
+							<div class="interests-actions">
+								{#if selectedInterests.length > 0 && selectedInterests.join(',') !== userInterests.join(',')}
+									<button
+										class="save-interests-button"
+										onclick={saveInterests}
+										disabled={savingInterests}
+									>
+										{savingInterests ? 'Saving...' : 'Save Interests'}
+									</button>
+								{/if}
+								{#if selectedInterests.length > 0}
+									<span class="interests-count"
+										>{selectedInterests.length} topic{selectedInterests.length !== 1 ? 's' : ''} selected</span
+									>
+								{/if}
+							</div>
+
+							{#if interestsError}
+								<div class="error-message">{interestsError}</div>
+							{/if}
+
+							{#if interestsSuccess}
+								<div class="success-message">{interestsSuccess}</div>
+							{/if}
+						{:else}
+							<p class="interests-empty">
+								No topics available yet. Topics will appear here as discussions are published with
+								tags.
+							</p>
+						{/if}
 					</div>
 				</div>
 
@@ -4722,5 +4852,78 @@
 		justify-content: center;
 		color: var(--color-primary);
 		flex-shrink: 0;
+	}
+
+	/* Interests section styles */
+	.interests-section {
+		margin-top: 1rem;
+	}
+
+	.interests-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	.interest-tag {
+		background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+		color: var(--color-text-secondary);
+		padding: 0.5rem 1rem;
+		border-radius: var(--border-radius-lg);
+		font-size: 0.9rem;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.interest-tag:hover {
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+	}
+
+	.interest-tag.selected {
+		background: var(--color-primary);
+		border-color: var(--color-primary);
+		color: white;
+	}
+
+	.interests-actions {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		margin-top: 1rem;
+	}
+
+	.save-interests-button {
+		background: var(--color-primary);
+		color: white;
+		border: none;
+		padding: 0.6rem 1.25rem;
+		border-radius: var(--border-radius-lg);
+		font-size: 0.9rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.save-interests-button:hover:not(:disabled) {
+		opacity: 0.9;
+		transform: translateY(-1px);
+	}
+
+	.save-interests-button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.interests-count {
+		color: var(--color-text-secondary);
+		font-size: 0.875rem;
+	}
+
+	.interests-loading,
+	.interests-empty {
+		color: var(--color-text-secondary);
+		font-size: 0.9rem;
 	}
 </style>

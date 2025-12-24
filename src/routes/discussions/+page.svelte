@@ -15,7 +15,9 @@
 		GET_EDITORS_DESK_PICKS,
 		GET_CONTRIBUTOR,
 		DELETE_EDITORS_DESK_PICK,
-		GET_MY_FOLLOWING
+		GET_MY_FOLLOWING,
+		GET_ALL_TAGS,
+		UPDATE_CONTRIBUTOR_INTERESTS
 	} from '$lib/graphql/queries';
 	import { canCurateEditorsDesk } from '$lib/utils/editorsDeskUtils';
 	import type { PageData } from './$types';
@@ -29,10 +31,18 @@
 	let selectedTags = $state<string[]>([]);
 	let showTagFilter = $state(false);
 
-	// Following filter
-	let showFollowingOnly = $state(false);
+	// Filter mode: 'all' | 'following' | 'interests'
+	type FilterMode = 'all' | 'following' | 'interests';
+	let filterMode = $state<FilterMode>('all');
 	let followingIds = $state<string[]>([]);
 	let followingLoaded = $state(false);
+
+	// Interests filter
+	let userInterests = $state<string[]>([]);
+	let allTags = $state<string[]>([]);
+	let selectedInterests = $state<string[]>([]);
+	let interestsLoaded = $state(false);
+	let savingInterests = $state(false);
 	type DiscussionSummary = {
 		id: string;
 		created_at: string;
@@ -201,7 +211,7 @@
 			let data: any;
 			let gqlError: any;
 
-			if (showFollowingOnly && followingIds.length > 0) {
+			if (filterMode === 'following' && followingIds.length > 0) {
 				// Fetch discussions from followed users
 				const result = await nhost.graphql.request(LIST_DISCUSSIONS_FROM_FOLLOWING, {
 					authorIds: followingIds,
@@ -210,12 +220,31 @@
 				});
 				data = result.data;
 				gqlError = result.error;
-			} else if (showFollowingOnly && followingIds.length === 0) {
+			} else if (filterMode === 'following' && followingIds.length === 0) {
 				// User is not following anyone - return empty
 				discussions = [];
 				hasMoreDiscussions = false;
 				loading = false;
 				return;
+			} else if (filterMode === 'interests') {
+				// Get the tags to filter by (saved interests or manually selected)
+				const tagsToFilter = selectedInterests.length > 0 ? selectedInterests : userInterests;
+				if (tagsToFilter.length === 0) {
+					// No interests selected - show empty state
+					discussions = [];
+					hasMoreDiscussions = false;
+					loading = false;
+					return;
+				}
+				// Use tag search for interests
+				const result = await nhost.graphql.request(SEARCH_DISCUSSIONS_BY_TAGS, {
+					tags: tagsToFilter,
+					limit: PAGE_SIZE
+				});
+				data = result.data;
+				gqlError = result.error;
+				// Tag search doesn't support pagination well, so disable load more
+				hasMoreDiscussions = false;
 			} else {
 				// Fetch all published discussions
 				const result = await nhost.graphql.request(LIST_PUBLISHED_DISCUSSIONS, {
@@ -342,12 +371,61 @@
 		fetchEditorsDeskPicks();
 	}
 
-	async function toggleFollowingFilter(following: boolean) {
-		showFollowingOnly = following;
-		if (following && !followingLoaded) {
+	async function setFilterMode(mode: FilterMode) {
+		filterMode = mode;
+		if (mode === 'following' && !followingLoaded) {
 			await fetchFollowingIds();
 		}
+		if (mode === 'interests' && !interestsLoaded) {
+			await fetchAllTags();
+		}
 		await fetchAll(true);
+	}
+
+	async function fetchAllTags() {
+		try {
+			const { data, error: gqlError } = await nhost.graphql.request(GET_ALL_TAGS);
+			if (gqlError) throw gqlError;
+			// Flatten and dedupe tags from all discussions
+			const tagArrays = ((data as any)?.discussion_version ?? []).map((dv: any) => dv.tags ?? []);
+			const flatTags = tagArrays.flat();
+			allTags = [...new Set(flatTags)].sort();
+			interestsLoaded = true;
+		} catch (e) {
+			allTags = [];
+			interestsLoaded = true;
+		}
+	}
+
+	function toggleInterest(tag: string) {
+		if (selectedInterests.includes(tag)) {
+			selectedInterests = selectedInterests.filter((t) => t !== tag);
+		} else {
+			selectedInterests = [...selectedInterests, tag];
+		}
+		// Re-fetch with new selection
+		fetchAll(true);
+	}
+
+	async function saveInterests() {
+		if (!user?.id || selectedInterests.length === 0) return;
+		savingInterests = true;
+		try {
+			const { error: gqlError } = await nhost.graphql.request(UPDATE_CONTRIBUTOR_INTERESTS, {
+				userId: user.id,
+				interests: `{${selectedInterests.join(',')}}`
+			});
+			if (gqlError) throw gqlError;
+			userInterests = [...selectedInterests];
+			// Update contributor data
+			if (contributor) {
+				contributor = { ...contributor, interests: selectedInterests };
+			}
+		} catch (e: any) {
+			console.error('Failed to save interests:', e);
+		} finally {
+			savingInterests = false;
+		}
 	}
 
 	onMount(async () => {
@@ -355,9 +433,14 @@
 		await fetchAll(true);
 		await fetchEditorsDeskPicks();
 		await fetchContributor();
-		// Pre-fetch following IDs for logged-in users
+		// Pre-fetch following IDs and interests for logged-in users
 		if (user?.id) {
 			await fetchFollowingIds();
+			// Load user's saved interests from contributor data
+			if (contributor?.interests) {
+				userInterests = contributor.interests;
+				selectedInterests = [...contributor.interests];
+			}
 		}
 	});
 
@@ -491,24 +574,63 @@
 					<div class="filter-toggle">
 						<button
 							class="filter-button"
-							class:active={!showFollowingOnly}
-							onclick={() => toggleFollowingFilter(false)}
+							class:active={filterMode === 'all'}
+							onclick={() => setFilterMode('all')}
 						>
 							All
 						</button>
 						<button
 							class="filter-button"
-							class:active={showFollowingOnly}
-							onclick={() => toggleFollowingFilter(true)}
-							disabled={!followingLoaded && showFollowingOnly}
+							class:active={filterMode === 'following'}
+							onclick={() => setFilterMode('following')}
 						>
 							Following
 							{#if followingIds.length > 0}
 								<span class="filter-count">({followingIds.length})</span>
 							{/if}
 						</button>
+						<button
+							class="filter-button"
+							class:active={filterMode === 'interests'}
+							onclick={() => setFilterMode('interests')}
+						>
+							Interests
+							{#if userInterests.length > 0}
+								<span class="filter-count">({userInterests.length})</span>
+							{/if}
+						</button>
 					</div>
 				</div>
+				{#if filterMode === 'interests'}
+					<div class="interests-picker">
+						{#if allTags.length > 0}
+							<div class="interests-tags">
+								{#each allTags as tag}
+									<button
+										class="interest-tag"
+										class:selected={selectedInterests.includes(tag)}
+										onclick={() => toggleInterest(tag)}
+									>
+										{tag}
+									</button>
+								{/each}
+							</div>
+							{#if selectedInterests.length > 0 && selectedInterests.join(',') !== userInterests.join(',')}
+								<button
+									class="save-interests-button"
+									onclick={saveInterests}
+									disabled={savingInterests}
+								>
+									{savingInterests ? 'Saving...' : 'Save as my interests'}
+								</button>
+							{/if}
+						{:else if interestsLoaded}
+							<p class="interests-empty">No topics available yet.</p>
+						{:else}
+							<p class="interests-loading">Loading topics...</p>
+						{/if}
+					</div>
+				{/if}
 			{/if}
 		</section>
 	</header>
@@ -623,12 +745,16 @@
 				{/if}
 			{:else if q.trim().length > 0 && !loading}
 				<p class="empty-state">No discussions match your search.</p>
-			{:else if showFollowingOnly && followingIds.length === 0 && !loading}
+			{:else if filterMode === 'following' && followingIds.length === 0 && !loading}
 				<p class="empty-state">
 					You're not following anyone yet. Follow users to see their discussions here.
 				</p>
-			{:else if showFollowingOnly && !loading}
+			{:else if filterMode === 'following' && !loading}
 				<p class="empty-state">No discussions from people you follow yet.</p>
+			{:else if filterMode === 'interests' && selectedInterests.length === 0 && !loading}
+				<p class="empty-state">Select topics above to see matching discussions.</p>
+			{:else if filterMode === 'interests' && !loading}
+				<p class="empty-state">No discussions match your selected interests.</p>
 			{:else if !loading}
 				<p class="empty-state">No discussions yet.</p>
 			{/if}
@@ -796,6 +922,70 @@
 	.filter-count {
 		font-size: 0.75rem;
 		opacity: 0.8;
+	}
+
+	.interests-picker {
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+	}
+
+	.interests-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	.interest-tag {
+		background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+		color: var(--color-text-secondary);
+		padding: 0.4rem 0.75rem;
+		border-radius: var(--border-radius-lg);
+		font-size: 0.85rem;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.interest-tag:hover {
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+	}
+
+	.interest-tag.selected {
+		background: var(--color-primary);
+		border-color: var(--color-primary);
+		color: white;
+	}
+
+	.save-interests-button {
+		margin-top: 1rem;
+		background: var(--color-primary);
+		color: white;
+		border: none;
+		padding: 0.5rem 1rem;
+		border-radius: var(--border-radius-lg);
+		font-size: 0.85rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.save-interests-button:hover:not(:disabled) {
+		opacity: 0.9;
+		transform: translateY(-1px);
+	}
+
+	.save-interests-button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.interests-empty,
+	.interests-loading {
+		color: var(--color-text-secondary);
+		font-size: 0.9rem;
+		margin: 0;
 	}
 
 	.analysis-section {
