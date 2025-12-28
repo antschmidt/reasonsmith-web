@@ -1,6 +1,6 @@
 // ============================================
-// GraphQL Queries & Mutations
-// This file re-exports from the modular structure for backward compatibility
+// GraphQL Module Index
+// Re-exports all fragments, queries, and mutations for backward compatibility
 // ============================================
 
 // Re-export all fragments
@@ -22,4 +22,4 @@ export {
 } from './fragments';
 
 // Re-export all queries and mutations
-export * from './queries/index';
+export * from './queries';
