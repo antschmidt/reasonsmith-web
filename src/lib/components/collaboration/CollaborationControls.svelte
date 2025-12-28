@@ -1,9 +1,15 @@
 <script lang="ts">
 	import { Users, Lock, LockOpen, AlertCircle, Shield, Calendar } from '@lucide/svelte';
-	import Button from './ui/Button.svelte';
+	import Button from '../ui/Button.svelte';
 	import CollaboratorContextMenu from './CollaboratorContextMenu.svelte';
+	import EventModal from '../EventModal.svelte';
+	import EventCard from '../EventCard.svelte';
 	import { nhost } from '$lib/nhostClient';
-	import { CREATE_EDIT_CONTROL_REQUEST, CREATE_ROLE_UPGRADE_REQUEST } from '$lib/graphql/queries';
+	import {
+		CREATE_EDIT_CONTROL_REQUEST,
+		CREATE_ROLE_UPGRADE_REQUEST,
+		GET_POST_EVENTS
+	} from '$lib/graphql/queries';
 
 	type Collaborator = {
 		id: string;
@@ -33,6 +39,7 @@
 	let {
 		lockStatus,
 		currentUserId,
+		contributorId,
 		isAuthor,
 		postId,
 		discussionId,
@@ -45,6 +52,7 @@
 	} = $props<{
 		lockStatus: EditLockStatus;
 		currentUserId: string;
+		contributorId: string;
 		isAuthor: boolean;
 		postId: string;
 		discussionId: string | null | undefined;
@@ -58,9 +66,17 @@
 
 	let selectedCollaborator = $state<PostCollaborator | null>(null);
 	let showContextMenu = $state(false);
+	let showEventModal = $state(false);
 	let requestFeedback = $state<string | null>(null);
 	let isRequestingControl = $state(false);
 	let isRequestingRoleUpgrade = $state(false);
+
+	// Event list state
+	let events = $state<any[]>([]);
+	let isLoadingEvents = $state(true);
+	let eventsError = $state<string | null>(null);
+	let isBrowser = $state(false);
+	let isEventsExpanded = $state(false);
 
 	// Get current user's role
 	const currentUserRole = $derived(
@@ -264,6 +280,38 @@
 		if (diffHours === 1) return '1 hour ago';
 		return `${diffHours} hours ago`;
 	}
+
+	// Initialize browser state and load events only on client
+	$effect(() => {
+		isBrowser = typeof window !== 'undefined';
+		if (isBrowser) {
+			loadEvents();
+		}
+	});
+
+	async function loadEvents() {
+		isLoadingEvents = true;
+		eventsError = null;
+		try {
+			const now = new Date().toISOString();
+			const result = await nhost.graphql.request(GET_POST_EVENTS, { postId, now });
+			if (result.error) {
+				console.error('[CollaborationControls] Error loading events:', result.error);
+				eventsError = 'Failed to load events';
+			} else {
+				events = result.data?.event || [];
+			}
+		} catch (err) {
+			console.error('[CollaborationControls] Exception loading events:', err);
+			eventsError = 'Failed to load events';
+		} finally {
+			isLoadingEvents = false;
+		}
+	}
+
+	function onEventCreated() {
+		loadEvents();
+	}
 </script>
 
 <div class="collaboration-controls">
@@ -332,6 +380,20 @@
 				<Shield size={16} />
 				Request Edit Role
 			</Button>
+		{/if}
+		{#if lockStatus.collaboration_enabled && (isAuthor || currentUserRole === 'editor' || currentUserRole === 'co-author')}
+			<Button variant="secondary" size="sm" onclick={() => (showEventModal = true)}>
+				<Calendar size={16} />
+				Add Event
+			</Button>
+		{/if}
+
+		{#if isBrowser && !isLoadingEvents && !eventsError && events.length > 0}
+			<button class="events-toggle" onclick={() => (isEventsExpanded = !isEventsExpanded)}>
+				<span class="toggle-icon" class:expanded={isEventsExpanded}>▶</span>
+				<Calendar size={16} />
+				<span>Upcoming Events ({events.length})</span>
+			</button>
 		{/if}
 
 		{#if requestFeedback}
@@ -407,6 +469,15 @@
 			</div>
 		</div>
 	{/if}
+
+	<!-- Expanded Events List -->
+	{#if isEventsExpanded && events.length > 0}
+		<div class="events-list">
+			{#each events as event (event.id)}
+				<EventCard {event} {currentUserId} onDeleted={loadEvents} />
+			{/each}
+		</div>
+	{/if}
 </div>
 
 {#if selectedCollaborator && showContextMenu}
@@ -422,6 +493,19 @@
 		{onUpdate}
 	/>
 {/if}
+
+<EventModal
+	{postId}
+	{contributorId}
+	{discussionTitle}
+	isOpen={showEventModal}
+	onClose={() => (showEventModal = false)}
+	onEventCreated={() => {
+		showEventModal = false;
+		onEventCreated();
+		onUpdate();
+	}}
+/>
 
 <style>
 	.collaboration-controls {
@@ -643,5 +727,47 @@
 		.controls-actions {
 			flex-direction: column;
 		}
+	}
+
+	/* Events toggle button */
+	.events-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		color: var(--text-primary);
+		cursor: pointer;
+		font-family: inherit;
+		font-size: 0.875rem;
+		transition: all 0.2s;
+	}
+
+	.events-toggle:hover {
+		background: var(--color-surface-secondary);
+		opacity: 0.8;
+	}
+
+	.toggle-icon {
+		display: inline-block;
+		font-size: 0.75rem;
+		transition: transform 0.2s;
+		color: var(--text-secondary);
+	}
+
+	.toggle-icon.expanded {
+		transform: rotate(90deg);
+	}
+
+	/* Events list */
+	.events-list {
+		display: flex;
+		flex-direction: row;
+		gap: 1rem;
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--color-border);
 	}
 </style>

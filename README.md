@@ -6,26 +6,76 @@ A platform for good-faith political discussion, where ideas are crafted and hone
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-- **📝 Rich Text Editor**: Powered by TipTap with full formatting support (bold, italic, lists, headings, code blocks)
-- **📚 Citation System**: Chicago-style citations with automatic formatting and citation network visualization
-- **🎯 Good-Faith Analysis**: AI-powered content moderation using Claude and OpenAI to score arguments for constructive discourse
-- **👥 Role-Based Access**: Three-tier system (user, site manager, admin) with granular permissions
-- **💾 Auto-Save Drafts**: Real-time draft persistence with local storage fallback and network sync
-- **🏆 Editor's Desk**: Curated featured content selected by site managers
-- **🔔 Notifications**: Real-time updates for mentions, approvals, and discussion activity
-- **🎨 Writing Styles**: Multiple formats (journalistic, academic, quick point) with style-specific requirements
-- **🔐 Flexible Authentication**: GitHub, Google OAuth, magic links, or email/password
-- **📊 User Statistics**: Track good-faith rate, source accuracy, and reputation scores
-- **🗂️ Citation Networks**: Neo4j-powered visualization of argument connections
-- **🎭 Anonymous Posting**: Optional anonymity for sensitive discussions
-- **💳 Credits System**: Monthly credits with optional purchased credits for good-faith analysis
-- **🔍 Content Quality Assessment**: Automated checks for citations, argument structure, and tone
+### Core Writing & Discussion
+
+- **Rich Text Editor**: Powered by TipTap with full formatting support (bold, italic, lists, headings, code blocks)
+- **Citation System**: Chicago-style citations with automatic formatting and citation network visualization
+- **Good-Faith Analysis**: AI-powered content moderation using Claude and OpenAI to score arguments for constructive discourse
+- **Auto-Save Drafts**: Real-time draft persistence with local storage fallback and network sync
+- **Writing Styles**: Multiple formats (journalistic, academic, quick point) with style-specific requirements
+- **Anonymous Posting**: Optional anonymity for sensitive discussions
+- **Content Quality Assessment**: Automated checks for citations, argument structure, and tone
+
+### Growth & Progression
+
+- **XP System**: Earn experience points for creating discussions, posting comments, and receiving good-faith scores
+- **Leveling**: Progress through levels with titles (Novice Thinker, Apprentice Analyst, Journeyman Debater, etc.)
+- **Achievements**: Unlock badges for milestones (first post, discussion streaks, quality contributions)
+- **Activity Streaks**: Track consecutive days of participation
+- **Progress Visualization**: Dashboard displays XP progress, current level, and achievements
+
+### Social & Networking
+
+- **Follow System**: Follow other contributors to see their discussions and activity
+- **Collaboration Contacts**: Build a network of trusted collaborators with invite system
+- **User Blocking**: Block users to prevent unwanted interactions
+- **Saved Interests**: Save topic tags to personalize your discussion feed
+- **Networking Dashboard**: Dedicated section for managing follows, contacts, and social connections
+
+### Collaboration
+
+- **Collaboration Invites**: Invite other users to collaborate on discussion drafts
+- **Edit Locks**: Automatic locking prevents concurrent editing conflicts
+- **Collaborator Chat**: Real-time messaging between discussion collaborators
+- **Collaboration Status**: Track invite acceptance, pending requests, and active collaborations
+
+### Events
+
+- **Event Management**: Create and manage community events
+- **Upcoming Events**: Dashboard display of upcoming events
+- **Event Details**: Full event pages with descriptions, dates, and details
+
+### Content Discovery
+
+- **Filter Modes**: Filter discussions by All, Following (people you follow), or Interests (saved tags)
+- **Tag System**: Tag discussions for categorization and discovery
+- **Interest-Based Filtering**: Personalized feeds based on saved topic interests
+- **Editor's Desk**: Curated featured content selected by site managers
+
+### Notifications
+
+- **Discussion Notifications**: Updates for mentions, approvals, and discussion activity
+- **Social Notifications**: Alerts for new followers, follow requests, and contact invites
+- **Collaboration Notifications**: Updates for collaboration invites, chat messages, and edit activity
+- **Real-Time Updates**: WebSocket-based notification delivery
+
+### Administration
+
+- **Role-Based Access**: Three-tier system (user, site manager, admin) with granular permissions
+- **Public Showcase**: Feature discussions on the public-facing showcase page
+- **Credits System**: Monthly credits with optional purchased credits for good-faith analysis
+- **User Statistics**: Track good-faith rate, source accuracy, and reputation scores
+- **Citation Networks**: Neo4j-powered visualization of argument connections
+
+### Authentication
+
+- **Flexible Options**: GitHub, Google OAuth, magic links, or email/password
 
 ---
 
-## 🚀 Tech Stack
+## Tech Stack
 
 **Frontend:**
 - SvelteKit 2 with TypeScript
@@ -51,7 +101,7 @@ A platform for good-faith political discussion, where ideas are crafted and hone
 
 ---
 
-## 🔧 Installation & Setup
+## Installation & Setup
 
 1. **Clone the repo**
 
@@ -108,28 +158,34 @@ A platform for good-faith political discussion, where ideas are crafted and hone
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 reasonsmith-web/
 ├─ src/
 │  ├─ lib/
-│  │  ├─ components/          # 37+ Svelte components
+│  │  ├─ components/
 │  │  │  ├─ admin/           # Admin & site manager tools
 │  │  │  ├─ citations/       # Citation forms & network viz
+│  │  │  ├─ collaboration/   # Collaboration invites, chat, edit locks
 │  │  │  ├─ discussion/      # Discussion UI components
+│  │  │  ├─ events/          # Event display components
+│  │  │  ├─ growth/          # XP, leveling, achievements
 │  │  │  ├─ landing/         # Marketing & onboarding
+│  │  │  ├─ networking/      # Follow, contacts, blocking
 │  │  │  ├─ posts/           # Post/comment components
 │  │  │  └─ ui/              # Reusable UI primitives
 │  │  ├─ graphql/
 │  │  │  └─ queries.ts       # GraphQL queries & mutations
 │  │  ├─ types/
 │  │  │  └─ writingStyle.ts  # Style definitions & types
-│  │  ├─ utils/              # 22 utility modules
+│  │  ├─ utils/
 │  │  │  ├─ analysisCache.ts
 │  │  │  ├─ contentQuality.ts
 │  │  │  ├─ draftAutosave.ts
-│  │  │  ├─ editorsDeskUtils.ts
+│  │  │  ├─ editLockManager.ts    # Collaboration edit locking
+│  │  │  ├─ growthProgression.ts  # XP & leveling logic
+│  │  │  ├─ notificationHelpers.ts
 │  │  │  └─ ...
 │  │  ├─ creditUtils.ts      # Credits & permissions logic
 │  │  ├─ logger.ts           # Centralized logging
@@ -145,15 +201,20 @@ reasonsmith-web/
 │  │  │  ├─ audio/[fileId]/
 │  │  │  └─ image/[fileId]/
 │  │  ├─ discussions/
-│  │  │  ├─ +page.svelte              # Discussion list
+│  │  │  ├─ +page.svelte              # Discussion list with filters
 │  │  │  ├─ [id]/+page.svelte         # Discussion view
 │  │  │  └─ [id]/draft/[draft_id]/    # Draft editor
+│  │  ├─ events/             # Events list and details
 │  │  ├─ admin/              # Admin dashboard
-│  │  ├─ profile/            # User profile editor
+│  │  ├─ profile/            # User profile & interests
+│  │  ├─ public/             # Public showcase page
 │  │  ├─ u/[id]/             # Public user profiles
 │  │  ├─ resources/          # Documentation pages
-│  │  └─ ...
+│  │  └─ +page.svelte        # Dashboard (home)
 │  └─ app.html               # HTML template
+├─ nhost/
+│  ├─ migrations/            # Database migrations
+│  └─ metadata/              # Hasura permissions & config
 ├─ static/                   # Static assets (logos, icons)
 ├─ tests/                    # E2E and unit tests
 ├─ .env                      # Environment variables (not committed)
@@ -164,7 +225,7 @@ reasonsmith-web/
 
 ---
 
-## 📝 Available Scripts
+## Available Scripts
 
 | Command              | Description                                    |
 | -------------------- | ---------------------------------------------- |
@@ -182,7 +243,7 @@ reasonsmith-web/
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ### Authentication & Roles
 
@@ -240,9 +301,38 @@ Monthly credits reset at beginning of each month:
 
 Implementation: `src/lib/creditUtils.ts`
 
+### Growth & Progression System
+
+XP-based progression with leveling:
+- **XP Sources**: Creating discussions, posting comments, good-faith scores, achievements
+- **Levels**: Novice Thinker → Apprentice Analyst → Journeyman Debater → Expert Rhetorician → Master Logician → Grand Philosopher
+- **Achievements**: Milestone-based badges with XP rewards
+- **Streaks**: Consecutive daily activity tracking
+
+Implementation: `src/lib/utils/growthProgression.ts`, `src/lib/components/growth/`
+
+### Social & Networking System
+
+Follow-based social graph:
+- **Follows**: Asymmetric follow relationships
+- **Contacts**: Symmetric collaboration relationships with invite system
+- **Blocking**: User blocking with interaction prevention
+- **Interests**: Saved topic tags for personalized content filtering
+
+Implementation: `src/lib/components/networking/`
+
+### Collaboration System
+
+Real-time collaboration features:
+- **Invites**: Invite users to collaborate on discussion drafts
+- **Edit Locks**: Pessimistic locking to prevent concurrent editing conflicts
+- **Chat**: Real-time messaging between collaborators on a discussion
+
+Implementation: `src/lib/utils/editLockManager.ts`, `src/lib/components/collaboration/`
+
 ---
 
-## 🔌 API Endpoints
+## API Endpoints
 
 ### Serverless Functions (Vercel)
 
@@ -262,7 +352,7 @@ All functions include authentication checks and proper error handling.
 
 ---
 
-## 🗄️ Database Schema Overview
+## Database Schema Overview
 
 ### Core Tables
 
@@ -286,6 +376,8 @@ All functions include authentication checks and proper error handling.
   - Role (user/slartibartfast/admin)
   - Analysis credits tracking
   - Reputation scores
+  - `interests`: Saved topic tags for personalized filtering
+  - XP, level, and streak tracking
 
 - **`citation`**: Citation records
   - Chicago-style citation fields
@@ -296,9 +388,59 @@ All functions include authentication checks and proper error handling.
   - Requires author approval
   - Display order and publication status
 
+### Social & Networking Tables
+
+- **`follow`**: User follow relationships
+  - `follower_id`, `following_id`
+  - Follow status (active, pending for private accounts)
+
+- **`contact`**: Collaboration contacts
+  - Trusted collaborator relationships
+  - Contact status
+
+- **`contact_request`**: Pending contact invitations
+  - Request status (pending, accepted, rejected)
+
+- **`block`**: User blocking
+  - Prevents interactions between users
+
+### Collaboration Tables
+
+- **`collaboration_invite`**: Discussion collaboration invites
+  - Links collaborators to discussions
+  - Invite status (pending, accepted, rejected)
+
+- **`collaboration_chat_message`**: Real-time collaborator messaging
+  - Messages between discussion collaborators
+
+- **`edit_lock`**: Concurrent editing prevention
+  - Tracks active editors on discussions
+
+### Growth & Gamification Tables
+
+- **`achievement`**: Achievement definitions
+  - Name, description, XP reward, icon
+  - Unlock criteria
+
+- **`contributor_achievement`**: Earned achievements
+  - Links contributors to unlocked achievements
+  - Unlock timestamp
+
+### Events Tables
+
+- **`event`**: Community events
+  - Title, description, date/time
+  - Location, organizer
+
+### Notification Tables
+
+- **`notification`**: User notifications
+  - Multiple notification types (discussion, social, collaboration)
+  - Read status, metadata
+
 ---
 
-## 🎨 Brand & Design
+## Brand & Design
 
 ReasonSmith follows a sophisticated, editorial aesthetic inspired by Foreign Affairs and The Atlantic:
 
@@ -311,7 +453,7 @@ Design principles documented in `CLAUDE.md`.
 
 ---
 
-## 🧪 Testing
+## Testing
 
 **Unit Tests** (Vitest):
 ```bash
@@ -327,7 +469,7 @@ Test files located in `tests/` and `*.test.ts` files.
 
 ---
 
-## 🚀 Deployment
+## Deployment
 
 ReasonSmith is deployed on Vercel with:
 - Automatic deployments from main branch
@@ -339,7 +481,7 @@ ReasonSmith is deployed on Vercel with:
 
 ---
 
-## 🛠️ Development Guidelines
+## Development Guidelines
 
 ### Using the Logger
 
@@ -373,16 +515,20 @@ if (canEdit(contributor, resourceOwnerId, userId)) {
 ### Component Organization
 
 Components are organized by function:
-- **ui/**: Reusable primitives (buttons, modals, badges)
+- **ui/**: Reusable primitives (buttons, modals, badges, notifications)
 - **posts/**: Post-specific components (composer, item display)
 - **discussion/**: Discussion-specific (header, edit form, references)
 - **citations/**: Citation management (form, list, network)
-- **admin/**: Admin-only tools
+- **growth/**: XP display, level badges, achievement cards, streak indicators
+- **networking/**: Follow buttons, contact lists, blocking UI
+- **collaboration/**: Invite management, collaborator chat, edit lock indicators
+- **events/**: Event cards, event lists, event details
+- **admin/**: Admin-only tools, public showcase manager
 - **landing/**: Marketing and onboarding
 
 ---
 
-## 📚 Additional Documentation
+## Additional Documentation
 
 - **CLAUDE.md**: Comprehensive architecture documentation for AI assistants
 - **Community Guidelines**: `/resources/community-guidelines`
@@ -391,7 +537,7 @@ Components are organized by function:
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the [GNU General Public License v3.0](./LICENSE).
 
@@ -399,7 +545,7 @@ See the LICENSE file for the full terms and conditions.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)

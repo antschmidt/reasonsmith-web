@@ -3,7 +3,7 @@
 	// Avoid importing gql to prevent type resolution issues; use plain strings
 	import { nhost } from '$lib/nhostClient';
 	import { GET_DASHBOARD_DATA, GET_SAVED_ITEMS, REMOVE_SAVED_ITEM } from '$lib/graphql/queries';
-	import CollaborationInvites from './CollaborationInvites.svelte';
+	import CollaborationInvites from './collaboration/CollaborationInvites.svelte';
 	import NetworkingSection from './NetworkingSection.svelte';
 	import { BookOpen, Link2, Users } from '@lucide/svelte';
 
