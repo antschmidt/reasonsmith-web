@@ -17,8 +17,8 @@
 	} from '$lib/graphql/queries';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import CollaborationChatList from './CollaborationChatList.svelte';
-	import CollaborationChatThread from './CollaborationChatThread.svelte';
+	import CollaborationChatList from '../collaboration/CollaborationChatList.svelte';
+	import CollaborationChatThread from '../collaboration/CollaborationChatThread.svelte';
 	import {
 		getNotificationMessage,
 		isSocialNotification,

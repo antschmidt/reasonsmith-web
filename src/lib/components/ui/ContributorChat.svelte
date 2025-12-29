@@ -23,8 +23,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { MessageCircle } from '@lucide/svelte';
-	import CollaborationChatList from './CollaborationChatList.svelte';
-	import CollaborationChatThread from './CollaborationChatThread.svelte';
+	import CollaborationChatList from '../collaboration/CollaborationChatList.svelte';
+	import CollaborationChatThread from '../collaboration/CollaborationChatThread.svelte';
 
 	// Navigation height constants (must match CSS)
 	const NAV_HEIGHT_MOBILE = 88;

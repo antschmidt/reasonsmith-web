@@ -6,7 +6,7 @@
 		FORCE_RECLAIM_EDIT_LOCK
 	} from '$lib/graphql/queries';
 	import { User, Shield, Lock, Trash2, X } from '@lucide/svelte';
-	import Button from './ui/Button.svelte';
+	import Button from '../ui/Button.svelte';
 
 	type PostCollaborator = {
 		id: string; // post_collaborator.id

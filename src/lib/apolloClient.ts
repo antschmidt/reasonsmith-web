@@ -53,16 +53,13 @@ if (isBrowser) {
 				}
 			};
 		},
-		// Reconnect on connection loss - but give up quickly since we have polling fallback
-		shouldRetry: (err) => {
-			console.log('[WebSocket] Connection failed, will use polling fallback');
-			return false; // Don't retry - use polling instead
-		},
-		retryAttempts: 0, // No retries - polling fallback will handle it
+		// Reconnect on connection loss with limited retries
+		shouldRetry: () => true,
+		retryAttempts: 3, // Retry 3 times before falling back to polling
 		// Keep connection alive with ping/pong
 		keepAlive: 10000, // Send keepalive every 10 seconds
-		// Lazy connection - don't connect until subscription is active
-		lazy: false,
+		// Lazy connection - only connect when subscription is actually needed
+		lazy: true,
 		// Log connection state for debugging
 		on: {
 			connected: () => console.log('[WebSocket] Connected successfully'),
@@ -109,10 +106,12 @@ export const apolloClient = new ApolloClient({
 	cache: new InMemoryCache(),
 	defaultOptions: {
 		watchQuery: {
-			fetchPolicy: 'network-only'
+			// Serve cached data immediately, then update from network
+			fetchPolicy: 'cache-and-network'
 		},
 		query: {
-			fetchPolicy: 'network-only'
+			// Use cache if available, only fetch from network if not cached
+			fetchPolicy: 'cache-first'
 		}
 	}
 });

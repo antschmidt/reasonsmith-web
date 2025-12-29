@@ -4,8 +4,8 @@
 	import CitationForm from '../citations/CitationForm.svelte';
 	import Button from '../ui/Button.svelte';
 	import RichTextEditor from '../RichTextEditor.svelte';
-	import CollaboratorInviteButton from '../CollaboratorInviteButton.svelte';
-	import CollaborationControls from '../CollaborationControls.svelte';
+	import CollaboratorInviteButton from '../collaboration/CollaboratorInviteButton.svelte';
+	import CollaborationControls from '../collaboration/CollaborationControls.svelte';
 	import { nhost } from '$lib/nhostClient';
 	import {
 		GET_EDIT_LOCK_STATUS,
