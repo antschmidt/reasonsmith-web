@@ -4,8 +4,10 @@
  */
 
 export type PollingOptions = {
-	interval?: number; // Polling interval in milliseconds (default: 2000)
-	maxPolls?: number; // Maximum number of polls before timeout (default: 60)
+	interval?: number; // Initial polling interval in milliseconds (default: 1000)
+	maxPolls?: number; // Maximum number of polls before timeout (default: 30)
+	useExponentialBackoff?: boolean; // Use exponential backoff (default: true)
+	maxInterval?: number; // Maximum interval when using backoff (default: 10000)
 	onProgress?: (pollCount: number, maxPolls: number) => void;
 	onTimeout?: () => void;
 	onError?: (error: unknown) => void;
@@ -33,8 +35,10 @@ export function startPollingForAnalysis(
 	options: PollingOptions = {}
 ): () => void {
 	const {
-		interval = 2000,
-		maxPolls = 60, // 2 minutes at 2 second intervals
+		interval = 1000, // Start with 1 second
+		maxPolls = 30, // Reduced from 60 since we use backoff
+		useExponentialBackoff = true,
+		maxInterval = 10000, // Cap at 10 seconds
 		onProgress,
 		onTimeout,
 		onError
@@ -42,12 +46,11 @@ export function startPollingForAnalysis(
 
 	let pollCount = 0;
 	let isRunning = true;
+	let currentInterval = interval;
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-	const intervalId = setInterval(async () => {
-		if (!isRunning) {
-			clearInterval(intervalId);
-			return;
-		}
+	async function poll() {
+		if (!isRunning) return;
 
 		pollCount++;
 
@@ -64,7 +67,6 @@ export function startPollingForAnalysis(
 
 				// Analysis is newer than last edit (or no edit date) = completed
 				if (!editDate || analysisDate > editDate) {
-					clearInterval(intervalId);
 					isRunning = false;
 					onComplete(status);
 					return;
@@ -73,21 +75,39 @@ export function startPollingForAnalysis(
 
 			// Check for timeout
 			if (pollCount >= maxPolls) {
-				clearInterval(intervalId);
 				isRunning = false;
 				onTimeout?.();
 				console.log('Analysis polling timed out');
+				return;
 			}
+
+			// Schedule next poll with exponential backoff
+			if (useExponentialBackoff) {
+				// Increase interval: 1s, 1.5s, 2.25s, 3.4s, 5s, 7.5s, 10s (capped)
+				currentInterval = Math.min(currentInterval * 1.5, maxInterval);
+			}
+
+			timeoutId = setTimeout(poll, currentInterval);
 		} catch (error) {
 			console.error('Error polling for analysis:', error);
 			onError?.(error);
+			// Still schedule next poll on error
+			if (isRunning && pollCount < maxPolls) {
+				timeoutId = setTimeout(poll, currentInterval);
+			}
 		}
-	}, interval);
+	}
+
+	// Start first poll
+	timeoutId = setTimeout(poll, currentInterval);
 
 	// Return cleanup function
 	return () => {
 		isRunning = false;
-		clearInterval(intervalId);
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+			timeoutId = null;
+		}
 	};
 }
 

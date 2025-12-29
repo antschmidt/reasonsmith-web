@@ -129,21 +129,40 @@ export function createDraftAutosaver(opts: DraftAutosaveOptions) {
 		await executeSave();
 	}
 
-	function destroy() {
-		state.destroyed = true;
-		if (state.timer) clearTimeout(state.timer);
-	}
+	// Event listener references for cleanup
+	let onlineHandler: (() => void) | null = null;
+	let beforeUnloadHandler: (() => void) | null = null;
 
 	// Retry when back online if pending unsaved changes
 	if (typeof window !== 'undefined') {
-		window.addEventListener('online', () => {
+		onlineHandler = () => {
 			if (state.pendingContent && hash(state.pendingContent) !== state.lastSavedHash) {
 				scheduleNetworkSave();
 			}
-		});
-		window.addEventListener('beforeunload', () => {
+		};
+		beforeUnloadHandler = () => {
 			if (state.pendingContent) writeLocal(state.pendingContent);
-		});
+		};
+
+		window.addEventListener('online', onlineHandler);
+		window.addEventListener('beforeunload', beforeUnloadHandler);
+	}
+
+	function destroy() {
+		state.destroyed = true;
+		if (state.timer) clearTimeout(state.timer);
+
+		// Clean up event listeners to prevent memory leaks
+		if (typeof window !== 'undefined') {
+			if (onlineHandler) {
+				window.removeEventListener('online', onlineHandler);
+				onlineHandler = null;
+			}
+			if (beforeUnloadHandler) {
+				window.removeEventListener('beforeunload', beforeUnloadHandler);
+				beforeUnloadHandler = null;
+			}
+		}
 	}
 
 	return {

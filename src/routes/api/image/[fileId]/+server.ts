@@ -55,7 +55,7 @@ export async function GET({ params, request }) {
 			headers: {
 				'Content-Type': contentType,
 				'Content-Disposition': 'inline', // Display inline, not as download
-				'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+				'Cache-Control': 'public, max-age=31536000, immutable', // Cache for 1 year (images rarely change)
 				'Content-Length': imageBuffer.byteLength.toString()
 			}
 		});
