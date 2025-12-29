@@ -680,9 +680,9 @@
 		.dashboard-grid {
 			grid-template-columns: 1fr;
 		}
-		/* When sidebar has content, use 3-column layout */
+		/* When sidebar has content, use 2-column layout */
 		.dashboard-grid:has(.sidebar:not(:empty)) {
-			grid-template-columns: 1fr 300px;
+			grid-template-columns: 1fr 530px;
 		}
 		.main-content {
 			grid-column: 1;
@@ -691,6 +691,12 @@
 		.sidebar:not(:empty) {
 			grid-column: 2;
 			order: 2;
+		}
+	}
+	@media (min-width: 1280px) {
+		/* Wider sidebar on larger screens */
+		.dashboard-grid:has(.sidebar:not(:empty)) {
+			grid-template-columns: 1fr 600px;
 		}
 	}
 	.main-content {
@@ -1024,13 +1030,13 @@
 
 	@media (min-width: 640px) {
 		.drafts-list {
-			grid-template-columns: repeat(2, 1fr);
+			grid-template-columns: repeat(1, 1fr);
 		}
 	}
 
 	@media (min-width: 1200px) {
 		.drafts-list {
-			grid-template-columns: repeat(3, 1fr);
+			grid-template-columns: repeat(1, 1fr);
 		}
 	}
 

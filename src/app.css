@@ -68,7 +68,7 @@
 
 	/* Breakpoints (for reference in media queries) */
 	--breakpoint-sm: 640px; /* Mobile landscape */
-	--breakpoint-md: 768px; /* Tablet */
+	--breakpoint-md: 906px; /* Tablet - when nav brand text starts wrapping */
 	--breakpoint-lg: 1024px; /* Desktop */
 	--breakpoint-xl: 1280px; /* Large desktop */
 }

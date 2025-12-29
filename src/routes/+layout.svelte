@@ -269,7 +269,7 @@
 		backdrop-filter: blur(10px);
 	}
 
-	@media (max-width: 768px) {
+	@media (max-width: 906px) {
 		.top-nav {
 			padding: 0.25rem;
 		}
@@ -331,7 +331,7 @@
 		font-weight: 600;
 		color: var(--color-text-primary);
 	}
-	@media (max-width: 768px) {
+	@media (max-width: 906px) {
 		.brand-text {
 			display: none;
 		}
@@ -373,7 +373,7 @@
 		padding: 0 0.5rem;
 	}
 
-	@media (max-width: 768px) {
+	@media (max-width: 906px) {
 		.user-email-nav {
 			display: none;
 		}
@@ -433,7 +433,7 @@
 	.nav-label {
 		white-space: nowrap;
 	}
-	@media (max-width: 768px) {
+	@media (max-width: 906px) {
 		.nav-label {
 			display: none;
 		}
@@ -557,7 +557,7 @@
 		transform: scale(0.98);
 	}
 
-	@media (max-width: 768px) {
+	@media (max-width: 906px) {
 		.new-discussion-button span {
 			display: none;
 		}

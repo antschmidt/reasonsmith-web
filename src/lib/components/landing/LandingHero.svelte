@@ -7,6 +7,21 @@
 </script>
 
 <section class="landing-hero hero-grid">
+	<a href="/login" class="login-icon" aria-label="Sign in">
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+			<polyline points="10 17 15 12 10 7" />
+			<line x1="15" y1="12" x2="3" y2="12" />
+		</svg>
+	</a>
 	<div class="hero-primary">
 		<p class="editorial-masthead">ReasonSmith Journal</p>
 		<h1>Learn through thoughtful disagreement.</h1>
@@ -38,6 +53,40 @@
 </section>
 
 <style>
+	.login-icon {
+		position: absolute;
+		top: clamp(1rem, 3vw, 1.5rem);
+		right: clamp(1rem, 3vw, 2rem);
+		z-index: 10;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		border-radius: var(--border-radius-full);
+		border: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
+		background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+		backdrop-filter: blur(10px);
+		color: var(--color-text-secondary);
+		text-decoration: none;
+		transition: all 0.25s ease;
+	}
+
+	.login-icon:hover,
+	.login-icon:focus {
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 15%, transparent);
+		outline: none;
+	}
+
+	.login-icon svg {
+		width: 20px;
+		height: 20px;
+	}
+
 	.landing-hero {
 		position: relative;
 		padding: clamp(3rem, 6vw, 5rem) clamp(1.5rem, 6vw, 5rem);
