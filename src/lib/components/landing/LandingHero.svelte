@@ -30,6 +30,10 @@
 			dialogue. Explore ideas through evidence-based discussion, learn to understand perspectives
 			you disagree with, and build stronger reasoning through collaborative refinement.
 		</p>
+		<p class="alpha-notice">
+			We're currently in <strong>Alpha</strong>. Many features and designs are subject to drastic
+			changes as we iterate toward our Beta release in early-to-mid 2026.
+		</p>
 		<div class="hero-actions">
 			<a class="cta-button" href="/login"> Start Learning </a>
 			<a class="secondary-cta" href="/discussions">Explore Discussions</a>
@@ -138,7 +142,21 @@
 	}
 
 	.hero-lede {
-		margin-bottom: clamp(2rem, 5vw, 2.5rem);
+		margin-bottom: 1rem;
+	}
+
+	.alpha-notice {
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+		border-radius: var(--border-radius-sm);
+		padding: 0.75rem 1rem;
+		margin-bottom: clamp(1.5rem, 4vw, 2rem);
+	}
+
+	.alpha-notice strong {
+		color: var(--color-warning);
 	}
 
 	.hero-actions {

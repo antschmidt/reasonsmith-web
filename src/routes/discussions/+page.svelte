@@ -553,6 +553,10 @@
 				viewpoints. Learn from examples of good-faith reasoning, steelmanning, and evidence-based
 				dialogue.
 			</p>
+			<p class="alpha-notice">
+				We're currently in <strong>Alpha</strong>. Many features and designs are subject to drastic
+				changes as we iterate toward our Beta release in early-to-mid 2026.
+			</p>
 		</div>
 		<section class="search-card" aria-labelledby="discussion-search">
 			<h2 id="discussion-search">Find discussions by topic</h2>
@@ -825,6 +829,20 @@
 		font-family: var(--font-family-display);
 		font-size: clamp(2.25rem, 5vw, 3rem);
 		letter-spacing: -0.015em;
+	}
+
+	.hero-body .alpha-notice {
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+		border-radius: var(--border-radius-sm);
+		padding: 0.75rem 1rem;
+		margin-top: 1rem;
+	}
+
+	.hero-body .alpha-notice strong {
+		color: var(--color-warning);
 	}
 
 	.search-card {
