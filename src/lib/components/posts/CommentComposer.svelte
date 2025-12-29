@@ -17,6 +17,7 @@
 	} from '$lib/graphql/queries';
 	import { apolloClient } from '$lib/apolloClient';
 	import type { ObservableSubscription } from '@apollo/client';
+	import { isPageVisible } from '$lib/stores/visibilityStore';
 
 	type Citation = {
 		id: string;
@@ -359,15 +360,11 @@
 		loadEditLockStatus();
 	});
 
-	// Subscribe to draft updates for real-time content changes
-	$effect(() => {
-		if (typeof window === 'undefined' || !draftPostId) return;
+	// Helper functions to manage subscriptions
+	function startDraftUpdateSubscription() {
+		if (draftUpdateSubscription || !draftPostId) return;
 
-		// Clean up previous subscription
-		if (draftUpdateSubscription) {
-			draftUpdateSubscription.unsubscribe();
-		}
-
+		console.log('[Subscription] Starting draft update subscription');
 		draftUpdateSubscription = apolloClient
 			.subscribe({
 				query: SUBSCRIBE_TO_DRAFT_UPDATES,
@@ -403,23 +400,20 @@
 					console.error('Draft update subscription error:', error);
 				}
 			});
+	}
 
-		return () => {
-			if (draftUpdateSubscription) {
-				draftUpdateSubscription.unsubscribe();
-			}
-		};
-	});
-
-	// Subscribe to edit lock status changes
-	$effect(() => {
-		if (typeof window === 'undefined' || !draftPostId) return;
-
-		// Clean up previous subscription
-		if (lockStatusSubscription) {
-			lockStatusSubscription.unsubscribe();
+	function stopDraftUpdateSubscription() {
+		if (draftUpdateSubscription) {
+			console.log('[Subscription] Stopping draft update subscription');
+			draftUpdateSubscription.unsubscribe();
+			draftUpdateSubscription = null;
 		}
+	}
 
+	function startLockStatusSubscription() {
+		if (lockStatusSubscription || !draftPostId) return;
+
+		console.log('[Subscription] Starting lock status subscription');
 		lockStatusSubscription = apolloClient
 			.subscribe({
 				query: SUBSCRIBE_TO_EDIT_LOCK_STATUS,
@@ -438,11 +432,69 @@
 					console.error('Lock status subscription error:', error);
 				}
 			});
+	}
+
+	function stopLockStatusSubscription() {
+		if (lockStatusSubscription) {
+			console.log('[Subscription] Stopping lock status subscription');
+			lockStatusSubscription.unsubscribe();
+			lockStatusSubscription = null;
+		}
+	}
+
+	// Track previous visibility state to avoid loops
+	let wasVisible: boolean | null = null;
+	let previousDraftPostId: string | null = null;
+
+	// React to visibility changes - only act when visibility actually changes
+	$effect(() => {
+		if (typeof window === 'undefined' || !draftPostId) return;
+
+		const currentVisible = $isPageVisible;
+
+		// Only react to actual visibility changes, not initial render
+		if (wasVisible !== null && wasVisible !== currentVisible) {
+			if (currentVisible) {
+				// Page became visible - fetch latest state and resume subscriptions
+				console.log('[Subscription] Page visible - resuming subscriptions');
+				loadEditLockStatus(); // Fetch latest state immediately
+				startDraftUpdateSubscription();
+				startLockStatusSubscription();
+			} else {
+				// Page hidden - stop subscriptions to save resources
+				console.log('[Subscription] Page hidden - pausing subscriptions');
+				stopDraftUpdateSubscription();
+				stopLockStatusSubscription();
+			}
+		}
+
+		wasVisible = currentVisible;
 
 		return () => {
-			if (lockStatusSubscription) {
-				lockStatusSubscription.unsubscribe();
+			stopDraftUpdateSubscription();
+			stopLockStatusSubscription();
+		};
+	});
+
+	// Start subscriptions when draftPostId changes (and page is visible)
+	$effect(() => {
+		if (typeof window === 'undefined' || !draftPostId || !$isPageVisible) return;
+
+		// Only start subscriptions if draftPostId actually changed
+		if (previousDraftPostId !== draftPostId) {
+			startDraftUpdateSubscription();
+			startLockStatusSubscription();
+			previousDraftPostId = draftPostId;
+
+			// Initialize wasVisible on first subscription setup
+			if (wasVisible === null) {
+				wasVisible = $isPageVisible;
 			}
+		}
+
+		return () => {
+			stopDraftUpdateSubscription();
+			stopLockStatusSubscription();
 		};
 	});
 

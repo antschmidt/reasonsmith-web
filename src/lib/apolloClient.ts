@@ -28,6 +28,11 @@ let wsLink: GraphQLWsLink | null = null;
 if (isBrowser) {
 	console.log('[WebSocket] Initializing with URL:', wsUrl);
 
+	// Track retry state for exponential backoff
+	let retryCount = 0;
+	const MAX_RETRIES = 5;
+	const BASE_DELAY = 1000; // 1 second base delay
+
 	const wsClient = createClient({
 		url: wsUrl,
 		connectionParams: async () => {
@@ -53,16 +58,32 @@ if (isBrowser) {
 				}
 			};
 		},
-		// Reconnect on connection loss with limited retries
-		shouldRetry: () => true,
-		retryAttempts: 3, // Retry 3 times before falling back to polling
+		// Reconnect on connection loss with limited retries and exponential backoff
+		shouldRetry: () => {
+			if (retryCount >= MAX_RETRIES) {
+				console.warn(`[WebSocket] Max retries (${MAX_RETRIES}) reached, stopping reconnection`);
+				return false;
+			}
+			return true;
+		},
+		retryAttempts: MAX_RETRIES,
+		// Exponential backoff: 1s, 2s, 4s, 8s, 16s
+		retryWait: async (retries) => {
+			retryCount = retries;
+			const delay = Math.min(BASE_DELAY * Math.pow(2, retries), 30000); // Cap at 30 seconds
+			console.log(`[WebSocket] Retry ${retries + 1}/${MAX_RETRIES} in ${delay}ms`);
+			await new Promise((resolve) => setTimeout(resolve, delay));
+		},
 		// Keep connection alive with ping/pong
 		keepAlive: 10000, // Send keepalive every 10 seconds
 		// Lazy connection - only connect when subscription is actually needed
 		lazy: true,
 		// Log connection state for debugging
 		on: {
-			connected: () => console.log('[WebSocket] Connected successfully'),
+			connected: () => {
+				console.log('[WebSocket] Connected successfully');
+				retryCount = 0; // Reset retry count on successful connection
+			},
 			connecting: () => console.log('[WebSocket] Connecting...'),
 			closed: (event) => {
 				console.log('[WebSocket] Closed:', {

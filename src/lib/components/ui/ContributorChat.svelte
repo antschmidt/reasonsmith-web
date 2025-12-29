@@ -25,6 +25,7 @@
 	import { MessageCircle } from '@lucide/svelte';
 	import CollaborationChatList from '../collaboration/CollaborationChatList.svelte';
 	import CollaborationChatThread from '../collaboration/CollaborationChatThread.svelte';
+	import { isPageVisible } from '$lib/stores/visibilityStore';
 
 	// Navigation height constants (must match CSS)
 	const NAV_HEIGHT_MOBILE = 88;
@@ -675,12 +676,54 @@
 		}
 	}
 
+	// Polling interval reference - managed by visibility state
+	let pollingInterval: ReturnType<typeof setInterval> | null = null;
+	let wasVisible: boolean | null = null; // Track previous visibility state
+
+	// Start polling when page is visible
+	function startPolling() {
+		if (pollingInterval) return; // Already polling
+		pollingInterval = setInterval(loadAll, 30000);
+	}
+
+	// Stop polling when page is hidden
+	function stopPolling() {
+		if (pollingInterval) {
+			clearInterval(pollingInterval);
+			pollingInterval = null;
+		}
+	}
+
+	// React to visibility changes - only act when visibility actually changes
+	$effect(() => {
+		const currentVisible = $isPageVisible;
+
+		// Only react to actual changes, not initial render or same-value updates
+		if (wasVisible !== null && wasVisible !== currentVisible) {
+			if (currentVisible) {
+				// Page became visible - fetch latest state immediately, then resume polling
+				loadAll();
+				startPolling();
+			} else {
+				// Page hidden - stop polling to save resources
+				stopPolling();
+			}
+		}
+
+		wasVisible = currentVisible;
+	});
+
 	onMount(() => {
 		loadAll();
 		loadPanelSettings();
 
-		// Poll for updates every 30 seconds
-		const interval = setInterval(loadAll, 30000);
+		// Start polling only if page is visible
+		if ($isPageVisible) {
+			startPolling();
+		}
+
+		// Initialize wasVisible to prevent initial effect from triggering loadAll
+		wasVisible = $isPageVisible;
 
 		// Add global mouse event listeners for dragging and resizing
 		const handleGlobalMouseMove = (e: MouseEvent) => {
@@ -707,7 +750,7 @@
 		window.addEventListener('resize', handleResize);
 
 		return () => {
-			clearInterval(interval);
+			stopPolling();
 			window.removeEventListener('mousemove', handleGlobalMouseMove);
 			window.removeEventListener('mouseup', handleGlobalMouseUp);
 			window.removeEventListener('resize', handleResize);

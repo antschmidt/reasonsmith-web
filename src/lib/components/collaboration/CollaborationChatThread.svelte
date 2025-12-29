@@ -12,6 +12,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { ArrowLeft, Send } from '@lucide/svelte';
 	import CollaborationMessageItem from './CollaborationMessageItem.svelte';
+	import { isPageVisible } from '$lib/stores/visibilityStore';
 
 	type Collaborator = {
 		id: string;
@@ -225,11 +226,10 @@
 		}
 	}
 
-	onMount(() => {
-		loadMessages();
-		markMessagesAsRead();
+	// Start subscription for real-time messages
+	function startSubscription() {
+		if (subscription) return; // Already subscribed
 
-		// Subscribe to real-time messages
 		console.log('[Chat] Setting up subscription for post:', postId);
 		subscription = apolloClient
 			.subscribe({
@@ -245,11 +245,7 @@
 					);
 					subscriptionActive = true;
 					// Clear polling fallback if subscription is working
-					if (pollingInterval) {
-						console.log('[Chat] Subscription working, clearing polling fallback');
-						clearInterval(pollingInterval);
-						pollingInterval = null;
-					}
+					stopPolling();
 					if (result.data?.collaboration_message) {
 						messages = result.data.collaboration_message;
 						scrollToBottom();
@@ -259,47 +255,90 @@
 				error: (err: any) => {
 					console.error('[Chat] Subscription error:', err);
 					subscriptionActive = false;
-					// Start polling fallback if subscription fails
-					if (!pollingInterval) {
+					// Only start polling if subscription explicitly fails and page is visible
+					if ($isPageVisible) {
 						console.log('[Chat] Subscription failed, starting polling fallback');
 						startPollingFallback();
 					}
-					// Try to reconnect after error
-					setTimeout(() => {
-						console.log('[Chat] Attempting to reload messages after subscription error');
-						loadMessages();
-					}, 2000);
 				}
 			});
-
-		// Start a fallback polling mechanism after 2 seconds if subscription hasn't fired
-		setTimeout(() => {
-			if (!subscriptionActive) {
-				console.log('[Chat] Subscription not active after 2s, starting polling fallback');
-				startPollingFallback();
-			}
-		}, 2000);
-	});
-
-	function startPollingFallback() {
-		if (pollingInterval) {
-			console.log('[Chat] Polling already active, skipping');
-			return;
-		}
-		console.log('[Chat] Starting polling fallback every 3 seconds');
-		pollingInterval = setInterval(() => {
-			console.log('[Chat] Polling tick - fetching messages');
-			loadMessages();
-		}, 3000);
 	}
 
-	onDestroy(() => {
+	// Stop subscription
+	function stopSubscription() {
 		if (subscription) {
+			console.log('[Chat] Stopping subscription');
 			subscription.unsubscribe();
+			subscription = null;
+			subscriptionActive = false;
 		}
+	}
+
+	// Start polling fallback (only when subscription fails)
+	function startPollingFallback() {
+		if (pollingInterval || subscriptionActive) {
+			return; // Don't poll if already polling or subscription is working
+		}
+		console.log('[Chat] Starting polling fallback every 5 seconds');
+		pollingInterval = setInterval(() => {
+			if ($isPageVisible) {
+				console.log('[Chat] Polling tick - fetching messages');
+				loadMessages();
+			}
+		}, 5000); // Increased from 3s to 5s to reduce load
+	}
+
+	// Stop polling
+	function stopPolling() {
 		if (pollingInterval) {
+			console.log('[Chat] Stopping polling');
 			clearInterval(pollingInterval);
+			pollingInterval = null;
 		}
+	}
+
+	// Track previous visibility state to avoid loops
+	let wasVisible: boolean | null = null;
+
+	// React to visibility changes - only act when visibility actually changes
+	$effect(() => {
+		const currentVisible = $isPageVisible;
+
+		// Only react to actual changes, not initial render or same-value updates
+		if (wasVisible !== null && wasVisible !== currentVisible) {
+			if (currentVisible) {
+				// Page became visible - fetch latest state immediately, then resume subscription
+				console.log('[Chat] Page visible - resuming');
+				loadMessages();
+				markMessagesAsRead();
+				startSubscription();
+			} else {
+				// Page hidden - stop subscription and polling to save resources
+				console.log('[Chat] Page hidden - pausing');
+				stopSubscription();
+				stopPolling();
+			}
+		}
+
+		wasVisible = currentVisible;
+	});
+
+	onMount(() => {
+		loadMessages();
+		markMessagesAsRead();
+
+		// Only start subscription if page is visible
+		if ($isPageVisible) {
+			startSubscription();
+		}
+
+		// Initialize wasVisible to prevent initial effect from triggering
+		wasVisible = $isPageVisible;
+	});
+
+	onDestroy(() => {
+		stopSubscription();
+		stopPolling();
 	});
 </script>
 
