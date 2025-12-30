@@ -1,9 +1,5 @@
 import { gql } from '@apollo/client/core';
-import {
-	CONTRIBUTOR_FIELDS,
-	POST_FIELDS,
-	DISCUSSION_VERSION_FIELDS
-} from '../fragments';
+import { CONTRIBUTOR_FIELDS, POST_FIELDS, DISCUSSION_VERSION_FIELDS } from '../fragments';
 
 // ============================================
 // Discussion Queries
@@ -16,6 +12,18 @@ export const GET_DISCUSSION_DETAILS = gql`
 			created_at
 			is_anonymous
 			status
+			showcase_item_id
+			showcase_item {
+				id
+				title
+				subtitle
+				creator
+				media_type
+				source_url
+				date_published
+				summary
+				analysis
+			}
 			contributor {
 				...ContributorFields
 			}
@@ -68,6 +76,18 @@ export const GET_DISCUSSION_WITH_CURRENT_VERSION = gql`
 			created_by
 			created_at
 			is_anonymous
+			showcase_item_id
+			showcase_item {
+				id
+				title
+				subtitle
+				creator
+				media_type
+				source_url
+				date_published
+				summary
+				analysis
+			}
 			contributor {
 				...ContributorFields
 			}
@@ -378,11 +398,13 @@ export const CREATE_DISCUSSION_WITH_VERSION = gql`
 		$importContent: String
 		$importAuthor: String
 		$importDate: timestamptz
+		$showcaseItemId: uuid
 	) {
 		insert_discussion_one(
 			object: {
 				created_by: $createdBy
 				status: "draft"
+				showcase_item_id: $showcaseItemId
 				discussion_versions: {
 					data: {
 						title: $title
@@ -405,6 +427,7 @@ export const CREATE_DISCUSSION_WITH_VERSION = gql`
 		) {
 			id
 			status
+			showcase_item_id
 			discussion_versions {
 				...DiscussionVersionFields
 			}

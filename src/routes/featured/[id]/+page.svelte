@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import ShowcaseDiscussions from '$lib/components/showcase/ShowcaseDiscussions.svelte';
 
 	let { data } = $props<{ data: PageData }>();
 
@@ -254,6 +255,8 @@
 			>
 		{/if}
 	</article>
+
+	<ShowcaseDiscussions showcaseItemId={item.id} showcaseTitle={item.title} />
 </main>
 
 <style>

@@ -1,5 +1,9 @@
 import { gql } from '@apollo/client/core';
-import { PUBLIC_SHOWCASE_ITEM_FIELDS } from '../fragments';
+import {
+	PUBLIC_SHOWCASE_ITEM_FIELDS,
+	CONTRIBUTOR_FIELDS,
+	DISCUSSION_VERSION_FIELDS
+} from '../fragments';
 
 // ============================================
 // Public Showcase Queries
@@ -61,4 +65,33 @@ export const DELETE_PUBLIC_SHOWCASE_ITEM = gql`
 			id
 		}
 	}
+`;
+
+// ============================================
+// Showcase Item Discussions
+// ============================================
+
+export const GET_SHOWCASE_ITEM_DISCUSSIONS = gql`
+	query GetShowcaseItemDiscussions($showcaseItemId: uuid!) {
+		discussion(
+			where: { showcase_item_id: { _eq: $showcaseItemId }, status: { _eq: "published" } }
+			order_by: { created_at: desc }
+		) {
+			id
+			created_at
+			is_anonymous
+			contributor {
+				...ContributorFields
+			}
+			current_version: discussion_versions(
+				where: { version_type: { _eq: "published" } }
+				order_by: { version_number: desc }
+				limit: 1
+			) {
+				...DiscussionVersionFields
+			}
+		}
+	}
+	${CONTRIBUTOR_FIELDS}
+	${DISCUSSION_VERSION_FIELDS}
 `;

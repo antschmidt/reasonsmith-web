@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { nhost } from '$lib/nhostClient';
 	import { onMount } from 'svelte';
 	import { CREATE_DISCUSSION_WITH_VERSION } from '$lib/graphql/queries';
+	import { GET_PUBLIC_SHOWCASE_ITEM } from '$lib/graphql/queries/public-showcase';
 	import AnimatedLogo from '$lib/components/ui/AnimatedLogo.svelte';
 
 	let creating = $state(true);
 	let error = $state<string | null>(null);
+	let showcaseItem = $state<{ id: string; title: string; subtitle?: string | null } | null>(null);
 
 	onMount(async () => {
 		const user = nhost.auth.getUser();
@@ -17,16 +20,31 @@
 			return;
 		}
 
+		// Check for showcase query parameter
+		const showcaseId = $page.url.searchParams.get('showcase');
+
 		try {
+			// If we have a showcase ID, fetch the showcase item details
+			if (showcaseId) {
+				const showcaseResult = await nhost.graphql.request(GET_PUBLIC_SHOWCASE_ITEM, {
+					id: showcaseId
+				});
+
+				if (showcaseResult.data?.public_showcase_item_by_pk) {
+					showcaseItem = showcaseResult.data.public_showcase_item_by_pk;
+				}
+			}
+
 			// Create a new discussion with a draft version
 			const result = await nhost.graphql.request(CREATE_DISCUSSION_WITH_VERSION, {
-				title: '',
-				description: '',
+				title: showcaseItem ? `Discussion: ${showcaseItem.title}` : '',
+				description: showcaseItem?.subtitle || '',
 				tags: [],
 				sections: [],
 				claims: [],
 				citations: [],
-				createdBy: user.id
+				createdBy: user.id,
+				showcaseItemId: showcaseId || null
 			});
 
 			if (result.error) {
@@ -58,7 +76,11 @@
 	{#if creating}
 		<div class="creating-message">
 			<AnimatedLogo size="64px" />
-			<p>Creating your new discussion...</p>
+			{#if showcaseItem}
+				<p>Creating discussion about "{showcaseItem.title}"...</p>
+			{:else}
+				<p>Creating your new discussion...</p>
+			{/if}
 		</div>
 	{:else if error}
 		<div class="error-message">

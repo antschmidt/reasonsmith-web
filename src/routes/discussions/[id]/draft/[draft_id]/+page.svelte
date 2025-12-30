@@ -71,6 +71,9 @@
 	let draft = $state<any>(null);
 	let discussion = $state<any>(null);
 
+	// Showcase item context (if this discussion is about a featured analysis)
+	let showcaseItem = $derived(discussion?.showcase_item || null);
+
 	// Form data
 	let title = $state('');
 	let description = $state('');
@@ -168,6 +171,16 @@
 							created_by
 							created_at
 							is_anonymous
+							showcase_item {
+								id
+								title
+								subtitle
+								creator
+								media_type
+								source_url
+								summary
+								analysis
+							}
 							contributor {
 								id
 								handle
@@ -679,6 +692,27 @@
 						}
 					: undefined;
 
+				// Build showcase context if this discussion is about a featured analysis
+				// This provides context for the AI but is not subject to analysis itself
+				const showcaseContextPayload = discussion?.showcase_item
+					? {
+							title: discussion.showcase_item.title,
+							subtitle: discussion.showcase_item.subtitle || undefined,
+							creator: discussion.showcase_item.creator || undefined,
+							media_type: discussion.showcase_item.media_type || undefined,
+							summary: discussion.showcase_item.summary || undefined,
+							analysis: discussion.showcase_item.analysis
+								? (() => {
+										try {
+											return JSON.parse(discussion.showcase_item.analysis);
+										} catch {
+											return undefined;
+										}
+									})()
+								: undefined
+						}
+					: undefined;
+
 				// Get the access token for authentication
 				const accessToken = nhost.auth.getAccessToken();
 				const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -691,7 +725,8 @@
 					headers,
 					body: JSON.stringify({
 						content: content,
-						importData: importDataPayload
+						importData: importDataPayload,
+						showcaseContext: showcaseContextPayload
 					})
 				});
 
@@ -1366,6 +1401,30 @@
 							{/each}
 						</div>
 					{/if}
+				</div>
+			{/if}
+
+			<!-- Showcase Item Context Banner -->
+			{#if showcaseItem}
+				<div class="showcase-context-banner">
+					<div class="showcase-context-label">This discussion is about:</div>
+					<a href="/featured/{showcaseItem.id}" class="showcase-context-card">
+						<div class="showcase-context-info">
+							<h3 class="showcase-context-title">{showcaseItem.title}</h3>
+							{#if showcaseItem.subtitle}
+								<p class="showcase-context-subtitle">{showcaseItem.subtitle}</p>
+							{/if}
+							<div class="showcase-context-meta">
+								{#if showcaseItem.creator}
+									<span class="showcase-creator">By {showcaseItem.creator}</span>
+								{/if}
+								{#if showcaseItem.media_type}
+									<span class="showcase-media-type">{showcaseItem.media_type}</span>
+								{/if}
+							</div>
+						</div>
+						<span class="view-link">View Analysis →</span>
+					</a>
 				</div>
 			{/if}
 
@@ -2330,5 +2389,107 @@
 		background: var(--color-surface-alt);
 		border-color: var(--color-primary);
 		color: var(--color-primary);
+	}
+
+	/* Showcase Context Banner Styles */
+	.showcase-context-banner {
+		margin-bottom: 2rem;
+		padding: 1.25rem;
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 15%, transparent);
+		border-radius: var(--border-radius);
+	}
+
+	.showcase-context-label {
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: 0.75rem;
+	}
+
+	.showcase-context-card {
+		display: flex;
+		align-items: flex-start;
+		gap: 1rem;
+		padding: 1rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-sm);
+		text-decoration: none;
+		color: inherit;
+		transition: all 0.2s ease;
+	}
+
+	.showcase-context-card:hover {
+		border-color: var(--color-primary);
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+	}
+
+	.showcase-context-info {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.showcase-context-title {
+		margin: 0 0 0.25rem 0;
+		font-family: 'Crimson Text', Georgia, serif;
+		font-size: 1.125rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		line-height: 1.3;
+	}
+
+	.showcase-context-subtitle {
+		margin: 0 0 0.5rem 0;
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+		line-height: 1.4;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.showcase-context-meta {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		font-size: 0.8125rem;
+		color: var(--color-text-secondary);
+	}
+
+	.showcase-creator {
+		font-weight: 500;
+	}
+
+	.showcase-media-type {
+		padding: 0.125rem 0.5rem;
+		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+		border-radius: var(--border-radius-sm);
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.025em;
+	}
+
+	.view-link {
+		flex-shrink: 0;
+		font-size: 0.875rem;
+		color: var(--color-primary);
+		font-weight: 500;
+		white-space: nowrap;
+		align-self: center;
+	}
+
+	@media (max-width: 640px) {
+		.showcase-context-card {
+			flex-direction: column;
+		}
+
+		.view-link {
+			align-self: flex-start;
+			margin-top: 0.5rem;
+		}
 	}
 </style>
