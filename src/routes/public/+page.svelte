@@ -80,6 +80,7 @@
 	let showForm = $state(false);
 	let draggedIndex = $state<number | null>(null);
 	let savingOrder = $state(false);
+	let activeTab = $state<'edit' | 'preview'>('edit');
 
 	const DRAFT_STORAGE_KEY = 'showcase-form-draft';
 
@@ -262,6 +263,7 @@
 		analysisError = null;
 		extractedExamples = '';
 		showForm = true;
+		activeTab = 'edit';
 		if (item.analysis) {
 			try {
 				const parsed = JSON.parse(item.analysis);
@@ -429,6 +431,113 @@
 			extractedExamples = '';
 		}
 	});
+
+	// Preview data derivations
+	const previewStructuredAnalysis = $derived(() => {
+		if (!form.analysis) return null;
+		try {
+			return JSON.parse(form.analysis);
+		} catch {
+			return null;
+		}
+	});
+
+	const previewSections = $derived(() => {
+		const analysis = previewStructuredAnalysis();
+		if (!analysis) return [];
+		return [
+			{
+				key: 'good_faith',
+				title: 'Good Faith Indicators',
+				icon: '🤝',
+				tone: 'positive',
+				items: analysis.good_faith ?? [],
+				emptyCopy: 'No clear good-faith signals were identified in this excerpt.'
+			},
+			{
+				key: 'logical_fallacies',
+				title: 'Logical Fallacies',
+				icon: '⚠️',
+				tone: 'warning',
+				items: analysis.logical_fallacies ?? [],
+				emptyCopy: 'No explicit logical fallacies were detected.'
+			},
+			{
+				key: 'cultish_language',
+				title: 'Cultish / Manipulative Language',
+				icon: '🧠',
+				tone: 'alert',
+				items: analysis.cultish_language ?? [],
+				emptyCopy: 'No manipulative language patterns were highlighted.'
+			}
+		];
+	});
+
+	const previewFactChecks = $derived(() => {
+		const analysis = previewStructuredAnalysis();
+		return analysis?.fact_checking ?? [];
+	});
+
+	const previewSummary = $derived(() => {
+		const analysis = previewStructuredAnalysis();
+		return analysis?.summary ?? null;
+	});
+
+	const previewSummaryStats = $derived(() => {
+		const sections = previewSections();
+		const factChecks = previewFactChecks();
+		if (sections.length === 0) return [];
+		return sections
+			.map((section) => ({
+				key: section.key,
+				label: section.title,
+				icon: section.icon,
+				tone: section.tone,
+				count: Array.isArray(section.items) ? section.items.length : 0
+			}))
+			.concat([
+				{
+					key: 'fact_checking',
+					label: 'Fact Checks',
+					icon: '🔍',
+					tone: 'fact',
+					count: Array.isArray(factChecks) ? factChecks.length : 0
+				}
+			]);
+	});
+
+	const formatMultiline = (value?: string | null) => {
+		if (!value) return '';
+		const escaped = value
+			.replaceAll('&', '&amp;')
+			.replaceAll('<', '&lt;')
+			.replaceAll('>', '&gt;')
+			.replaceAll('"', '&quot;')
+			.replaceAll("'", '&#39;');
+		return escaped.replace(/(?:\r\n|\r|\n)/g, '<br />');
+	};
+
+	const getPreviewExamples = (entry: any): string[] => {
+		if (!entry || typeof entry !== 'object') return [];
+		const collected: string[] = [];
+		if (Array.isArray(entry.examples)) {
+			for (const example of entry.examples) {
+				if (typeof example === 'string') {
+					const trimmed = example.trim();
+					if (trimmed.length > 0) {
+						collected.push(trimmed);
+					}
+				}
+			}
+		}
+		if (typeof entry.example === 'string') {
+			const trimmed = entry.example.trim();
+			if (trimmed.length > 0 && !collected.includes(trimmed)) {
+				collected.push(trimmed);
+			}
+		}
+		return collected;
+	};
 
 	async function generateFeaturedAnalysis(options?: { force?: boolean }) {
 		if (!hasAccess) return;
@@ -752,265 +861,455 @@
 						</button>
 					</div>
 
-					<form
-						onsubmit={(event) => {
-							event.preventDefault();
-							saveForm();
-						}}
-					>
-						<!-- Basic Info Section -->
-						<fieldset class="form-section">
-							<legend>
-								<span class="section-number">1</span>
-								Basic Information
-							</legend>
-							<label class="field-full">
-								<span>Title <span class="required">*</span></span>
-								<input
-									type="text"
-									bind:value={form.title}
-									required
-									placeholder="Enter a descriptive title for this showcase item"
-								/>
-							</label>
-							<label class="field-full">
-								<span>Subtitle</span>
-								<input
-									type="text"
-									bind:value={form.subtitle}
-									placeholder="Optional secondary headline or context"
-								/>
-							</label>
-							<div class="field-row">
-								<label>
-									<span>Media Type</span>
+					<div class="tab-bar">
+						<button
+							type="button"
+							class="tab-button"
+							class:active={activeTab === 'edit'}
+							onclick={() => (activeTab = 'edit')}
+						>
+							Edit
+						</button>
+						<button
+							type="button"
+							class="tab-button"
+							class:active={activeTab === 'preview'}
+							onclick={() => (activeTab = 'preview')}
+						>
+							Preview
+						</button>
+					</div>
+
+					{#if activeTab === 'edit'}
+						<form
+							onsubmit={(event) => {
+								event.preventDefault();
+								saveForm();
+							}}
+						>
+							<!-- Basic Info Section -->
+							<fieldset class="form-section">
+								<legend>
+									<span class="section-number">1</span>
+									Basic Information
+								</legend>
+								<label class="field-full">
+									<span>Title <span class="required">*</span></span>
 									<input
 										type="text"
-										bind:value={form.media_type}
-										placeholder="Speech, Podcast, Essay…"
+										bind:value={form.title}
+										required
+										placeholder="Enter a descriptive title for this showcase item"
 									/>
 								</label>
-								<label>
-									<span>Creator / Speaker</span>
+								<label class="field-full">
+									<span>Subtitle</span>
 									<input
 										type="text"
-										bind:value={form.creator}
-										placeholder="Author or speaker name"
+										bind:value={form.subtitle}
+										placeholder="Optional secondary headline or context"
 									/>
 								</label>
-							</div>
-							<div class="field-row">
-								<label>
-									<span>Date Published</span>
-									<input type="date" bind:value={form.date_published} />
+								<div class="field-row">
+									<label>
+										<span>Media Type</span>
+										<input
+											type="text"
+											bind:value={form.media_type}
+											placeholder="Speech, Podcast, Essay…"
+										/>
+									</label>
+									<label>
+										<span>Creator / Speaker</span>
+										<input
+											type="text"
+											bind:value={form.creator}
+											placeholder="Author or speaker name"
+										/>
+									</label>
+								</div>
+								<div class="field-row">
+									<label>
+										<span>Date Published</span>
+										<input type="date" bind:value={form.date_published} />
+									</label>
+									<label>
+										<span>Source URL</span>
+										<input
+											type="url"
+											bind:value={form.source_url}
+											placeholder="https://example.com/article"
+										/>
+									</label>
+								</div>
+							</fieldset>
+
+							<!-- AI Analysis Section -->
+							<fieldset class="form-section analysis-section">
+								<legend>
+									<span class="section-number">2</span>
+									AI Analysis
+								</legend>
+								<p class="section-description">
+									Paste source content below and generate a structured good-faith analysis using AI.
+								</p>
+
+								<label class="field-full">
+									<span>Source Content</span>
+									<textarea
+										id="analysis-input"
+										rows="12"
+										bind:value={rawContent}
+										placeholder="Paste transcript excerpts, statements, or notes to analyze…"
+									></textarea>
 								</label>
-								<label>
-									<span>Source URL</span>
-									<input
-										type="url"
-										bind:value={form.source_url}
-										placeholder="https://example.com/article"
-									/>
-								</label>
-							</div>
-						</fieldset>
 
-						<!-- AI Analysis Section -->
-						<fieldset class="form-section analysis-section">
-							<legend>
-								<span class="section-number">2</span>
-								AI Analysis
-							</legend>
-							<p class="section-description">
-								Paste source content below and generate a structured good-faith analysis using AI.
-							</p>
+								<div class="analysis-controls">
+									<div class="control-group">
+										<span class="control-label">Model</span>
+										<div class="button-toggle-group">
+											<button
+												type="button"
+												class="toggle-btn"
+												class:is-active={analysisProvider === 'claude'}
+												disabled={analyzing}
+												onclick={() => (analysisProvider = 'claude')}
+											>
+												Claude
+											</button>
+											<button
+												type="button"
+												class="toggle-btn"
+												class:is-active={analysisProvider === 'openai'}
+												disabled={analyzing}
+												onclick={() => (analysisProvider = 'openai')}
+											>
+												OpenAI
+											</button>
+										</div>
+									</div>
 
-							<label class="field-full">
-								<span>Source Content</span>
-								<textarea
-									id="analysis-input"
-									rows="12"
-									bind:value={rawContent}
-									placeholder="Paste transcript excerpts, statements, or notes to analyze…"
-								></textarea>
-							</label>
-
-							<div class="analysis-controls">
-								<div class="control-group">
-									<span class="control-label">Model</span>
-									<div class="button-toggle-group">
-										<button
-											type="button"
-											class="toggle-btn"
-											class:is-active={analysisProvider === 'claude'}
-											disabled={analyzing}
-											onclick={() => (analysisProvider = 'claude')}
-										>
-											Claude
-										</button>
-										<button
-											type="button"
-											class="toggle-btn"
-											class:is-active={analysisProvider === 'openai'}
-											disabled={analyzing}
-											onclick={() => (analysisProvider = 'openai')}
-										>
-											OpenAI
-										</button>
+									<div class="control-group">
+										<span class="control-label">Fact Check</span>
+										<div class="button-toggle-group">
+											<button
+												type="button"
+												class="toggle-btn"
+												class:is-active={!enableFactChecking}
+												disabled={analyzing}
+												onclick={() => (enableFactChecking = false)}
+											>
+												Off
+											</button>
+											<button
+												type="button"
+												class="toggle-btn"
+												class:is-active={enableFactChecking}
+												disabled={analyzing}
+												onclick={() => (enableFactChecking = true)}
+											>
+												On
+											</button>
+										</div>
 									</div>
 								</div>
 
-								<div class="control-group">
-									<span class="control-label">Fact Check</span>
-									<div class="button-toggle-group">
-										<button
-											type="button"
-											class="toggle-btn"
-											class:is-active={!enableFactChecking}
-											disabled={analyzing}
-											onclick={() => (enableFactChecking = false)}
-										>
-											Off
-										</button>
-										<button
-											type="button"
-											class="toggle-btn"
-											class:is-active={enableFactChecking}
-											disabled={analyzing}
-											onclick={() => (enableFactChecking = true)}
-										>
-											On
-										</button>
-									</div>
+								<div class="analysis-actions">
+									<button
+										type="button"
+										class="btn-analyze"
+										onclick={() => generateFeaturedAnalysis()}
+										disabled={analyzing || !rawContent.trim()}
+									>
+										{#if analyzing}
+											<AnimatedLogo size="18px" isAnimating={true} />
+											<span>Analyzing…</span>
+										{:else}
+											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+												<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+											</svg>
+											<span>Generate Analysis</span>
+										{/if}
+									</button>
+									<button
+										type="button"
+										class="btn-secondary btn-small"
+										onclick={() => generateFeaturedAnalysis({ force: true })}
+										disabled={analyzing || !rawContent.trim()}
+									>
+										Force Refresh
+									</button>
 								</div>
-							</div>
 
-							<div class="analysis-actions">
-								<button
-									type="button"
-									class="btn-analyze"
-									onclick={() => generateFeaturedAnalysis()}
-									disabled={analyzing || !rawContent.trim()}
-								>
-									{#if analyzing}
-										<AnimatedLogo size="18px" isAnimating={true} />
-										<span>Analyzing…</span>
-									{:else}
+								{#if analysisStatus}
+									<div class="analysis-feedback success">
 										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+											<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+											<polyline points="22 4 12 14.01 9 11.01" />
 										</svg>
-										<span>Generate Analysis</span>
-									{/if}
-								</button>
-								<button
-									type="button"
-									class="btn-secondary btn-small"
-									onclick={() => generateFeaturedAnalysis({ force: true })}
-									disabled={analyzing || !rawContent.trim()}
-								>
-									Force Refresh
-								</button>
-							</div>
+										<span>{analysisStatus}</span>
+									</div>
+								{:else if analysisError}
+									<div class="analysis-feedback error">
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<circle cx="12" cy="12" r="10" />
+											<line x1="12" y1="8" x2="12" y2="12" />
+											<line x1="12" y1="16" x2="12.01" y2="16" />
+										</svg>
+										<span>{analysisError}</span>
+									</div>
+								{/if}
 
-							{#if analysisStatus}
-								<div class="analysis-feedback success">
-									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-										<polyline points="22 4 12 14.01 9 11.01" />
-									</svg>
-									<span>{analysisStatus}</span>
+								{#if extractedExamples}
+									<details class="analysis-examples">
+										<summary>View Extracted Examples</summary>
+										<pre>{extractedExamples}</pre>
+									</details>
+								{/if}
+							</fieldset>
+
+							<!-- Results Section -->
+							<fieldset class="form-section">
+								<legend>
+									<span class="section-number">3</span>
+									Results & Display
+								</legend>
+
+								<label class="field-full">
+									<span>Highlights</span>
+									<textarea
+										id="highlights"
+										rows="3"
+										bind:value={form.summary}
+										placeholder="Key takeaways that will be shown prominently on the card"
+									></textarea>
+								</label>
+
+								<label class="field-full">
+									<span>Full Analysis (JSON)</span>
+									<textarea
+										id="analysis"
+										rows="6"
+										bind:value={form.analysis}
+										placeholder="Detailed analysis data in JSON format"
+										class="code-textarea"
+									></textarea>
+								</label>
+
+								<label class="field-full">
+									<span>Tags</span>
+									<input
+										type="text"
+										bind:value={form.tags}
+										placeholder="Comma-separated: ethics, policy, rhetoric"
+									/>
+									<span class="field-hint">Tags help categorize and filter showcase items</span>
+								</label>
+
+								<label class="publish-toggle">
+									<span class="toggle-track" class:is-active={form.published}>
+										<span class="toggle-thumb"></span>
+									</span>
+									<input type="checkbox" bind:checked={form.published} class="sr-only" />
+									<span class="toggle-label">{form.published ? 'Published' : 'Draft'}</span>
+								</label>
+							</fieldset>
+
+							<!-- Form Actions -->
+							<div class="form-actions">
+								{#if success}<p class="success">{success}</p>{/if}
+								{#if error && !loading}<p class="error">{error}</p>{/if}
+								<div class="action-buttons">
+									<button
+										type="button"
+										class="btn-secondary"
+										onclick={() => resetForm(true)}
+										disabled={saving}
+									>
+										Reset Form
+									</button>
+									<button type="submit" class="btn-primary" disabled={saving}>
+										{#if saving}
+											Saving…
+										{:else if form.id}
+											Update Item
+										{:else}
+											Create Item
+										{/if}
+									</button>
 								</div>
-							{:else if analysisError}
-								<div class="analysis-feedback error">
-									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<circle cx="12" cy="12" r="10" />
-										<line x1="12" y1="8" x2="12" y2="12" />
-										<line x1="12" y1="16" x2="12.01" y2="16" />
-									</svg>
-									<span>{analysisError}</span>
-								</div>
-							{/if}
-
-							{#if extractedExamples}
-								<details class="analysis-examples">
-									<summary>View Extracted Examples</summary>
-									<pre>{extractedExamples}</pre>
-								</details>
-							{/if}
-						</fieldset>
-
-						<!-- Results Section -->
-						<fieldset class="form-section">
-							<legend>
-								<span class="section-number">3</span>
-								Results & Display
-							</legend>
-
-							<label class="field-full">
-								<span>Highlights</span>
-								<textarea
-									id="highlights"
-									rows="3"
-									bind:value={form.summary}
-									placeholder="Key takeaways that will be shown prominently on the card"
-								></textarea>
-							</label>
-
-							<label class="field-full">
-								<span>Full Analysis (JSON)</span>
-								<textarea
-									id="analysis"
-									rows="6"
-									bind:value={form.analysis}
-									placeholder="Detailed analysis data in JSON format"
-									class="code-textarea"
-								></textarea>
-							</label>
-
-							<label class="field-full">
-								<span>Tags</span>
-								<input
-									type="text"
-									bind:value={form.tags}
-									placeholder="Comma-separated: ethics, policy, rhetoric"
-								/>
-								<span class="field-hint">Tags help categorize and filter showcase items</span>
-							</label>
-
-							<label class="publish-toggle">
-								<span class="toggle-track" class:is-active={form.published}>
-									<span class="toggle-thumb"></span>
-								</span>
-								<input type="checkbox" bind:checked={form.published} class="sr-only" />
-								<span class="toggle-label">{form.published ? 'Published' : 'Draft'}</span>
-							</label>
-						</fieldset>
-
-						<!-- Form Actions -->
-						<div class="form-actions">
-							{#if success}<p class="success">{success}</p>{/if}
-							{#if error && !loading}<p class="error">{error}</p>{/if}
-							<div class="action-buttons">
-								<button
-									type="button"
-									class="btn-secondary"
-									onclick={() => resetForm(true)}
-									disabled={saving}
-								>
-									Reset Form
-								</button>
-								<button type="submit" class="btn-primary" disabled={saving}>
-									{#if saving}
-										Saving…
-									{:else if form.id}
-										Update Item
-									{:else}
-										Create Item
-									{/if}
-								</button>
 							</div>
+						</form>
+					{:else}
+						<!-- Preview Tab -->
+						<div class="preview-panel">
+							<article class="preview-card">
+								<header class="preview-header">
+									<h1>{form.title || 'Untitled'}</h1>
+									{#if form.subtitle}
+										<p class="preview-subtitle">{@html formatMultiline(form.subtitle)}</p>
+									{/if}
+									<div class="preview-meta">
+										{#if form.media_type}<span>{form.media_type}</span>{/if}
+										{#if form.creator}<span>{form.creator}</span>{/if}
+										<span>
+											{form.date_published
+												? new Date(form.date_published + 'T12:00:00').toLocaleDateString()
+												: new Date().toLocaleDateString()}
+										</span>
+									</div>
+
+									{#if form.tags}
+										{@const tagList = parseTags(form.tags)}
+										{#if tagList.length > 0}
+											<ul class="preview-tag-list">
+												{#each tagList as tag}
+													<li>{tag}</li>
+												{/each}
+											</ul>
+										{/if}
+									{/if}
+								</header>
+
+								{#if previewSummary()}
+									<div class="preview-section-body" style="margin-top: 1.5rem;">
+										<strong>Overall summary:</strong>
+										{@html formatMultiline(previewSummary())}
+									</div>
+								{/if}
+
+								{#if form.summary}
+									<section class="preview-section">
+										<h2>Highlights</h2>
+										<div class="preview-section-body">{@html formatMultiline(form.summary)}</div>
+									</section>
+								{/if}
+
+								{#if previewStructuredAnalysis()}
+									<section class="preview-summary">
+										<div class="preview-summary-grid">
+											{#each previewSummaryStats() as stat}
+												<div class={`preview-summary-card tone-${stat.tone}`}>
+													<div class="preview-summary-icon">{stat.icon}</div>
+													<div class="preview-summary-meta">
+														<span class="preview-summary-count">{stat.count}</span>
+														<span class="preview-summary-label">{stat.label}</span>
+													</div>
+												</div>
+											{/each}
+										</div>
+									</section>
+
+									{#each previewSections() as section}
+										<section class="preview-section">
+											<div class="preview-section-heading">
+												<h2>{section.icon} {section.title}</h2>
+												{#if section.items.length > 0}
+													<span class="preview-section-count">
+														{section.items.length} finding{section.items.length === 1 ? '' : 's'}
+													</span>
+												{/if}
+											</div>
+											{#if section.items.length > 0}
+												<div class="preview-insight-grid">
+													{#each section.items as entry}
+														{@const examples = getPreviewExamples(entry)}
+														<article class={`preview-insight-card tone-${section.tone}`}>
+															<header>
+																<h3>{entry.name}</h3>
+																{#if entry.description}
+																	<p class="preview-description">{entry.description}</p>
+																{/if}
+															</header>
+															{#if examples.length > 0}
+																<div class="preview-example">
+																	<strong>{examples.length === 1 ? 'Example' : 'Examples'}:</strong>
+																	<ul>
+																		{#each examples as example}
+																			<li>{example}</li>
+																		{/each}
+																	</ul>
+																</div>
+															{/if}
+															{#if entry.why}
+																<p class="preview-rationale">
+																	<strong>Why it matters:</strong>
+																	{entry.why}
+																</p>
+															{/if}
+														</article>
+													{/each}
+												</div>
+											{:else}
+												<p class="preview-section-empty">{section.emptyCopy}</p>
+											{/if}
+										</section>
+									{/each}
+
+									<section class="preview-section">
+										<div class="preview-section-heading">
+											<h2>🔍 Fact Checking</h2>
+											{#if previewFactChecks().length > 0}
+												<span class="preview-section-count">
+													{previewFactChecks().length} claim{previewFactChecks().length === 1
+														? ''
+														: 's'}
+												</span>
+											{/if}
+										</div>
+										{#if previewFactChecks().length > 0}
+											<div class="preview-fact-grid">
+												{#each previewFactChecks() as check}
+													<article
+														class={`preview-fact-card verdict-${(check.verdict || 'Unverified').toLowerCase()}`}
+													>
+														<header>
+															<h3>{check.verdict || 'Unverified'}</h3>
+														</header>
+														{#if check.claim}
+															<p class="preview-claim">{check.claim}</p>
+														{/if}
+														{#if check.source?.name || check.source?.url}
+															<p class="preview-source">
+																<strong>Source:</strong>
+																{#if check.source?.url}
+																	<a href={check.source.url} target="_blank" rel="noopener">
+																		{check.source?.name || check.source.url}
+																	</a>
+																{:else if check.source?.name}
+																	{check.source.name}
+																{/if}
+															</p>
+														{/if}
+													</article>
+												{/each}
+											</div>
+										{:else}
+											<p class="preview-section-empty">
+												No fact-checkable claims were highlighted.
+											</p>
+										{/if}
+									</section>
+								{:else if form.analysis}
+									<section class="preview-section">
+										<h2>Analysis</h2>
+										<div class="preview-section-body">{@html formatMultiline(form.analysis)}</div>
+									</section>
+								{/if}
+
+								{#if form.source_url}
+									<a
+										class="preview-source-link"
+										href={form.source_url}
+										target="_blank"
+										rel="noopener"
+									>
+										Original source ↗
+									</a>
+								{/if}
+							</article>
 						</div>
-					</form>
+					{/if}
 				</section>
 			{/if}
 		</section>
@@ -1692,5 +1991,340 @@
 		border: 1px solid var(--color-border);
 		border-radius: var(--border-radius-md);
 		background: var(--color-surface);
+	}
+
+	/* Tab Bar */
+	.tab-bar {
+		display: flex;
+		gap: 0.25rem;
+		margin-bottom: 1.5rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		padding-bottom: 0;
+	}
+	.tab-button {
+		background: transparent;
+		border: none;
+		padding: 0.75rem 1.5rem;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		transition: all 0.2s ease;
+		border-bottom: 2px solid transparent;
+		margin-bottom: -1px;
+	}
+	.tab-button:hover:not(.active) {
+		color: var(--color-text-primary);
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+	}
+	.tab-button.active {
+		color: var(--color-primary);
+		border-bottom-color: var(--color-primary);
+	}
+
+	/* Preview Panel */
+	.preview-panel {
+		padding: 1rem 0;
+	}
+	.preview-card {
+		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 25%, transparent);
+		border-radius: var(--border-radius-xl);
+		padding: 2rem;
+		position: relative;
+		overflow: hidden;
+	}
+	.preview-card::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 4px;
+		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+		border-radius: var(--border-radius-xl) var(--border-radius-xl) 0 0;
+	}
+	.preview-header h1 {
+		margin: 0;
+		font-size: clamp(1.75rem, 4vw, 2.5rem);
+		font-weight: 900;
+		line-height: 1.1;
+		color: var(--color-text-primary);
+		font-family: var(--font-family-display);
+		letter-spacing: -0.02em;
+		margin-bottom: 1rem;
+	}
+	.preview-subtitle {
+		margin: 0 0 1rem;
+		font-size: 1.1rem;
+		color: var(--color-text-secondary);
+		line-height: 1.6;
+	}
+	.preview-meta {
+		display: flex;
+		gap: 1rem;
+		flex-wrap: wrap;
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	.preview-meta span + span::before {
+		content: '•';
+		margin-right: 0.5rem;
+		color: color-mix(in srgb, var(--color-text-secondary) 60%, transparent);
+	}
+	.preview-tag-list {
+		list-style: none;
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+		padding: 0;
+		margin: 1rem 0 0;
+	}
+	.preview-tag-list li {
+		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+		border-radius: var(--border-radius-lg);
+		padding: 0.4rem 0.75rem;
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--color-primary);
+	}
+	.preview-section {
+		margin-top: 2rem;
+	}
+	.preview-section h2 {
+		margin: 0 0 1rem;
+		font-size: 1.35rem;
+		font-weight: 800;
+		color: var(--color-text-primary);
+		font-family: var(--font-family-display);
+	}
+	.preview-section-heading {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
+		margin-bottom: 1.25rem;
+	}
+	.preview-section-heading h2 {
+		margin: 0;
+	}
+	.preview-section-count {
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+		font-weight: 600;
+		padding: 0.2rem 0.6rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+		border-radius: var(--border-radius-md);
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+	}
+	.preview-section-body {
+		font-size: 1rem;
+		line-height: 1.6;
+		color: var(--color-text-primary);
+	}
+	.preview-section-empty {
+		margin: 0;
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+	}
+	.preview-summary {
+		margin-top: 2rem;
+	}
+	.preview-summary-grid {
+		display: grid;
+		gap: 0.75rem;
+		grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+	}
+	.preview-summary-card {
+		border-radius: var(--border-radius-lg);
+		padding: 1rem;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+	}
+	.preview-summary-icon {
+		font-size: 1.5rem;
+	}
+	.preview-summary-meta {
+		display: flex;
+		flex-direction: column;
+		line-height: 1.1;
+	}
+	.preview-summary-count {
+		font-size: 1.25rem;
+		font-weight: 900;
+		color: var(--color-text-primary);
+		font-family: var(--font-family-display);
+	}
+	.preview-summary-label {
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+		font-weight: 500;
+	}
+	.preview-insight-grid {
+		display: grid;
+		gap: 1rem;
+		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+	}
+	.preview-insight-card {
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		border-radius: var(--border-radius-lg);
+		padding: 1.25rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		position: relative;
+		overflow: hidden;
+	}
+	.preview-insight-card::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 3px;
+		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+	}
+	.preview-insight-card h3 {
+		margin: 0;
+		font-size: 1.1rem;
+		font-weight: 700;
+		color: var(--color-text-primary);
+		font-family: var(--font-family-display);
+	}
+	.preview-description {
+		margin: 0;
+		color: var(--color-text-secondary);
+		font-size: 0.85rem;
+	}
+	.preview-example {
+		font-size: 0.85rem;
+		line-height: 1.5;
+	}
+	.preview-example strong {
+		display: block;
+		margin-bottom: 0.25rem;
+	}
+	.preview-example ul {
+		margin: 0;
+		padding-left: 1rem;
+	}
+	.preview-example li {
+		margin: 0.1rem 0;
+	}
+	.preview-rationale {
+		margin: 0;
+		font-size: 0.85rem;
+		line-height: 1.5;
+	}
+	.preview-fact-grid {
+		display: grid;
+		gap: 1rem;
+		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+	}
+	.preview-fact-card {
+		border-radius: var(--border-radius-lg);
+		padding: 1.25rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		position: relative;
+		overflow: hidden;
+	}
+	.preview-fact-card::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 3px;
+		background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+	}
+	.preview-fact-card header h3 {
+		margin: 0;
+		font-size: 1rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-text-primary);
+	}
+	.preview-claim {
+		margin: 0;
+		font-size: 0.95rem;
+		line-height: 1.5;
+		color: var(--color-text-primary);
+	}
+	.preview-source {
+		margin: 0;
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+	}
+	.preview-source a {
+		color: var(--color-primary);
+		text-decoration: none;
+	}
+	.preview-source a:hover {
+		text-decoration: underline;
+	}
+	.preview-source-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 2rem;
+		color: var(--color-primary);
+		font-weight: 600;
+		text-decoration: none;
+		padding: 0.75rem 1.5rem;
+		border-radius: var(--border-radius-lg);
+		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+		transition: all 0.2s ease;
+	}
+	.preview-source-link:hover {
+		background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+	}
+
+	/* Tone colors for preview cards */
+	.preview-summary-card.tone-positive,
+	.preview-insight-card.tone-positive {
+		border-color: color-mix(in srgb, #10b981 50%, transparent);
+	}
+	.preview-summary-card.tone-warning,
+	.preview-insight-card.tone-warning {
+		border-color: color-mix(in srgb, #f59e0b 50%, transparent);
+	}
+	.preview-summary-card.tone-alert,
+	.preview-insight-card.tone-alert {
+		border-color: color-mix(in srgb, #ef4444 50%, transparent);
+	}
+	.preview-summary-card.tone-fact {
+		border-color: color-mix(in srgb, #3b82f6 50%, transparent);
+	}
+	.preview-fact-card.verdict-true {
+		border-color: color-mix(in srgb, #10b981 50%, transparent);
+	}
+	.preview-fact-card.verdict-true::before {
+		background: linear-gradient(90deg, #10b981, #34d399);
+	}
+	.preview-fact-card.verdict-false {
+		border-color: color-mix(in srgb, #ef4444 50%, transparent);
+	}
+	.preview-fact-card.verdict-false::before {
+		background: linear-gradient(90deg, #ef4444, #f87171);
+	}
+	.preview-fact-card.verdict-misleading {
+		border-color: color-mix(in srgb, #f59e0b 50%, transparent);
+	}
+	.preview-fact-card.verdict-misleading::before {
+		background: linear-gradient(90deg, #f59e0b, #fbbf24);
 	}
 </style>
