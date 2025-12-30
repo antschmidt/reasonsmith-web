@@ -3297,6 +3297,17 @@
 				onRevealIdentity={handleUnanonymizeDiscussion}
 			/>
 
+			{#if discussion.showcase_item}
+				<a href="/featured/{discussion.showcase_item.id}" class="showcase-context-banner">
+					<span class="banner-label">This discussion is about:</span>
+					<span class="banner-title">{discussion.showcase_item.title}</span>
+					{#if discussion.showcase_item.creator}
+						<span class="banner-meta">by {discussion.showcase_item.creator}</span>
+					{/if}
+					<span class="banner-arrow">View Analysis &rarr;</span>
+				</a>
+			{/if}
+
 			{#if pendingApprovalForThisDiscussion}
 				<EditorsDeskApprovalCard
 					pick={pendingApprovalForThisDiscussion}
@@ -3560,6 +3571,68 @@
 			padding: 2rem 1rem;
 		}
 	}
+	/* Showcase Context Banner */
+	.showcase-context-banner {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 1rem;
+		padding: 1rem 1.25rem;
+		margin-bottom: 1.5rem;
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--color-primary) 8%, var(--color-surface)),
+			color-mix(in srgb, var(--color-accent) 6%, var(--color-surface))
+		);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+		border-radius: var(--border-radius-lg);
+		text-decoration: none;
+		transition: all 0.2s ease;
+	}
+
+	.showcase-context-banner:hover {
+		border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 15%, transparent);
+		transform: translateY(-1px);
+	}
+
+	.showcase-context-banner .banner-label {
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+		font-weight: 500;
+	}
+
+	.showcase-context-banner .banner-title {
+		font-size: 1rem;
+		font-weight: 700;
+		color: var(--color-text-primary);
+		font-family: var(--font-family-display);
+	}
+
+	.showcase-context-banner .banner-meta {
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+	}
+
+	.showcase-context-banner .banner-arrow {
+		margin-left: auto;
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--color-primary);
+	}
+
+	@media (max-width: 640px) {
+		.showcase-context-banner {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+
+		.showcase-context-banner .banner-arrow {
+			margin-left: 0;
+			margin-top: 0.5rem;
+		}
+	}
+
 	/* Editorial Article Header */
 	.discussion-header {
 		margin-bottom: 3rem;
