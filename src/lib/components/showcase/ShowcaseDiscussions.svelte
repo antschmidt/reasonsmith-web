@@ -2,6 +2,7 @@
 	import { nhost } from '$lib/nhostClient';
 	import { goto } from '$app/navigation';
 	import { GET_SHOWCASE_ITEM_DISCUSSIONS } from '$lib/graphql/queries/public-showcase';
+	import { extractCitationData } from '$lib/utils/contentExtraction';
 
 	type Discussion = {
 		id: string;
@@ -111,6 +112,14 @@
 		return content.slice(0, maxLength).trim() + '...';
 	}
 
+	function cleanDescription(description: string | null | undefined): string {
+		if (!description) return '';
+		// Strip citation data and other embedded HTML comments
+		const { cleanContent } = extractCitationData(description);
+		// Also strip any remaining HTML tags
+		return cleanContent.replace(/<[^>]*>/g, '').trim();
+	}
+
 	// Load discussions on mount if not provided and user is authenticated
 	import { onMount } from 'svelte';
 	onMount(() => {
@@ -185,9 +194,12 @@
 					<div class="card-content">
 						<h3>{version?.title || 'Untitled Discussion'}</h3>
 						{#if version?.description}
-							<p class="description">
-								{version.description.slice(0, 150)}{version.description.length > 150 ? '...' : ''}
-							</p>
+							{@const cleaned = cleanDescription(version.description)}
+							{#if cleaned}
+								<p class="description">
+									{cleaned.slice(0, 150)}{cleaned.length > 150 ? '...' : ''}
+								</p>
+							{/if}
 						{/if}
 						{#if version?.tags && version.tags.length > 0}
 							<div class="tags">
