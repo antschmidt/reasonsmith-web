@@ -897,6 +897,20 @@
 						created_by
 						is_anonymous
 						status
+						showcase_item_id
+						showcase_item {
+							id
+							title
+							subtitle
+							creator
+							media_type
+							source_url
+							date_published
+							created_at
+							summary
+							analysis
+							tags
+						}
 						contributor {
 							id
 							handle
