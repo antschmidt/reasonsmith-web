@@ -182,7 +182,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 	logger.info('=== Claude API endpoint called ===');
 	try {
 		const body = await request.json();
-		const { postId, content, importData, discussionContext } = body as {
+		const { postId, content, importData, discussionContext, showcaseContext } = body as {
 			postId?: string;
 			content?: string;
 			importData?: {
@@ -212,6 +212,17 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 					created_at: string;
 					is_anonymous: boolean;
 				}>;
+			};
+			showcaseContext?: {
+				title: string;
+				subtitle?: string;
+				creator?: string;
+				media_type?: string;
+				summary?: string;
+				analysis?: {
+					summary?: string;
+					[key: string]: any;
+				};
 			};
 		};
 
@@ -255,6 +266,31 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 				contextString += '\n---\n\n';
 			}
 
+			// Add showcase context if this discussion is about a featured analysis
+			// This provides reference context but is NOT subject to analysis
+			if (showcaseContext?.title) {
+				contextString += `FEATURED ANALYSIS CONTEXT (for reference only - DO NOT ANALYZE this content):\n`;
+				contextString += `The user is writing a discussion about the following featured analysis.\n`;
+				contextString += `This context is provided for reference only - analyze the user's discussion content, NOT this featured analysis.\n\n`;
+				contextString += `Title: ${showcaseContext.title}\n`;
+				if (showcaseContext.subtitle) {
+					contextString += `Subtitle: ${showcaseContext.subtitle}\n`;
+				}
+				if (showcaseContext.creator) {
+					contextString += `Creator: ${showcaseContext.creator}\n`;
+				}
+				if (showcaseContext.media_type) {
+					contextString += `Media Type: ${showcaseContext.media_type}\n`;
+				}
+				if (showcaseContext.summary) {
+					contextString += `Summary: ${showcaseContext.summary}\n`;
+				}
+				if (showcaseContext.analysis?.summary) {
+					contextString += `Analysis Conclusion: ${showcaseContext.analysis.summary}\n`;
+				}
+				contextString += '\n---\n\n';
+			}
+
 			// Add social media import if present
 			if (contextImportData?.content) {
 				contextString += `IMPORTED SOCIAL MEDIA POST (for context only - not subject to good faith evaluation):\n`;
@@ -280,10 +316,31 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
 			contextString += `USER'S NEW COMMENT (evaluate this for good faith):\n${content}`;
 			fullContent = contextString;
-		} else if (contextImportData?.content) {
-			// Old format for backward compatibility
-			const importContext = `
-IMPORTED SOCIAL MEDIA POST (for context only - not subject to good faith evaluation):
+		} else if (contextImportData?.content || showcaseContext?.title) {
+			// Old format for backward compatibility, or showcase-only context
+			let contextString = '';
+
+			// Add showcase context if present
+			if (showcaseContext?.title) {
+				contextString += `FEATURED ANALYSIS CONTEXT (for reference only - DO NOT ANALYZE this content):
+The user is writing a discussion about the following featured analysis.
+This context is provided for reference only - analyze the user's discussion content, NOT this featured analysis.
+
+Title: ${showcaseContext.title}
+${showcaseContext.subtitle ? `Subtitle: ${showcaseContext.subtitle}` : ''}
+${showcaseContext.creator ? `Creator: ${showcaseContext.creator}` : ''}
+${showcaseContext.media_type ? `Media Type: ${showcaseContext.media_type}` : ''}
+${showcaseContext.summary ? `Summary: ${showcaseContext.summary}` : ''}
+${showcaseContext.analysis?.summary ? `Analysis Conclusion: ${showcaseContext.analysis.summary}` : ''}
+
+---
+
+`;
+			}
+
+			// Add import context if present
+			if (contextImportData?.content) {
+				contextString += `IMPORTED SOCIAL MEDIA POST (for context only - not subject to good faith evaluation):
 Platform: ${contextImportData.source || 'Unknown'}
 Author: ${contextImportData.author || 'Unknown'}
 ${contextImportData.date ? `Date: ${contextImportData.date}` : ''}
@@ -294,10 +351,13 @@ ${contextImportData.content}
 
 ---
 
-USER'S RESPONSE (evaluate this for good faith):
+`;
+			}
+
+			contextString += `USER'S RESPONSE (evaluate this for good faith):
 ${content}
 `;
-			fullContent = importContext;
+			fullContent = contextString;
 		}
 
 		// Get user from session to track usage

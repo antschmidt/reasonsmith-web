@@ -178,6 +178,8 @@
 								creator
 								media_type
 								source_url
+								summary
+								analysis
 							}
 							contributor {
 								id
@@ -690,6 +692,27 @@
 						}
 					: undefined;
 
+				// Build showcase context if this discussion is about a featured analysis
+				// This provides context for the AI but is not subject to analysis itself
+				const showcaseContextPayload = discussion?.showcase_item
+					? {
+							title: discussion.showcase_item.title,
+							subtitle: discussion.showcase_item.subtitle || undefined,
+							creator: discussion.showcase_item.creator || undefined,
+							media_type: discussion.showcase_item.media_type || undefined,
+							summary: discussion.showcase_item.summary || undefined,
+							analysis: discussion.showcase_item.analysis
+								? (() => {
+										try {
+											return JSON.parse(discussion.showcase_item.analysis);
+										} catch {
+											return undefined;
+										}
+									})()
+								: undefined
+						}
+					: undefined;
+
 				// Get the access token for authentication
 				const accessToken = nhost.auth.getAccessToken();
 				const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -702,7 +725,8 @@
 					headers,
 					body: JSON.stringify({
 						content: content,
-						importData: importDataPayload
+						importData: importDataPayload,
+						showcaseContext: showcaseContextPayload
 					})
 				});
 
