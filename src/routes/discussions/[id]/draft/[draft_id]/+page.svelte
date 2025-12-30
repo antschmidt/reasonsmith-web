@@ -178,7 +178,6 @@
 								creator
 								media_type
 								source_url
-								thumbnail_url
 							}
 							contributor {
 								id
@@ -1386,9 +1385,6 @@
 				<div class="showcase-context-banner">
 					<div class="showcase-context-label">This discussion is about:</div>
 					<a href="/featured/{showcaseItem.id}" class="showcase-context-card">
-						{#if showcaseItem.thumbnail_url}
-							<img src={showcaseItem.thumbnail_url} alt="" class="showcase-thumbnail" />
-						{/if}
 						<div class="showcase-context-info">
 							<h3 class="showcase-context-title">{showcaseItem.title}</h3>
 							{#if showcaseItem.subtitle}
@@ -2407,14 +2403,6 @@
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 	}
 
-	.showcase-thumbnail {
-		width: 80px;
-		height: 60px;
-		object-fit: cover;
-		border-radius: var(--border-radius-sm);
-		flex-shrink: 0;
-	}
-
 	.showcase-context-info {
 		flex: 1;
 		min-width: 0;
@@ -2473,11 +2461,6 @@
 	@media (max-width: 640px) {
 		.showcase-context-card {
 			flex-direction: column;
-		}
-
-		.showcase-thumbnail {
-			width: 100%;
-			height: 120px;
 		}
 
 		.view-link {

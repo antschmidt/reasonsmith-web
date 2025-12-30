@@ -80,6 +80,21 @@
 	let authReady = $state(false);
 	let contributor = $state<any>(null);
 
+	// Showcase context card state
+	let showcaseContextExpanded = $state(false);
+
+	const getAnalysisSummary = (analysisJson?: string | null): string | null => {
+		if (!analysisJson) return null;
+		try {
+			const parsed = JSON.parse(analysisJson);
+			return parsed?.summary || null;
+		} catch {
+			return null;
+		}
+	};
+
+	let analysisSummary = $derived(getAnalysisSummary(discussion?.showcase_item?.analysis));
+
 	// Editors' Desk approval state
 	let editorsDeskApprovals = $state<any[]>([]);
 	let pendingApprovalForThisDiscussion = $derived(
@@ -3298,14 +3313,44 @@
 			/>
 
 			{#if discussion.showcase_item}
-				<a href="/featured/{discussion.showcase_item.id}" class="showcase-context-banner">
-					<span class="banner-label">This discussion is about:</span>
-					<span class="banner-title">{discussion.showcase_item.title}</span>
-					{#if discussion.showcase_item.creator}
-						<span class="banner-meta">by {discussion.showcase_item.creator}</span>
+				<div class="showcase-context-card" class:expanded={showcaseContextExpanded}>
+					<button
+						class="showcase-context-header"
+						onclick={() => (showcaseContextExpanded = !showcaseContextExpanded)}
+					>
+						<span class="context-label">This discussion is about:</span>
+						<div class="context-title-row">
+							<h3>{discussion.showcase_item.title}</h3>
+							<span class="expand-icon">{showcaseContextExpanded ? '−' : '+'}</span>
+						</div>
+						<div class="context-meta">
+							{#if discussion.showcase_item.media_type}<span
+									>{discussion.showcase_item.media_type}</span
+								>{/if}
+							{#if discussion.showcase_item.creator}<span>{discussion.showcase_item.creator}</span
+								>{/if}
+							{#if discussion.showcase_item.date_published}<span
+									>{new Date(
+										discussion.showcase_item.date_published + 'T12:00:00'
+									).toLocaleDateString()}</span
+								>{/if}
+						</div>
+					</button>
+
+					{#if showcaseContextExpanded}
+						<div class="showcase-context-body">
+							{#if discussion.showcase_item.subtitle}
+								<p class="context-subtitle">{discussion.showcase_item.subtitle}</p>
+							{/if}
+							{#if analysisSummary}
+								<p class="context-analysis-summary">{analysisSummary}</p>
+							{/if}
+							<a href="/featured/{discussion.showcase_item.id}" class="view-analysis-link">
+								View Full Analysis →
+							</a>
+						</div>
 					{/if}
-					<span class="banner-arrow">View Analysis &rarr;</span>
-				</a>
+				</div>
 			{/if}
 
 			{#if pendingApprovalForThisDiscussion}
@@ -3571,65 +3616,130 @@
 			padding: 2rem 1rem;
 		}
 	}
-	/* Showcase Context Banner */
-	.showcase-context-banner {
+	/* Showcase Context Card */
+	.showcase-context-card {
+		margin-bottom: 2rem;
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		border-radius: var(--border-radius-xl);
+		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+		backdrop-filter: blur(10px);
+		overflow: hidden;
+		transition: all 0.3s ease;
+	}
+
+	.showcase-context-card.expanded {
+		box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 10%, transparent);
+	}
+
+	.showcase-context-header {
+		width: 100%;
 		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem 1rem;
+		flex-direction: column;
+		gap: 0.5rem;
 		padding: 1rem 1.25rem;
-		margin-bottom: 1.5rem;
-		background: linear-gradient(
-			135deg,
-			color-mix(in srgb, var(--color-primary) 8%, var(--color-surface)),
-			color-mix(in srgb, var(--color-accent) 6%, var(--color-surface))
-		);
-		border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
-		border-radius: var(--border-radius-lg);
-		text-decoration: none;
-		transition: all 0.2s ease;
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		text-align: left;
+		transition: background 0.2s ease;
+		font-family: inherit;
+		color: inherit;
 	}
 
-	.showcase-context-banner:hover {
-		border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
-		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 15%, transparent);
-		transform: translateY(-1px);
+	.showcase-context-header:hover {
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
 	}
 
-	.showcase-context-banner .banner-label {
-		font-size: 0.85rem;
+	.context-label {
+		font-size: 0.8rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 		color: var(--color-text-secondary);
-		font-weight: 500;
+		font-weight: 600;
 	}
 
-	.showcase-context-banner .banner-title {
-		font-size: 1rem;
+	.context-title-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.context-title-row h3 {
+		margin: 0;
+		font-size: 1.125rem;
 		font-weight: 700;
 		color: var(--color-text-primary);
 		font-family: var(--font-family-display);
 	}
 
-	.showcase-context-banner .banner-meta {
-		font-size: 0.85rem;
-		color: var(--color-text-secondary);
+	.expand-icon {
+		font-size: 1.25rem;
+		color: var(--color-primary);
+		font-weight: 600;
 	}
 
-	.showcase-context-banner .banner-arrow {
-		margin-left: auto;
-		font-size: 0.85rem;
+	.context-meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 0.75rem;
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.context-meta span + span::before {
+		content: '•';
+		margin-right: 0.5rem;
+		color: color-mix(in srgb, var(--color-text-secondary) 50%, transparent);
+	}
+
+	.showcase-context-body {
+		padding: 0 1.25rem 1.25rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
+		animation: slideDown 0.2s ease;
+	}
+
+	.context-subtitle {
+		margin: 1rem 0 0.75rem;
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		line-height: 1.5;
+	}
+
+	.context-analysis-summary {
+		margin: 0 0 1rem;
+		padding: 0.75rem 1rem;
+		font-size: 0.9rem;
+		font-style: italic;
+		color: var(--color-text-secondary);
+		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
+		border-left: 3px solid color-mix(in srgb, var(--color-primary) 50%, transparent);
+		border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
+		line-height: 1.6;
+	}
+
+	.view-analysis-link {
+		display: inline-flex;
+		align-items: center;
+		font-size: 0.9rem;
 		font-weight: 600;
 		color: var(--color-primary);
+		text-decoration: none;
 	}
 
-	@media (max-width: 640px) {
-		.showcase-context-banner {
-			flex-direction: column;
-			align-items: flex-start;
-		}
+	.view-analysis-link:hover {
+		text-decoration: underline;
+	}
 
-		.showcase-context-banner .banner-arrow {
-			margin-left: 0;
-			margin-top: 0.5rem;
+	@keyframes slideDown {
+		from {
+			opacity: 0;
+			transform: translateY(-8px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
 		}
 	}
 

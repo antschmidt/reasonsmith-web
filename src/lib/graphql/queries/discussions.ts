@@ -20,6 +20,9 @@ export const GET_DISCUSSION_DETAILS = gql`
 				creator
 				media_type
 				source_url
+				date_published
+				summary
+				analysis
 			}
 			contributor {
 				...ContributorFields
@@ -81,6 +84,9 @@ export const GET_DISCUSSION_WITH_CURRENT_VERSION = gql`
 				creator
 				media_type
 				source_url
+				date_published
+				summary
+				analysis
 			}
 			contributor {
 				...ContributorFields
