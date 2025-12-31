@@ -102,6 +102,13 @@ export interface GoodFaithResult {
 	provider: 'claude' | 'openai' | 'gemini' | 'heuristic';
 	usedAI: boolean;
 
+	// Token usage (for API cost tracking)
+	usage?: {
+		input_tokens: number;
+		output_tokens: number;
+		total_tokens: number;
+	};
+
 	// Legacy compatibility (some consumers expect these)
 	goodFaithScore?: number; // 0-100 scale (original)
 	goodFaithDescriptor?: string;

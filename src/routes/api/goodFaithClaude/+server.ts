@@ -5,9 +5,10 @@ import { print } from 'graphql';
 import { INCREMENT_ANALYSIS_USAGE, INCREMENT_PURCHASED_CREDITS_USED } from '$lib/graphql/queries';
 import { getMonthlyCreditsRemaining } from '$lib/creditUtils';
 import { logger } from '$lib/logger';
+import { logApiUsageAsync } from '$lib/server/apiUsageLogger';
 
 // Import shared utilities
-import type { GoodFaithInput, ClaudeRawResponse } from '$lib/goodFaith';
+import type { GoodFaithInput, ClaudeRawResponse, GoodFaithResult } from '$lib/goodFaith';
 import {
 	buildFullContent,
 	buildBaseSystemPrompt,
@@ -26,9 +27,7 @@ const anthropic = new Anthropic({
 /**
  * Analyze content using Claude API
  */
-async function analyzeWithClaude(
-	fullContent: string
-): Promise<ReturnType<typeof normalizeClaudeResponse>> {
+async function analyzeWithClaude(fullContent: string): Promise<GoodFaithResult> {
 	try {
 		logger.info('Starting Claude API call...');
 
@@ -55,6 +54,16 @@ async function analyzeWithClaude(
 
 		logger.info('Claude API response received');
 
+		// Capture token usage from the response
+		const usage = {
+			input_tokens: msg.usage.input_tokens,
+			output_tokens: msg.usage.output_tokens,
+			total_tokens: msg.usage.input_tokens + msg.usage.output_tokens
+		};
+		logger.info(
+			`Token usage: ${usage.input_tokens} in, ${usage.output_tokens} out, ${usage.total_tokens} total`
+		);
+
 		const responseText = msg.content[0]?.type === 'text' ? msg.content[0].text : '';
 
 		if (!responseText) {
@@ -71,7 +80,11 @@ async function analyzeWithClaude(
 		// Normalize response using shared utility
 		const result = normalizeClaudeResponse(rawResult);
 
-		return result;
+		// Add token usage to the result
+		return {
+			...result,
+			usage
+		};
 	} catch (error: unknown) {
 		logger.error('Claude API error:', error);
 		if (error instanceof Error) {
@@ -330,6 +343,25 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 					logger.error('Failed to increment usage count:', usageError);
 					// Don't fail the request if usage tracking fails
 				}
+			}
+
+			// Log API usage for token tracking (fire-and-forget)
+			if (scored.usedAI && scored.usage) {
+				logApiUsageAsync({
+					contributorId,
+					provider: 'claude',
+					model: PROVIDER_CONFIGS.claude.model,
+					endpoint: 'goodFaithClaude',
+					inputTokens: scored.usage.input_tokens,
+					outputTokens: scored.usage.output_tokens,
+					postId: input.postId,
+					discussionId: input.discussionContext?.discussion ? undefined : undefined, // TODO: Add discussion ID if available
+					metadata: {
+						contentLength: input.content.length,
+						hasImportData: !!input.importData,
+						hasShowcaseContext: !!input.showcaseContext
+					}
+				});
 			}
 
 			// Add legacy usedClaude field for backward compatibility

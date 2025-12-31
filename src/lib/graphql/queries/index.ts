@@ -193,12 +193,7 @@ export {
 } from './editors-desk';
 
 // Saved Items
-export {
-	CHECK_SAVED_ITEM,
-	GET_SAVED_ITEMS,
-	SAVE_ITEM,
-	REMOVE_SAVED_ITEM
-} from './saved-items';
+export { CHECK_SAVED_ITEM, GET_SAVED_ITEMS, SAVE_ITEM, REMOVE_SAVED_ITEM } from './saved-items';
 
 // Public Showcase
 export {
@@ -211,8 +206,16 @@ export {
 } from './public-showcase';
 
 // Auth (Security Keys, Subscription Plans)
+export { GET_USER_SECURITY_KEYS, DELETE_SECURITY_KEY, GET_SUBSCRIPTION_PLANS } from './auth';
+
+// API Usage (Token tracking)
 export {
-	GET_USER_SECURITY_KEYS,
-	DELETE_SECURITY_KEY,
-	GET_SUBSCRIPTION_PLANS
-} from './auth';
+	GET_MY_API_USAGE_SUMMARY,
+	GET_MY_API_USAGE_LOGS,
+	GET_MY_TOTAL_TOKEN_USAGE,
+	GET_ALL_API_USAGE_SUMMARIES,
+	GET_PLATFORM_TOKEN_USAGE,
+	GET_USAGE_BY_ENDPOINT,
+	GET_USAGE_BY_PROVIDER,
+	GET_TOP_USERS_BY_USAGE
+} from './api-usage';

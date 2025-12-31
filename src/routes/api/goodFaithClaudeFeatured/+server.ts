@@ -5,6 +5,7 @@ import OpenAI from 'openai';
 import { print } from 'graphql';
 import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
 import { logger } from '$lib/logger';
+import { logApiUsageAsync } from '$lib/server/apiUsageLogger';
 
 const anthropic = new Anthropic({
 	apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-build'
@@ -61,6 +62,18 @@ interface FeaturedClaudeResponse {
 	cultish_language: CultishLanguageFinding[];
 	fact_checking: FactCheckFinding[];
 	summary: string;
+}
+
+interface TokenUsage {
+	input_tokens: number;
+	output_tokens: number;
+	total_tokens: number;
+}
+
+interface AnalysisResultWithUsage {
+	analysis: FeaturedClaudeResponse;
+	usage?: TokenUsage;
+	provider: 'claude' | 'openai';
 }
 
 const featuredAnalysisSchema = {
@@ -292,7 +305,7 @@ Return the analysis strictly as a JSON object. Be thorough - it's better to be c
   "summary": "A brief summary of the overall tone and quality of the argumentation in the text."
 }`;
 
-async function analyzeWithClaude(content: string): Promise<FeaturedClaudeResponse> {
+async function analyzeWithClaude(content: string): Promise<AnalysisResultWithUsage> {
 	if (!process.env.ANTHROPIC_API_KEY) {
 		throw new Error('AI analysis is temporarily unavailable');
 	}
@@ -324,6 +337,15 @@ ${content}`
 		]
 	});
 
+	// Capture token usage from the response
+	const usage: TokenUsage | undefined = message.usage
+		? {
+				input_tokens: message.usage.input_tokens,
+				output_tokens: message.usage.output_tokens,
+				total_tokens: message.usage.input_tokens + message.usage.output_tokens
+			}
+		: undefined;
+
 	const responseBlocks = message.content ?? [];
 	const textResponse = responseBlocks
 		.filter((block) => block.type === 'text')
@@ -354,7 +376,8 @@ ${content}`
 
 	// Attempt to parse, with repair for common JSON issues
 	try {
-		return JSON.parse(cleaned) as FeaturedClaudeResponse;
+		const analysis = JSON.parse(cleaned) as FeaturedClaudeResponse;
+		return { analysis, usage, provider: 'claude' };
 	} catch (parseError) {
 		// Try to repair common JSON issues from LLM output
 		let repaired = cleaned
@@ -374,7 +397,8 @@ ${content}`
 			.replace(/: "([^"]*)"([^",}\]\n][^"]*)"([^"]*)",/g, ': "$1\\"$2\\"$3",');
 
 		try {
-			return JSON.parse(repaired) as FeaturedClaudeResponse;
+			const analysis = JSON.parse(repaired) as FeaturedClaudeResponse;
+			return { analysis, usage, provider: 'claude' };
 		} catch (repairError) {
 			// Log the problematic JSON for debugging
 			logger.error('Failed to parse Claude response JSON:', {
@@ -389,7 +413,7 @@ ${content}`
 	}
 }
 
-async function analyzeWithOpenAI(content: string): Promise<FeaturedClaudeResponse> {
+async function analyzeWithOpenAI(content: string): Promise<AnalysisResultWithUsage> {
 	if (!process.env.OPENAI_API_KEY) {
 		throw new Error('OPENAI_API_KEY not set');
 	}
@@ -414,13 +438,23 @@ async function analyzeWithOpenAI(content: string): Promise<FeaturedClaudeRespons
 		]
 	});
 
+	// Capture token usage from OpenAI response
+	const usage: TokenUsage | undefined = completion.usage
+		? {
+				input_tokens: completion.usage.prompt_tokens,
+				output_tokens: completion.usage.completion_tokens,
+				total_tokens: completion.usage.total_tokens
+			}
+		: undefined;
+
 	const responseText = completion.choices[0]?.message?.content?.trim();
 
 	if (!responseText) {
 		throw new Error('No response from OpenAI');
 	}
 
-	return JSON.parse(responseText) as FeaturedClaudeResponse;
+	const analysis = JSON.parse(responseText) as FeaturedClaudeResponse;
+	return { analysis, usage, provider: 'openai' };
 }
 
 export const POST: RequestHandler = async ({ request, cookies }) => {
@@ -546,10 +580,12 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
 		try {
 			const selectedProvider = provider === 'openai' ? 'openai' : 'claude';
-			const analysis =
+			const result =
 				selectedProvider === 'openai'
 					? await analyzeWithOpenAI(content)
 					: await analyzeWithClaude(content);
+
+			const { analysis, usage, provider: usedProvider } = result;
 
 			// Remove fact checking if requested
 			if (skipFactChecking) {
@@ -585,9 +621,25 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 					logger.error('Failed to increment usage count:', usageError);
 					// Don't fail the request if usage tracking fails
 				}
+
+				// Log token usage asynchronously (fire-and-forget)
+				if (usage) {
+					logApiUsageAsync({
+						contributorId,
+						endpoint: 'goodFaithClaudeFeatured',
+						provider: usedProvider,
+						model: usedProvider === 'claude' ? CLAUDE_MODEL : OPENAI_MODEL,
+						inputTokens: usage.input_tokens,
+						outputTokens: usage.output_tokens
+					});
+				}
 			}
 
-			return json(analysis);
+			// Return the analysis with usage info
+			return json({
+				...analysis,
+				usage
+			});
 		} catch (error) {
 			logger.error('Featured analysis generation failed.', error);
 			const message = error instanceof Error ? error.message : 'Analysis request failed';
