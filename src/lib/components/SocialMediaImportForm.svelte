@@ -29,7 +29,13 @@
 	let content = $state(props.initialData?.content || '');
 	let author = $state(props.initialData?.author || '');
 	let date = $state(props.initialData?.date || '');
-	let expanded = $state(!!props.initialData);
+
+	// Only expand initially if there's actual data in initialData
+	const hasInitialData =
+		!!props.initialData?.source?.trim() ||
+		!!props.initialData?.content?.trim() ||
+		!!props.initialData?.author?.trim();
+	let expanded = $state(false); // Always start collapsed - user clicks to open
 
 	// Validation state
 	let errors = $state<Partial<Record<keyof ImportData, string>>>({});

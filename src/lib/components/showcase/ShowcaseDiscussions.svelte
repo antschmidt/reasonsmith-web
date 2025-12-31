@@ -2,6 +2,7 @@
 	import { nhost } from '$lib/nhostClient';
 	import { goto } from '$app/navigation';
 	import { GET_SHOWCASE_ITEM_DISCUSSIONS } from '$lib/graphql/queries/public-showcase';
+	import { extractCitationData } from '$lib/utils/contentExtraction';
 
 	type Discussion = {
 		id: string;
@@ -18,6 +19,11 @@
 			title: string;
 			description?: string | null;
 			tags?: string[] | null;
+			import_source?: string | null;
+			import_url?: string | null;
+			import_content?: string | null;
+			import_author?: string | null;
+			import_date?: string | null;
 		}[];
 	};
 
@@ -44,10 +50,9 @@
 		loading = true;
 		error = null;
 		try {
-			const { data, error: gqlError } = await nhost.graphql.request(
-				GET_SHOWCASE_ITEM_DISCUSSIONS,
-				{ showcaseItemId }
-			);
+			const { data, error: gqlError } = await nhost.graphql.request(GET_SHOWCASE_ITEM_DISCUSSIONS, {
+				showcaseItemId
+			});
 			if (gqlError) {
 				throw Array.isArray(gqlError)
 					? new Error(gqlError.map((e: any) => e.message).join('; '))
@@ -83,10 +88,49 @@
 		return discussion.contributor?.display_name || discussion.contributor?.handle || 'Unknown';
 	}
 
-	// Load discussions on mount if not provided
+	function hasImportContext(discussion: Discussion): boolean {
+		const version = discussion.current_version?.[0];
+		return !!(version?.import_source && version?.import_content && version?.import_author);
+	}
+
+	function formatImportDate(dateStr?: string | null): string | null {
+		if (!dateStr) return null;
+		try {
+			const date = new Date(dateStr);
+			return date.toLocaleDateString('en-US', {
+				year: 'numeric',
+				month: 'short',
+				day: 'numeric'
+			});
+		} catch {
+			return dateStr;
+		}
+	}
+
+	function truncateContent(content: string, maxLength: number = 120): string {
+		if (content.length <= maxLength) return content;
+		return content.slice(0, maxLength).trim() + '...';
+	}
+
+	function cleanDescription(description: string | null | undefined): string {
+		if (!description) return '';
+		// Strip citation data and other embedded HTML comments
+		const { cleanContent } = extractCitationData(description);
+		// Also strip any remaining HTML tags
+		return cleanContent.replace(/<[^>]*>/g, '').trim();
+	}
+
+	// Load discussions on mount if not provided and user is authenticated
 	import { onMount } from 'svelte';
 	onMount(() => {
-		if (initialDiscussions.length === 0) {
+		if (initialDiscussions.length === 0 && user) {
+			loadDiscussions();
+		}
+	});
+
+	// Reload discussions when user logs in
+	$effect(() => {
+		if (user && discussions.length === 0 && !loading && !error) {
 			loadDiscussions();
 		}
 	});
@@ -99,17 +143,17 @@
 			<p>Join the conversation about this analysis</p>
 		</div>
 		{#if user}
-			<button class="start-discussion-btn" onclick={startDiscussion}>
-				Start a Discussion
-			</button>
+			<button class="start-discussion-btn" onclick={startDiscussion}> Start a Discussion </button>
 		{:else}
-			<a href="/login" class="login-prompt">
-				Sign in to start a discussion
-			</a>
+			<a href="/login" class="login-prompt"> Sign in to start a discussion </a>
 		{/if}
 	</header>
 
-	{#if loading}
+	{#if !user}
+		<div class="empty-state">
+			<p>Sign in to view and participate in discussions about this analysis.</p>
+		</div>
+	{:else if loading}
 		<p class="status-message">Loading discussions...</p>
 	{:else if error}
 		<p class="status-message error">{error}</p>
@@ -121,14 +165,41 @@
 		<div class="discussions-list">
 			{#each discussions as discussion}
 				{@const version = discussion.current_version?.[0]}
-				<button
-					class="discussion-card"
-					onclick={() => viewDiscussion(discussion.id)}
-				>
+				<button class="discussion-card" onclick={() => viewDiscussion(discussion.id)}>
+					{#if hasImportContext(discussion)}
+						<div class="import-context">
+							<div class="import-badge">
+								<svg class="import-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
+									<path
+										d="M8 2L10 6L14 6.5L11 9.5L11.5 14L8 12L4.5 14L5 9.5L2 6.5L6 6L8 2Z"
+										stroke="currentColor"
+										stroke-width="1.5"
+										fill="none"
+										stroke-linejoin="round"
+									/>
+								</svg>
+								<span>{version?.import_source}</span>
+								{#if version?.import_author}
+									<span class="import-author">@{version.import_author}</span>
+								{/if}
+								{#if version?.import_date}
+									<span class="import-date">{formatImportDate(version.import_date)}</span>
+								{/if}
+							</div>
+							{#if version?.import_content}
+								<p class="import-quote">"{truncateContent(version.import_content)}"</p>
+							{/if}
+						</div>
+					{/if}
 					<div class="card-content">
 						<h3>{version?.title || 'Untitled Discussion'}</h3>
 						{#if version?.description}
-							<p class="description">{version.description.slice(0, 150)}{version.description.length > 150 ? '...' : ''}</p>
+							{@const cleaned = cleanDescription(version.description)}
+							{#if cleaned}
+								<p class="description">
+									{cleaned.slice(0, 150)}{cleaned.length > 150 ? '...' : ''}
+								</p>
+							{/if}
 						{/if}
 						{#if version?.tags && version.tags.length > 0}
 							<div class="tags">
@@ -316,6 +387,55 @@
 
 	.date {
 		opacity: 0.8;
+	}
+
+	/* Import context styles */
+	.import-context {
+		margin-bottom: 1rem;
+		padding: 0.875rem;
+		background: color-mix(in srgb, var(--color-warning) 6%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-warning) 20%, transparent);
+		border-left: 3px solid var(--color-warning);
+		border-radius: var(--border-radius-md);
+	}
+
+	.import-badge {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+		font-size: 0.8rem;
+		color: var(--color-warning);
+		font-weight: 600;
+		margin-bottom: 0.5rem;
+	}
+
+	.import-icon {
+		flex-shrink: 0;
+	}
+
+	.import-author {
+		color: var(--color-text-secondary);
+		font-weight: 500;
+	}
+
+	.import-date {
+		color: var(--color-text-secondary);
+		font-weight: 400;
+		opacity: 0.8;
+	}
+
+	.import-date::before {
+		content: '•';
+		margin-right: 0.5rem;
+	}
+
+	.import-quote {
+		margin: 0;
+		font-size: 0.85rem;
+		line-height: 1.5;
+		color: var(--color-text-secondary);
+		font-style: italic;
 	}
 
 	@media (max-width: 640px) {

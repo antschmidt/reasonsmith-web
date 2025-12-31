@@ -53,6 +53,7 @@
 	import DiscussionHeader from '$lib/components/discussion/DiscussionHeader.svelte';
 	import PostItem from '$lib/components/posts/PostItem.svelte';
 	import SocialMediaImportDisplay from '$lib/components/SocialMediaImportDisplay.svelte';
+	import FeaturedAnalysisContext from '$lib/components/showcase/FeaturedAnalysisContext.svelte';
 	import CommentComposer from '$lib/components/posts/CommentComposer.svelte';
 	import DiscussionEditForm from '$lib/components/discussion/DiscussionEditForm.svelte';
 	import GoodFaithModal from '$lib/components/ui/GoodFaithModal.svelte';
@@ -79,21 +80,6 @@
 	let error = $state<Error | null>(null);
 	let authReady = $state(false);
 	let contributor = $state<any>(null);
-
-	// Showcase context card state
-	let showcaseContextExpanded = $state(false);
-
-	const getAnalysisSummary = (analysisJson?: string | null): string | null => {
-		if (!analysisJson) return null;
-		try {
-			const parsed = JSON.parse(analysisJson);
-			return parsed?.summary || null;
-		} catch {
-			return null;
-		}
-	};
-
-	let analysisSummary = $derived(getAnalysisSummary(discussion?.showcase_item?.analysis));
 
 	// Editors' Desk approval state
 	let editorsDeskApprovals = $state<any[]>([]);
@@ -911,6 +897,20 @@
 						created_by
 						is_anonymous
 						status
+						showcase_item_id
+						showcase_item {
+							id
+							title
+							subtitle
+							creator
+							media_type
+							source_url
+							date_published
+							created_at
+							summary
+							analysis
+							tags
+						}
 						contributor {
 							id
 							handle
@@ -3313,44 +3313,7 @@
 			/>
 
 			{#if discussion.showcase_item}
-				<div class="showcase-context-card" class:expanded={showcaseContextExpanded}>
-					<button
-						class="showcase-context-header"
-						onclick={() => (showcaseContextExpanded = !showcaseContextExpanded)}
-					>
-						<span class="context-label">This discussion is about:</span>
-						<div class="context-title-row">
-							<h3>{discussion.showcase_item.title}</h3>
-							<span class="expand-icon">{showcaseContextExpanded ? '−' : '+'}</span>
-						</div>
-						<div class="context-meta">
-							{#if discussion.showcase_item.media_type}<span
-									>{discussion.showcase_item.media_type}</span
-								>{/if}
-							{#if discussion.showcase_item.creator}<span>{discussion.showcase_item.creator}</span
-								>{/if}
-							{#if discussion.showcase_item.date_published}<span
-									>{new Date(
-										discussion.showcase_item.date_published + 'T12:00:00'
-									).toLocaleDateString()}</span
-								>{/if}
-						</div>
-					</button>
-
-					{#if showcaseContextExpanded}
-						<div class="showcase-context-body">
-							{#if discussion.showcase_item.subtitle}
-								<p class="context-subtitle">{discussion.showcase_item.subtitle}</p>
-							{/if}
-							{#if analysisSummary}
-								<p class="context-analysis-summary">{analysisSummary}</p>
-							{/if}
-							<a href="/featured/{discussion.showcase_item.id}" class="view-analysis-link">
-								View Full Analysis →
-							</a>
-						</div>
-					{/if}
-				</div>
+				<FeaturedAnalysisContext item={discussion.showcase_item} />
 			{/if}
 
 			{#if pendingApprovalForThisDiscussion}
@@ -3616,133 +3579,6 @@
 			padding: 2rem 1rem;
 		}
 	}
-	/* Showcase Context Card */
-	.showcase-context-card {
-		margin-bottom: 2rem;
-		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: var(--border-radius-xl);
-		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
-		backdrop-filter: blur(10px);
-		overflow: hidden;
-		transition: all 0.3s ease;
-	}
-
-	.showcase-context-card.expanded {
-		box-shadow: 0 10px 30px color-mix(in srgb, var(--color-primary) 10%, transparent);
-	}
-
-	.showcase-context-header {
-		width: 100%;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		padding: 1rem 1.25rem;
-		background: transparent;
-		border: none;
-		cursor: pointer;
-		text-align: left;
-		transition: background 0.2s ease;
-		font-family: inherit;
-		color: inherit;
-	}
-
-	.showcase-context-header:hover {
-		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
-	}
-
-	.context-label {
-		font-size: 0.8rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--color-text-secondary);
-		font-weight: 600;
-	}
-
-	.context-title-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
-
-	.context-title-row h3 {
-		margin: 0;
-		font-size: 1.125rem;
-		font-weight: 700;
-		color: var(--color-text-primary);
-		font-family: var(--font-family-display);
-	}
-
-	.expand-icon {
-		font-size: 1.25rem;
-		color: var(--color-primary);
-		font-weight: 600;
-	}
-
-	.context-meta {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem 0.75rem;
-		font-size: 0.8rem;
-		color: var(--color-text-secondary);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-
-	.context-meta span + span::before {
-		content: '•';
-		margin-right: 0.5rem;
-		color: color-mix(in srgb, var(--color-text-secondary) 50%, transparent);
-	}
-
-	.showcase-context-body {
-		padding: 0 1.25rem 1.25rem;
-		border-top: 1px solid color-mix(in srgb, var(--color-border) 20%, transparent);
-		animation: slideDown 0.2s ease;
-	}
-
-	.context-subtitle {
-		margin: 1rem 0 0.75rem;
-		font-size: 0.9rem;
-		color: var(--color-text-secondary);
-		line-height: 1.5;
-	}
-
-	.context-analysis-summary {
-		margin: 0 0 1rem;
-		padding: 0.75rem 1rem;
-		font-size: 0.9rem;
-		font-style: italic;
-		color: var(--color-text-secondary);
-		background: color-mix(in srgb, var(--color-surface-alt) 50%, transparent);
-		border-left: 3px solid color-mix(in srgb, var(--color-primary) 50%, transparent);
-		border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
-		line-height: 1.6;
-	}
-
-	.view-analysis-link {
-		display: inline-flex;
-		align-items: center;
-		font-size: 0.9rem;
-		font-weight: 600;
-		color: var(--color-primary);
-		text-decoration: none;
-	}
-
-	.view-analysis-link:hover {
-		text-decoration: underline;
-	}
-
-	@keyframes slideDown {
-		from {
-			opacity: 0;
-			transform: translateY(-8px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
 	/* Editorial Article Header */
 	.discussion-header {
 		margin-bottom: 3rem;
