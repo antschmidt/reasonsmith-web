@@ -72,17 +72,42 @@ export async function logApiUsage(params: ApiUsageParams): Promise<void> {
 		metadata
 	} = params;
 
+	logger.info(
+		`[API Usage] Attempting to log usage: ${endpoint}, ${provider}, ${inputTokens}/${outputTokens} tokens, contributor: ${contributorId}`
+	);
+
 	// Fire and forget - don't await in calling code if you want non-blocking
 	try {
-		const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-		const HASURA_ADMIN_SECRET = process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+		let HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+		const HASURA_ADMIN_SECRET =
+			process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
 
 		if (!HASURA_GRAPHQL_ENDPOINT || !HASURA_ADMIN_SECRET) {
-			logger.warn('API usage logging skipped: Missing Hasura configuration');
+			logger.warn('[API Usage] Logging skipped: Missing Hasura configuration', {
+				hasEndpoint: !!HASURA_GRAPHQL_ENDPOINT,
+				hasSecret: !!HASURA_ADMIN_SECRET
+			});
 			return;
 		}
 
-		const response = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+		// Try alternative endpoint if primary uses .graphql. subdomain
+		const alternativeEndpoint = HASURA_GRAPHQL_ENDPOINT.replace('.graphql.', '.hasura.');
+
+		const variables = {
+			contributorId: contributorId || null,
+			provider,
+			model,
+			endpoint,
+			inputTokens,
+			outputTokens,
+			postId: postId || null,
+			discussionId: discussionId || null,
+			metadata: metadata || null
+		};
+
+		logger.debug('[API Usage] Sending mutation to:', HASURA_GRAPHQL_ENDPOINT);
+
+		let response = await fetch(HASURA_GRAPHQL_ENDPOINT, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
@@ -90,31 +115,40 @@ export async function logApiUsage(params: ApiUsageParams): Promise<void> {
 			},
 			body: JSON.stringify({
 				query: LOG_API_USAGE_MUTATION,
-				variables: {
-					contributorId: contributorId || null,
-					provider,
-					model,
-					endpoint,
-					inputTokens,
-					outputTokens,
-					postId: postId || null,
-					discussionId: discussionId || null,
-					metadata: metadata || null
-				}
+				variables
 			})
 		});
 
-		const result = await response.json();
+		let result = await response.json();
+
+		// If we get a connection error or the table doesn't exist, try alternative endpoint
+		if (result.errors && alternativeEndpoint !== HASURA_GRAPHQL_ENDPOINT) {
+			logger.debug('[API Usage] Primary endpoint failed, trying alternative:', alternativeEndpoint);
+			response = await fetch(alternativeEndpoint, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'x-hasura-admin-secret': HASURA_ADMIN_SECRET
+				},
+				body: JSON.stringify({
+					query: LOG_API_USAGE_MUTATION,
+					variables
+				})
+			});
+			result = await response.json();
+		}
 
 		if (result.errors) {
-			logger.error('Failed to log API usage:', result.errors);
+			logger.error('[API Usage] Failed to log usage:', JSON.stringify(result.errors, null, 2));
 		} else {
 			const totalTokens = result.data?.insert_api_usage_log_one?.total_tokens;
-			logger.debug(`API usage logged: ${totalTokens} tokens (${inputTokens} in, ${outputTokens} out) for ${endpoint}`);
+			logger.info(
+				`[API Usage] Successfully logged: ${totalTokens} tokens (${inputTokens} in, ${outputTokens} out) for ${endpoint}`
+			);
 		}
 	} catch (error) {
 		// Log error but don't throw - this is a non-critical operation
-		logger.error('Error logging API usage:', error);
+		logger.error('[API Usage] Error logging usage:', error);
 	}
 }
 
