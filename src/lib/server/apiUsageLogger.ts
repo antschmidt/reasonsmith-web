@@ -7,6 +7,14 @@
 
 import { logger } from '$lib/logger';
 
+// UUID validation regex
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUuid(value: string | null | undefined): boolean {
+	if (!value) return false;
+	return UUID_REGEX.test(value);
+}
+
 export interface ApiUsageParams {
 	contributorId: string | null;
 	provider: string;
@@ -93,15 +101,27 @@ export async function logApiUsage(params: ApiUsageParams): Promise<void> {
 		// Try alternative endpoint if primary uses .graphql. subdomain
 		const alternativeEndpoint = HASURA_GRAPHQL_ENDPOINT.replace('.graphql.', '.hasura.');
 
+		// Validate UUIDs - only include if they're valid UUIDs, otherwise pass null
+		const validatedPostId = isValidUuid(postId) ? postId : null;
+		const validatedDiscussionId = isValidUuid(discussionId) ? discussionId : null;
+		const validatedContributorId = isValidUuid(contributorId) ? contributorId : null;
+
+		if (postId && !validatedPostId) {
+			logger.debug(`[API Usage] postId "${postId}" is not a valid UUID, skipping`);
+		}
+		if (discussionId && !validatedDiscussionId) {
+			logger.debug(`[API Usage] discussionId "${discussionId}" is not a valid UUID, skipping`);
+		}
+
 		const variables = {
-			contributorId: contributorId || null,
+			contributorId: validatedContributorId,
 			provider,
 			model,
 			endpoint,
 			inputTokens,
 			outputTokens,
-			postId: postId || null,
-			discussionId: discussionId || null,
+			postId: validatedPostId,
+			discussionId: validatedDiscussionId,
 			metadata: metadata || null
 		};
 
