@@ -735,6 +735,31 @@ const UPSERT_CONTRIBUTOR = `
   }
 `;
 
+// Send welcome email to new users (fire and forget)
+async function sendWelcomeEmailIfNeeded(userId: string) {
+	try {
+		const response = await fetch('/api/sendWelcomeEmail', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ userId })
+		});
+
+		if (response.ok) {
+			const result = await response.json();
+			if (result.sent) {
+				console.log('[sendWelcomeEmail] Welcome email sent to new user');
+			} else {
+				console.log('[sendWelcomeEmail] Skipped:', result.reason);
+			}
+		} else {
+			console.warn('[sendWelcomeEmail] Failed to send:', response.status);
+		}
+	} catch (error) {
+		// Don't block sign-in flow if welcome email fails
+		console.warn('[sendWelcomeEmail] Error:', error);
+	}
+}
+
 export async function ensureContributor() {
 	const session = nhost.getUserSession();
 	if (!session?.user) {
@@ -815,6 +840,10 @@ if (isBrowser) {
 			console.log('Upgrading role headers');
 			roleUpgradePromise = upgradeRoleHeaders();
 			await roleUpgradePromise;
+			// Send welcome email to new users (fire and forget, don't await)
+			if (newSession?.user?.id) {
+				sendWelcomeEmailIfNeeded(newSession.user.id);
+			}
 		}
 		// Sign out event
 		else if (wasSignedIn && !isSignedIn) {

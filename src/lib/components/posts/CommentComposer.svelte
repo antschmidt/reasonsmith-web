@@ -764,6 +764,7 @@
 					placeholder="Add your comment... (Style will be automatically determined by length)"
 					minHeight="300px"
 					readonly={false}
+					showTokenCount={true}
 				/>
 			{:else if isReadOnly}
 				<!-- Read-only preview for viewers -->

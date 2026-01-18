@@ -5,6 +5,7 @@
 	import Link from '@tiptap/extension-link';
 	import Underline from '@tiptap/extension-underline';
 	import Placeholder from '@tiptap/extension-placeholder';
+	import { estimateTokens, formatTokenCount } from '$lib/utils/tokenEstimate';
 
 	// Props
 	let {
@@ -13,7 +14,8 @@
 		onUpdate = (html: string) => {},
 		showToolbar = true,
 		minHeight = '200px',
-		readonly = false
+		readonly = false,
+		showTokenCount = false
 	} = $props<{
 		content?: string;
 		placeholder?: string;
@@ -21,7 +23,11 @@
 		showToolbar?: boolean;
 		minHeight?: string;
 		readonly?: boolean;
+		showTokenCount?: boolean;
 	}>();
+
+	// Token count derived from content
+	let tokenCount = $derived(showTokenCount ? estimateTokens(content) : 0);
 
 	let element: HTMLDivElement;
 	let editor: Editor | null = null;
@@ -328,6 +334,11 @@
 	{/if}
 
 	<div bind:this={element} class="editor-wrapper" style="min-height: {minHeight}"></div>
+	{#if showTokenCount}
+		<div class="token-counter">
+			{formatTokenCount(tokenCount)} tokens
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -498,6 +509,15 @@
 		pointer-events: none;
 		float: left;
 		height: 0;
+	}
+
+	.token-counter {
+		padding: 0.25rem 0.75rem;
+		font-size: 0.75rem;
+		color: var(--color-text-secondary);
+		text-align: right;
+		background: color-mix(in srgb, var(--color-surface-alt) 20%, transparent);
+		border-top: 1px solid var(--color-border);
 	}
 
 	@media (max-width: 768px) {

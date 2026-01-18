@@ -54,7 +54,8 @@ export function normalizeClaudeResponse(raw: ClaudeRawResponse): GoodFaithResult
 	return {
 		// Core scoring
 		good_faith_score: normalizedScore,
-		good_faith_label: raw.goodFaithDescriptor || getLabel(normalizedScore),
+		// Always derive label from score to ensure consistency with publishing requirements
+		good_faith_label: getLabel(normalizedScore),
 
 		// Detailed analysis
 		claims: raw.claims ?? [],
@@ -92,7 +93,8 @@ export function normalizeOpenAIResponse(raw: OpenAIRawResponse): GoodFaithResult
 	return {
 		// Core scoring
 		good_faith_score: normalizedScore,
-		good_faith_label: raw.goodFaithDescriptor || getLabel(normalizedScore),
+		// Always derive label from score to ensure consistency with publishing requirements
+		good_faith_label: getLabel(normalizedScore),
 
 		// Detailed analysis
 		claims: raw.claims ?? [],
@@ -145,7 +147,9 @@ export function parseClaudeJsonResponse(responseText: string): ClaudeRawResponse
 /**
  * Validate that a response has the minimum required fields
  */
-export function isValidResponse(response: unknown): response is ClaudeRawResponse | OpenAIRawResponse {
+export function isValidResponse(
+	response: unknown
+): response is ClaudeRawResponse | OpenAIRawResponse {
 	if (!response || typeof response !== 'object') return false;
 
 	const resp = response as Record<string, unknown>;
