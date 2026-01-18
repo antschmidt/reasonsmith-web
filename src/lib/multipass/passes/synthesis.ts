@@ -3,6 +3,7 @@
  *
  * Combines individual claim analyses into a cohesive final evaluation.
  * Produces a GoodFaithResult compatible with the existing system.
+ * Uses tool calling for guaranteed valid JSON output.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -14,6 +15,101 @@ import {
 } from '../prompts/synthesis';
 import type { ClaimAnalysisResult, MultiPassConfig, AnalysisContext, TokenUsage } from '../types';
 import type { GoodFaithResult, Claim } from '$lib/goodFaith/types';
+
+/**
+ * Tool definition for structured synthesis output
+ */
+const SYNTHESIS_TOOL: Anthropic.Tool = {
+	name: 'submit_synthesis',
+	description: 'Submit the synthesized analysis combining all claim evaluations',
+	input_schema: {
+		type: 'object' as const,
+		properties: {
+			claims: {
+				type: 'array',
+				description: 'Array of claim evaluations in the standard format',
+				items: {
+					type: 'object',
+					properties: {
+						claim: { type: 'string', description: 'The claim text' },
+						supportingArguments: {
+							type: 'array',
+							items: {
+								type: 'object',
+								properties: {
+									argument: { type: 'string' },
+									score: { type: 'number' },
+									fallacies: { type: 'array', items: { type: 'string' } },
+									improvements: { type: 'string' }
+								}
+							}
+						}
+					},
+					required: ['claim', 'supportingArguments']
+				}
+			},
+			fallacyOverload: {
+				type: 'boolean',
+				description: 'True if the argument has an excessive number of fallacies'
+			},
+			goodFaithScore: {
+				type: 'number',
+				description: 'Overall good faith score (0-100)'
+			},
+			goodFaithDescriptor: {
+				type: 'string',
+				description: 'Label for the good faith score (e.g., Constructive, Neutral, Questionable)'
+			},
+			cultishPhrases: {
+				type: 'array',
+				items: { type: 'string' },
+				description: 'Any cult-like or manipulative language detected'
+			},
+			tags: {
+				type: 'array',
+				items: { type: 'string' },
+				description: '3-5 topic tags for the content'
+			},
+			overallAnalysis: {
+				type: 'string',
+				description: 'Comprehensive summary of the analysis'
+			},
+			steelmanScore: {
+				type: 'number',
+				description: 'How well the argument represents the strongest version of its position (1-10)'
+			},
+			steelmanNotes: {
+				type: 'string',
+				description: 'Notes on steelmanning opportunities'
+			},
+			understandingScore: {
+				type: 'number',
+				description: 'How well the author demonstrates understanding of the topic (1-10)'
+			},
+			intellectualHumilityScore: {
+				type: 'number',
+				description: 'How well the author acknowledges limitations and uncertainty (1-10)'
+			},
+			relevanceScore: {
+				type: 'number',
+				description: 'How relevant the argument is to the discussion (1-10)'
+			},
+			relevanceNotes: {
+				type: 'string',
+				description: 'Notes on relevance'
+			}
+		},
+		required: [
+			'claims',
+			'fallacyOverload',
+			'goodFaithScore',
+			'goodFaithDescriptor',
+			'cultishPhrases',
+			'tags',
+			'overallAnalysis'
+		]
+	}
+};
 
 /**
  * Raw response from synthesis
@@ -35,7 +131,7 @@ interface SynthesisRawResponse {
 }
 
 /**
- * Run Pass 3: Synthesize claim analyses into final result
+ * Run Pass 3: Synthesize claim analyses into final result using tool calling
  */
 export async function runSynthesisPass(
 	originalContent: string,
@@ -48,7 +144,7 @@ export async function runSynthesisPass(
 	usage: TokenUsage;
 }> {
 	const startTime = Date.now();
-	logger.info('[Pass 3] Starting synthesis');
+	logger.info('[Pass 3] Starting synthesis (using tool calling)');
 
 	// Separate completed and failed analyses
 	const completedAnalyses = claimAnalyses.filter((a) => a.status === 'completed');
@@ -75,6 +171,8 @@ export async function runSynthesisPass(
 			model: config.models.synthesis,
 			max_tokens: 4096,
 			temperature: 0.3,
+			tools: [SYNTHESIS_TOOL],
+			tool_choice: { type: 'tool', name: 'submit_synthesis' },
 			messages: [
 				{
 					role: 'user',
@@ -108,14 +206,17 @@ export async function runSynthesisPass(
 			cacheReadTokens: (response.usage as any).cache_read_input_tokens || 0
 		};
 
-		// Parse response
-		const responseText = response.content[0]?.type === 'text' ? response.content[0].text : '';
+		// Extract tool use response - guaranteed valid JSON
+		const toolUseBlock = response.content.find(
+			(block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+		);
 
-		if (!responseText) {
-			throw new Error('Empty response from synthesis');
+		if (!toolUseBlock) {
+			throw new Error('No tool use response from synthesis');
 		}
 
-		const rawResult = parseSynthesisResponse(responseText);
+		// Tool input is already parsed JSON
+		const rawResult = normalizeSynthesisResponse(toolUseBlock.input as any);
 		const result = normalizeToGoodFaithResult(rawResult, failedAnalyses.length);
 
 		logger.info(
@@ -135,70 +236,24 @@ export async function runSynthesisPass(
 }
 
 /**
- * Parse the JSON response from synthesis
+ * Normalize the synthesis response (already parsed from tool use)
  */
-function parseSynthesisResponse(responseText: string): SynthesisRawResponse {
-	// Handle potential markdown code blocks
-	let jsonText = responseText.trim();
-
-	if (jsonText.startsWith('```json')) {
-		jsonText = jsonText.slice(7);
-	} else if (jsonText.startsWith('```')) {
-		jsonText = jsonText.slice(3);
-	}
-
-	if (jsonText.endsWith('```')) {
-		jsonText = jsonText.slice(0, -3);
-	}
-
-	jsonText = jsonText.trim();
-
-	// Helper to repair common JSON issues from LLM output
-	const repairJson = (text: string): string => {
-		return text
-			.replace(/[\x00-\x1F\x7F]/g, (char) => {
-				if (char === '\n') return '\\n';
-				if (char === '\r') return '\\r';
-				if (char === '\t') return '\\t';
-				return '';
-			})
-			.replace(/,\s*([}\]])/g, '$1')
-			.replace(/"\s+"/g, '", "')
-			.replace(/}\s*\n\s*{/g, '},\n{')
-			.replace(/"\s*\n\s*"/g, '",\n"');
+function normalizeSynthesisResponse(input: any): SynthesisRawResponse {
+	return {
+		claims: Array.isArray(input.claims) ? input.claims : [],
+		fallacyOverload: input.fallacyOverload || false,
+		goodFaithScore: input.goodFaithScore || 50,
+		goodFaithDescriptor: input.goodFaithDescriptor || 'Neutral',
+		cultishPhrases: Array.isArray(input.cultishPhrases) ? input.cultishPhrases : [],
+		tags: Array.isArray(input.tags) ? input.tags : [],
+		overallAnalysis: input.overallAnalysis || '',
+		steelmanScore: input.steelmanScore,
+		steelmanNotes: input.steelmanNotes,
+		understandingScore: input.understandingScore,
+		intellectualHumilityScore: input.intellectualHumilityScore,
+		relevanceScore: input.relevanceScore,
+		relevanceNotes: input.relevanceNotes
 	};
-
-	const extractResult = (parsed: any): SynthesisRawResponse => ({
-		claims: Array.isArray(parsed.claims) ? parsed.claims : [],
-		fallacyOverload: parsed.fallacyOverload || false,
-		goodFaithScore: parsed.goodFaithScore || 50,
-		goodFaithDescriptor: parsed.goodFaithDescriptor || 'Neutral',
-		cultishPhrases: Array.isArray(parsed.cultishPhrases) ? parsed.cultishPhrases : [],
-		tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-		overallAnalysis: parsed.overallAnalysis || '',
-		steelmanScore: parsed.steelmanScore,
-		steelmanNotes: parsed.steelmanNotes,
-		understandingScore: parsed.understandingScore,
-		intellectualHumilityScore: parsed.intellectualHumilityScore,
-		relevanceScore: parsed.relevanceScore,
-		relevanceNotes: parsed.relevanceNotes
-	});
-
-	try {
-		const parsed = JSON.parse(jsonText);
-		return extractResult(parsed);
-	} catch (parseError) {
-		// Try to repair and parse again
-		try {
-			const repaired = repairJson(jsonText);
-			const parsed = JSON.parse(repaired);
-			logger.info('[Pass 3] Successfully parsed JSON after repair');
-			return extractResult(parsed);
-		} catch (repairError) {
-			logger.error('[Pass 3] Failed to parse synthesis response:', responseText.substring(0, 500));
-			throw new Error(`Failed to parse synthesis response: ${parseError}`);
-		}
-	}
 }
 
 /**

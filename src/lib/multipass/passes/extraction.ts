@@ -23,6 +23,67 @@ import type {
 /**
  * Run Pass 1: Extract claims and classify complexity
  */
+// Tool definition for structured claim extraction output
+const EXTRACTION_TOOL: Anthropic.Tool = {
+	name: 'submit_claims',
+	description: 'Submit the extracted claims from the content analysis',
+	input_schema: {
+		type: 'object' as const,
+		properties: {
+			claims: {
+				type: 'array',
+				description: 'Array of extracted claims',
+				items: {
+					type: 'object',
+					properties: {
+						text: {
+							type: 'string',
+							description: 'The exact claim text (quote or close paraphrase)'
+						},
+						type: {
+							type: 'string',
+							enum: ['factual', 'interpretive', 'evaluative', 'prescriptive'],
+							description: 'Type of claim'
+						},
+						explicit: {
+							type: 'boolean',
+							description: 'True if stated directly, false if implied/assumed'
+						},
+						complexity: {
+							type: 'string',
+							enum: ['simple', 'moderate', 'complex'],
+							description: 'Complexity classification'
+						},
+						complexityConfidence: {
+							type: 'number',
+							description: 'Confidence in complexity rating (0.0-1.0)'
+						},
+						dependsOn: {
+							type: 'array',
+							items: { type: 'number' },
+							description: 'Array of claim indices this claim depends on'
+						}
+					},
+					required: ['text', 'type', 'explicit', 'complexity', 'complexityConfidence', 'dependsOn']
+				}
+			},
+			totalCount: {
+				type: 'number',
+				description: 'Total number of claims extracted'
+			},
+			tooManyClaims: {
+				type: 'boolean',
+				description: 'True if content has more than 15 claims'
+			},
+			recommendSplit: {
+				type: 'string',
+				description: 'If too many claims, suggestion for how to split into multiple posts'
+			}
+		},
+		required: ['claims', 'totalCount', 'tooManyClaims']
+	}
+};
+
 export async function runExtractionPass(
 	content: string,
 	context: AnalysisContext,
@@ -30,7 +91,7 @@ export async function runExtractionPass(
 	anthropic: Anthropic
 ): Promise<ExtractionResult> {
 	const startTime = Date.now();
-	logger.info('[Pass 1] Starting claim extraction with Haiku');
+	logger.info('[Pass 1] Starting claim extraction with Haiku (using tool calling)');
 
 	try {
 		const systemPrompt = buildExtractionSystemPromptWithExamples();
@@ -39,11 +100,13 @@ export async function runExtractionPass(
 			discussionDescription: context.discussion?.description
 		});
 
-		// Build request with optional caching
+		// Build request with tool calling for guaranteed valid JSON
 		const requestOptions: Parameters<typeof anthropic.messages.create>[0] = {
 			model: config.models.extraction,
 			max_tokens: 4096,
 			temperature: 0.1, // Low temperature for consistent extraction
+			tools: [EXTRACTION_TOOL],
+			tool_choice: { type: 'tool', name: 'submit_claims' },
 			messages: [
 				{
 					role: 'user',
@@ -77,14 +140,23 @@ export async function runExtractionPass(
 			cacheReadTokens: (response.usage as any).cache_read_input_tokens || 0
 		};
 
-		// Parse response
-		const responseText = response.content[0]?.type === 'text' ? response.content[0].text : '';
+		// Extract tool use response - guaranteed valid JSON
+		const toolUseBlock = response.content.find(
+			(block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+		);
 
-		if (!responseText) {
-			throw new Error('Empty response from Haiku extraction');
+		if (!toolUseBlock) {
+			throw new Error('No tool use response from Haiku extraction');
 		}
 
-		const rawResult = parseExtractionResponse(responseText);
+		// Tool input is already parsed JSON - no need for JSON.parse
+		const rawResult = toolUseBlock.input as ExtractionRawResponse;
+
+		// Validate required fields
+		if (!Array.isArray(rawResult.claims)) {
+			throw new Error('Invalid extraction response: missing claims array');
+		}
+
 		const result = processExtractionResult(rawResult, config);
 
 		logger.info(
@@ -98,98 +170,6 @@ export async function runExtractionPass(
 	} catch (error) {
 		logger.error('[Pass 1] Extraction failed:', error);
 		throw error;
-	}
-}
-
-/**
- * Parse the JSON response from Haiku
- */
-function parseExtractionResponse(responseText: string): ExtractionRawResponse {
-	// Handle potential markdown code blocks
-	let jsonText = responseText.trim();
-
-	if (jsonText.startsWith('```json')) {
-		jsonText = jsonText.slice(7);
-	} else if (jsonText.startsWith('```')) {
-		jsonText = jsonText.slice(3);
-	}
-
-	if (jsonText.endsWith('```')) {
-		jsonText = jsonText.slice(0, -3);
-	}
-
-	jsonText = jsonText.trim();
-
-	// Helper to attempt parsing with optional repairs
-	const tryParse = (text: string): any => JSON.parse(text);
-
-	// Helper to repair common JSON issues from LLM output
-	const repairJson = (text: string): string => {
-		return (
-			text
-				// Fix unescaped control characters in strings
-				.replace(/[\x00-\x1F\x7F]/g, (char) => {
-					if (char === '\n') return '\\n';
-					if (char === '\r') return '\\r';
-					if (char === '\t') return '\\t';
-					return '';
-				})
-				// Fix trailing commas before closing brackets
-				.replace(/,\s*([}\]])/g, '$1')
-				// Fix missing commas between array elements
-				.replace(/"\s+"/g, '", "')
-				// Fix missing commas between objects in arrays
-				.replace(/}\s*\n\s*{/g, '},\n{')
-				// Fix missing commas after strings before next property
-				.replace(/"\s*\n\s*"/g, '",\n"')
-		);
-	};
-
-	try {
-		const parsed = tryParse(jsonText);
-
-		// Validate required fields
-		if (!Array.isArray(parsed.claims)) {
-			throw new Error('Invalid extraction response: missing claims array');
-		}
-
-		return {
-			claims: parsed.claims,
-			totalCount: parsed.totalCount || parsed.claims.length,
-			tooManyClaims: parsed.tooManyClaims || false,
-			recommendSplit: parsed.recommendSplit || undefined
-		};
-	} catch (parseError) {
-		// Try to repair and parse again
-		try {
-			const repaired = repairJson(jsonText);
-			const parsed = tryParse(repaired);
-
-			if (!Array.isArray(parsed.claims)) {
-				throw new Error('Invalid extraction response: missing claims array');
-			}
-
-			logger.info('[Pass 1] Successfully parsed JSON after repair');
-			return {
-				claims: parsed.claims,
-				totalCount: parsed.totalCount || parsed.claims.length,
-				tooManyClaims: parsed.tooManyClaims || false,
-				recommendSplit: parsed.recommendSplit || undefined
-			};
-		} catch (repairError) {
-			// Log context around the error for debugging
-			const posMatch =
-				parseError instanceof Error ? parseError.message.match(/position (\d+)/) : null;
-			if (posMatch) {
-				const pos = parseInt(posMatch[1], 10);
-				logger.error('[Pass 1] JSON error context:', {
-					around: jsonText.substring(Math.max(0, pos - 100), pos + 100),
-					position: pos
-				});
-			}
-			logger.error('[Pass 1] Failed to parse extraction response:', responseText.substring(0, 500));
-			throw new Error(`Failed to parse extraction response: ${parseError}`);
-		}
 	}
 }
 

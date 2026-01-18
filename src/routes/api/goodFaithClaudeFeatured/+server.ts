@@ -6,6 +6,7 @@ import { print } from 'graphql';
 import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
 import { logger } from '$lib/logger';
 import { logApiUsageAsync } from '$lib/server/apiUsageLogger';
+import { parseJsonWithRepair } from '$lib/utils/jsonRepair';
 
 // Import multi-pass for deep claim analysis
 import { runMultiPassAnalysis, FEATURED_CONFIG, DEFAULT_MULTIPASS_MODELS } from '$lib/multipass';
@@ -439,101 +440,11 @@ ${content}`
 		throw new Error('No response from Claude');
 	}
 
-	let cleaned = responseText.trim();
-	if (cleaned.startsWith('```json')) {
-		cleaned = cleaned.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-	} else if (cleaned.startsWith('```')) {
-		cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
-	}
-
-	if (!cleaned.trim().startsWith('{')) {
-		const start = cleaned.indexOf('{');
-		const end = cleaned.lastIndexOf('}');
-		if (start !== -1 && end !== -1 && end > start) {
-			cleaned = cleaned.slice(start, end + 1);
-		}
-	}
-
-	// Attempt to parse, with repair for common JSON issues
-	try {
-		const analysis = JSON.parse(cleaned) as FeaturedClaudeResponse;
-		return { analysis, usage, provider: 'claude' };
-	} catch (parseError) {
-		// Try to repair common JSON issues from LLM output
-		let repaired = cleaned
-			// Fix unescaped control characters in strings
-			.replace(/[\x00-\x1F\x7F]/g, (char) => {
-				if (char === '\n') return '\\n';
-				if (char === '\r') return '\\r';
-				if (char === '\t') return '\\t';
-				return '';
-			})
-			// Fix trailing commas before closing brackets
-			.replace(/,\s*([}\]])/g, '$1')
-			// Fix missing commas between array elements or object properties
-			.replace(/"\s*\n\s*"/g, '",\n"')
-			.replace(/}\s*\n\s*{/g, '},\n{')
-			// Fix unescaped quotes within strings (naive approach - look for patterns)
-			.replace(/: "([^"]*)"([^",}\]\n][^"]*)"([^"]*)",/g, ': "$1\\"$2\\"$3",');
-
-		try {
-			const analysis = JSON.parse(repaired) as FeaturedClaudeResponse;
-			return { analysis, usage, provider: 'claude' };
-		} catch (repairError) {
-			// More aggressive repair: escape unescaped quotes within string values
-			// This handles cases like: "example": "He said "hello" to me"
-			let aggressiveRepaired = repaired;
-
-			// Find string values and escape internal quotes
-			// Match ": " followed by a quoted string, then look for unescaped quotes inside
-			aggressiveRepaired = aggressiveRepaired.replace(
-				/: "((?:[^"\\]|\\.)*)"/g,
-				(match, content) => {
-					// If there are unbalanced quotes, try to fix them
-					return match;
-				}
-			);
-
-			// Try to fix missing commas in arrays (common: "item1" "item2" instead of "item1", "item2")
-			aggressiveRepaired = aggressiveRepaired.replace(/"\s+"/g, '", "');
-
-			// Fix patterns like: "text"} should be "text"}  but "text" } with content after might need comma
-			aggressiveRepaired = aggressiveRepaired.replace(/"\s*\n\s*\]/g, '"\n]');
-			aggressiveRepaired = aggressiveRepaired.replace(/"\s*\n\s*\}/g, '"\n}');
-
-			try {
-				const analysis = JSON.parse(aggressiveRepaired) as FeaturedClaudeResponse;
-				logger.info('Successfully parsed JSON after aggressive repair');
-				return { analysis, usage, provider: 'claude' };
-			} catch (aggressiveError) {
-				// Log the problematic JSON for debugging
-				logger.error('Failed to parse Claude response JSON:', {
-					original: responseText.substring(0, 500),
-					cleaned: cleaned.substring(0, 500),
-					parseError: parseError instanceof Error ? parseError.message : 'Unknown parse error',
-					position:
-						parseError instanceof Error
-							? parseError.message.match(/position (\d+)/)?.[1]
-							: undefined
-				});
-
-				// Log the area around the error position for debugging
-				const posMatch =
-					parseError instanceof Error ? parseError.message.match(/position (\d+)/) : null;
-				if (posMatch) {
-					const pos = parseInt(posMatch[1], 10);
-					logger.error('JSON error context:', {
-						around: cleaned.substring(Math.max(0, pos - 100), pos + 100),
-						position: pos
-					});
-				}
-
-				throw new Error(
-					`Invalid JSON response from Claude: ${parseError instanceof Error ? parseError.message : 'Parse error'}`
-				);
-			}
-		}
-	}
+	const analysis = parseJsonWithRepair<FeaturedClaudeResponse>(
+		responseText,
+		'Featured Claude analysis'
+	);
+	return { analysis, usage, provider: 'claude' };
 }
 
 async function analyzeWithOpenAI(content: string): Promise<AnalysisResultWithUsage> {

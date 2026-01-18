@@ -3,6 +3,7 @@
  *
  * Analyzes each claim individually using the appropriate model based on complexity.
  * Uses Promise.allSettled for resilient parallel execution.
+ * Uses tool calling for guaranteed valid JSON output.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -21,6 +22,60 @@ import type {
 	AnalysisContext,
 	TokenUsage
 } from '../types';
+
+/**
+ * Tool definition for structured claim analysis output
+ */
+const CLAIM_ANALYSIS_TOOL: Anthropic.Tool = {
+	name: 'submit_analysis',
+	description: 'Submit the analysis results for this claim',
+	input_schema: {
+		type: 'object' as const,
+		properties: {
+			validityScore: {
+				type: 'number',
+				description: 'Logical validity score (1-10)'
+			},
+			evidenceScore: {
+				type: 'number',
+				description: 'Evidence support score (1-10)'
+			},
+			fallacies: {
+				type: 'array',
+				items: { type: 'string' },
+				description: 'List of logical fallacies identified (use standard names)'
+			},
+			fallacyExplanations: {
+				type: 'object',
+				additionalProperties: { type: 'string' },
+				description: 'Explanations for each fallacy identified'
+			},
+			assumptions: {
+				type: 'array',
+				items: { type: 'string' },
+				description: 'Assumptions that must be true for this claim to hold'
+			},
+			counterArguments: {
+				type: 'array',
+				items: { type: 'string' },
+				description: 'Strongest objections to this claim'
+			},
+			improvements: {
+				type: 'string',
+				description: 'How this claim could be strengthened'
+			}
+		},
+		required: [
+			'validityScore',
+			'evidenceScore',
+			'fallacies',
+			'fallacyExplanations',
+			'assumptions',
+			'counterArguments',
+			'improvements'
+		]
+	}
+};
 
 /**
  * Get the appropriate model for a claim based on complexity and confidence
@@ -46,7 +101,7 @@ export function getModelForClaim(claim: ExtractedClaim, config: MultiPassConfig)
 }
 
 /**
- * Analyze a single claim
+ * Analyze a single claim using tool calling for guaranteed valid JSON
  */
 async function analyzeIndividualClaim(
 	claim: ExtractedClaim,
@@ -59,7 +114,7 @@ async function analyzeIndividualClaim(
 	const startTime = Date.now();
 	const model = getModelForClaim(claim, config);
 
-	logger.debug(`[Pass 2] Analyzing claim ${claim.index} with ${model}`);
+	logger.debug(`[Pass 2] Analyzing claim ${claim.index} with ${model} (using tool calling)`);
 
 	try {
 		// Build request
@@ -80,6 +135,8 @@ async function analyzeIndividualClaim(
 			model,
 			max_tokens: 2048,
 			temperature: 0.2,
+			tools: [CLAIM_ANALYSIS_TOOL],
+			tool_choice: { type: 'tool', name: 'submit_analysis' },
 			messages: [
 				{
 					role: 'user',
@@ -108,14 +165,17 @@ async function analyzeIndividualClaim(
 		const inputTokens = response.usage.input_tokens;
 		const outputTokens = response.usage.output_tokens;
 
-		// Parse response
-		const responseText = response.content[0]?.type === 'text' ? response.content[0].text : '';
+		// Extract tool use response - guaranteed valid JSON
+		const toolUseBlock = response.content.find(
+			(block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+		);
 
-		if (!responseText) {
-			throw new Error('Empty response from model');
+		if (!toolUseBlock) {
+			throw new Error('No tool use response from model');
 		}
 
-		const analysis = parseClaimAnalysisResponse(responseText);
+		// Tool input is already parsed JSON
+		const analysis = normalizeClaimAnalysisResponse(toolUseBlock.input as ClaimAnalysisRawResponse);
 
 		logger.debug(`[Pass 2] Claim ${claim.index} analyzed in ${Date.now() - startTime}ms`);
 
@@ -150,67 +210,18 @@ async function analyzeIndividualClaim(
 }
 
 /**
- * Parse the JSON response from claim analysis
+ * Normalize the claim analysis response (already parsed from tool use)
  */
-function parseClaimAnalysisResponse(responseText: string): ClaimAnalysisRawResponse {
-	// Handle potential markdown code blocks
-	let jsonText = responseText.trim();
-
-	if (jsonText.startsWith('```json')) {
-		jsonText = jsonText.slice(7);
-	} else if (jsonText.startsWith('```')) {
-		jsonText = jsonText.slice(3);
-	}
-
-	if (jsonText.endsWith('```')) {
-		jsonText = jsonText.slice(0, -3);
-	}
-
-	jsonText = jsonText.trim();
-
-	// Helper to repair common JSON issues from LLM output
-	const repairJson = (text: string): string => {
-		return text
-			.replace(/[\x00-\x1F\x7F]/g, (char) => {
-				if (char === '\n') return '\\n';
-				if (char === '\r') return '\\r';
-				if (char === '\t') return '\\t';
-				return '';
-			})
-			.replace(/,\s*([}\]])/g, '$1')
-			.replace(/"\s+"/g, '", "')
-			.replace(/}\s*\n\s*{/g, '},\n{')
-			.replace(/"\s*\n\s*"/g, '",\n"');
+function normalizeClaimAnalysisResponse(input: any): ClaimAnalysisRawResponse {
+	return {
+		validityScore: clampScore(input.validityScore),
+		evidenceScore: clampScore(input.evidenceScore),
+		fallacies: Array.isArray(input.fallacies) ? input.fallacies : [],
+		fallacyExplanations: input.fallacyExplanations || {},
+		assumptions: Array.isArray(input.assumptions) ? input.assumptions : [],
+		counterArguments: Array.isArray(input.counterArguments) ? input.counterArguments : [],
+		improvements: input.improvements || ''
 	};
-
-	const extractResult = (parsed: any): ClaimAnalysisRawResponse => ({
-		validityScore: clampScore(parsed.validityScore),
-		evidenceScore: clampScore(parsed.evidenceScore),
-		fallacies: Array.isArray(parsed.fallacies) ? parsed.fallacies : [],
-		fallacyExplanations: parsed.fallacyExplanations || {},
-		assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions : [],
-		counterArguments: Array.isArray(parsed.counterArguments) ? parsed.counterArguments : [],
-		improvements: parsed.improvements || ''
-	});
-
-	try {
-		const parsed = JSON.parse(jsonText);
-		return extractResult(parsed);
-	} catch (parseError) {
-		// Try to repair and parse again
-		try {
-			const repaired = repairJson(jsonText);
-			const parsed = JSON.parse(repaired);
-			logger.info('[Pass 2] Successfully parsed JSON after repair');
-			return extractResult(parsed);
-		} catch (repairError) {
-			logger.error(
-				'[Pass 2] Failed to parse claim analysis response:',
-				responseText.substring(0, 300)
-			);
-			throw new Error(`Failed to parse claim analysis response: ${parseError}`);
-		}
-	}
 }
 
 /**
