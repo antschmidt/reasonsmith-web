@@ -558,7 +558,8 @@
 				body: JSON.stringify({
 					content: rawContent,
 					provider: analysisProvider,
-					skipFactChecking: !enableFactChecking
+					skipFactChecking: !enableFactChecking,
+					includeMultiPass: true
 				})
 			});
 			if (!response.ok) {

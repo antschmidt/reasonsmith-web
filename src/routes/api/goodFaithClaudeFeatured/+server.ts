@@ -15,6 +15,82 @@ const anthropic = new Anthropic({
 	apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-build'
 });
 
+/**
+ * Store claim analyses in database for featured content
+ */
+async function storeClaimAnalyses(result: MultiPassResult, showcaseItemId?: string): Promise<void> {
+	try {
+		const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+		const HASURA_GRAPHQL_ADMIN_SECRET =
+			process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+
+		if (!HASURA_GRAPHQL_ENDPOINT || !HASURA_GRAPHQL_ADMIN_SECRET) {
+			logger.warn('[Featured] Missing Hasura config, skipping claim analysis storage');
+			return;
+		}
+
+		// Build claim analysis records
+		// Note: For featured/showcase content, we don't have a post_id or discussion_version_id
+		// We store them without a parent reference for now - they can be linked to showcase items later
+		const claimRecords = result.claimAnalyses.map((analysis) => ({
+			post_id: null,
+			discussion_version_id: null,
+			claim_index: analysis.claimIndex,
+			claim_text: analysis.claim.text,
+			claim_type: analysis.claim.type,
+			complexity_level: analysis.claim.complexity,
+			complexity_confidence: analysis.claim.complexityConfidence,
+			is_explicit: analysis.claim.explicit,
+			depends_on: analysis.claim.dependsOn,
+			analysis:
+				analysis.status === 'completed'
+					? {
+							validityScore: analysis.validityScore,
+							evidenceScore: analysis.evidenceScore,
+							fallacies: analysis.fallacies,
+							fallacyExplanations: analysis.fallacyExplanations,
+							assumptions: analysis.assumptions,
+							counterArguments: analysis.counterArguments,
+							improvements: analysis.improvements
+						}
+					: null,
+			model_used: analysis.modelUsed,
+			status: analysis.status,
+			error_message: analysis.error || null,
+			input_tokens: analysis.inputTokens,
+			output_tokens: analysis.outputTokens
+		}));
+
+		// Insert claim analyses
+		const insertResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET
+			},
+			body: JSON.stringify({
+				query: `
+					mutation InsertClaimAnalyses($objects: [claim_analysis_insert_input!]!) {
+						insert_claim_analysis(objects: $objects) {
+							affected_rows
+						}
+					}
+				`,
+				variables: { objects: claimRecords }
+			})
+		});
+
+		const insertResult = await insertResponse.json();
+		if (insertResult.errors) {
+			logger.error('[Featured] Failed to store claim analyses:', insertResult.errors);
+		} else {
+			logger.info(`[Featured] Stored ${claimRecords.length} claim analyses`);
+		}
+	} catch (err) {
+		logger.error('[Featured] Error storing claim analyses:', err);
+	}
+}
+
 const openai = new OpenAI({
 	apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-build'
 });
@@ -632,6 +708,9 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 					logger.info(
 						`[Featured] Multi-pass complete: ${multiPassResult.claimsAnalyzed} claims analyzed`
 					);
+
+					// Store claim analyses in database
+					await storeClaimAnalyses(multiPassResult);
 				} catch (multiPassError) {
 					logger.error('[Featured] Multi-pass analysis failed:', multiPassError);
 					// Continue without multi-pass - it's optional
