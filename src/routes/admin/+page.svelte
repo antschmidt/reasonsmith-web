@@ -6,7 +6,10 @@
 		RESET_ANALYSIS_USAGE,
 		UPDATE_CONTRIBUTOR_ROLE,
 		SET_PURCHASED_CREDITS,
-		ANONYMIZE_AND_DELETE_USER
+		ANONYMIZE_AND_DELETE_USER,
+		GET_SITE_SETTING,
+		UPDATE_SITE_SETTING,
+		type PromptCacheTTL
 	} from '$lib/graphql/queries';
 	import { refreshUserRole, debugAdminRequest, debugCurrentRole } from '$lib/nhostClient';
 	import { collectRoles } from '$lib/utils/authHelpers';
@@ -38,6 +41,11 @@
 	let saving = false;
 	let error: string | null = null;
 	let success: string | null = null;
+
+	// Site settings state
+	let promptCacheTTL: PromptCacheTTL = 'off';
+	let loadingSettings = false;
+	let savingSettings = false;
 
 	const GET_ALL_CONTRIBUTORS = `
     query GetAllContributors {
@@ -124,6 +132,65 @@
 			console.error('Error loading contributors:', err);
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function loadSiteSettings() {
+		if (!hasAccess) return;
+
+		loadingSettings = true;
+
+		try {
+			const result = await nhost.graphql.request(GET_SITE_SETTING, {
+				key: 'prompt_cache_ttl'
+			});
+
+			if (result.error) {
+				console.error('Failed to load site settings:', result.error);
+				return;
+			}
+
+			const setting = result.data?.site_settings_by_pk;
+			if (setting?.value) {
+				// Value is stored as JSON string, so parse it
+				const value =
+					typeof setting.value === 'string' ? setting.value : JSON.stringify(setting.value);
+				promptCacheTTL = value.replace(/"/g, '') as PromptCacheTTL;
+			}
+		} catch (err: any) {
+			console.error('Error loading site settings:', err);
+		} finally {
+			loadingSettings = false;
+		}
+	}
+
+	async function updatePromptCacheTTL(newValue: PromptCacheTTL) {
+		savingSettings = true;
+		error = null;
+		success = null;
+
+		try {
+			const result = await nhost.graphql.request(UPDATE_SITE_SETTING, {
+				key: 'prompt_cache_ttl',
+				value: newValue,
+				updatedBy: user?.id
+			});
+
+			if (result.error) {
+				const errorMessage = Array.isArray(result.error)
+					? result.error[0]?.message || 'Failed to update setting'
+					: result.error.message || 'Failed to update setting';
+				throw new Error(errorMessage);
+			}
+
+			promptCacheTTL = newValue;
+			success = `Prompt cache TTL updated to ${newValue === 'off' ? 'disabled' : newValue}`;
+			setTimeout(() => (success = null), 3000);
+		} catch (err: any) {
+			error = err.message || 'Failed to update prompt cache TTL';
+			console.error('Error updating prompt cache TTL:', err);
+		} finally {
+			savingSettings = false;
 		}
 	}
 
@@ -386,7 +453,7 @@
 	onMount(async () => {
 		await checkAccess();
 		if (hasAccess) {
-			await loadContributors();
+			await Promise.all([loadContributors(), loadSiteSettings()]);
 		}
 	});
 </script>
@@ -403,168 +470,232 @@
 		</div>
 	{:else}
 		<header class="admin-header">
-			<h1>User Management</h1>
-			<p class="lead">Manage analysis permissions and usage limits for all users</p>
+			<h1>Admin Dashboard</h1>
+			<p class="lead">Manage site settings, users, and system configuration</p>
 		</header>
 
-		{#if loading}
-			<div class="loading">Loading contributors...</div>
-		{:else}
-			<div class="contributors-table">
-				<table>
-					<thead>
-						<tr>
-							<th>User</th>
-							<th>Role</th>
-							<th>Subscription</th>
-							<th>Monthly Credits</th>
-							<th>Purchased Credits</th>
-							<th>Analysis Enabled</th>
-							<th>Usage Limit</th>
-							<th>Used / Reset</th>
-							<th>Actions</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each contributors as contributor (contributor.id)}
-							<tr class="contributor-row">
-								<td class="user-info">
-									<div class="user-name">
-										{contributor.display_name ||
-											contributor.handle ||
-											contributor.auth_email ||
-											'Unnamed'}
-									</div>
-									{#if contributor.display_name || contributor.handle}
-										<div class="user-email">{contributor.auth_email}</div>
-									{/if}
-								</td>
-								<td>
-									{#if isAdmin || (currentUserRole === 'slartibartfast' && !['admin'].includes(contributor.role))}
-										<select
-											class="role-select"
-											value={contributor.role}
-											disabled={saving || (contributor.id === user?.id && !isAdmin)}
-											onchange={(e) => updateUserRole(contributor.id, e.currentTarget.value)}
-										>
-											<option value="user">User</option>
-											<option value="slartibartfast">Site Manager</option>
-											{#if isAdmin}
-												<option value="admin">Root Admin</option>
-											{/if}
-										</select>
-									{:else}
-										<span class="role-badge role-{contributor.role}">{contributor.role}</span>
-									{/if}
-								</td>
-								<td>
-									<span class="subscription-badge tier-{contributor.subscription_tier || 'free'}">
-										{contributor.subscription_tier || 'free'}
-									</span>
-								</td>
-								<td class="credits-info">
-									<div class="credits-count">
-										{contributor.monthly_credits_remaining ?? 0}
-									</div>
-									{#if contributor.monthly_credits_reset_at}
-										<div class="reset-date">
-											Reset: {new Date(contributor.monthly_credits_reset_at).toLocaleDateString()}
+		<!-- Site Settings Section -->
+		<section class="settings-section">
+			<h2>Site Settings</h2>
+			<div class="settings-grid">
+				<div class="setting-card">
+					<div class="setting-header">
+						<h3>Claude Prompt Cache</h3>
+						<p class="setting-description">
+							Cache the system prompt to reduce API costs. Higher TTL = more savings but slower
+							prompt updates.
+						</p>
+					</div>
+					<div class="setting-control">
+						{#if loadingSettings}
+							<span class="loading-text">Loading...</span>
+						{:else}
+							<div class="ttl-options">
+								<button
+									class="ttl-btn"
+									class:active={promptCacheTTL === 'off'}
+									disabled={savingSettings}
+									onclick={() => updatePromptCacheTTL('off')}
+								>
+									Off
+								</button>
+								<button
+									class="ttl-btn"
+									class:active={promptCacheTTL === '5m'}
+									disabled={savingSettings}
+									onclick={() => updatePromptCacheTTL('5m')}
+								>
+									5 min
+								</button>
+								<button
+									class="ttl-btn"
+									class:active={promptCacheTTL === '1h'}
+									disabled={savingSettings}
+									onclick={() => updatePromptCacheTTL('1h')}
+								>
+									1 hour
+								</button>
+							</div>
+							<p class="setting-hint">
+								{#if promptCacheTTL === 'off'}
+									Caching disabled - each request sends full system prompt
+								{:else if promptCacheTTL === '5m'}
+									Cache expires after 5 minutes of inactivity
+								{:else}
+									Cache expires after 1 hour of inactivity (best for high traffic)
+								{/if}
+							</p>
+						{/if}
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- User Management Section -->
+		<section class="users-section">
+			<h2>User Management</h2>
+
+			{#if loading}
+				<div class="loading">Loading contributors...</div>
+			{:else}
+				<div class="contributors-table">
+					<table class="users-table">
+						<thead>
+							<tr>
+								<th>User</th>
+								<th>Role</th>
+								<th>Subscription</th>
+								<th>Monthly Credits</th>
+								<th>Purchased Credits</th>
+								<th>Analysis Enabled</th>
+								<th>Usage Limit</th>
+								<th>Used / Reset</th>
+								<th>Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each contributors as contributor (contributor.id)}
+								<tr class="contributor-row">
+									<td class="user-info">
+										<div class="user-name">
+											{contributor.display_name ||
+												contributor.handle ||
+												contributor.auth_email ||
+												'Unnamed'}
 										</div>
-									{/if}
-								</td>
-								<td class="credits-info">
-									<div class="credits-edit-container">
-										<label class="credits-label">Remaining:</label>
+										{#if contributor.display_name || contributor.handle}
+											<div class="user-email">{contributor.auth_email}</div>
+										{/if}
+									</td>
+									<td>
+										{#if isAdmin || (currentUserRole === 'slartibartfast' && !['admin'].includes(contributor.role))}
+											<select
+												class="role-select"
+												value={contributor.role}
+												disabled={saving || (contributor.id === user?.id && !isAdmin)}
+												onchange={(e) => updateUserRole(contributor.id, e.currentTarget.value)}
+											>
+												<option value="user">User</option>
+												<option value="slartibartfast">Site Manager</option>
+												{#if isAdmin}
+													<option value="admin">Root Admin</option>
+												{/if}
+											</select>
+										{:else}
+											<span class="role-badge role-{contributor.role}">{contributor.role}</span>
+										{/if}
+									</td>
+									<td>
+										<span class="subscription-badge tier-{contributor.subscription_tier || 'free'}">
+											{contributor.subscription_tier || 'free'}
+										</span>
+									</td>
+									<td class="credits-info">
+										<div class="credits-count">
+											{contributor.monthly_credits_remaining ?? 0}
+										</div>
+										{#if contributor.monthly_credits_reset_at}
+											<div class="reset-date">
+												Reset: {new Date(contributor.monthly_credits_reset_at).toLocaleDateString()}
+											</div>
+										{/if}
+									</td>
+									<td class="credits-info">
+										<div class="credits-edit-container">
+											<label class="credits-label">Remaining:</label>
+											<input
+												type="number"
+												class="credits-input"
+												value={contributor.purchased_credits_remaining ?? 0}
+												min="0"
+												disabled={saving}
+												onblur={(e) => {
+													const remaining = parseInt(e.currentTarget.value) || 0;
+													updatePurchasedCredits(contributor.id, remaining);
+												}}
+											/>
+										</div>
+										<div class="reset-date">
+											Total: {contributor.purchased_credits_total ?? 0} / Used: {contributor.purchased_credits_used ??
+												0}
+										</div>
+									</td>
+									<td>
+										<label class="toggle">
+											<input
+												type="checkbox"
+												checked={contributor.analysis_enabled}
+												disabled={saving || contributor.role === 'admin'}
+												onchange={(e) =>
+													updateAnalysisSettings(
+														contributor.id,
+														e.currentTarget.checked,
+														contributor.analysis_limit
+													)}
+											/>
+											<span class="toggle-slider"></span>
+										</label>
+									</td>
+									<td>
 										<input
 											type="number"
-											class="credits-input"
-											value={contributor.purchased_credits_remaining ?? 0}
+											class="limit-input"
+											value={contributor.analysis_limit || ''}
+											placeholder="Unlimited"
 											min="0"
-											disabled={saving}
+											disabled={saving || contributor.role === 'me'}
 											onblur={(e) => {
-												const remaining = parseInt(e.currentTarget.value) || 0;
-												updatePurchasedCredits(contributor.id, remaining);
+												const value = e.currentTarget.value
+													? parseInt(e.currentTarget.value)
+													: null;
+												updateAnalysisSettings(contributor.id, contributor.analysis_enabled, value);
 											}}
 										/>
-									</div>
-									<div class="reset-date">
-										Total: {contributor.purchased_credits_total ?? 0} / Used: {contributor.purchased_credits_used ??
-											0}
-									</div>
-								</td>
-								<td>
-									<label class="toggle">
-										<input
-											type="checkbox"
-											checked={contributor.analysis_enabled}
-											disabled={saving || contributor.role === 'admin'}
-											onchange={(e) =>
-												updateAnalysisSettings(
-													contributor.id,
-													e.currentTarget.checked,
-													contributor.analysis_limit
-												)}
-										/>
-										<span class="toggle-slider"></span>
-									</label>
-								</td>
-								<td>
-									<input
-										type="number"
-										class="limit-input"
-										value={contributor.analysis_limit || ''}
-										placeholder="Unlimited"
-										min="0"
-										disabled={saving || contributor.role === 'me'}
-										onblur={(e) => {
-											const value = e.currentTarget.value ? parseInt(e.currentTarget.value) : null;
-											updateAnalysisSettings(contributor.id, contributor.analysis_enabled, value);
-										}}
-									/>
-								</td>
-								<td class="usage-info">
-									<div class="usage-count">
-										{contributor.analysis_count_used}
-										{#if contributor.analysis_limit}
-											/ {contributor.analysis_limit}
-										{/if}
-									</div>
-									<div class="reset-date">
-										Reset: {new Date(contributor.analysis_count_reset_at).toLocaleDateString()}
-									</div>
-								</td>
-								<td>
-									<div class="action-buttons">
-										<button
-											class="btn-secondary reset-btn"
-											disabled={saving || contributor.role === 'me'}
-											onclick={() => resetAnalysisCount(contributor.id)}
-											title="Reset analysis count"
-										>
-											Reset Count
-										</button>
-										{#if isAdmin && contributor.id !== user?.id}
+									</td>
+									<td class="usage-info">
+										<div class="usage-count">
+											{contributor.analysis_count_used}
+											{#if contributor.analysis_limit}
+												/ {contributor.analysis_limit}
+											{/if}
+										</div>
+										<div class="reset-date">
+											Reset: {new Date(contributor.analysis_count_reset_at).toLocaleDateString()}
+										</div>
+									</td>
+									<td>
+										<div class="action-buttons">
 											<button
-												class="btn-danger delete-btn"
-												disabled={saving}
-												onclick={() =>
-													deleteUser(
-														contributor.id,
-														contributor.display_name || contributor.handle || contributor.email
-													)}
-												title="Delete user and anonymize their content"
+												class="btn-secondary reset-btn"
+												disabled={saving || contributor.role === 'me'}
+												onclick={() => resetAnalysisCount(contributor.id)}
+												title="Reset analysis count"
 											>
-												Delete User
+												Reset Count
 											</button>
-										{/if}
-									</div>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		{/if}
+											{#if isAdmin && contributor.id !== user?.id}
+												<button
+													class="btn-danger delete-btn"
+													disabled={saving}
+													onclick={() =>
+														deleteUser(
+															contributor.id,
+															contributor.display_name || contributor.handle || contributor.email
+														)}
+													title="Delete user and anonymize their content"
+												>
+													Delete User
+												</button>
+											{/if}
+										</div>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		</section>
 	{/if}
 </div>
 
@@ -629,6 +760,103 @@
 		color: var(--color-text-secondary);
 		font-size: 1.1rem;
 		line-height: 1.6;
+	}
+
+	/* Settings Section */
+	.settings-section,
+	.users-section {
+		margin-bottom: 2rem;
+	}
+
+	.settings-section h2,
+	.users-section h2 {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 0 0 1rem 0;
+		padding-bottom: 0.5rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.settings-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+		gap: 1.5rem;
+	}
+
+	.setting-card {
+		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+		backdrop-filter: blur(20px) saturate(1.2);
+		border: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		border-radius: var(--border-radius-lg);
+		padding: 1.5rem;
+		box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 5%, transparent);
+	}
+
+	.setting-header h3 {
+		margin: 0 0 0.5rem 0;
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.setting-description {
+		margin: 0 0 1rem 0;
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+		line-height: 1.5;
+	}
+
+	.setting-control {
+		margin-top: 1rem;
+	}
+
+	.loading-text {
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+	}
+
+	.ttl-options {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.ttl-btn {
+		flex: 1;
+		padding: 0.6rem 1rem;
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: var(--border-radius-sm);
+		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+		color: var(--color-text-secondary);
+		font-size: 0.85rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.ttl-btn:hover:not(:disabled) {
+		border-color: var(--color-primary);
+		color: var(--color-text-primary);
+	}
+
+	.ttl-btn.active {
+		background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+		border-color: transparent;
+		color: white;
+		font-weight: 600;
+		box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 30%, transparent);
+	}
+
+	.ttl-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.setting-hint {
+		margin: 0.75rem 0 0 0;
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+		font-style: italic;
 	}
 
 	/* Toast notifications */

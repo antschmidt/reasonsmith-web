@@ -140,6 +140,9 @@
 			return true;
 		}
 		if (!draft?.good_faith_label) return false;
+		// Reject heuristic fallback results - must be real AI analysis
+		const provider = draft.good_faith_analysis?.provider;
+		if (provider === 'heuristic') return false;
 		// Pass criteria: constructive, exemplary, or neutral (score >= 0.4)
 		return ['constructive', 'exemplary', 'neutral'].includes(draft.good_faith_label);
 	});
@@ -345,12 +348,14 @@
 
 			// Load existing good faith analysis if available
 			if (draft.good_faith_score !== null && draft.good_faith_label) {
+				const savedProvider = draft.good_faith_analysis?.provider;
 				goodFaithResult = {
 					good_faith_score: draft.good_faith_score,
 					good_faith_label: draft.good_faith_label,
 					rationale: draft.good_faith_analysis?.rationale || null,
 					claims: draft.good_faith_analysis?.claims || [],
-					provider: draft.good_faith_analysis?.provider || 'claude'
+					provider: savedProvider || 'unknown',
+					usedClaude: savedProvider === 'claude'
 				};
 				analysisCollapsed = true;
 			}
@@ -358,18 +363,24 @@
 			// Check if analysis was in progress when user navigated away
 			const analysisInProgress = sessionStorage.getItem(`analysis-${draftId}`);
 			if (analysisInProgress === 'true') {
-				// Check if analysis has completed
-				const analysisDate = draft.good_faith_last_evaluated
-					? new Date(draft.good_faith_last_evaluated)
-					: null;
-				const editDate = draft.edited_at ? new Date(draft.edited_at) : null;
-
-				if (analysisDate && editDate && analysisDate > editDate) {
-					// Analysis completed while away
+				// Check if stored analysis contains an error - don't poll if so
+				if (draft.good_faith_analysis?.error) {
+					goodFaithError = draft.good_faith_analysis.error;
 					sessionStorage.removeItem(`analysis-${draftId}`);
 				} else {
-					// Analysis still in progress, start polling
-					startPollingForAnalysis();
+					// Check if analysis has completed
+					const analysisDate = draft.good_faith_last_evaluated
+						? new Date(draft.good_faith_last_evaluated)
+						: null;
+					const editDate = draft.edited_at ? new Date(draft.edited_at) : null;
+
+					if (analysisDate && editDate && analysisDate > editDate) {
+						// Analysis completed while away
+						sessionStorage.removeItem(`analysis-${draftId}`);
+					} else {
+						// Analysis still in progress, start polling
+						startPollingForAnalysis();
+					}
 				}
 			}
 		} catch (err: any) {
@@ -421,6 +432,19 @@
 					const analysisDate = new Date(updatedDraft.good_faith_last_evaluated);
 					const editDate = updatedDraft.edited_at ? new Date(updatedDraft.edited_at) : null;
 
+					// Check if analysis contains an error - stop polling if so
+					if (updatedDraft.good_faith_analysis?.error) {
+						goodFaithError = updatedDraft.good_faith_analysis.error;
+						goodFaithTesting = false;
+						isAnalyzing = false;
+						sessionStorage.removeItem(`analysis-${draftId}`);
+						if (pollingInterval) {
+							clearInterval(pollingInterval);
+							pollingInterval = null;
+						}
+						return;
+					}
+
 					// Check if analysis is newer than edit (or no edit date)
 					if (!editDate || analysisDate > editDate) {
 						// Analysis completed!
@@ -428,12 +452,14 @@
 						draft.good_faith_label = updatedDraft.good_faith_label;
 						draft.good_faith_last_evaluated = updatedDraft.good_faith_last_evaluated;
 
+						const polledProvider = updatedDraft.good_faith_analysis?.provider;
 						goodFaithResult = {
 							good_faith_score: updatedDraft.good_faith_score,
 							good_faith_label: updatedDraft.good_faith_label,
 							rationale: updatedDraft.good_faith_analysis?.rationale || null,
 							claims: updatedDraft.good_faith_analysis?.claims || [],
-							provider: updatedDraft.good_faith_analysis?.provider || 'claude'
+							provider: polledProvider || 'unknown',
+							usedClaude: polledProvider === 'claude'
 						};
 
 						goodFaithTesting = false;
@@ -726,9 +752,21 @@
 					body: JSON.stringify({
 						content: content,
 						importData: importDataPayload,
-						showcaseContext: showcaseContextPayload
+						showcaseContext: showcaseContextPayload,
+						writingStyle: selectedStyle,
+						discussionContext: {
+							discussion: {
+								id: discussion?.id,
+								title: title
+							}
+						}
 					})
 				});
+
+				if (!response.ok) {
+					const errorData = await response.json().catch(() => ({}));
+					throw new Error(errorData.error || `Analysis failed with status ${response.status}`);
+				}
 
 				const data = await response.json();
 
@@ -737,6 +775,7 @@
 					goodFaithError =
 						'AI analysis is temporarily unavailable. Please try again later or contact support if the issue persists.';
 					goodFaithTesting = false;
+					isAnalyzing = false;
 					return null;
 				}
 
@@ -1352,6 +1391,10 @@
 								>
 								<span class="analysis-label">{goodFaithResult.good_faith_label}</span>
 							</div>
+							{#if goodFaithResult.provider === 'heuristic'}
+								<span class="heuristic-badge">Heuristic only - AI analysis required to publish</span
+								>
+							{/if}
 							{#if analysisIsOutdated}
 								<span class="outdated-badge">Outdated - Content edited since analysis</span>
 							{/if}
@@ -1466,6 +1509,7 @@
 						placeholder="Describe your discussion..."
 						minHeight="400px"
 						showToolbar={!(isAnalyzing || goodFaithTesting)}
+						showTokenCount={true}
 					/>
 				</div>
 
@@ -2367,6 +2411,18 @@
 		font-weight: 500;
 		border-radius: var(--border-radius-sm);
 		border: 1px solid color-mix(in srgb, #f59e0b 25%, transparent);
+	}
+
+	/* Heuristic badge - warns that AI analysis is required */
+	.heuristic-badge {
+		display: inline-block;
+		padding: 0.25rem 0.75rem;
+		background: color-mix(in srgb, #ef4444 15%, transparent);
+		color: #dc2626;
+		font-size: 0.85rem;
+		font-weight: 500;
+		border-radius: var(--border-radius-sm);
+		border: 1px solid color-mix(in srgb, #ef4444 25%, transparent);
 	}
 
 	/* Expand/Collapse buttons */

@@ -592,7 +592,18 @@
 				const response = await fetch('/api/goodFaithClaude', {
 					method: 'POST',
 					headers,
-					body: JSON.stringify({ postId: draftPostId, content: newComment })
+					body: JSON.stringify({
+						postId: draftPostId,
+						content: newComment,
+						writingStyle: commentSelectedStyle,
+						discussionContext: {
+							discussion: {
+								id: discussion?.id,
+								title: getDiscussionTitle(discussion),
+								description: getDiscussionDescription(discussion)
+							}
+						}
+					})
 				});
 				if (!response.ok) {
 					throw new Error(`Analysis failed with status ${response.status}`);
@@ -2784,7 +2795,14 @@
 				headers,
 				body: JSON.stringify({
 					postId: 'test-claude',
-					content: editDescription
+					content: editDescription,
+					writingStyle: editSelectedStyle,
+					discussionContext: {
+						discussion: {
+							id: discussion?.id,
+							title: editTitle
+						}
+					}
 				})
 			});
 
@@ -2974,6 +2992,7 @@
 			// Build context payload (same as OpenAI version)
 			const discussionContext: any = {
 				discussion: {
+					id: discussion?.id,
 					title: getDiscussionTitle(discussion),
 					description: getDiscussionDescription(discussion)
 				}
@@ -3032,7 +3051,8 @@
 				body: JSON.stringify({
 					postId: 'test-comment-claude',
 					content: newComment,
-					discussionContext
+					discussionContext,
+					writingStyle: commentSelectedStyle
 				})
 			});
 

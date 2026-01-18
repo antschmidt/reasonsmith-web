@@ -8,7 +8,13 @@ import { logger } from '$lib/logger';
 import { logApiUsageAsync } from '$lib/server/apiUsageLogger';
 
 // Import shared utilities
-import type { GoodFaithInput, ClaudeRawResponse, GoodFaithResult } from '$lib/goodFaith';
+import type {
+	GoodFaithInput,
+	ClaudeRawResponse,
+	GoodFaithResult,
+	WritingStyle
+} from '$lib/goodFaith';
+import type { PromptCacheTTL } from '$lib/graphql/queries/site-settings';
 import {
 	buildFullContent,
 	buildBaseSystemPrompt,
@@ -17,7 +23,10 @@ import {
 	normalizeClaudeResponse,
 	parseClaudeJsonResponse,
 	heuristicScore,
-	PROVIDER_CONFIGS
+	PROVIDER_CONFIGS,
+	STYLE_MODEL_MAP,
+	DEFAULT_CLAUDE_MODEL,
+	DEFAULT_MAX_TOKENS
 } from '$lib/goodFaith';
 
 const anthropic = new Anthropic({
@@ -25,11 +34,69 @@ const anthropic = new Anthropic({
 });
 
 /**
- * Analyze content using Claude API
+ * Fetch prompt cache TTL setting from database
  */
-async function analyzeWithClaude(fullContent: string): Promise<GoodFaithResult> {
+async function getPromptCacheTTL(): Promise<PromptCacheTTL> {
 	try {
-		logger.info('Starting Claude API call...');
+		const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+		const HASURA_GRAPHQL_ADMIN_SECRET =
+			process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+
+		if (!HASURA_GRAPHQL_ENDPOINT || !HASURA_GRAPHQL_ADMIN_SECRET) {
+			logger.warn('Missing Hasura config for fetching cache TTL, defaulting to off');
+			return 'off';
+		}
+
+		const response = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET
+			},
+			body: JSON.stringify({
+				query: `
+					query GetPromptCacheTTL {
+						site_settings_by_pk(key: "prompt_cache_ttl") {
+							value
+						}
+					}
+				`
+			})
+		});
+
+		const result = await response.json();
+		const value = result.data?.site_settings_by_pk?.value;
+
+		if (value && ['off', '5m', '1h'].includes(value)) {
+			return value as PromptCacheTTL;
+		}
+
+		return 'off';
+	} catch (err) {
+		logger.error('Failed to fetch prompt cache TTL:', err);
+		return 'off';
+	}
+}
+
+/**
+ * Analyze content using Claude API
+ * @param fullContent The content to analyze
+ * @param modelOverride Optional model to use instead of default (based on writing style)
+ * @param maxTokensOverride Optional max tokens override for the model
+ * @param cacheTTL Optional cache TTL for system prompt
+ */
+async function analyzeWithClaude(
+	fullContent: string,
+	modelOverride?: string,
+	maxTokensOverride?: number,
+	cacheTTL: PromptCacheTTL = 'off'
+): Promise<GoodFaithResult> {
+	try {
+		const model = modelOverride || DEFAULT_CLAUDE_MODEL;
+		const maxTokens = maxTokensOverride || DEFAULT_MAX_TOKENS;
+		logger.info(
+			`Starting Claude API call with model: ${model}, maxTokens: ${maxTokens}, cache TTL: ${cacheTTL}`
+		);
 
 		if (!process.env.ANTHROPIC_API_KEY) {
 			throw new Error('AI analysis is temporarily unavailable');
@@ -39,30 +106,59 @@ async function analyzeWithClaude(fullContent: string): Promise<GoodFaithResult> 
 		const systemPrompt =
 			buildBaseSystemPrompt() + CLAUDE_SPECIFIC_INSTRUCTIONS + '\n\n' + OUTPUT_SCHEMA_DESCRIPTION;
 
-		const msg = await anthropic.messages.create({
-			model: config.model,
-			max_tokens: config.maxTokens,
+		// Build request options based on cache TTL setting
+		const requestOptions: Parameters<typeof anthropic.messages.create>[0] = {
+			model: model,
+			max_tokens: maxTokens,
 			temperature: config.temperature,
-			system: systemPrompt,
 			messages: [
 				{
 					role: 'user',
 					content: fullContent
 				}
 			]
-		});
+		};
+
+		// Apply caching if enabled
+		if (cacheTTL !== 'off') {
+			// Use array format with cache_control for caching
+			requestOptions.system = [
+				{
+					type: 'text',
+					text: systemPrompt,
+					cache_control: { type: 'ephemeral', ttl: cacheTTL }
+				}
+			] as any; // Type cast needed for cache_control extension
+			// Add beta header for extended cache TTL
+			(requestOptions as any).betas = ['extended-cache-ttl-2025-04-11'];
+			logger.info(`Prompt caching enabled with TTL: ${cacheTTL}`);
+		} else {
+			// No caching - use simple string format
+			requestOptions.system = systemPrompt;
+		}
+
+		const msg = await anthropic.messages.create(requestOptions);
 
 		logger.info('Claude API response received');
 
-		// Capture token usage from the response
+		// Capture token usage from the response (including cache stats)
+		const cacheCreationTokens = (msg.usage as any).cache_creation_input_tokens || 0;
+		const cacheReadTokens = (msg.usage as any).cache_read_input_tokens || 0;
 		const usage = {
 			input_tokens: msg.usage.input_tokens,
 			output_tokens: msg.usage.output_tokens,
-			total_tokens: msg.usage.input_tokens + msg.usage.output_tokens
+			total_tokens: msg.usage.input_tokens + msg.usage.output_tokens,
+			cache_creation_input_tokens: cacheCreationTokens,
+			cache_read_input_tokens: cacheReadTokens
 		};
 		logger.info(
 			`Token usage: ${usage.input_tokens} in, ${usage.output_tokens} out, ${usage.total_tokens} total`
 		);
+		if (cacheCreationTokens > 0 || cacheReadTokens > 0) {
+			logger.info(
+				`Cache stats: ${cacheCreationTokens} tokens cached, ${cacheReadTokens} tokens read from cache`
+			);
+		}
 
 		const responseText = msg.content[0]?.type === 'text' ? msg.content[0].text : '';
 
@@ -108,6 +204,15 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			discussionContext: body.discussionContext,
 			showcaseContext: body.showcaseContext
 		};
+
+		// Extract writing style and determine model
+		const writingStyle = body.writingStyle as WritingStyle | undefined;
+		const modelConfig = writingStyle ? STYLE_MODEL_MAP[writingStyle] : null;
+		const selectedModel = modelConfig?.model || DEFAULT_CLAUDE_MODEL;
+		const selectedMaxTokens = modelConfig?.maxTokens || DEFAULT_MAX_TOKENS;
+		logger.info(
+			`Writing style: ${writingStyle || 'not specified'}, using model: ${selectedModel}, maxTokens: ${selectedMaxTokens}`
+		);
 
 		if (!input.content.trim()) {
 			return json({ error: 'content required' }, { status: 400 });
@@ -265,8 +370,16 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			logger.info('Claude API key present:', !!process.env.ANTHROPIC_API_KEY);
 			logger.info('Processing request for content length:', input.content.length);
 
-			// Use Claude analysis
-			const scored = await analyzeWithClaude(fullContent);
+			// Fetch cache TTL setting from database
+			const cacheTTL = await getPromptCacheTTL();
+
+			// Use Claude analysis with the selected model, max tokens, and cache TTL
+			const scored = await analyzeWithClaude(
+				fullContent,
+				selectedModel,
+				selectedMaxTokens,
+				cacheTTL
+			);
 
 			// Increment appropriate credit type only if Claude was actually used (not heuristic fallback)
 			logger.info('Checking credit consumption:', {
@@ -350,16 +463,17 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 				logApiUsageAsync({
 					contributorId,
 					provider: 'claude',
-					model: PROVIDER_CONFIGS.claude.model,
+					model: selectedModel,
 					endpoint: 'goodFaithClaude',
 					inputTokens: scored.usage.input_tokens,
 					outputTokens: scored.usage.output_tokens,
 					postId: input.postId,
-					discussionId: input.discussionContext?.discussion ? undefined : undefined, // TODO: Add discussion ID if available
+					discussionId: input.discussionContext?.discussion?.id,
 					metadata: {
 						contentLength: input.content.length,
 						hasImportData: !!input.importData,
-						hasShowcaseContext: !!input.showcaseContext
+						hasShowcaseContext: !!input.showcaseContext,
+						writingStyle: writingStyle || null
 					}
 				});
 			}

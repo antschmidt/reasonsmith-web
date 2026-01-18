@@ -15,7 +15,7 @@ const openai = new OpenAI({
 	apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-build'
 });
 
-const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-20250514';
+const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-5';
 const OPENAI_MODEL = process.env.OPENAI_FEATURED_MODEL ?? 'gpt-5';
 
 type Verdict = 'True' | 'False' | 'Misleading' | 'Unverified';

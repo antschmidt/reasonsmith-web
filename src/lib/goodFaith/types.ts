@@ -47,6 +47,7 @@ export interface SelectedComment {
 
 export interface DiscussionContext {
 	discussion?: {
+		id?: string;
 		title?: string;
 		description?: string;
 		citations?: Citation[];
@@ -163,7 +164,7 @@ export interface ProviderConfig {
 export const PROVIDER_CONFIGS: Record<ProviderName, ProviderConfig> = {
 	claude: {
 		name: 'claude',
-		model: 'claude-sonnet-4-5-20250929',
+		model: 'claude-sonnet-4-5',
 		maxTokens: 20000,
 		temperature: 0.2
 	},
@@ -180,3 +181,21 @@ export const PROVIDER_CONFIGS: Record<ProviderName, ProviderConfig> = {
 		temperature: 0.2
 	}
 };
+
+// Writing style to Claude model mapping
+export type WritingStyle = 'quick_point' | 'journalistic' | 'academic';
+
+export interface ModelConfig {
+	model: string;
+	maxTokens: number;
+}
+
+export const STYLE_MODEL_MAP: Record<WritingStyle, ModelConfig> = {
+	quick_point: { model: 'claude-haiku-4-5', maxTokens: 8192 },
+	journalistic: { model: 'claude-sonnet-4-5', maxTokens: 16384 },
+	academic: { model: 'claude-opus-4-5', maxTokens: 16384 }
+};
+
+// Default model when no style specified
+export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-5-20250514';
+export const DEFAULT_MAX_TOKENS = 16384;
