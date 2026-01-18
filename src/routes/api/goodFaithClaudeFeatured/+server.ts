@@ -7,6 +7,10 @@ import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
 import { logger } from '$lib/logger';
 import { logApiUsageAsync } from '$lib/server/apiUsageLogger';
 
+// Import multi-pass for deep claim analysis
+import { runMultiPassAnalysis, FEATURED_CONFIG, DEFAULT_MULTIPASS_MODELS } from '$lib/multipass';
+import type { MultiPassResult } from '$lib/multipass';
+
 const anthropic = new Anthropic({
 	apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-build'
 });
@@ -463,11 +467,21 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		const {
 			content,
 			provider,
-			skipFactChecking = true
+			skipFactChecking = true,
+			includeMultiPass = false,
+			discussionContext
 		} = body as {
 			content?: string;
 			provider?: string;
 			skipFactChecking?: boolean;
+			includeMultiPass?: boolean;
+			discussionContext?: {
+				discussion?: {
+					id?: string;
+					title?: string;
+					description?: string;
+				};
+			};
 		};
 
 		if (typeof content !== 'string' || !content.trim()) {
@@ -592,6 +606,38 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 				analysis.fact_checking = [];
 			}
 
+			// Optionally run multi-pass claim analysis for deeper insights
+			let multiPassResult: MultiPassResult | null = null;
+			if (includeMultiPass) {
+				try {
+					logger.info('[Featured] Running multi-pass claim analysis');
+					multiPassResult = await runMultiPassAnalysis(
+						content,
+						{
+							discussion: discussionContext?.discussion
+								? {
+										id: discussionContext.discussion.id,
+										title: discussionContext.discussion.title,
+										description: discussionContext.discussion.description
+									}
+								: undefined
+						},
+						{
+							...FEATURED_CONFIG,
+							models: DEFAULT_MULTIPASS_MODELS,
+							cacheTTL: '5m'
+						},
+						anthropic
+					);
+					logger.info(
+						`[Featured] Multi-pass complete: ${multiPassResult.claimsAnalyzed} claims analyzed`
+					);
+				} catch (multiPassError) {
+					logger.error('[Featured] Multi-pass analysis failed:', multiPassError);
+					// Continue without multi-pass - it's optional
+				}
+			}
+
 			// Increment usage count after successful analysis
 			if (contributorId) {
 				try {
@@ -636,10 +682,26 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			}
 
 			// Return the analysis with usage info
-			return json({
+			const response: any = {
 				...analysis,
 				usage
-			});
+			};
+
+			// Include multi-pass results if available
+			if (multiPassResult) {
+				response.multipass = {
+					result: multiPassResult.result,
+					strategy: multiPassResult.strategy,
+					claimsTotal: multiPassResult.claimsTotal,
+					claimsAnalyzed: multiPassResult.claimsAnalyzed,
+					claimsFailed: multiPassResult.claimsFailed,
+					claimAnalyses: multiPassResult.claimAnalyses,
+					usage: multiPassResult.usage,
+					estimatedCost: multiPassResult.estimatedCost
+				};
+			}
+
+			return json(response);
 		} catch (error) {
 			logger.error('Featured analysis generation failed.', error);
 			const message = error instanceof Error ? error.message : 'Analysis request failed';

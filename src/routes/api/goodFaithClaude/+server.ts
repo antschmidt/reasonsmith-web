@@ -29,6 +29,16 @@ import {
 	DEFAULT_MAX_TOKENS
 } from '$lib/goodFaith';
 
+// Import multi-pass analysis
+import {
+	shouldUseMultiPass,
+	runMultiPassAnalysis,
+	FEATURED_CONFIG,
+	ACADEMIC_CONFIG,
+	DEFAULT_MULTIPASS_MODELS
+} from '$lib/multipass';
+import type { AnalysisContext } from '$lib/multipass';
+
 const anthropic = new Anthropic({
 	apiKey: process.env.ANTHROPIC_API_KEY
 });
@@ -137,7 +147,7 @@ async function analyzeWithClaude(
 			requestOptions.system = systemPrompt;
 		}
 
-		const msg = await anthropic.messages.create(requestOptions);
+		const msg = (await anthropic.messages.create(requestOptions)) as Anthropic.Message;
 
 		logger.info('Claude API response received');
 
@@ -216,6 +226,114 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
 		if (!input.content.trim()) {
 			return json({ error: 'content required' }, { status: 400 });
+		}
+
+		// Check if multi-pass analysis should be used
+		// Phase 1: Featured content always uses multi-pass
+		// Phase 2: Academic posts with 4+ claims use multi-pass
+		const multiPassDecision = await shouldUseMultiPass(
+			input.content,
+			writingStyle,
+			input.showcaseContext
+		);
+
+		if (multiPassDecision.useMultiPass) {
+			logger.info(`[MultiPass] Routing to multi-pass analysis: ${multiPassDecision.reason}`);
+
+			// Build context for multi-pass
+			const multiPassContext: AnalysisContext = {
+				discussion: input.discussionContext?.discussion
+					? {
+							id: input.discussionContext.discussion.id,
+							title: input.discussionContext.discussion.title,
+							description: input.discussionContext.discussion.description
+						}
+					: undefined,
+				citations: input.discussionContext?.discussion?.citations?.map((c) => ({
+					title: c.title,
+					url: c.url,
+					author: c.author,
+					relevantQuote: c.relevant_quote
+				})),
+				selectedComments: input.discussionContext?.selectedComments?.map((c) => ({
+					id: c.id,
+					content: c.content,
+					author: c.author
+				})),
+				showcaseContext: input.showcaseContext
+					? {
+							title: input.showcaseContext.title,
+							subtitle: input.showcaseContext.subtitle,
+							summary: input.showcaseContext.summary
+						}
+					: undefined
+			};
+
+			// Get cache TTL for multi-pass
+			const cacheTTL = await getPromptCacheTTL();
+
+			// Build config based on strategy
+			const strategyConfig =
+				multiPassDecision.strategy === 'multi_featured' ? FEATURED_CONFIG : ACADEMIC_CONFIG;
+
+			try {
+				const multiPassResult = await runMultiPassAnalysis(
+					input.content,
+					multiPassContext,
+					{
+						...strategyConfig,
+						models: DEFAULT_MULTIPASS_MODELS,
+						cacheTTL
+					},
+					anthropic
+				);
+
+				// Log multi-pass usage
+				logApiUsageAsync({
+					contributorId: null, // Will be set after auth check if needed
+					provider: 'claude',
+					model: 'multipass',
+					endpoint: 'goodFaithClaude-multipass',
+					inputTokens: multiPassResult.usage.total.inputTokens,
+					outputTokens: multiPassResult.usage.total.outputTokens,
+					postId: input.postId,
+					discussionId: input.discussionContext?.discussion?.id,
+					metadata: {
+						strategy: multiPassResult.strategy,
+						claimsTotal: multiPassResult.claimsTotal,
+						claimsAnalyzed: multiPassResult.claimsAnalyzed,
+						estimatedCost: multiPassResult.estimatedCost
+					}
+				});
+
+				// Return multi-pass result in compatible format
+				return json({
+					...multiPassResult.result,
+					postId: input.postId || null,
+					usedClaude: true,
+					multipass: {
+						strategy: multiPassResult.strategy,
+						claimsTotal: multiPassResult.claimsTotal,
+						claimsAnalyzed: multiPassResult.claimsAnalyzed,
+						claimsFailed: multiPassResult.claimsFailed,
+						claimAnalyses: multiPassResult.claimAnalyses,
+						passes: multiPassResult.passes,
+						recommendSplit: multiPassResult.recommendSplit
+					},
+					usage: {
+						input_tokens: multiPassResult.usage.total.inputTokens,
+						output_tokens: multiPassResult.usage.total.outputTokens,
+						total_tokens: multiPassResult.usage.total.totalTokens
+					},
+					estimatedCost: multiPassResult.estimatedCost
+				});
+			} catch (multiPassError) {
+				logger.error(
+					'[MultiPass] Multi-pass analysis failed, falling back to single-pass:',
+					multiPassError
+				);
+				// Fall through to single-pass analysis
+			}
 		}
 
 		// Build full content with context using shared utility
