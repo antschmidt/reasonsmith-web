@@ -168,24 +168,48 @@ function parseClaimAnalysisResponse(responseText: string): ClaimAnalysisRawRespo
 
 	jsonText = jsonText.trim();
 
+	// Helper to repair common JSON issues from LLM output
+	const repairJson = (text: string): string => {
+		return text
+			.replace(/[\x00-\x1F\x7F]/g, (char) => {
+				if (char === '\n') return '\\n';
+				if (char === '\r') return '\\r';
+				if (char === '\t') return '\\t';
+				return '';
+			})
+			.replace(/,\s*([}\]])/g, '$1')
+			.replace(/"\s+"/g, '", "')
+			.replace(/}\s*\n\s*{/g, '},\n{')
+			.replace(/"\s*\n\s*"/g, '",\n"');
+	};
+
+	const extractResult = (parsed: any): ClaimAnalysisRawResponse => ({
+		validityScore: clampScore(parsed.validityScore),
+		evidenceScore: clampScore(parsed.evidenceScore),
+		fallacies: Array.isArray(parsed.fallacies) ? parsed.fallacies : [],
+		fallacyExplanations: parsed.fallacyExplanations || {},
+		assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions : [],
+		counterArguments: Array.isArray(parsed.counterArguments) ? parsed.counterArguments : [],
+		improvements: parsed.improvements || ''
+	});
+
 	try {
 		const parsed = JSON.parse(jsonText);
-
-		return {
-			validityScore: clampScore(parsed.validityScore),
-			evidenceScore: clampScore(parsed.evidenceScore),
-			fallacies: Array.isArray(parsed.fallacies) ? parsed.fallacies : [],
-			fallacyExplanations: parsed.fallacyExplanations || {},
-			assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions : [],
-			counterArguments: Array.isArray(parsed.counterArguments) ? parsed.counterArguments : [],
-			improvements: parsed.improvements || ''
-		};
+		return extractResult(parsed);
 	} catch (parseError) {
-		logger.error(
-			'[Pass 2] Failed to parse claim analysis response:',
-			responseText.substring(0, 300)
-		);
-		throw new Error(`Failed to parse claim analysis response: ${parseError}`);
+		// Try to repair and parse again
+		try {
+			const repaired = repairJson(jsonText);
+			const parsed = JSON.parse(repaired);
+			logger.info('[Pass 2] Successfully parsed JSON after repair');
+			return extractResult(parsed);
+		} catch (repairError) {
+			logger.error(
+				'[Pass 2] Failed to parse claim analysis response:',
+				responseText.substring(0, 300)
+			);
+			throw new Error(`Failed to parse claim analysis response: ${parseError}`);
+		}
 	}
 }
 

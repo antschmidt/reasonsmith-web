@@ -153,27 +153,51 @@ function parseSynthesisResponse(responseText: string): SynthesisRawResponse {
 
 	jsonText = jsonText.trim();
 
+	// Helper to repair common JSON issues from LLM output
+	const repairJson = (text: string): string => {
+		return text
+			.replace(/[\x00-\x1F\x7F]/g, (char) => {
+				if (char === '\n') return '\\n';
+				if (char === '\r') return '\\r';
+				if (char === '\t') return '\\t';
+				return '';
+			})
+			.replace(/,\s*([}\]])/g, '$1')
+			.replace(/"\s+"/g, '", "')
+			.replace(/}\s*\n\s*{/g, '},\n{')
+			.replace(/"\s*\n\s*"/g, '",\n"');
+	};
+
+	const extractResult = (parsed: any): SynthesisRawResponse => ({
+		claims: Array.isArray(parsed.claims) ? parsed.claims : [],
+		fallacyOverload: parsed.fallacyOverload || false,
+		goodFaithScore: parsed.goodFaithScore || 50,
+		goodFaithDescriptor: parsed.goodFaithDescriptor || 'Neutral',
+		cultishPhrases: Array.isArray(parsed.cultishPhrases) ? parsed.cultishPhrases : [],
+		tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+		overallAnalysis: parsed.overallAnalysis || '',
+		steelmanScore: parsed.steelmanScore,
+		steelmanNotes: parsed.steelmanNotes,
+		understandingScore: parsed.understandingScore,
+		intellectualHumilityScore: parsed.intellectualHumilityScore,
+		relevanceScore: parsed.relevanceScore,
+		relevanceNotes: parsed.relevanceNotes
+	});
+
 	try {
 		const parsed = JSON.parse(jsonText);
-
-		return {
-			claims: Array.isArray(parsed.claims) ? parsed.claims : [],
-			fallacyOverload: parsed.fallacyOverload || false,
-			goodFaithScore: parsed.goodFaithScore || 50,
-			goodFaithDescriptor: parsed.goodFaithDescriptor || 'Neutral',
-			cultishPhrases: Array.isArray(parsed.cultishPhrases) ? parsed.cultishPhrases : [],
-			tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-			overallAnalysis: parsed.overallAnalysis || '',
-			steelmanScore: parsed.steelmanScore,
-			steelmanNotes: parsed.steelmanNotes,
-			understandingScore: parsed.understandingScore,
-			intellectualHumilityScore: parsed.intellectualHumilityScore,
-			relevanceScore: parsed.relevanceScore,
-			relevanceNotes: parsed.relevanceNotes
-		};
+		return extractResult(parsed);
 	} catch (parseError) {
-		logger.error('[Pass 3] Failed to parse synthesis response:', responseText.substring(0, 500));
-		throw new Error(`Failed to parse synthesis response: ${parseError}`);
+		// Try to repair and parse again
+		try {
+			const repaired = repairJson(jsonText);
+			const parsed = JSON.parse(repaired);
+			logger.info('[Pass 3] Successfully parsed JSON after repair');
+			return extractResult(parsed);
+		} catch (repairError) {
+			logger.error('[Pass 3] Failed to parse synthesis response:', responseText.substring(0, 500));
+			throw new Error(`Failed to parse synthesis response: ${parseError}`);
+		}
 	}
 }
 

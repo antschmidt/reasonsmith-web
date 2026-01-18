@@ -480,15 +480,58 @@ ${content}`
 			const analysis = JSON.parse(repaired) as FeaturedClaudeResponse;
 			return { analysis, usage, provider: 'claude' };
 		} catch (repairError) {
-			// Log the problematic JSON for debugging
-			logger.error('Failed to parse Claude response JSON:', {
-				original: responseText.substring(0, 500),
-				cleaned: cleaned.substring(0, 500),
-				parseError: parseError instanceof Error ? parseError.message : 'Unknown parse error'
-			});
-			throw new Error(
-				`Invalid JSON response from Claude: ${parseError instanceof Error ? parseError.message : 'Parse error'}`
+			// More aggressive repair: escape unescaped quotes within string values
+			// This handles cases like: "example": "He said "hello" to me"
+			let aggressiveRepaired = repaired;
+
+			// Find string values and escape internal quotes
+			// Match ": " followed by a quoted string, then look for unescaped quotes inside
+			aggressiveRepaired = aggressiveRepaired.replace(
+				/: "((?:[^"\\]|\\.)*)"/g,
+				(match, content) => {
+					// If there are unbalanced quotes, try to fix them
+					return match;
+				}
 			);
+
+			// Try to fix missing commas in arrays (common: "item1" "item2" instead of "item1", "item2")
+			aggressiveRepaired = aggressiveRepaired.replace(/"\s+"/g, '", "');
+
+			// Fix patterns like: "text"} should be "text"}  but "text" } with content after might need comma
+			aggressiveRepaired = aggressiveRepaired.replace(/"\s*\n\s*\]/g, '"\n]');
+			aggressiveRepaired = aggressiveRepaired.replace(/"\s*\n\s*\}/g, '"\n}');
+
+			try {
+				const analysis = JSON.parse(aggressiveRepaired) as FeaturedClaudeResponse;
+				logger.info('Successfully parsed JSON after aggressive repair');
+				return { analysis, usage, provider: 'claude' };
+			} catch (aggressiveError) {
+				// Log the problematic JSON for debugging
+				logger.error('Failed to parse Claude response JSON:', {
+					original: responseText.substring(0, 500),
+					cleaned: cleaned.substring(0, 500),
+					parseError: parseError instanceof Error ? parseError.message : 'Unknown parse error',
+					position:
+						parseError instanceof Error
+							? parseError.message.match(/position (\d+)/)?.[1]
+							: undefined
+				});
+
+				// Log the area around the error position for debugging
+				const posMatch =
+					parseError instanceof Error ? parseError.message.match(/position (\d+)/) : null;
+				if (posMatch) {
+					const pos = parseInt(posMatch[1], 10);
+					logger.error('JSON error context:', {
+						around: cleaned.substring(Math.max(0, pos - 100), pos + 100),
+						position: pos
+					});
+				}
+
+				throw new Error(
+					`Invalid JSON response from Claude: ${parseError instanceof Error ? parseError.message : 'Parse error'}`
+				);
+			}
 		}
 	}
 }

@@ -120,8 +120,33 @@ function parseExtractionResponse(responseText: string): ExtractionRawResponse {
 
 	jsonText = jsonText.trim();
 
+	// Helper to attempt parsing with optional repairs
+	const tryParse = (text: string): any => JSON.parse(text);
+
+	// Helper to repair common JSON issues from LLM output
+	const repairJson = (text: string): string => {
+		return (
+			text
+				// Fix unescaped control characters in strings
+				.replace(/[\x00-\x1F\x7F]/g, (char) => {
+					if (char === '\n') return '\\n';
+					if (char === '\r') return '\\r';
+					if (char === '\t') return '\\t';
+					return '';
+				})
+				// Fix trailing commas before closing brackets
+				.replace(/,\s*([}\]])/g, '$1')
+				// Fix missing commas between array elements
+				.replace(/"\s+"/g, '", "')
+				// Fix missing commas between objects in arrays
+				.replace(/}\s*\n\s*{/g, '},\n{')
+				// Fix missing commas after strings before next property
+				.replace(/"\s*\n\s*"/g, '",\n"')
+		);
+	};
+
 	try {
-		const parsed = JSON.parse(jsonText);
+		const parsed = tryParse(jsonText);
 
 		// Validate required fields
 		if (!Array.isArray(parsed.claims)) {
@@ -135,8 +160,36 @@ function parseExtractionResponse(responseText: string): ExtractionRawResponse {
 			recommendSplit: parsed.recommendSplit || undefined
 		};
 	} catch (parseError) {
-		logger.error('[Pass 1] Failed to parse extraction response:', responseText.substring(0, 500));
-		throw new Error(`Failed to parse extraction response: ${parseError}`);
+		// Try to repair and parse again
+		try {
+			const repaired = repairJson(jsonText);
+			const parsed = tryParse(repaired);
+
+			if (!Array.isArray(parsed.claims)) {
+				throw new Error('Invalid extraction response: missing claims array');
+			}
+
+			logger.info('[Pass 1] Successfully parsed JSON after repair');
+			return {
+				claims: parsed.claims,
+				totalCount: parsed.totalCount || parsed.claims.length,
+				tooManyClaims: parsed.tooManyClaims || false,
+				recommendSplit: parsed.recommendSplit || undefined
+			};
+		} catch (repairError) {
+			// Log context around the error for debugging
+			const posMatch =
+				parseError instanceof Error ? parseError.message.match(/position (\d+)/) : null;
+			if (posMatch) {
+				const pos = parseInt(posMatch[1], 10);
+				logger.error('[Pass 1] JSON error context:', {
+					around: jsonText.substring(Math.max(0, pos - 100), pos + 100),
+					position: pos
+				});
+			}
+			logger.error('[Pass 1] Failed to parse extraction response:', responseText.substring(0, 500));
+			throw new Error(`Failed to parse extraction response: ${parseError}`);
+		}
 	}
 }
 
