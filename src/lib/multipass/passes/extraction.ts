@@ -103,14 +103,14 @@ export async function runExtractionPass(
 		// Build request with tool calling for guaranteed valid JSON
 		const requestOptions: Parameters<typeof anthropic.messages.create>[0] = {
 			model: config.models.extraction,
-			max_tokens: 4096,
+			max_tokens: 8192, // Increased for long content extraction
 			temperature: 0.1, // Low temperature for consistent extraction
 			tools: [EXTRACTION_TOOL],
 			tool_choice: { type: 'tool', name: 'submit_claims' },
 			messages: [
 				{
 					role: 'user',
-					content: userMessage
+					content: `Extract all claims from the following content and submit them using the submit_claims tool.\n\n${userMessage}`
 				}
 			]
 		};
@@ -128,7 +128,13 @@ export async function runExtractionPass(
 			requestOptions.system = systemPrompt;
 		}
 
+		logger.debug('[Pass 1] User message length:', userMessage.length);
+		logger.debug('[Pass 1] User message preview:', userMessage.substring(0, 500));
+
 		const response = (await anthropic.messages.create(requestOptions)) as Anthropic.Message;
+
+		logger.debug('[Pass 1] Response stop_reason:', response.stop_reason);
+		logger.debug('[Pass 1] Response content blocks:', response.content.length);
 
 		// Extract token usage
 		const usage: TokenUsage = {
@@ -145,14 +151,18 @@ export async function runExtractionPass(
 		);
 
 		if (!toolUseBlock) {
+			logger.error('[Pass 1] No tool use block found. Response content:', response.content);
 			throw new Error('No tool use response from Haiku extraction');
 		}
 
 		// Tool input is already parsed JSON - no need for JSON.parse
 		const rawResult = toolUseBlock.input as ExtractionRawResponse;
 
+		logger.debug('[Pass 1] Tool response:', JSON.stringify(rawResult, null, 2));
+
 		// Validate required fields
 		if (!Array.isArray(rawResult.claims)) {
+			logger.error('[Pass 1] Invalid response structure:', rawResult);
 			throw new Error('Invalid extraction response: missing claims array');
 		}
 

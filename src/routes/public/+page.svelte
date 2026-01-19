@@ -12,6 +12,7 @@
 	} from '$lib/graphql/queries';
 	import AnimatedLogo from '$lib/components/ui/AnimatedLogo.svelte';
 	import { collectRoles } from '$lib/utils/authHelpers';
+	import { estimateTokens, formatTokenCount } from '$lib/utils/tokenEstimate';
 
 	type ShowcaseItem = {
 		id: string;
@@ -964,6 +965,9 @@
 										bind:value={rawContent}
 										placeholder="Paste transcript excerpts, statements, or notes to analyze…"
 									></textarea>
+									<div class="token-counter">
+										{formatTokenCount(estimateTokens(rawContent))} tokens
+									</div>
 								</label>
 
 								<div class="analysis-controls">
@@ -1725,6 +1729,12 @@
 		font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
 		font-size: 0.85rem;
 		line-height: 1.4;
+	}
+	.token-counter {
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+		text-align: right;
+		margin-top: 0.25rem;
 	}
 
 	/* Analysis Controls */

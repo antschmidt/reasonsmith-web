@@ -106,7 +106,7 @@ Return ONLY valid JSON with this exact structure:
 3. Mark implicit/assumed claims with explicit: false
 4. If there are more than 15 claims, set tooManyClaims: true and provide recommendSplit suggestion
 5. Do not analyze or evaluate claims - just extract and classify
-6. Output ONLY the JSON object, no explanatory text`;
+6. Use the submit_claims tool to return your results`;
 
 /**
  * Build the user message for extraction

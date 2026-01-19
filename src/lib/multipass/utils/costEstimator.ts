@@ -13,16 +13,16 @@ import type { MultiPassTokenUsage, MultiPassModels, TokenUsage } from '../types'
  */
 export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
 	// Haiku 4.5
-	'claude-haiku-4-5-20241022': { input: 1.0, output: 5.0 },
+	'claude-haiku-4-5-20251001': { input: 1.0, output: 5.0 },
 	'claude-haiku-4-5': { input: 1.0, output: 5.0 },
 
 	// Sonnet 4.5
-	'claude-sonnet-4-5-20250514': { input: 3.0, output: 15.0 },
+	'claude-sonnet-4-5-20250929': { input: 3.0, output: 15.0 },
 	'claude-sonnet-4-5': { input: 3.0, output: 15.0 },
 
 	// Opus 4.5
-	'claude-opus-4-5-20250101': { input: 15.0, output: 75.0 },
-	'claude-opus-4-5': { input: 15.0, output: 75.0 },
+	'claude-opus-4-5-20251101': { input: 5.0, output: 25.0 },
+	'claude-opus-4-5': { input: 5.0, output: 25.0 },
 
 	// Legacy models (fallback)
 	'claude-3-haiku-20240307': { input: 0.25, output: 1.25 },
@@ -38,10 +38,7 @@ export const CACHE_DISCOUNT = 0.1;
 /**
  * Calculate cost for a single pass in cents
  */
-export function calculatePassCost(
-	usage: TokenUsage,
-	model: string
-): number {
+export function calculatePassCost(usage: TokenUsage, model: string): number {
 	const pricing = MODEL_PRICING[model] || MODEL_PRICING['claude-sonnet-4-5'];
 
 	// Base cost
@@ -63,10 +60,7 @@ export function calculatePassCost(
 /**
  * Calculate total cost for multi-pass analysis in cents
  */
-export function calculateCost(
-	usage: MultiPassTokenUsage,
-	models: MultiPassModels
-): number {
+export function calculateCost(usage: MultiPassTokenUsage, models: MultiPassModels): number {
 	// Pass 1: Extraction (Haiku)
 	const pass1Cost = calculatePassCost(usage.pass1, models.extraction);
 

@@ -179,11 +179,11 @@ export interface MultiPassModels {
 
 /** Default model configuration */
 export const DEFAULT_MULTIPASS_MODELS: MultiPassModels = {
-	extraction: 'claude-haiku-4-5-20241022',
-	simple: 'claude-sonnet-4-5-20250514',
-	moderate: 'claude-sonnet-4-5-20250514',
-	complex: 'claude-opus-4-5-20250101',
-	synthesis: 'claude-sonnet-4-5-20250514'
+	extraction: 'claude-haiku-4-5-20251001', // Haiku 4.5 for fast extraction
+	simple: 'claude-sonnet-4-5-20250929',
+	moderate: 'claude-sonnet-4-5-20250929',
+	complex: 'claude-opus-4-5-20251101',
+	synthesis: 'claude-sonnet-4-5-20250929'
 };
 
 /** Configuration for multi-pass analysis */

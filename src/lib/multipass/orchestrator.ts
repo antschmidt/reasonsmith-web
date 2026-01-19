@@ -56,11 +56,11 @@ export async function runMultiPassAnalysis(
 		maxIndividualClaims: config.maxIndividualClaims ?? 15,
 		isFeatured: config.isFeatured ?? false,
 		models: config.models || {
-			extraction: 'claude-haiku-4-5-20241022',
-			simple: 'claude-sonnet-4-5-20250514',
-			moderate: 'claude-sonnet-4-5-20250514',
-			complex: 'claude-opus-4-5-20250101',
-			synthesis: 'claude-sonnet-4-5-20250514'
+			extraction: 'claude-haiku-4-5-20251001',
+			simple: 'claude-sonnet-4-5-20250929',
+			moderate: 'claude-sonnet-4-5-20250929',
+			complex: 'claude-opus-4-5-20251101',
+			synthesis: 'claude-sonnet-4-5-20250929'
 		},
 		complexityConfidenceThreshold:
 			config.complexityConfidenceThreshold ?? DEFAULT_CONFIG.complexityConfidenceThreshold!,
@@ -124,14 +124,17 @@ export async function runMultiPassAnalysis(
 		passes.push({
 			passNumber: 2,
 			passName: 'claim_analysis',
-			status: failedCount === 0 ? 'completed' : failedCount === claimAnalyses.length ? 'failed' : 'partial',
+			status:
+				failedCount === 0
+					? 'completed'
+					: failedCount === claimAnalyses.length
+						? 'failed'
+						: 'partial',
 			duration: Date.now() - pass2Start,
 			tokenUsage: pass2Usage
 		});
 
-		logger.info(
-			`[MultiPass] Pass 2 complete: ${completedCount} succeeded, ${failedCount} failed`
-		);
+		logger.info(`[MultiPass] Pass 2 complete: ${completedCount} succeeded, ${failedCount} failed`);
 
 		// ========================================
 		// Pass 3: Synthesis
