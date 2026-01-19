@@ -145,16 +145,15 @@ async function analyzeIndividualClaim(
 			]
 		};
 
-		// Apply caching if enabled and using cached context
+		// Apply caching if enabled and using cached context (note: extended TTL betas not compatible with tool calling)
 		if (config.cacheTTL !== 'off' && useCachedContext) {
 			requestOptions.system = [
 				{
 					type: 'text',
 					text: systemPrompt,
-					cache_control: { type: 'ephemeral', ttl: config.cacheTTL }
+					cache_control: { type: 'ephemeral' }
 				}
 			] as any;
-			(requestOptions as any).betas = ['extended-cache-ttl-2025-04-11'];
 		} else {
 			requestOptions.system = systemPrompt;
 		}

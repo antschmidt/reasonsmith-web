@@ -115,16 +115,15 @@ export async function runExtractionPass(
 			]
 		};
 
-		// Apply caching if enabled
+		// Apply caching if enabled (note: extended TTL betas not compatible with tool calling)
 		if (config.cacheTTL !== 'off') {
 			requestOptions.system = [
 				{
 					type: 'text',
 					text: systemPrompt,
-					cache_control: { type: 'ephemeral', ttl: config.cacheTTL }
+					cache_control: { type: 'ephemeral' }
 				}
 			] as any;
-			(requestOptions as any).betas = ['extended-cache-ttl-2025-04-11'];
 		} else {
 			requestOptions.system = systemPrompt;
 		}

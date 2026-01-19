@@ -559,7 +559,8 @@
 					content: rawContent,
 					provider: analysisProvider,
 					skipFactChecking: !enableFactChecking,
-					includeMultiPass: true
+					includeMultiPass: true,
+					showcaseItemId: form.id || undefined
 				})
 			});
 			if (!response.ok) {

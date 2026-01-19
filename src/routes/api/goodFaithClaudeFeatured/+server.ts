@@ -30,12 +30,43 @@ async function storeClaimAnalyses(result: MultiPassResult, showcaseItemId?: stri
 			return;
 		}
 
-		// Build claim analysis records
-		// Note: For featured/showcase content, we don't have a post_id or discussion_version_id
-		// We store them without a parent reference for now - they can be linked to showcase items later
+		// Showcase item ID is required to store claim analyses
+		if (!showcaseItemId) {
+			logger.warn('[Featured] No showcase item ID provided, skipping claim analysis storage');
+			return;
+		}
+
+		// Delete existing claim analyses for this showcase item (re-analysis replaces previous)
+		const deleteResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET
+			},
+			body: JSON.stringify({
+				query: `
+					mutation DeleteExistingClaimAnalyses($showcaseItemId: uuid!) {
+						delete_claim_analysis(where: { showcase_item_id: { _eq: $showcaseItemId } }) {
+							affected_rows
+						}
+					}
+				`,
+				variables: { showcaseItemId }
+			})
+		});
+
+		const deleteResult = await deleteResponse.json();
+		if (deleteResult.data?.delete_claim_analysis?.affected_rows > 0) {
+			logger.info(
+				`[Featured] Deleted ${deleteResult.data.delete_claim_analysis.affected_rows} existing claim analyses`
+			);
+		}
+
+		// Build claim analysis records with showcase_item_id
 		const claimRecords = result.claimAnalyses.map((analysis) => ({
 			post_id: null,
 			discussion_version_id: null,
+			showcase_item_id: showcaseItemId,
 			claim_index: analysis.claimIndex,
 			claim_text: analysis.claim.text,
 			claim_type: analysis.claim.type,
@@ -499,7 +530,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			provider,
 			skipFactChecking = true,
 			includeMultiPass = false,
-			discussionContext
+			discussionContext,
+			showcaseItemId
 		} = body as {
 			content?: string;
 			provider?: string;
@@ -512,6 +544,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 					description?: string;
 				};
 			};
+			showcaseItemId?: string;
 		};
 
 		if (typeof content !== 'string' || !content.trim()) {
@@ -663,8 +696,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						`[Featured] Multi-pass complete: ${multiPassResult.claimsAnalyzed} claims analyzed`
 					);
 
-					// Store claim analyses in database
-					await storeClaimAnalyses(multiPassResult);
+					// Store claim analyses in database (requires showcase item ID)
+					await storeClaimAnalyses(multiPassResult, showcaseItemId);
 				} catch (multiPassError) {
 					logger.error('[Featured] Multi-pass analysis failed:', multiPassError);
 					// Continue without multi-pass - it's optional
