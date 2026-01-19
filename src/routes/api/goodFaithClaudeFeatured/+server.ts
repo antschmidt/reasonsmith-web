@@ -6,7 +6,6 @@ import { print } from 'graphql';
 import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
 import { logger } from '$lib/logger';
 import { logApiUsageAsync } from '$lib/server/apiUsageLogger';
-import { parseJsonWithRepair } from '$lib/utils/jsonRepair';
 
 // Import multi-pass for deep claim analysis
 import { runMultiPassAnalysis, FEATURED_CONFIG, DEFAULT_MULTIPASS_MODELS } from '$lib/multipass';
@@ -188,6 +187,86 @@ interface AnalysisResultWithUsage {
 	provider: 'claude' | 'openai';
 }
 
+// Tool definition for Claude to ensure valid JSON output
+const FEATURED_ANALYSIS_TOOL: Anthropic.Tool = {
+	name: 'submit_analysis',
+	description: 'Submit the complete rhetorical and argumentation analysis',
+	input_schema: {
+		type: 'object' as const,
+		properties: {
+			good_faith: {
+				type: 'array',
+				description: 'Good faith indicators found in the text',
+				items: {
+					type: 'object',
+					properties: {
+						name: { type: 'string' },
+						description: { type: 'string' },
+						examples: { type: 'array', items: { type: 'string' } },
+						why: { type: 'string' }
+					},
+					required: ['name', 'description', 'examples', 'why']
+				}
+			},
+			logical_fallacies: {
+				type: 'array',
+				description: 'Logical fallacies identified in the text',
+				items: {
+					type: 'object',
+					properties: {
+						name: { type: 'string' },
+						description: { type: 'string' },
+						examples: { type: 'array', items: { type: 'string' } },
+						why: { type: 'string' }
+					},
+					required: ['name', 'description', 'examples', 'why']
+				}
+			},
+			cultish_language: {
+				type: 'array',
+				description: 'Cultish or manipulative language patterns',
+				items: {
+					type: 'object',
+					properties: {
+						name: { type: 'string' },
+						description: { type: 'string' },
+						examples: { type: 'array', items: { type: 'string' } },
+						why: { type: 'string' }
+					},
+					required: ['name', 'description', 'examples', 'why']
+				}
+			},
+			fact_checking: {
+				type: 'array',
+				description: 'Fact-checking results for verifiable claims',
+				items: {
+					type: 'object',
+					properties: {
+						claim: { type: 'string' },
+						verdict: { type: 'string', enum: ['True', 'False', 'Misleading', 'Unverified'] },
+						relevance: { type: 'string' },
+						source: {
+							type: 'object',
+							properties: {
+								name: { type: 'string' },
+								url: { type: 'string' }
+							},
+							required: ['name', 'url']
+						}
+					},
+					required: ['claim', 'verdict', 'relevance']
+				}
+			},
+			summary: {
+				type: 'string',
+				description: 'Comprehensive summary of the analysis (3-5 paragraphs)'
+			}
+		},
+		required: ['good_faith', 'logical_fallacies', 'cultish_language', 'fact_checking', 'summary']
+	}
+};
+
+// Schema for OpenAI structured output (kept for compatibility)
 const featuredAnalysisSchema = {
 	type: 'object',
 	properties: {
@@ -422,29 +501,21 @@ async function analyzeWithClaude(content: string): Promise<AnalysisResultWithUsa
 		throw new Error('AI analysis is temporarily unavailable');
 	}
 
+	// Use tool calling for guaranteed valid JSON output
 	const message = await anthropic.messages.create({
 		model: CLAUDE_MODEL,
-		// Keep max tokens below Anthropic's non-streaming threshold to avoid streaming requirement errors
-		max_tokens: 6000,
+		max_tokens: 16000,
 		temperature: 0.2,
 		system: SYSTEM_PROMPT,
+		tools: [FEATURED_ANALYSIS_TOOL],
+		tool_choice: { type: 'tool', name: 'submit_analysis' },
 		messages: [
 			{
 				role: 'user',
-				content: [
-					{
-						type: 'text',
-						text: `Analyze the following text.
-
-Instructions:
-- Follow the system prompt exactly.
-- Respond with valid JSON matching the schema and nothing else.
-- Do not include code fences, commentary, or explanations outside the JSON object.
+				content: `Analyze the following text thoroughly using the submit_analysis tool.
 
 Text to analyze:
 ${content}`
-					}
-				]
 			}
 		]
 	});
@@ -458,23 +529,17 @@ ${content}`
 			}
 		: undefined;
 
-	const responseBlocks = message.content ?? [];
-	const textResponse = responseBlocks
-		.filter((block) => block.type === 'text')
-		.map((block) => (block as any).text)
-		.join('')
-		.trim();
+	// Extract tool use response - guaranteed valid JSON
+	const toolUseBlock = message.content.find(
+		(block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+	);
 
-	const responseText = textResponse;
-
-	if (!responseText) {
-		throw new Error('No response from Claude');
+	if (!toolUseBlock) {
+		throw new Error('No tool use response from Claude');
 	}
 
-	const analysis = parseJsonWithRepair<FeaturedClaudeResponse>(
-		responseText,
-		'Featured Claude analysis'
-	);
+	// Tool input is already parsed JSON
+	const analysis = toolUseBlock.input as FeaturedClaudeResponse;
 	return { analysis, usage, provider: 'claude' };
 }
 
