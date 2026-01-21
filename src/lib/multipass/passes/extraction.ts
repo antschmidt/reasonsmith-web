@@ -91,7 +91,14 @@ export async function runExtractionPass(
 	anthropic: Anthropic
 ): Promise<ExtractionResult> {
 	const startTime = Date.now();
-	logger.info('[Pass 1] Starting claim extraction with Haiku (using tool calling)');
+
+	// For very long content, use Sonnet instead of Haiku to handle large output
+	const isLongContent = content.length > 10000;
+	const extractionModel = isLongContent ? config.models.simple : config.models.extraction;
+
+	logger.info(
+		`[Pass 1] Starting claim extraction with ${isLongContent ? 'Sonnet (long content)' : 'Haiku'} (using tool calling)`
+	);
 
 	try {
 		const systemPrompt = buildExtractionSystemPromptWithExamples();
@@ -101,9 +108,10 @@ export async function runExtractionPass(
 		});
 
 		// Build request with tool calling for guaranteed valid JSON
+		// Note: For very long content with 100+ claims, we need sufficient output tokens
 		const requestOptions: Parameters<typeof anthropic.messages.create>[0] = {
-			model: config.models.extraction,
-			max_tokens: 8192, // Increased for long content extraction
+			model: extractionModel,
+			max_tokens: 16384, // Increased for very long content with many claims
 			temperature: 0.1, // Low temperature for consistent extraction
 			tools: [EXTRACTION_TOOL],
 			tool_choice: { type: 'tool', name: 'submit_claims' },
@@ -136,6 +144,14 @@ export async function runExtractionPass(
 		logger.debug('[Pass 1] Response stop_reason:', response.stop_reason);
 		logger.debug('[Pass 1] Response content blocks:', response.content.length);
 
+		// Check if response was truncated due to max_tokens
+		if (response.stop_reason === 'max_tokens') {
+			logger.error('[Pass 1] Response truncated - hit max_tokens limit');
+			throw new Error(
+				'Claim extraction was truncated due to content length. The document may have too many claims to extract in a single pass.'
+			);
+		}
+
 		// Extract token usage
 		const usage: TokenUsage = {
 			inputTokens: response.usage.input_tokens,
@@ -157,6 +173,14 @@ export async function runExtractionPass(
 
 		// Tool input is already parsed JSON - no need for JSON.parse
 		const rawResult = toolUseBlock.input as ExtractionRawResponse;
+
+		// Check for empty/truncated tool response
+		if (!rawResult || Object.keys(rawResult).length === 0) {
+			logger.error('[Pass 1] Empty tool response received');
+			throw new Error(
+				'Claim extraction returned empty response. The document may be too long for extraction.'
+			);
+		}
 
 		logger.debug('[Pass 1] Tool response:', JSON.stringify(rawResult, null, 2));
 

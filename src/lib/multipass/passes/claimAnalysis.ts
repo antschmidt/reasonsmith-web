@@ -1,9 +1,10 @@
 /**
- * Pass 2: Parallel Claim Analysis
+ * Pass 2: Batched Claim Analysis with Rate Limiting
  *
  * Analyzes each claim individually using the appropriate model based on complexity.
- * Uses Promise.allSettled for resilient parallel execution.
+ * Uses batched execution to respect API rate limits (30,000 input tokens/minute).
  * Uses tool calling for guaranteed valid JSON output.
+ * Includes retry logic with exponential backoff for rate limit errors.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -14,6 +15,15 @@ import {
 	buildClaimAnalysisSystemPromptWithContext,
 	buildMinimalClaimUserMessage
 } from '../prompts/claimAnalysis';
+import {
+	chunkArray,
+	delay,
+	isRateLimitError,
+	getRetryAfterMs,
+	calculateBackoff,
+	formatDuration,
+	estimateTotalTime
+} from '../utils/rateLimiter';
 import type {
 	ExtractedClaim,
 	ClaimAnalysisResult,
@@ -22,6 +32,17 @@ import type {
 	AnalysisContext,
 	TokenUsage
 } from '../types';
+import type { ProgressCallback } from '../streaming';
+
+/** Batch progress callback for streaming updates */
+export type BatchProgressCallback = (progress: {
+	batchIndex: number;
+	totalBatches: number;
+	claimIndices: number[];
+	results: ClaimAnalysisResult[];
+	succeeded: number;
+	failed: number;
+}) => void;
 
 /**
  * Tool definition for structured claim analysis output
@@ -232,7 +253,75 @@ function clampScore(score: number | undefined): number {
 }
 
 /**
- * Run Pass 2: Analyze all claims in parallel
+ * Analyze a single claim with retry logic for rate limit errors
+ */
+async function analyzeClaimWithRetry(
+	claim: ExtractedClaim,
+	originalContent: string,
+	context: AnalysisContext,
+	config: MultiPassConfig,
+	anthropic: Anthropic,
+	useCachedContext: boolean
+): Promise<ClaimAnalysisResult> {
+	const maxRetries = config.rateLimiting?.maxRetries ?? 3;
+	const baseBackoffMs = config.rateLimiting?.retryBackoffBaseMs ?? 20000;
+	let lastError: Error | null = null;
+
+	for (let attempt = 0; attempt <= maxRetries; attempt++) {
+		try {
+			return await analyzeIndividualClaim(
+				claim,
+				originalContent,
+				context,
+				config,
+				anthropic,
+				useCachedContext
+			);
+		} catch (error) {
+			lastError = error instanceof Error ? error : new Error(String(error));
+
+			// Check if this is a rate limit error
+			if (isRateLimitError(error)) {
+				if (attempt < maxRetries) {
+					// Get retry delay from headers or use exponential backoff
+					const retryAfterMs = getRetryAfterMs(error);
+					const backoffMs =
+						retryAfterMs > 0 ? retryAfterMs : calculateBackoff(attempt, baseBackoffMs);
+
+					logger.warn(
+						`[Pass 2] Rate limit hit for claim ${claim.index}, ` +
+							`retry ${attempt + 1}/${maxRetries} after ${formatDuration(backoffMs)}`
+					);
+
+					await delay(backoffMs);
+					continue;
+				}
+			}
+
+			// Non-rate-limit error or exhausted retries, return failed result
+			break;
+		}
+	}
+
+	// All retries exhausted or non-retryable error
+	const model = getModelForClaim(claim, config);
+	return {
+		claimIndex: claim.index,
+		claim,
+		status: 'failed',
+		error: lastError?.message || 'Unknown error after retries',
+		modelUsed: model,
+		inputTokens: 0,
+		outputTokens: 0
+	};
+}
+
+/**
+ * Run Pass 2: Analyze all claims with batched execution to respect rate limits
+ *
+ * Uses batched parallel execution to stay within API rate limits (30,000 input tokens/minute).
+ * Each batch processes a small number of claims in parallel, with delays between batches.
+ * Includes retry logic with exponential backoff for any rate limit errors that still occur.
  */
 export async function runClaimAnalysisPass(
 	claims: ExtractedClaim[],
@@ -245,59 +334,101 @@ export async function runClaimAnalysisPass(
 	totalUsage: TokenUsage;
 }> {
 	const startTime = Date.now();
-	logger.info(`[Pass 2] Starting parallel analysis of ${claims.length} claims`);
+	const batchSize = config.rateLimiting?.batchSize ?? 4;
+	const batchDelayMs = config.rateLimiting?.batchDelayMs ?? 15000;
+
+	// Split claims into batches
+	const batches = chunkArray(claims, batchSize);
+	const estimatedTime = estimateTotalTime(claims.length, batchSize, batchDelayMs, 3000);
+
+	logger.info(
+		`[Pass 2] Starting batched analysis of ${claims.length} claims in ${batches.length} batches ` +
+			`(batch size: ${batchSize}, delay: ${formatDuration(batchDelayMs)}, ` +
+			`estimated time: ${formatDuration(estimatedTime)})`
+	);
 
 	// Determine if we should use cached context
 	// Cache is more efficient when analyzing multiple claims
 	const useCachedContext = config.cacheTTL !== 'off' && claims.length > 1;
 
-	// Run all analyses in parallel
-	const results = await Promise.allSettled(
-		claims.map((claim) =>
-			analyzeIndividualClaim(claim, originalContent, context, config, anthropic, useCachedContext)
-		)
-	);
+	const allResults: ClaimAnalysisResult[] = [];
 
-	// Process results
-	const claimResults: ClaimAnalysisResult[] = results.map((result, index) => {
-		if (result.status === 'fulfilled') {
-			return result.value;
-		} else {
-			// Promise rejected (shouldn't happen since we catch errors inside)
-			return {
-				claimIndex: claims[index].index,
-				claim: claims[index],
-				status: 'failed' as const,
-				error: result.reason?.message || 'Promise rejected',
-				modelUsed: getModelForClaim(claims[index], config),
-				inputTokens: 0,
-				outputTokens: 0
-			};
+	// Process batches sequentially
+	for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+		const batch = batches[batchIndex];
+		const batchStartTime = Date.now();
+
+		logger.info(
+			`[Pass 2] Processing batch ${batchIndex + 1}/${batches.length} ` +
+				`(claims ${batch[0].index}-${batch[batch.length - 1].index})`
+		);
+
+		// Process claims within batch in parallel (with retry logic)
+		const batchResults = await Promise.allSettled(
+			batch.map((claim) =>
+				analyzeClaimWithRetry(claim, originalContent, context, config, anthropic, useCachedContext)
+			)
+		);
+
+		// Collect results from this batch
+		const processedResults: ClaimAnalysisResult[] = batchResults.map((result, index) => {
+			if (result.status === 'fulfilled') {
+				return result.value;
+			} else {
+				// Promise rejected (shouldn't happen since we catch errors inside)
+				return {
+					claimIndex: batch[index].index,
+					claim: batch[index],
+					status: 'failed' as const,
+					error: result.reason?.message || 'Promise rejected',
+					modelUsed: getModelForClaim(batch[index], config),
+					inputTokens: 0,
+					outputTokens: 0
+				};
+			}
+		});
+
+		allResults.push(...processedResults);
+
+		const batchCompleted = processedResults.filter((r) => r.status === 'completed').length;
+		const batchFailed = processedResults.filter((r) => r.status === 'failed').length;
+
+		logger.info(
+			`[Pass 2] Batch ${batchIndex + 1} completed in ${Date.now() - batchStartTime}ms: ` +
+				`${batchCompleted} succeeded, ${batchFailed} failed`
+		);
+
+		// Wait before processing next batch (except for the last batch)
+		if (batchIndex < batches.length - 1) {
+			logger.debug(`[Pass 2] Waiting ${formatDuration(batchDelayMs)} before next batch`);
+			await delay(batchDelayMs);
 		}
-	});
+	}
 
 	// Calculate total usage
 	const totalUsage: TokenUsage = {
-		inputTokens: claimResults.reduce((sum, r) => sum + r.inputTokens, 0),
-		outputTokens: claimResults.reduce((sum, r) => sum + r.outputTokens, 0),
-		totalTokens: claimResults.reduce((sum, r) => sum + r.inputTokens + r.outputTokens, 0)
+		inputTokens: allResults.reduce((sum, r) => sum + r.inputTokens, 0),
+		outputTokens: allResults.reduce((sum, r) => sum + r.outputTokens, 0),
+		totalTokens: allResults.reduce((sum, r) => sum + r.inputTokens + r.outputTokens, 0)
 	};
 
-	const completed = claimResults.filter((r) => r.status === 'completed').length;
-	const failed = claimResults.filter((r) => r.status === 'failed').length;
+	const completed = allResults.filter((r) => r.status === 'completed').length;
+	const failed = allResults.filter((r) => r.status === 'failed').length;
+	const elapsed = Date.now() - startTime;
 
 	logger.info(
-		`[Pass 2] Completed in ${Date.now() - startTime}ms: ${completed} succeeded, ${failed} failed`
+		`[Pass 2] All batches completed in ${formatDuration(elapsed)}: ` +
+			`${completed}/${claims.length} succeeded, ${failed} failed`
 	);
 
 	return {
-		results: claimResults,
+		results: allResults,
 		totalUsage
 	};
 }
 
 /**
- * Retry failed claims
+ * Retry failed claims with batched execution and retry logic
  */
 export async function retryFailedClaims(
 	failedResults: ClaimAnalysisResult[],
@@ -306,22 +437,176 @@ export async function retryFailedClaims(
 	config: MultiPassConfig,
 	anthropic: Anthropic
 ): Promise<ClaimAnalysisResult[]> {
-	logger.info(`[Pass 2] Retrying ${failedResults.length} failed claims`);
+	const batchSize = config.rateLimiting?.batchSize ?? 4;
+	const batchDelayMs = config.rateLimiting?.batchDelayMs ?? 15000;
 
-	const results = await Promise.allSettled(
-		failedResults.map((result) =>
-			analyzeIndividualClaim(result.claim, originalContent, context, config, anthropic, false)
-		)
+	logger.info(
+		`[Pass 2] Retrying ${failedResults.length} failed claims ` +
+			`(batch size: ${batchSize}, delay: ${formatDuration(batchDelayMs)})`
 	);
 
-	return results.map((result, index) => {
-		if (result.status === 'fulfilled') {
-			return result.value;
-		} else {
-			return {
-				...failedResults[index],
-				error: `Retry failed: ${result.reason?.message || 'Unknown error'}`
-			};
+	// Split into batches
+	const batches = chunkArray(failedResults, batchSize);
+	const allResults: ClaimAnalysisResult[] = [];
+
+	for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+		const batch = batches[batchIndex];
+
+		logger.info(`[Pass 2] Retry batch ${batchIndex + 1}/${batches.length}`);
+
+		// Process batch in parallel with retry logic
+		const batchResults = await Promise.allSettled(
+			batch.map((result) =>
+				analyzeClaimWithRetry(result.claim, originalContent, context, config, anthropic, false)
+			)
+		);
+
+		const processedResults = batchResults.map((result, index) => {
+			if (result.status === 'fulfilled') {
+				return result.value;
+			} else {
+				return {
+					...batch[index],
+					error: `Retry failed: ${result.reason?.message || 'Unknown error'}`
+				};
+			}
+		});
+
+		allResults.push(...processedResults);
+
+		// Wait before next batch
+		if (batchIndex < batches.length - 1) {
+			await delay(batchDelayMs);
 		}
-	});
+	}
+
+	const succeeded = allResults.filter((r) => r.status === 'completed').length;
+	logger.info(`[Pass 2] Retry completed: ${succeeded}/${failedResults.length} now succeeded`);
+
+	return allResults;
+}
+
+/**
+ * Run Pass 2 with streaming progress updates
+ *
+ * Same as runClaimAnalysisPass but calls onBatchComplete after each batch finishes.
+ * This allows the SSE endpoint to send progress updates to the client.
+ */
+export async function runClaimAnalysisPassWithProgress(
+	claims: ExtractedClaim[],
+	originalContent: string,
+	context: AnalysisContext,
+	config: MultiPassConfig,
+	anthropic: Anthropic,
+	onBatchComplete?: BatchProgressCallback
+): Promise<{
+	results: ClaimAnalysisResult[];
+	totalUsage: TokenUsage;
+	totalBatches: number;
+	estimatedTimeMs: number;
+}> {
+	const startTime = Date.now();
+	const batchSize = config.rateLimiting?.batchSize ?? 4;
+	const batchDelayMs = config.rateLimiting?.batchDelayMs ?? 15000;
+
+	// Split claims into batches
+	const batches = chunkArray(claims, batchSize);
+	const estimatedTimeMs = estimateTotalTime(claims.length, batchSize, batchDelayMs, 3000);
+
+	logger.info(
+		`[Pass 2] Starting batched analysis of ${claims.length} claims in ${batches.length} batches ` +
+			`(batch size: ${batchSize}, delay: ${formatDuration(batchDelayMs)}, ` +
+			`estimated time: ${formatDuration(estimatedTimeMs)})`
+	);
+
+	// Determine if we should use cached context
+	const useCachedContext = config.cacheTTL !== 'off' && claims.length > 1;
+
+	const allResults: ClaimAnalysisResult[] = [];
+
+	// Process batches sequentially
+	for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+		const batch = batches[batchIndex];
+		const batchStartTime = Date.now();
+
+		logger.info(
+			`[Pass 2] Processing batch ${batchIndex + 1}/${batches.length} ` +
+				`(claims ${batch[0].index}-${batch[batch.length - 1].index})`
+		);
+
+		// Process claims within batch in parallel (with retry logic)
+		const batchResults = await Promise.allSettled(
+			batch.map((claim) =>
+				analyzeClaimWithRetry(claim, originalContent, context, config, anthropic, useCachedContext)
+			)
+		);
+
+		// Collect results from this batch
+		const processedResults: ClaimAnalysisResult[] = batchResults.map((result, index) => {
+			if (result.status === 'fulfilled') {
+				return result.value;
+			} else {
+				return {
+					claimIndex: batch[index].index,
+					claim: batch[index],
+					status: 'failed' as const,
+					error: result.reason?.message || 'Promise rejected',
+					modelUsed: getModelForClaim(batch[index], config),
+					inputTokens: 0,
+					outputTokens: 0
+				};
+			}
+		});
+
+		allResults.push(...processedResults);
+
+		const batchCompleted = processedResults.filter((r) => r.status === 'completed').length;
+		const batchFailed = processedResults.filter((r) => r.status === 'failed').length;
+
+		logger.info(
+			`[Pass 2] Batch ${batchIndex + 1} completed in ${Date.now() - batchStartTime}ms: ` +
+				`${batchCompleted} succeeded, ${batchFailed} failed`
+		);
+
+		// Call progress callback if provided
+		if (onBatchComplete) {
+			onBatchComplete({
+				batchIndex,
+				totalBatches: batches.length,
+				claimIndices: batch.map((c) => c.index),
+				results: processedResults,
+				succeeded: batchCompleted,
+				failed: batchFailed
+			});
+		}
+
+		// Wait before processing next batch (except for the last batch)
+		if (batchIndex < batches.length - 1) {
+			logger.debug(`[Pass 2] Waiting ${formatDuration(batchDelayMs)} before next batch`);
+			await delay(batchDelayMs);
+		}
+	}
+
+	// Calculate total usage
+	const totalUsage: TokenUsage = {
+		inputTokens: allResults.reduce((sum, r) => sum + r.inputTokens, 0),
+		outputTokens: allResults.reduce((sum, r) => sum + r.outputTokens, 0),
+		totalTokens: allResults.reduce((sum, r) => sum + r.inputTokens + r.outputTokens, 0)
+	};
+
+	const completed = allResults.filter((r) => r.status === 'completed').length;
+	const failed = allResults.filter((r) => r.status === 'failed').length;
+	const elapsed = Date.now() - startTime;
+
+	logger.info(
+		`[Pass 2] All batches completed in ${formatDuration(elapsed)}: ` +
+			`${completed}/${claims.length} succeeded, ${failed} failed`
+	);
+
+	return {
+		results: allResults,
+		totalUsage,
+		totalBatches: batches.length,
+		estimatedTimeMs
+	};
 }

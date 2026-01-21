@@ -78,6 +78,23 @@ export interface Claim {
 	supportingArguments: Argument[];
 }
 
+/**
+ * Featured analysis finding structure (used by public showcase page)
+ */
+export interface AnalysisFinding {
+	name: string;
+	description: string;
+	examples: string[];
+	why: string;
+}
+
+export interface FactCheckFinding {
+	claim: string;
+	verdict: 'True' | 'False' | 'Misleading' | 'Unverified';
+	source: { name: string; url: string } | null;
+	relevance: string;
+}
+
 export interface GoodFaithResult {
 	// Core scoring
 	good_faith_score: number; // 0-1 scale (normalized)
@@ -114,6 +131,13 @@ export interface GoodFaithResult {
 	goodFaithScore?: number; // 0-100 scale (original)
 	goodFaithDescriptor?: string;
 	overallAnalysis?: string;
+
+	// Featured analysis format (used by public showcase page)
+	// These are populated by multi-pass synthesis for featured content
+	good_faith?: AnalysisFinding[];
+	logical_fallacies?: AnalysisFinding[];
+	cultish_language?: AnalysisFinding[];
+	fact_checking?: FactCheckFinding[];
 }
 
 // Provider-specific raw response types

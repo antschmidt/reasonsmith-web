@@ -2,136 +2,148 @@
  * Pass 3: Synthesis
  *
  * Combines individual claim analyses into a cohesive final evaluation.
- * Produces a GoodFaithResult compatible with the existing system.
+ * Produces output in the Featured Analysis format (good_faith, logical_fallacies, etc.)
+ * which is compatible with the public showcase page.
  * Uses tool calling for guaranteed valid JSON output.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import { logger } from '$lib/logger';
-import {
-	SYNTHESIS_SYSTEM_PROMPT,
-	buildSynthesisUserMessage,
-	calculatePreliminaryScore
-} from '../prompts/synthesis';
+import { calculatePreliminaryScore } from '../prompts/synthesis';
 import type { ClaimAnalysisResult, MultiPassConfig, AnalysisContext, TokenUsage } from '../types';
-import type { GoodFaithResult, Claim } from '$lib/goodFaith/types';
+import type {
+	GoodFaithResult,
+	Claim,
+	AnalysisFinding,
+	FactCheckFinding
+} from '$lib/goodFaith/types';
 
 /**
- * Tool definition for structured synthesis output
+ * Featured analysis response format (matches what the public page expects)
  */
-const SYNTHESIS_TOOL: Anthropic.Tool = {
-	name: 'submit_synthesis',
-	description: 'Submit the synthesized analysis combining all claim evaluations',
+export interface FeaturedAnalysisResponse {
+	good_faith: AnalysisFinding[];
+	logical_fallacies: AnalysisFinding[];
+	cultish_language: AnalysisFinding[];
+	fact_checking: FactCheckFinding[];
+	summary: string;
+}
+
+/**
+ * Tool definition for structured synthesis output in featured format
+ */
+const FEATURED_SYNTHESIS_TOOL: Anthropic.Tool = {
+	name: 'submit_featured_synthesis',
+	description: 'Submit the synthesized analysis in the featured analysis format',
 	input_schema: {
 		type: 'object' as const,
 		properties: {
-			claims: {
+			good_faith: {
 				type: 'array',
-				description: 'Array of claim evaluations in the standard format',
+				description: 'Good faith indicators found based on the claim analyses',
 				items: {
 					type: 'object',
 					properties: {
-						claim: { type: 'string', description: 'The claim text' },
-						supportingArguments: {
+						name: {
+							type: 'string',
+							description:
+								'Name of the good faith indicator (e.g., "Charitable Interpretation", "Acknowledges Uncertainty")'
+						},
+						description: {
+							type: 'string',
+							description: 'Brief description of what this indicator means'
+						},
+						examples: {
 							type: 'array',
-							items: {
-								type: 'object',
-								properties: {
-									argument: { type: 'string' },
-									score: { type: 'number' },
-									fallacies: { type: 'array', items: { type: 'string' } },
-									improvements: { type: 'string' }
-								}
+							items: { type: 'string' },
+							description: 'Specific quotes or examples from the text'
+						},
+						why: { type: 'string', description: 'Why this demonstrates good faith argumentation' }
+					},
+					required: ['name', 'description', 'examples', 'why']
+				}
+			},
+			logical_fallacies: {
+				type: 'array',
+				description: 'Logical fallacies identified from the claim analyses',
+				items: {
+					type: 'object',
+					properties: {
+						name: {
+							type: 'string',
+							description: 'Standard name of the fallacy (e.g., "Straw Man", "Ad Hominem")'
+						},
+						description: {
+							type: 'string',
+							description: 'Brief description of what this fallacy is'
+						},
+						examples: {
+							type: 'array',
+							items: { type: 'string' },
+							description: 'Specific quotes showing this fallacy'
+						},
+						why: {
+							type: 'string',
+							description: 'Why this reasoning is fallacious and how it weakens the argument'
+						}
+					},
+					required: ['name', 'description', 'examples', 'why']
+				}
+			},
+			cultish_language: {
+				type: 'array',
+				description: 'Cultish or manipulative language patterns found',
+				items: {
+					type: 'object',
+					properties: {
+						name: {
+							type: 'string',
+							description: 'Name of the pattern (e.g., "Us vs Them", "Thought-Terminating Cliché")'
+						},
+						description: { type: 'string', description: 'Brief description of this pattern' },
+						examples: {
+							type: 'array',
+							items: { type: 'string' },
+							description: 'Specific quotes showing this pattern'
+						},
+						why: { type: 'string', description: 'Why this language is manipulative or problematic' }
+					},
+					required: ['name', 'description', 'examples', 'why']
+				}
+			},
+			fact_checking: {
+				type: 'array',
+				description:
+					'Fact-checking results for verifiable claims (can be empty if no fact-checking was done)',
+				items: {
+					type: 'object',
+					properties: {
+						claim: { type: 'string' },
+						verdict: { type: 'string', enum: ['True', 'False', 'Misleading', 'Unverified'] },
+						relevance: { type: 'string' },
+						source: {
+							type: 'object',
+							properties: {
+								name: { type: 'string' },
+								url: { type: 'string' }
 							}
 						}
 					},
-					required: ['claim', 'supportingArguments']
+					required: ['claim', 'verdict', 'relevance']
 				}
 			},
-			fallacyOverload: {
-				type: 'boolean',
-				description: 'True if the argument has an excessive number of fallacies'
-			},
-			goodFaithScore: {
-				type: 'number',
-				description: 'Overall good faith score (0-100)'
-			},
-			goodFaithDescriptor: {
+			summary: {
 				type: 'string',
-				description: 'Label for the good faith score (e.g., Constructive, Neutral, Questionable)'
-			},
-			cultishPhrases: {
-				type: 'array',
-				items: { type: 'string' },
-				description: 'Any cult-like or manipulative language detected'
-			},
-			tags: {
-				type: 'array',
-				items: { type: 'string' },
-				description: '3-5 topic tags for the content'
-			},
-			overallAnalysis: {
-				type: 'string',
-				description: 'Comprehensive summary of the analysis'
-			},
-			steelmanScore: {
-				type: 'number',
-				description: 'How well the argument represents the strongest version of its position (1-10)'
-			},
-			steelmanNotes: {
-				type: 'string',
-				description: 'Notes on steelmanning opportunities'
-			},
-			understandingScore: {
-				type: 'number',
-				description: 'How well the author demonstrates understanding of the topic (1-10)'
-			},
-			intellectualHumilityScore: {
-				type: 'number',
-				description: 'How well the author acknowledges limitations and uncertainty (1-10)'
-			},
-			relevanceScore: {
-				type: 'number',
-				description: 'How relevant the argument is to the discussion (1-10)'
-			},
-			relevanceNotes: {
-				type: 'string',
-				description: 'Notes on relevance'
+				description:
+					'Comprehensive summary of the analysis (3-5 paragraphs) covering tone, tactics, impact, and constructive observations'
 			}
 		},
-		required: [
-			'claims',
-			'fallacyOverload',
-			'goodFaithScore',
-			'goodFaithDescriptor',
-			'cultishPhrases',
-			'tags',
-			'overallAnalysis'
-		]
+		required: ['good_faith', 'logical_fallacies', 'cultish_language', 'fact_checking', 'summary']
 	}
 };
 
 /**
- * Raw response from synthesis
- */
-interface SynthesisRawResponse {
-	claims: Claim[];
-	fallacyOverload: boolean;
-	goodFaithScore: number;
-	goodFaithDescriptor: string;
-	cultishPhrases: string[];
-	tags: string[];
-	overallAnalysis: string;
-	steelmanScore?: number;
-	steelmanNotes?: string;
-	understandingScore?: number;
-	intellectualHumilityScore?: number;
-	relevanceScore?: number;
-	relevanceNotes?: string;
-}
-
-/**
- * Run Pass 3: Synthesize claim analyses into final result using tool calling
+ * Run Pass 3: Synthesize claim analyses into featured format result using tool calling
  */
 export async function runSynthesisPass(
 	originalContent: string,
@@ -144,7 +156,7 @@ export async function runSynthesisPass(
 	usage: TokenUsage;
 }> {
 	const startTime = Date.now();
-	logger.info('[Pass 3] Starting synthesis (using tool calling)');
+	logger.info('[Pass 3] Starting synthesis (using tool calling, featured format)');
 
 	// Separate completed and failed analyses
 	const completedAnalyses = claimAnalyses.filter((a) => a.status === 'completed');
@@ -160,7 +172,7 @@ export async function runSynthesisPass(
 	}
 
 	try {
-		const userMessage = buildSynthesisUserMessage(
+		const userMessage = buildFeaturedSynthesisUserMessage(
 			originalContent,
 			completedAnalyses,
 			failedAnalyses,
@@ -169,10 +181,10 @@ export async function runSynthesisPass(
 
 		const requestOptions: Parameters<typeof anthropic.messages.create>[0] = {
 			model: config.models.synthesis,
-			max_tokens: 4096,
+			max_tokens: 16384, // Increased for analyses with many findings
 			temperature: 0.3,
-			tools: [SYNTHESIS_TOOL],
-			tool_choice: { type: 'tool', name: 'submit_synthesis' },
+			tools: [FEATURED_SYNTHESIS_TOOL],
+			tool_choice: { type: 'tool', name: 'submit_featured_synthesis' },
 			messages: [
 				{
 					role: 'user',
@@ -181,17 +193,17 @@ export async function runSynthesisPass(
 			]
 		};
 
-		// Apply caching if enabled (note: extended TTL betas not compatible with tool calling)
+		// Apply caching if enabled
 		if (config.cacheTTL !== 'off') {
 			requestOptions.system = [
 				{
 					type: 'text',
-					text: SYNTHESIS_SYSTEM_PROMPT,
+					text: FEATURED_SYNTHESIS_SYSTEM_PROMPT,
 					cache_control: { type: 'ephemeral' }
 				}
 			] as any;
 		} else {
-			requestOptions.system = SYNTHESIS_SYSTEM_PROMPT;
+			requestOptions.system = FEATURED_SYNTHESIS_SYSTEM_PROMPT;
 		}
 
 		const response = (await anthropic.messages.create(requestOptions)) as Anthropic.Message;
@@ -205,6 +217,11 @@ export async function runSynthesisPass(
 			cacheReadTokens: (response.usage as any).cache_read_input_tokens || 0
 		};
 
+		// Check if response was truncated
+		if (response.stop_reason === 'max_tokens') {
+			logger.warn('[Pass 3] Response was truncated due to max_tokens - results may be incomplete');
+		}
+
 		// Extract tool use response - guaranteed valid JSON
 		const toolUseBlock = response.content.find(
 			(block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
@@ -214,9 +231,30 @@ export async function runSynthesisPass(
 			throw new Error('No tool use response from synthesis');
 		}
 
-		// Tool input is already parsed JSON
-		const rawResult = normalizeSynthesisResponse(toolUseBlock.input as any);
-		const result = normalizeToGoodFaithResult(rawResult, failedAnalyses.length);
+		// Log raw tool response for debugging
+		const rawInput = toolUseBlock.input as any;
+		logger.debug(
+			'[Pass 3] Raw tool response - good_faith count:',
+			rawInput.good_faith?.length || 0
+		);
+		logger.debug(
+			'[Pass 3] Raw tool response - logical_fallacies count:',
+			rawInput.logical_fallacies?.length || 0
+		);
+		logger.debug(
+			'[Pass 3] Raw tool response - cultish_language count:',
+			rawInput.cultish_language?.length || 0
+		);
+
+		// Tool input is already parsed JSON in featured format
+		const featuredResult = normalizeFeaturedResponse(rawInput);
+
+		// Convert to GoodFaithResult format (which includes the featured fields)
+		const result = convertToGoodFaithResult(
+			featuredResult,
+			completedAnalyses,
+			failedAnalyses.length
+		);
 
 		logger.info(
 			`[Pass 3] Synthesis completed in ${Date.now() - startTime}ms (score: ${result.good_faith_score})`
@@ -235,63 +273,240 @@ export async function runSynthesisPass(
 }
 
 /**
- * Normalize the synthesis response (already parsed from tool use)
+ * System prompt for featured synthesis
  */
-function normalizeSynthesisResponse(input: any): SynthesisRawResponse {
+const FEATURED_SYNTHESIS_SYSTEM_PROMPT = `You are an expert educator in rhetoric, logic, and argumentation analysis. Your task is to synthesize the results of detailed claim-by-claim analyses into a comprehensive featured analysis.
+
+## CRITICAL: Balanced Assessment
+
+You must identify BOTH strengths AND weaknesses with EQUAL diligence. Do not focus only on problems.
+
+**For Good Faith Indicators, actively look for:**
+- Claims with high validity scores (7+/10) indicate sound reasoning
+- Claims with high evidence scores (7+/10) indicate well-supported arguments
+- Acknowledgment of nuance, complexity, or uncertainty
+- Charitable interpretation of opposing views
+- Use of qualified language ("often", "tends to", "in many cases")
+- Citation of evidence or sources
+- Acknowledgment of counterarguments or limitations
+- Intellectual humility (admitting what isn't known)
+
+**For Logical Fallacies:**
+- Only report fallacies explicitly identified in the claim analyses
+- Each instance of a fallacy is a separate finding
+- Use standard fallacy names with clear examples
+
+**For Cultish/Manipulative Language:**
+- Look for us-vs-them framing, loaded language, thought-terminating clichés
+- Only report patterns clearly present in the text
+- Each instance is a separate finding
+
+## Your Tasks
+
+1. **Identify Good Faith Indicators**: Scan ALL claims for positive patterns. High-scoring claims should yield good faith indicators. If a claim has validity 8/10 and evidence 7/10, that's a good faith indicator worth noting.
+
+2. **Identify Logical Fallacies**: Report each fallacy instance found in the claim analyses with specific examples from the text.
+
+3. **Identify Cultish/Manipulative Language**: Report each instance of manipulative language patterns found.
+
+4. **Fact Checking**: Note any factual claims that were evaluated (can be empty if not applicable).
+
+5. **Write a Comprehensive Summary** (3-5 paragraphs) covering:
+   - Tone & Voice Analysis
+   - Tactical Assessment (rhetorical strategies, good/bad faith patterns)
+   - Impact Analysis (likely audience response, effect on discourse)
+   - Constructive Observations (strengths to emulate, weaknesses to avoid)
+
+Be thorough, educational, and BALANCED. Report both what works well and what doesn't.`;
+
+/**
+ * Build user message for featured synthesis
+ */
+function buildFeaturedSynthesisUserMessage(
+	originalContent: string,
+	completedAnalyses: ClaimAnalysisResult[],
+	failedAnalyses: ClaimAnalysisResult[],
+	context: AnalysisContext
+): string {
+	// Calculate summary statistics to guide balanced assessment
+	const avgValidity =
+		completedAnalyses.length > 0
+			? completedAnalyses.reduce((sum, a) => sum + (a.validityScore || 5), 0) /
+				completedAnalyses.length
+			: 5;
+	const avgEvidence =
+		completedAnalyses.length > 0
+			? completedAnalyses.reduce((sum, a) => sum + (a.evidenceScore || 5), 0) /
+				completedAnalyses.length
+			: 5;
+	const highValidityClaims = completedAnalyses.filter((a) => (a.validityScore || 0) >= 7).length;
+	const highEvidenceClaims = completedAnalyses.filter((a) => (a.evidenceScore || 0) >= 7).length;
+	const totalFallacies = completedAnalyses.reduce((sum, a) => sum + (a.fallacies?.length || 0), 0);
+
+	let message = `Synthesize the following claim analyses into a featured analysis format.
+
+## Claim Analysis Summary
+- Total claims analyzed: ${completedAnalyses.length}
+- Average validity score: ${avgValidity.toFixed(1)}/10
+- Average evidence score: ${avgEvidence.toFixed(1)}/10
+- Claims with high validity (≥7): ${highValidityClaims} ← these indicate good faith reasoning
+- Claims with high evidence (≥7): ${highEvidenceClaims} ← these indicate well-supported arguments
+- Total fallacy instances found: ${totalFallacies}
+
+**IMPORTANT**: ${highValidityClaims + highEvidenceClaims > 0 ? `The ${highValidityClaims} high-validity and ${highEvidenceClaims} high-evidence claims should each yield good faith indicators.` : 'The claim scores should guide your good faith assessment.'}
+
+## Original Content
+${originalContent}
+
+## Claim Analyses
+`;
+
+	for (const analysis of completedAnalyses) {
+		message += `
+### Claim ${analysis.claimIndex + 1}: "${analysis.claim.text}"
+- Type: ${analysis.claim.type}
+- Complexity: ${analysis.claim.complexity}
+- Validity Score: ${analysis.validityScore}/10
+- Evidence Score: ${analysis.evidenceScore}/10
+- Fallacies: ${analysis.fallacies?.length ? analysis.fallacies.join(', ') : 'None identified'}
+${analysis.fallacyExplanations ? `- Fallacy Explanations: ${JSON.stringify(analysis.fallacyExplanations)}` : ''}
+- Assumptions: ${analysis.assumptions?.length ? analysis.assumptions.join('; ') : 'None noted'}
+- Counter-arguments: ${analysis.counterArguments?.length ? analysis.counterArguments.join('; ') : 'None noted'}
+- Improvements: ${analysis.improvements || 'None suggested'}
+`;
+	}
+
+	if (failedAnalyses.length > 0) {
+		message += `
+## Failed Analyses
+${failedAnalyses.length} claims could not be analyzed. Please note this in your summary.
+`;
+	}
+
+	message += `
+## Instructions
+Based on these detailed claim analyses, create a featured analysis that:
+1. Identifies good_faith indicators for EACH claim with high validity or evidence scores (≥7) - these represent sound reasoning
+2. Reports each fallacy instance found in the claim analyses with proper names, descriptions, examples, and explanations
+3. Reports each cultish_language pattern instance (us-vs-them, loaded language, etc.)
+4. Leaves fact_checking empty (not applicable for this analysis)
+5. Writes a comprehensive summary covering tone, tactics, impact, and constructive observations
+
+Use the submit_featured_synthesis tool to provide your analysis.`;
+
+	return message;
+}
+
+/**
+ * Normalize the featured response (already parsed from tool use)
+ */
+function normalizeFeaturedResponse(input: any): FeaturedAnalysisResponse {
 	return {
-		claims: Array.isArray(input.claims) ? input.claims : [],
-		fallacyOverload: input.fallacyOverload || false,
-		goodFaithScore: input.goodFaithScore || 50,
-		goodFaithDescriptor: input.goodFaithDescriptor || 'Neutral',
-		cultishPhrases: Array.isArray(input.cultishPhrases) ? input.cultishPhrases : [],
-		tags: Array.isArray(input.tags) ? input.tags : [],
-		overallAnalysis: input.overallAnalysis || '',
-		steelmanScore: input.steelmanScore,
-		steelmanNotes: input.steelmanNotes,
-		understandingScore: input.understandingScore,
-		intellectualHumilityScore: input.intellectualHumilityScore,
-		relevanceScore: input.relevanceScore,
-		relevanceNotes: input.relevanceNotes
+		good_faith: Array.isArray(input.good_faith)
+			? input.good_faith.map(normalizeAnalysisFinding)
+			: [],
+		logical_fallacies: Array.isArray(input.logical_fallacies)
+			? input.logical_fallacies.map(normalizeAnalysisFinding)
+			: [],
+		cultish_language: Array.isArray(input.cultish_language)
+			? input.cultish_language.map(normalizeAnalysisFinding)
+			: [],
+		fact_checking: Array.isArray(input.fact_checking) ? input.fact_checking : [],
+		summary: input.summary || ''
+	};
+}
+
+function normalizeAnalysisFinding(item: any): AnalysisFinding {
+	return {
+		name: item.name || 'Unknown',
+		description: item.description || '',
+		examples: Array.isArray(item.examples) ? item.examples : item.example ? [item.example] : [],
+		why: item.why || ''
 	};
 }
 
 /**
- * Normalize synthesis result to GoodFaithResult format
+ * Convert featured format to GoodFaithResult (which the system also expects)
+ * The result contains BOTH the featured fields AND the GoodFaithResult fields
  */
-function normalizeToGoodFaithResult(
-	raw: SynthesisRawResponse,
+function convertToGoodFaithResult(
+	featured: FeaturedAnalysisResponse,
+	completedAnalyses: ClaimAnalysisResult[],
 	failedCount: number
 ): GoodFaithResult {
-	// Normalize score to 0-1 scale
-	const normalizedScore = Math.max(0, Math.min(1, raw.goodFaithScore / 100));
+	// Calculate score based on the balance of good faith vs fallacies/cultish language
+	const goodFaithCount = featured.good_faith.length;
+	const problemCount = featured.logical_fallacies.length + featured.cultish_language.length;
 
-	// Determine label based on score
-	const label = getScoreLabel(normalizedScore);
+	// Simple scoring: more good faith indicators relative to problems = higher score
+	let score: number;
+	if (goodFaithCount + problemCount === 0) {
+		score = 0.5; // Neutral if nothing found
+	} else {
+		score = Math.max(0.1, Math.min(0.9, 0.5 + (goodFaithCount - problemCount) * 0.1));
+	}
+
+	// Also factor in the average validity/evidence scores from claim analyses
+	if (completedAnalyses.length > 0) {
+		const avgValidity =
+			completedAnalyses.reduce((sum, a) => sum + (a.validityScore || 5), 0) /
+			completedAnalyses.length;
+		const avgEvidence =
+			completedAnalyses.reduce((sum, a) => sum + (a.evidenceScore || 5), 0) /
+			completedAnalyses.length;
+		const avgScore = (avgValidity + avgEvidence) / 2 / 10; // Convert to 0-1 scale
+		score = (score + avgScore) / 2; // Average with the indicator-based score
+	}
+
+	const label = getScoreLabel(score);
+
+	// Build summary with failed claim note if needed
+	const summaryText =
+		failedCount > 0
+			? `${featured.summary}\n\n(Note: ${failedCount} claim(s) could not be analyzed)`
+			: featured.summary;
+
+	// Build claims array from completed analyses for GoodFaithResult compatibility
+	const claims: Claim[] = completedAnalyses.map((a) => ({
+		claim: a.claim.text,
+		supportingArguments: [
+			{
+				argument: a.improvements || 'See detailed analysis',
+				score: Math.round(((a.validityScore || 5) + (a.evidenceScore || 5)) / 2),
+				fallacies: a.fallacies || [],
+				improvements: a.improvements
+			}
+		]
+	}));
+
+	// Collect unique fallacy names for cultishPhrases field (legacy)
+	const allFallacies = featured.logical_fallacies.map((f) => f.name);
+	const cultishPhrases = featured.cultish_language.map((c) => c.name);
 
 	return {
-		good_faith_score: normalizedScore,
+		// Core GoodFaithResult fields
+		good_faith_score: score,
 		good_faith_label: label,
-		claims: raw.claims,
-		fallacyOverload: raw.fallacyOverload,
-		cultishPhrases: raw.cultishPhrases,
-		summary: raw.overallAnalysis,
-		tags: raw.tags,
-		steelmanScore: raw.steelmanScore,
-		steelmanNotes: raw.steelmanNotes,
-		understandingScore: raw.understandingScore,
-		intellectualHumilityScore: raw.intellectualHumilityScore,
-		relevanceScore: raw.relevanceScore,
-		relevanceNotes:
-			failedCount > 0
-				? `${raw.relevanceNotes || ''} (Note: ${failedCount} claim(s) could not be analyzed)`
-				: raw.relevanceNotes,
+		claims,
+		fallacyOverload: featured.logical_fallacies.length > 5,
+		cultishPhrases,
+		summary: summaryText,
+		rationale: summaryText,
+		tags: [...new Set([...allFallacies.slice(0, 3), ...cultishPhrases.slice(0, 2)])],
 		provider: 'claude',
 		usedAI: true,
+
 		// Legacy compatibility
-		goodFaithScore: raw.goodFaithScore,
-		goodFaithDescriptor: raw.goodFaithDescriptor,
-		overallAnalysis: raw.overallAnalysis
-	};
+		goodFaithScore: Math.round(score * 100),
+		goodFaithDescriptor: label,
+		overallAnalysis: summaryText,
+
+		// FEATURED FORMAT FIELDS - these are what the public page actually uses
+		good_faith: featured.good_faith,
+		logical_fallacies: featured.logical_fallacies,
+		cultish_language: featured.cultish_language,
+		fact_checking: featured.fact_checking
+	} as GoodFaithResult & FeaturedAnalysisResponse;
 }
 
 /**
@@ -312,6 +527,7 @@ function createFallbackResult(
 	claimAnalyses: ClaimAnalysisResult[],
 	failedCount: number
 ): GoodFaithResult {
+	const summaryText = `Analysis incomplete: ${failedCount} of ${claimAnalyses.length} claims could not be analyzed. Please try again.`;
 	return {
 		good_faith_score: 0.5,
 		good_faith_label: 'neutral',
@@ -321,13 +537,19 @@ function createFallbackResult(
 		})),
 		fallacyOverload: false,
 		cultishPhrases: [],
-		summary: `Analysis incomplete: ${failedCount} of ${claimAnalyses.length} claims could not be analyzed. Please try again.`,
+		summary: summaryText,
+		rationale: summaryText,
 		tags: [],
 		provider: 'claude',
 		usedAI: false,
 		goodFaithScore: 50,
-		goodFaithDescriptor: 'Incomplete'
-	};
+		goodFaithDescriptor: 'Incomplete',
+		// Featured format fields (empty)
+		good_faith: [],
+		logical_fallacies: [],
+		cultish_language: [],
+		fact_checking: []
+	} as GoodFaithResult & FeaturedAnalysisResponse;
 }
 
 /**
@@ -365,11 +587,24 @@ function createAggregatedResult(
 		completedAnalyses.reduce((sum, a) => sum + (a.evidenceScore || 5), 0) /
 		completedAnalyses.length;
 
-	const summary =
+	const summaryText =
 		`Aggregated analysis of ${completedAnalyses.length} claims. ` +
 		`Average validity: ${avgValidity.toFixed(1)}/10. Average evidence: ${avgEvidence.toFixed(1)}/10. ` +
 		`${uniqueFallacies.length > 0 ? `Fallacies identified: ${uniqueFallacies.join(', ')}.` : 'No significant fallacies identified.'} ` +
 		`${failedAnalyses.length > 0 ? `(${failedAnalyses.length} claims could not be analyzed)` : ''}`;
+
+	// Build logical_fallacies array from unique fallacies
+	const logicalFallacies: AnalysisFinding[] = uniqueFallacies.map((name) => ({
+		name,
+		description: `Fallacy identified in claim analysis`,
+		examples: completedAnalyses
+			.filter((a) => a.fallacies?.includes(name))
+			.map((a) => a.claim.text)
+			.slice(0, 2),
+		why:
+			completedAnalyses.find((a) => a.fallacyExplanations?.[name])?.fallacyExplanations?.[name] ||
+			'See individual claim analysis'
+	}));
 
 	return {
 		good_faith_score: normalizedScore,
@@ -377,11 +612,17 @@ function createAggregatedResult(
 		claims,
 		fallacyOverload: uniqueFallacies.length > 5,
 		cultishPhrases: [],
-		summary,
-		tags: [],
+		summary: summaryText,
+		rationale: summaryText,
+		tags: uniqueFallacies.slice(0, 5),
 		provider: 'claude',
 		usedAI: true,
 		goodFaithScore: preliminaryScore,
-		goodFaithDescriptor: getScoreLabel(normalizedScore)
-	};
+		goodFaithDescriptor: getScoreLabel(normalizedScore),
+		// Featured format fields
+		good_faith: [],
+		logical_fallacies: logicalFallacies,
+		cultish_language: [],
+		fact_checking: []
+	} as GoodFaithResult & FeaturedAnalysisResponse;
 }

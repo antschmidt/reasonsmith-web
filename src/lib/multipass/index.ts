@@ -10,11 +10,20 @@
  */
 
 // Main orchestrator
-export { runMultiPassAnalysis, shouldUseMultiPass } from './orchestrator';
+export {
+	runMultiPassAnalysis,
+	runMultiPassAnalysisWithProgress,
+	shouldUseMultiPass
+} from './orchestrator';
 
 // Individual passes (for testing/debugging)
 export { runExtractionPass, quickClaimEstimate } from './passes/extraction';
-export { runClaimAnalysisPass, retryFailedClaims, getModelForClaim } from './passes/claimAnalysis';
+export {
+	runClaimAnalysisPass,
+	runClaimAnalysisPassWithProgress,
+	retryFailedClaims,
+	getModelForClaim
+} from './passes/claimAnalysis';
 export { runSynthesisPass } from './passes/synthesis';
 
 // Utilities
@@ -70,12 +79,53 @@ export type {
 
 	// Retry types
 	RetryClaimsRequest,
-	RetryClaimsResponse
+	RetryClaimsResponse,
+
+	// Session types (for reconnection/resume)
+	AnalysisSessionStatus,
+	AnalysisPhase,
+	AnalysisErrorPhase,
+	AnalysisSession,
+	AnalysisSessionCreateInput,
+	AnalysisSessionUpdateInput,
+	ResumeAction,
+	AnalysisStatusResponse,
+	ResumeAnalysisRequest,
+	ResynthesizeResponse
 } from './types';
 
 // Config presets
 export {
 	DEFAULT_MULTIPASS_MODELS,
 	FEATURED_CONFIG,
-	ACADEMIC_CONFIG
+	ACADEMIC_CONFIG,
+	DEFAULT_RATE_LIMIT_CONFIG
 } from './types';
+
+// Streaming utilities
+export {
+	formatSSEMessage,
+	createProgressEvent,
+	createSSEStream,
+	parseSSEMessage,
+	createSSEClient
+} from './streaming';
+
+export type {
+	ProgressEventType,
+	ProgressEvent,
+	ProgressCallback,
+	StartedEvent,
+	Pass1StartedEvent,
+	Pass1CompleteEvent,
+	Pass2StartedEvent,
+	Pass2BatchStartedEvent,
+	Pass2BatchCompleteEvent,
+	Pass2ClaimCompleteEvent,
+	Pass2CompleteEvent,
+	Pass3StartedEvent,
+	Pass3CompleteEvent,
+	CompleteEvent,
+	ErrorEvent,
+	SSEClient
+} from './streaming';

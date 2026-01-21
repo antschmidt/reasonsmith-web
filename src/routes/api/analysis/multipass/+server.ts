@@ -36,6 +36,24 @@ const anthropic = new Anthropic({
 });
 
 /**
+ * Get Hasura GraphQL endpoint with /v1/graphql path ensured
+ */
+function getHasuraEndpoint(): string | undefined {
+	let endpoint = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+	if (endpoint && !endpoint.includes('/v1/graphql')) {
+		endpoint = endpoint.replace(/\/?$/, '/v1/graphql');
+	}
+	return endpoint;
+}
+
+/**
+ * Get Hasura admin secret
+ */
+function getHasuraAdminSecret(): string | undefined {
+	return process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+}
+
+/**
  * Strategy configurations
  */
 const STRATEGY_CONFIGS: Record<'featured' | 'academic', Partial<MultiPassConfig>> = {
@@ -54,9 +72,8 @@ const STRATEGY_CONFIGS: Record<'featured' | 'academic', Partial<MultiPassConfig>
  */
 async function getPromptCacheTTL(): Promise<PromptCacheTTL> {
 	try {
-		const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-		const HASURA_GRAPHQL_ADMIN_SECRET =
-			process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+		const HASURA_GRAPHQL_ENDPOINT = getHasuraEndpoint();
+		const HASURA_GRAPHQL_ADMIN_SECRET = getHasuraAdminSecret();
 
 		if (!HASURA_GRAPHQL_ENDPOINT || !HASURA_GRAPHQL_ADMIN_SECRET) {
 			return '5m'; // Default to 5m for multi-pass (benefits from caching)
@@ -102,9 +119,8 @@ async function storeClaimAnalyses(
 	discussionVersionId?: string
 ): Promise<void> {
 	try {
-		const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-		const HASURA_GRAPHQL_ADMIN_SECRET =
-			process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+		const HASURA_GRAPHQL_ENDPOINT = getHasuraEndpoint();
+		const HASURA_GRAPHQL_ADMIN_SECRET = getHasuraAdminSecret();
 
 		if (!HASURA_GRAPHQL_ENDPOINT || !HASURA_GRAPHQL_ADMIN_SECRET) {
 			logger.warn('Missing Hasura config, skipping claim analysis storage');
@@ -306,10 +322,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
 		// Check user permissions and credits
 		if (accessToken) {
-			const HASURA_GRAPHQL_ENDPOINT =
-				process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-			const HASURA_GRAPHQL_ADMIN_SECRET =
-				process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+			const HASURA_GRAPHQL_ENDPOINT = getHasuraEndpoint();
+			const HASURA_GRAPHQL_ADMIN_SECRET = getHasuraAdminSecret();
 
 			if (HASURA_GRAPHQL_ENDPOINT && HASURA_GRAPHQL_ADMIN_SECRET) {
 				try {
@@ -394,10 +408,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		// Increment credit usage (count as 1 analysis for now, could be adjusted)
 		if (contributorId && contributor && result.result.usedAI) {
 			try {
-				const HASURA_GRAPHQL_ENDPOINT =
-					process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-				const HASURA_GRAPHQL_ADMIN_SECRET =
-					process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+				const HASURA_GRAPHQL_ENDPOINT = getHasuraEndpoint();
+				const HASURA_GRAPHQL_ADMIN_SECRET = getHasuraAdminSecret();
 
 				if (HASURA_GRAPHQL_ENDPOINT && HASURA_GRAPHQL_ADMIN_SECRET) {
 					const monthlyRemaining = getMonthlyCreditsRemaining(contributor);

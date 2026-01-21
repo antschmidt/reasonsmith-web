@@ -186,6 +186,26 @@ export const DEFAULT_MULTIPASS_MODELS: MultiPassModels = {
 	synthesis: 'claude-sonnet-4-5-20250929'
 };
 
+/** Rate limiting configuration for API calls */
+export interface RateLimitConfig {
+	/** Number of claims to process per batch (default: 4) */
+	batchSize: number;
+	/** Delay in ms between batches (default: 15000) */
+	batchDelayMs: number;
+	/** Maximum retries per claim on rate limit errors (default: 3) */
+	maxRetries: number;
+	/** Base backoff time in ms for retries (default: 20000) */
+	retryBackoffBaseMs: number;
+}
+
+/** Default rate limiting configuration */
+export const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
+	batchSize: 4, // ~4 claims × 6,500 tokens = 26,000 tokens (under 30k limit)
+	batchDelayMs: 15000, // 15 seconds between batches
+	maxRetries: 3,
+	retryBackoffBaseMs: 20000
+};
+
 /** Configuration for multi-pass analysis */
 export interface MultiPassConfig {
 	/** Analysis strategy type */
@@ -200,6 +220,8 @@ export interface MultiPassConfig {
 	complexityConfidenceThreshold: number;
 	/** Cache TTL setting */
 	cacheTTL: 'off' | '5m' | '1h';
+	/** Rate limiting configuration */
+	rateLimiting: RateLimitConfig;
 }
 
 /** Default configuration for featured analyses */
@@ -383,4 +405,105 @@ export interface RetryClaimsResponse {
 	allClaimsComplete: boolean;
 	/** Updated synthesis if all claims now complete */
 	updatedResult?: GoodFaithResult;
+}
+
+// ============================================================================
+// Analysis Session Types (for reconnection/resume)
+// ============================================================================
+
+/** Status of an analysis session */
+export type AnalysisSessionStatus = 'in_progress' | 'completed' | 'failed' | 'abandoned';
+
+/** Phase an analysis session is in */
+export type AnalysisPhase =
+	| 'not_started'
+	| 'pass1'
+	| 'pass2_incomplete'
+	| 'pass2_complete'
+	| 'ready_for_synthesis'
+	| 'completed'
+	| 'failed';
+
+/** Error phase indicator */
+export type AnalysisErrorPhase = 'pass1' | 'pass2' | 'pass3' | null;
+
+/** Analysis session record (matches database schema) */
+export interface AnalysisSession {
+	id: string;
+	showcase_item_id: string;
+	status: AnalysisSessionStatus;
+	current_pass: 1 | 2 | 3;
+	extracted_claims: ExtractedClaim[] | null;
+	total_claims: number | null;
+	claims_completed: number;
+	claims_failed: number;
+	last_batch_index: number;
+	content_hash: string | null;
+	started_at: string;
+	updated_at: string;
+	completed_at: string | null;
+	error_message: string | null;
+	error_phase: AnalysisErrorPhase;
+}
+
+/** Input for creating a new analysis session */
+export interface AnalysisSessionCreateInput {
+	showcase_item_id: string;
+	status?: AnalysisSessionStatus;
+	current_pass?: 1 | 2 | 3;
+	content_hash?: string;
+}
+
+/** Input for updating an analysis session */
+export interface AnalysisSessionUpdateInput {
+	status?: AnalysisSessionStatus;
+	current_pass?: 1 | 2 | 3;
+	extracted_claims?: ExtractedClaim[];
+	total_claims?: number;
+	claims_completed?: number;
+	claims_failed?: number;
+	last_batch_index?: number;
+	completed_at?: string;
+	error_message?: string;
+	error_phase?: AnalysisErrorPhase;
+}
+
+/** Resume action types */
+export type ResumeAction = 'continue' | 'retry_failed' | 'resynthesize' | 'start_fresh';
+
+/** Status response for client when checking for interrupted analyses */
+export interface AnalysisStatusResponse {
+	/** Whether an analysis session exists */
+	hasSession: boolean;
+	/** The session record if exists */
+	session?: AnalysisSession;
+	/** Current phase of analysis */
+	phase: AnalysisPhase;
+	/** Whether the analysis can be continued from where it left off */
+	canResume: boolean;
+	/** Whether there are failed claims that can be retried */
+	canRetryFailed: boolean;
+	/** Whether synthesis can be run on existing claim analyses */
+	canResynthesize: boolean;
+	/** Total number of claims extracted */
+	claimsTotal: number;
+	/** Number of claims successfully analyzed */
+	claimsCompleted: number;
+	/** Number of claims that failed analysis */
+	claimsFailed: number;
+	/** Available resume actions for the UI */
+	resumeActions: ResumeAction[];
+}
+
+/** Request body for the resume endpoint */
+export interface ResumeAnalysisRequest {
+	showcaseItemId: string;
+	content: string;
+	action: Exclude<ResumeAction, 'start_fresh'>;
+}
+
+/** Response from resynthesize action (non-streaming) */
+export interface ResynthesizeResponse {
+	result: GoodFaithResult;
+	usage: TokenUsage;
 }

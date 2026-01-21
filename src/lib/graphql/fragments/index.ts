@@ -233,6 +233,26 @@ export const PUBLIC_SHOWCASE_ITEM_FIELDS = gql`
 	}
 `;
 
+// Admin version includes source_content for editing
+export const PUBLIC_SHOWCASE_ITEM_ADMIN_FIELDS = gql`
+	fragment PublicShowcaseItemAdminFields on public_showcase_item {
+		id
+		title
+		subtitle
+		media_type
+		creator
+		source_url
+		source_content
+		summary
+		analysis
+		tags
+		display_order
+		published
+		created_at
+		updated_at
+	}
+`;
+
 // ============================================
 // Security Key Fragments
 // ============================================

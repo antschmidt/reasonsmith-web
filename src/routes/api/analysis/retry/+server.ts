@@ -29,6 +29,24 @@ const anthropic = new Anthropic({
 });
 
 /**
+ * Get Hasura GraphQL endpoint with /v1/graphql path ensured
+ */
+function getHasuraEndpoint(): string | undefined {
+	let endpoint = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+	if (endpoint && !endpoint.includes('/v1/graphql')) {
+		endpoint = endpoint.replace(/\/?$/, '/v1/graphql');
+	}
+	return endpoint;
+}
+
+/**
+ * Get Hasura admin secret
+ */
+function getHasuraAdminSecret(): string | undefined {
+	return process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+}
+
+/**
  * Fetch claim analyses from database
  */
 async function fetchClaimAnalyses(
@@ -40,9 +58,8 @@ async function fetchClaimAnalyses(
 	context?: AnalysisContext;
 } | null> {
 	try {
-		const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-		const HASURA_GRAPHQL_ADMIN_SECRET =
-			process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+		const HASURA_GRAPHQL_ENDPOINT = getHasuraEndpoint();
+		const HASURA_GRAPHQL_ADMIN_SECRET = getHasuraAdminSecret();
 
 		if (!HASURA_GRAPHQL_ENDPOINT || !HASURA_GRAPHQL_ADMIN_SECRET) {
 			return null;
@@ -142,14 +159,10 @@ async function fetchClaimAnalyses(
 /**
  * Update claim analysis in database
  */
-async function updateClaimAnalysis(
-	id: string,
-	result: ClaimAnalysisResult
-): Promise<void> {
+async function updateClaimAnalysis(id: string, result: ClaimAnalysisResult): Promise<void> {
 	try {
-		const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
-		const HASURA_GRAPHQL_ADMIN_SECRET =
-			process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+		const HASURA_GRAPHQL_ENDPOINT = getHasuraEndpoint();
+		const HASURA_GRAPHQL_ADMIN_SECRET = getHasuraAdminSecret();
 
 		if (!HASURA_GRAPHQL_ENDPOINT || !HASURA_GRAPHQL_ADMIN_SECRET) {
 			return;
@@ -185,15 +198,18 @@ async function updateClaimAnalysis(
 				`,
 				variables: {
 					id,
-					analysis: result.status === 'completed' ? {
-						validityScore: result.validityScore,
-						evidenceScore: result.evidenceScore,
-						fallacies: result.fallacies,
-						fallacyExplanations: result.fallacyExplanations,
-						assumptions: result.assumptions,
-						counterArguments: result.counterArguments,
-						improvements: result.improvements
-					} : null,
+					analysis:
+						result.status === 'completed'
+							? {
+									validityScore: result.validityScore,
+									evidenceScore: result.evidenceScore,
+									fallacies: result.fallacies,
+									fallacyExplanations: result.fallacyExplanations,
+									assumptions: result.assumptions,
+									counterArguments: result.counterArguments,
+									improvements: result.improvements
+								}
+							: null,
 					status: result.status,
 					error_message: result.error || null,
 					input_tokens: result.inputTokens,
@@ -210,7 +226,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	logger.info('=== Retry Claims endpoint called ===');
 
 	try {
-		const body = await request.json() as RetryClaimsRequest;
+		const body = (await request.json()) as RetryClaimsRequest;
 
 		const { postId, discussionVersionId, claimIndices } = body;
 
@@ -220,7 +236,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		if (!claimIndices || !Array.isArray(claimIndices) || claimIndices.length === 0) {
-			return json({ error: 'claimIndices required (array of claim indices to retry)' }, { status: 400 });
+			return json(
+				{ error: 'claimIndices required (array of claim indices to retry)' },
+				{ status: 400 }
+			);
 		}
 
 		// Fetch existing claim analyses
@@ -240,11 +259,16 @@ export const POST: RequestHandler = async ({ request }) => {
 		);
 
 		if (failedClaims.length === 0) {
-			return json({
-				error: 'No failed claims found matching the requested indices',
-				requestedIndices: claimIndices,
-				failedIndices: existing.claims.filter((c) => c.status === 'failed').map((c) => c.claimIndex)
-			}, { status: 400 });
+			return json(
+				{
+					error: 'No failed claims found matching the requested indices',
+					requestedIndices: claimIndices,
+					failedIndices: existing.claims
+						.filter((c) => c.status === 'failed')
+						.map((c) => c.claimIndex)
+				},
+				{ status: 400 }
+			);
 		}
 
 		logger.info(`Retrying ${failedClaims.length} failed claims`);
@@ -314,7 +338,9 @@ export const POST: RequestHandler = async ({ request }) => {
 			updatedResult
 		};
 
-		logger.info(`Retry complete: ${retriedResults.filter((r) => r.status === 'completed').length}/${retriedResults.length} succeeded`);
+		logger.info(
+			`Retry complete: ${retriedResults.filter((r) => r.status === 'completed').length}/${retriedResults.length} succeeded`
+		);
 
 		return json(response);
 	} catch (error) {
