@@ -92,13 +92,15 @@ const FEATURED_SYNTHESIS_TOOL: Anthropic.Tool = {
 			},
 			cultish_language: {
 				type: 'array',
-				description: 'Cultish or manipulative language patterns found',
+				description:
+					'Cultish or manipulative language patterns found, including performative good faith (e.g., "Us vs Them", "Thought-Terminating Cliché", "Sealioning", "False Balance", "Performative Respect")',
 				items: {
 					type: 'object',
 					properties: {
 						name: {
 							type: 'string',
-							description: 'Name of the pattern (e.g., "Us vs Them", "Thought-Terminating Cliché")'
+							description:
+								'Name of the pattern (e.g., "Us vs Them", "Thought-Terminating Cliché", "Sealioning", "Performative Respect", "False Balance")'
 						},
 						description: { type: 'string', description: 'Brief description of this pattern' },
 						examples: {
@@ -291,6 +293,26 @@ You must identify BOTH strengths AND weaknesses with EQUAL diligence. Do not foc
 - Acknowledgment of counterarguments or limitations
 - Intellectual humility (admitting what isn't known)
 
+**CRITICAL: Validate Good Faith Authenticity**
+Before reporting a good faith indicator, you MUST verify it is GENUINE and not performative or manipulative:
+
+RED FLAGS that disqualify "good faith" language:
+- "I'm just asking questions" followed by leading/loaded questions → NOT good faith (sealioning)
+- "I respect your opinion, but..." immediately followed by dismissal → NOT good faith (false respect)
+- "To be fair..." used to introduce a strawman or weak version of opposing view → NOT good faith
+- "Both sides have valid points" when one side is clearly factual/ethical → NOT good faith (false balance)
+- Hedging language ("maybe", "possibly") used to spread misinformation while maintaining deniability → NOT good faith
+- "I'm not saying X, but..." followed by implying X → NOT good faith (implicature manipulation)
+- Citing sources that don't support the claim or are misrepresented → NOT good faith
+- Acknowledging a counterargument only to immediately dismiss it without engagement → NOT good faith
+
+GENUINE good faith requires:
+- The charitable interpretation actually engages with the strongest form of the opposing argument
+- The uncertainty acknowledgment is consistent (not selective uncertainty on inconvenient facts only)
+- The qualified language reflects genuine epistemic humility, not rhetorical hedging
+- Evidence citations actually support the claim and aren't cherry-picked or misrepresented
+- Counterargument acknowledgment includes substantive engagement, not token mention
+
 **For Logical Fallacies:**
 - Only report fallacies explicitly identified in the claim analyses
 - Each instance of a fallacy is a separate finding
@@ -300,14 +322,15 @@ You must identify BOTH strengths AND weaknesses with EQUAL diligence. Do not foc
 - Look for us-vs-them framing, loaded language, thought-terminating clichés
 - Only report patterns clearly present in the text
 - Each instance is a separate finding
+- NOTE: Performative good faith that fails validation should be reported here as manipulation
 
 ## Your Tasks
 
-1. **Identify Good Faith Indicators**: Scan ALL claims for positive patterns. High-scoring claims should yield good faith indicators. If a claim has validity 8/10 and evidence 7/10, that's a good faith indicator worth noting.
+1. **Identify Good Faith Indicators**: Scan ALL claims for positive patterns. High-scoring claims should yield good faith indicators. VALIDATE each indicator is genuine before including it.
 
 2. **Identify Logical Fallacies**: Report each fallacy instance found in the claim analyses with specific examples from the text.
 
-3. **Identify Cultish/Manipulative Language**: Report each instance of manipulative language patterns found.
+3. **Identify Cultish/Manipulative Language**: Report each instance of manipulative language patterns found. Include any performative/fake good faith patterns here.
 
 4. **Fact Checking**: Note any factual claims that were evaluated (can be empty if not applicable).
 
@@ -317,7 +340,7 @@ You must identify BOTH strengths AND weaknesses with EQUAL diligence. Do not foc
    - Impact Analysis (likely audience response, effect on discourse)
    - Constructive Observations (strengths to emulate, weaknesses to avoid)
 
-Be thorough, educational, and BALANCED. Report both what works well and what doesn't.`;
+Be thorough, educational, and BALANCED. Report both what works well and what doesn't. Be skeptical of surface-level good faith signals - verify they represent genuine intellectual honesty.`;
 
 /**
  * Build user message for featured synthesis
