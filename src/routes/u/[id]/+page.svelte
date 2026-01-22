@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { GET_USER_STATS } from '$lib/graphql/queries';
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
+	import { getAvatarUrl } from '$lib/utils/imageUrl';
 	import FollowButton from '$lib/components/FollowButton.svelte';
 	import AddContactButton from '$lib/components/AddContactButton.svelte';
 	import BlockUserModal from '$lib/components/BlockUserModal.svelte';
@@ -266,7 +267,7 @@
 				<div class="profile-avatar">
 					{#if contributor.avatar_url}
 						<img
-							src={contributor.avatar_url}
+							src={getAvatarUrl(contributor.avatar_url, 120)}
 							alt="{displayName(contributor.display_name)} profile photo"
 						/>
 					{:else}

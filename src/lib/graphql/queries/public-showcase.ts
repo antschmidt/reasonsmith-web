@@ -1,6 +1,7 @@
 import { gql } from '@apollo/client/core';
 import {
 	PUBLIC_SHOWCASE_ITEM_FIELDS,
+	PUBLIC_SHOWCASE_ITEM_ADMIN_FIELDS,
 	CONTRIBUTOR_FIELDS,
 	DISCUSSION_VERSION_FIELDS
 } from '../fragments';
@@ -33,10 +34,10 @@ export const GET_PUBLIC_SHOWCASE_ITEM = gql`
 export const GET_PUBLIC_SHOWCASE_ADMIN = gql`
 	query GetPublicShowcaseAdmin {
 		public_showcase_item(order_by: [{ display_order: desc }, { created_at: desc }]) {
-			...PublicShowcaseItemFields
+			...PublicShowcaseItemAdminFields
 		}
 	}
-	${PUBLIC_SHOWCASE_ITEM_FIELDS}
+	${PUBLIC_SHOWCASE_ITEM_ADMIN_FIELDS}
 `;
 
 // ============================================

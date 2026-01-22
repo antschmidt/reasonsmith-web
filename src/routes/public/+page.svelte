@@ -8,10 +8,18 @@
 		GET_PUBLIC_SHOWCASE_ADMIN,
 		CREATE_PUBLIC_SHOWCASE_ITEM,
 		UPDATE_PUBLIC_SHOWCASE_ITEM,
-		DELETE_PUBLIC_SHOWCASE_ITEM
+		DELETE_PUBLIC_SHOWCASE_ITEM,
+		GET_ANALYSIS_VERSIONS,
+		SET_ACTIVE_ANALYSIS_VERSION,
+		DELETE_ANALYSIS_VERSION
 	} from '$lib/graphql/queries';
 	import AnimatedLogo from '$lib/components/ui/AnimatedLogo.svelte';
+	import MultiPassProgress from '$lib/components/ui/MultiPassProgress.svelte';
+	import InterruptedAnalysisBanner from '$lib/components/ui/InterruptedAnalysisBanner.svelte';
 	import { collectRoles } from '$lib/utils/authHelpers';
+	import { estimateTokens, formatTokenCount } from '$lib/utils/tokenEstimate';
+	import { parseSSEMessage } from '$lib/multipass';
+	import type { ProgressEvent, MultiPassResult, AnalysisStatusResponse, ResumeAction } from '$lib/multipass';
 
 	type ShowcaseItem = {
 		id: string;
@@ -20,6 +28,7 @@
 		media_type?: string | null;
 		creator?: string | null;
 		source_url?: string | null;
+		source_content?: string | null; // Raw source text (only available to editors)
 		summary?: string | null;
 		analysis?: string | null;
 		tags?: string[] | null;
@@ -81,6 +90,42 @@
 	let draggedIndex = $state<number | null>(null);
 	let savingOrder = $state(false);
 	let activeTab = $state<'edit' | 'preview'>('edit');
+
+	// Streaming analysis state
+	let useStreamingAnalysis = $state(true); // Enable streaming by default
+	let streamingProgress = $state<ProgressEvent | null>(null);
+	let streamAbortController = $state<AbortController | null>(null);
+
+	// Interrupted analysis state
+	let interruptedStatus = $state<AnalysisStatusResponse | null>(null);
+	let showInterruptedBanner = $state(true);
+
+	// Resynthesize state - tracks if current item has existing claim analyses
+	let hasExistingClaimAnalyses = $state(false);
+	let resynthesizing = $state(false);
+
+	// Analysis versions state
+	type AnalysisVersion = {
+		id: string;
+		version_number: number;
+		is_active: boolean;
+		analysis: any;
+		summary: string | null;
+		analysis_strategy: string | null;
+		claims_total: number | null;
+		claims_analyzed: number | null;
+		claims_failed: number | null;
+		model_used: string | null;
+		input_tokens: number | null;
+		output_tokens: number | null;
+		estimated_cost_cents: number | null;
+		created_at: string;
+	};
+	let analysisVersions = $state<AnalysisVersion[]>([]);
+	let loadingVersions = $state(false);
+	let settingActiveVersion = $state<string | null>(null);
+	let deletingVersion = $state<string | null>(null);
+	let showVersionsPanel = $state(false);
 
 	const DRAFT_STORAGE_KEY = 'showcase-form-draft';
 
@@ -233,6 +278,10 @@
 		analysisStatus = null;
 		analysisError = null;
 		extractedExamples = '';
+		hasExistingClaimAnalyses = false;
+		interruptedStatus = null;
+		analysisVersions = [];
+		showVersionsPanel = false;
 		if (hideForm) showForm = false;
 	}
 
@@ -258,10 +307,15 @@
 			display_order: item.display_order ?? 0,
 			published: !!item.published
 		};
-		rawContent = '';
+		// Load saved source content if available
+		rawContent = item.source_content ?? '';
 		analysisStatus = null;
 		analysisError = null;
 		extractedExamples = '';
+		streamingProgress = null;
+		interruptedStatus = null;
+		showInterruptedBanner = true;
+		hasExistingClaimAnalyses = false;
 		showForm = true;
 		activeTab = 'edit';
 		if (item.analysis) {
@@ -271,6 +325,20 @@
 			} catch {
 				extractedExamples = '';
 			}
+		}
+
+		// Check for interrupted analysis session and existing claim analyses
+		if (item.id) {
+			checkForInterruptedAnalysis(item.id).then((status) => {
+				interruptedStatus = status;
+				showInterruptedBanner = !!status;
+			});
+			// Also check for existing claim analyses (for resynthesize option)
+			checkForExistingClaimAnalyses(item.id).then((hasAnalyses) => {
+				hasExistingClaimAnalyses = hasAnalyses;
+			});
+			// Load analysis versions
+			loadAnalysisVersions(item.id);
 		}
 	}
 
@@ -304,6 +372,7 @@
 			media_type: form.media_type.trim() || null,
 			creator: form.creator.trim() || null,
 			source_url: form.source_url.trim() || null,
+			source_content: rawContent.trim() || null, // Save the source text for future editing
 			summary: form.summary.trim() || null,
 			analysis: form.analysis.trim() || null,
 			tags: parseTags(form.tags),
@@ -508,13 +577,26 @@
 
 	const formatMultiline = (value?: string | null) => {
 		if (!value) return '';
-		const escaped = value
+		let html = value
 			.replaceAll('&', '&amp;')
 			.replaceAll('<', '&lt;')
 			.replaceAll('>', '&gt;')
 			.replaceAll('"', '&quot;')
 			.replaceAll("'", '&#39;');
-		return escaped.replace(/(?:\r\n|\r|\n)/g, '<br />');
+
+		// Convert markdown headers (must be at start of line)
+		html = html.replace(/^####\s+(.+)$/gm, '<h6 class="md-h4">$1</h6>');
+		html = html.replace(/^###\s+(.+)$/gm, '<h5 class="md-h3">$1</h5>');
+		html = html.replace(/^##\s+(.+)$/gm, '<h4 class="md-h2">$1</h4>');
+
+		// Convert **bold** (must handle before single *)
+		html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+		// Convert *italic*
+		html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+		// Convert newlines to <br>
+		return html.replace(/(?:\r\n|\r|\n)/g, '<br />');
 	};
 
 	const getPreviewExamples = (entry: any): string[] => {
@@ -552,13 +634,56 @@
 		}
 		analyzing = true;
 		try {
+			// Auto-create a draft showcase item if we don't have an ID yet
+			// This allows claim analyses to be stored in the database
+			let showcaseItemId = form.id;
+			if (!showcaseItemId) {
+				analysisStatus = 'Creating draft entry...';
+				const draftTitle = form.title.trim() || `Draft Analysis - ${new Date().toLocaleString()}`;
+				const minOrder = items.length > 0 ? Math.min(...items.map((i) => i.display_order ?? 0)) : 0;
+				const newDisplayOrder = minOrder > 0 ? 0 : minOrder - 1;
+
+				const { data, error: gqlError } = await nhost.graphql.request(CREATE_PUBLIC_SHOWCASE_ITEM, {
+					input: {
+						title: draftTitle,
+						subtitle: form.subtitle.trim() || null,
+						media_type: form.media_type.trim() || null,
+						creator: form.creator.trim() || null,
+						source_url: form.source_url.trim() || null,
+						source_content: rawContent.trim() || null,
+						date_published: form.date_published.trim() || null,
+						display_order: newDisplayOrder,
+						published: false // Create as unpublished draft
+					}
+				});
+
+				if (gqlError) {
+					throw Array.isArray(gqlError)
+						? new Error(gqlError.map((e: any) => e.message).join('; '))
+						: gqlError;
+				}
+
+				const created = (data as any)?.insert_public_showcase_item_one;
+				if (!created?.id) {
+					throw new Error('Failed to create draft showcase item');
+				}
+
+				showcaseItemId = created.id;
+				form = { ...form, id: showcaseItemId, title: draftTitle };
+				items = [{ ...created, title: draftTitle, published: false }, ...items];
+				clearDraft(); // Clear local draft since we now have a DB record
+				analysisStatus = 'Draft created. Running analysis...';
+			}
+
 			const response = await fetch(`/api/goodFaithClaudeFeatured${force ? '?force=1' : ''}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					content: rawContent,
 					provider: analysisProvider,
-					skipFactChecking: !enableFactChecking
+					skipFactChecking: !enableFactChecking,
+					includeMultiPass: true,
+					showcaseItemId
 				})
 			});
 			if (!response.ok) {
@@ -626,6 +751,672 @@
 		} finally {
 			analyzing = false;
 		}
+	}
+
+	/**
+	 * Generate analysis using SSE streaming for real-time progress updates
+	 */
+	async function generateStreamingAnalysis() {
+		if (!hasAccess) return;
+		analysisError = null;
+		analysisStatus = null;
+		success = null;
+		extractedExamples = '';
+		streamingProgress = null;
+
+		if (!rawContent.trim()) {
+			analysisError = 'Provide source text to analyze first.';
+			return;
+		}
+
+		analyzing = true;
+
+		try {
+			// Auto-create a draft showcase item if we don't have an ID yet
+			let showcaseItemId = form.id;
+			if (!showcaseItemId) {
+				analysisStatus = 'Creating draft entry...';
+				const draftTitle = form.title.trim() || `Draft Analysis - ${new Date().toLocaleString()}`;
+				const minOrder = items.length > 0 ? Math.min(...items.map((i) => i.display_order ?? 0)) : 0;
+				const newDisplayOrder = minOrder > 0 ? 0 : minOrder - 1;
+
+				const { data, error: gqlError } = await nhost.graphql.request(CREATE_PUBLIC_SHOWCASE_ITEM, {
+					input: {
+						title: draftTitle,
+						subtitle: form.subtitle.trim() || null,
+						media_type: form.media_type.trim() || null,
+						creator: form.creator.trim() || null,
+						source_url: form.source_url.trim() || null,
+						source_content: rawContent.trim() || null,
+						date_published: form.date_published.trim() || null,
+						display_order: newDisplayOrder,
+						published: false
+					}
+				});
+
+				if (gqlError) {
+					throw Array.isArray(gqlError)
+						? new Error(gqlError.map((e: any) => e.message).join('; '))
+						: gqlError;
+				}
+
+				const created = (data as any)?.insert_public_showcase_item_one;
+				if (!created?.id) {
+					throw new Error('Failed to create draft showcase item');
+				}
+
+				showcaseItemId = created.id;
+				form = { ...form, id: showcaseItemId, title: draftTitle };
+				items = [{ ...created, title: draftTitle, published: false }, ...items];
+				clearDraft();
+			}
+
+			// Create abort controller for cancellation
+			streamAbortController = new AbortController();
+
+			// Get access token for Authorization header
+			const streamAccessToken = nhost.auth.getAccessToken();
+			const streamHeaders: Record<string, string> = {
+				'Content-Type': 'application/json',
+				Accept: 'text/event-stream'
+			};
+			if (streamAccessToken) {
+				streamHeaders['Authorization'] = `Bearer ${streamAccessToken}`;
+			}
+
+			// Start streaming analysis
+			const response = await fetch('/api/analysis/multipass/stream', {
+				method: 'POST',
+				headers: streamHeaders,
+				body: JSON.stringify({
+					content: rawContent,
+					showcaseItemId,
+					discussionContext: {}
+				}),
+				signal: streamAbortController.signal
+			});
+
+			if (!response.ok) {
+				const payload = await response.json().catch(() => ({}));
+				throw new Error(payload?.error || 'Failed to start analysis');
+			}
+
+			// Read the SSE stream
+			const reader = response.body?.getReader();
+			if (!reader) {
+				throw new Error('No response body');
+			}
+
+			const decoder = new TextDecoder();
+			let buffer = '';
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += decoder.decode(value, { stream: true });
+
+				// Process complete messages
+				const messages = buffer.split('\n\n');
+				buffer = messages.pop() || '';
+
+				for (const message of messages) {
+					if (!message.trim()) continue;
+
+					// Parse SSE format
+					const lines = message.split('\n');
+					let eventData: string | null = null;
+
+					for (const line of lines) {
+						if (line.startsWith('data: ')) {
+							eventData = line.slice(6);
+						}
+					}
+
+					if (eventData) {
+						const event = parseSSEMessage(eventData);
+						if (event) {
+							streamingProgress = event;
+
+							// Yield to browser to allow UI updates
+							await new Promise((resolve) => setTimeout(resolve, 0));
+
+							// Handle completion
+							if (event.type === 'complete') {
+								const result = (event as any).result as MultiPassResult;
+								await handleAnalysisComplete(result, showcaseItemId!);
+							} else if (event.type === 'error') {
+								analysisError = (event as any).error || 'Analysis failed';
+							}
+						}
+					}
+				}
+			}
+		} catch (e: any) {
+			if (e.name === 'AbortError') {
+				analysisStatus = 'Analysis cancelled.';
+			} else {
+				analysisError = e?.message || 'Failed to generate analysis.';
+			}
+		} finally {
+			analyzing = false;
+			streamAbortController = null;
+		}
+	}
+
+	/**
+	 * Handle completion of streaming analysis
+	 */
+	async function handleAnalysisComplete(multipassResult: MultiPassResult, showcaseItemId: string) {
+		// The multipass result contains the GoodFaith result in result.result
+		const gfResult = multipassResult.result;
+
+		// Build a combined analysis object that includes multipass data
+		const combinedResult = {
+			...gfResult,
+			multipass: {
+				strategy: multipassResult.strategy,
+				claimsTotal: multipassResult.claimsTotal,
+				claimsAnalyzed: multipassResult.claimsAnalyzed,
+				claimsFailed: multipassResult.claimsFailed,
+				claimAnalyses: multipassResult.claimAnalyses,
+				usage: multipassResult.usage,
+				estimatedCost: multipassResult.estimatedCost
+			}
+		};
+
+		const formatted = JSON.stringify(combinedResult, null, 2);
+		const tagsFromResult = new Set<string>();
+
+		// Extract tags from the result
+		if (gfResult.claims) {
+			gfResult.claims.forEach((claim: any) => {
+				if (claim.fallacies) {
+					claim.fallacies.forEach((f: string) => tagsFromResult.add(f));
+				}
+			});
+		}
+
+		const tagString = Array.from(tagsFromResult).join(', ');
+		const summaryText = gfResult.summary || '';
+		extractedExamples = ''; // Multi-pass uses different structure
+
+		form = {
+			...form,
+			summary: summaryText,
+			analysis: formatted,
+			tags: tagString || form.tags
+		};
+
+		// Save to database
+		try {
+			const { data, error: gqlError } = await nhost.graphql.request(UPDATE_PUBLIC_SHOWCASE_ITEM, {
+				id: showcaseItemId,
+				changes: {
+					summary: summaryText || null,
+					analysis: formatted,
+					tags: parseTags(tagString) || parseTags(form.tags),
+					updated_at: new Date().toISOString()
+				}
+			});
+
+			if (gqlError) {
+				throw Array.isArray(gqlError)
+					? new Error(gqlError.map((e: any) => e.message).join('; '))
+					: gqlError;
+			}
+
+			const updated = (data as any)?.update_public_showcase_item_by_pk;
+			if (updated) {
+				items = items.map((it) => (it.id === updated.id ? updated : it));
+			}
+
+			analysisStatus = `Multi-pass analysis complete! ${multipassResult.claimsAnalyzed} claims analyzed. Cost: ${multipassResult.estimatedCost.toFixed(2)}¢`;
+		} catch (saveError: any) {
+			analysisStatus = 'Analysis generated; review before saving.';
+			analysisError = saveError?.message || 'Failed to auto-save analysis.';
+		}
+	}
+
+	/**
+	 * Cancel ongoing streaming analysis
+	 */
+	function cancelStreamingAnalysis() {
+		if (streamAbortController) {
+			streamAbortController.abort();
+			streamAbortController = null;
+		}
+	}
+
+	/**
+	 * Check for interrupted analysis when editing an item
+	 */
+	async function checkForInterruptedAnalysis(showcaseItemId: string): Promise<AnalysisStatusResponse | null> {
+		try {
+			// Ensure auth is ready before checking
+			await nhost.auth.isAuthenticatedAsync();
+
+			const accessToken = nhost.auth.getAccessToken();
+			console.log('[checkForInterruptedAnalysis] accessToken:', accessToken ? 'present' : 'missing');
+
+			const headers: Record<string, string> = {};
+			if (accessToken) {
+				headers['Authorization'] = `Bearer ${accessToken}`;
+			}
+
+			const response = await fetch(`/api/analysis/status/${showcaseItemId}`, { headers });
+			console.log('[checkForInterruptedAnalysis] response status:', response.status);
+			if (!response.ok) return null;
+
+			const status: AnalysisStatusResponse = await response.json();
+			console.log('[checkForInterruptedAnalysis] status:', status);
+
+			// Only show banner if there's a resumable session (not completed, not not_started)
+			if (status.hasSession && status.phase !== 'completed' && status.phase !== 'not_started') {
+				return status;
+			}
+			return null;
+		} catch (err) {
+			console.error('Failed to check analysis status:', err);
+			return null;
+		}
+	}
+
+	/**
+	 * Check if an item has existing claim analyses that can be resynthesized
+	 */
+	async function checkForExistingClaimAnalyses(showcaseItemId: string): Promise<boolean> {
+		try {
+			const accessToken = nhost.auth.getAccessToken();
+			const headers: Record<string, string> = {};
+			if (accessToken) {
+				headers['Authorization'] = `Bearer ${accessToken}`;
+			}
+
+			const response = await fetch(`/api/analysis/status/${showcaseItemId}`, { headers });
+			if (!response.ok) return false;
+
+			const status: AnalysisStatusResponse = await response.json();
+			// Has existing analyses if session exists and has completed claims
+			return status.hasSession && status.claimsCompleted > 0;
+		} catch (err) {
+			console.error('Failed to check for existing claim analyses:', err);
+			return false;
+		}
+	}
+
+	/**
+	 * Resynthesize analysis from existing claim analyses (runs Pass 3 only)
+	 */
+	async function resynthesizeAnalysis() {
+		if (!form.id || !hasExistingClaimAnalyses) return;
+
+		resynthesizing = true;
+		analysisError = null;
+		analysisStatus = 'Resynthesizing from existing claim analyses...';
+
+		try {
+			const accessToken = nhost.auth.getAccessToken();
+			const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+			if (accessToken) {
+				headers['Authorization'] = `Bearer ${accessToken}`;
+			}
+
+			const response = await fetch('/api/analysis/resume', {
+				method: 'POST',
+				headers,
+				body: JSON.stringify({
+					showcaseItemId: form.id,
+					content: rawContent,
+					action: 'resynthesize'
+				})
+			});
+
+			if (!response.ok) {
+				const payload = await response.json().catch(() => ({}));
+				throw new Error(payload?.error || 'Failed to resynthesize');
+			}
+
+			const { result } = await response.json();
+
+			// Build combined result with multipass metadata
+			const combinedResult = {
+				...result,
+				multipass: {
+					strategy: 'multi_featured',
+					resynthesized: true
+				}
+			};
+
+			const formatted = JSON.stringify(combinedResult, null, 2);
+			form = {
+				...form,
+				summary: result.summary || '',
+				analysis: formatted
+			};
+
+			// Save to database
+			const { data, error: gqlError } = await nhost.graphql.request(UPDATE_PUBLIC_SHOWCASE_ITEM, {
+				id: form.id,
+				changes: {
+					summary: result.summary || null,
+					analysis: formatted,
+					updated_at: new Date().toISOString()
+				}
+			});
+
+			if (gqlError) {
+				throw Array.isArray(gqlError)
+					? new Error(gqlError.map((e: any) => e.message).join('; '))
+					: gqlError;
+			}
+
+			const updated = (data as any)?.update_public_showcase_item_by_pk;
+			if (updated) {
+				items = items.map((it) => (it.id === updated.id ? updated : it));
+			}
+
+			analysisStatus = 'Resynthesis complete! Analysis has been updated.';
+		} catch (err: any) {
+			analysisError = err?.message || 'Failed to resynthesize analysis.';
+			analysisStatus = null;
+		} finally {
+			resynthesizing = false;
+		}
+	}
+
+	/**
+	 * Load analysis versions for the current showcase item
+	 */
+	async function loadAnalysisVersions(showcaseItemId: string) {
+		if (!showcaseItemId) return;
+		loadingVersions = true;
+		try {
+			const { data, error: gqlError } = await nhost.graphql.request(GET_ANALYSIS_VERSIONS, {
+				showcaseItemId
+			});
+			if (gqlError) {
+				console.error('Failed to load analysis versions:', gqlError);
+				return;
+			}
+			analysisVersions = (data as any)?.showcase_analysis_version ?? [];
+		} catch (err) {
+			console.error('Failed to load analysis versions:', err);
+		} finally {
+			loadingVersions = false;
+		}
+	}
+
+	/**
+	 * Set a version as active and update the form with its analysis
+	 */
+	async function setActiveVersion(versionId: string) {
+		if (!form.id || settingActiveVersion) return;
+		settingActiveVersion = versionId;
+		try {
+			const { data, error: gqlError } = await nhost.graphql.request(SET_ACTIVE_ANALYSIS_VERSION, {
+				id: versionId
+			});
+			if (gqlError) {
+				throw Array.isArray(gqlError)
+					? new Error(gqlError.map((e: any) => e.message).join('; '))
+					: gqlError;
+			}
+
+			// Find the version and update the form
+			const version = analysisVersions.find((v) => v.id === versionId);
+			if (version) {
+				const analysisStr =
+					typeof version.analysis === 'string'
+						? version.analysis
+						: JSON.stringify(version.analysis, null, 2);
+				form = {
+					...form,
+					analysis: analysisStr,
+					summary: version.summary || ''
+				};
+
+				// Update the showcase item with the new active version's analysis
+				await nhost.graphql.request(UPDATE_PUBLIC_SHOWCASE_ITEM, {
+					id: form.id,
+					changes: {
+						analysis: analysisStr,
+						summary: version.summary || null,
+						updated_at: new Date().toISOString()
+					}
+				});
+
+				// Update local items list
+				items = items.map((it) =>
+					it.id === form.id ? { ...it, analysis: analysisStr, summary: version.summary } : it
+				);
+			}
+
+			// Refresh versions list to update active state
+			await loadAnalysisVersions(form.id);
+			success = `Version ${version?.version_number} is now active.`;
+		} catch (err: any) {
+			error = err?.message || 'Failed to set active version.';
+		} finally {
+			settingActiveVersion = null;
+		}
+	}
+
+	/**
+	 * Delete an analysis version
+	 */
+	async function deleteAnalysisVersion(versionId: string) {
+		if (!form.id || deletingVersion) return;
+		const version = analysisVersions.find((v) => v.id === versionId);
+		if (!version) return;
+
+		if (version.is_active) {
+			error = 'Cannot delete the active version. Set another version as active first.';
+			return;
+		}
+
+		if (!confirm(`Delete version ${version.version_number}? This cannot be undone.`)) return;
+
+		deletingVersion = versionId;
+		try {
+			const { error: gqlError } = await nhost.graphql.request(DELETE_ANALYSIS_VERSION, {
+				id: versionId
+			});
+			if (gqlError) {
+				throw Array.isArray(gqlError)
+					? new Error(gqlError.map((e: any) => e.message).join('; '))
+					: gqlError;
+			}
+
+			// Remove from local list
+			analysisVersions = analysisVersions.filter((v) => v.id !== versionId);
+			success = `Version ${version.version_number} deleted.`;
+		} catch (err: any) {
+			error = err?.message || 'Failed to delete version.';
+		} finally {
+			deletingVersion = null;
+		}
+	}
+
+	/**
+	 * Resume analysis with specified action
+	 */
+	async function resumeAnalysis(action: Exclude<ResumeAction, 'start_fresh'>) {
+		if (!form.id) return;
+
+		showInterruptedBanner = false;
+		analyzing = true;
+		analysisError = null;
+		analysisStatus = null;
+		streamingProgress = null;
+
+		// Get access token for Authorization header
+		const resumeAccessToken = nhost.auth.getAccessToken();
+
+		try {
+			if (action === 'resynthesize') {
+				// Non-streaming request
+				const resumeHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+				if (resumeAccessToken) {
+					resumeHeaders['Authorization'] = `Bearer ${resumeAccessToken}`;
+				}
+
+				const response = await fetch('/api/analysis/resume', {
+					method: 'POST',
+					headers: resumeHeaders,
+					body: JSON.stringify({
+						showcaseItemId: form.id,
+						content: rawContent,
+						action: 'resynthesize'
+					})
+				});
+
+				if (!response.ok) {
+					const payload = await response.json().catch(() => ({}));
+					throw new Error(payload?.error || 'Failed to resynthesize');
+				}
+
+				const { result } = await response.json();
+
+				// Build combined result with placeholder multipass data
+				const combinedResult = {
+					...result,
+					multipass: {
+						strategy: 'multi_featured',
+						claimsTotal: interruptedStatus?.claimsTotal || 0,
+						claimsAnalyzed: interruptedStatus?.claimsCompleted || 0,
+						claimsFailed: interruptedStatus?.claimsFailed || 0
+					}
+				};
+
+				const formatted = JSON.stringify(combinedResult, null, 2);
+				form = {
+					...form,
+					summary: result.summary || '',
+					analysis: formatted
+				};
+
+				// Save to database
+				const { data, error: gqlError } = await nhost.graphql.request(UPDATE_PUBLIC_SHOWCASE_ITEM, {
+					id: form.id,
+					changes: {
+						summary: result.summary || null,
+						analysis: formatted,
+						updated_at: new Date().toISOString()
+					}
+				});
+
+				if (gqlError) {
+					throw Array.isArray(gqlError)
+						? new Error(gqlError.map((e: any) => e.message).join('; '))
+						: gqlError;
+				}
+
+				const updated = (data as any)?.update_public_showcase_item_by_pk;
+				if (updated) {
+					items = items.map((it) => (it.id === updated.id ? updated : it));
+				}
+
+				analysisStatus = 'Synthesis complete! Analysis has been saved.';
+				interruptedStatus = null;
+				analyzing = false;
+				return;
+			}
+
+			// Streaming resume for 'continue' and 'retry_failed'
+			streamAbortController = new AbortController();
+
+			const streamResumeHeaders: Record<string, string> = {
+				'Content-Type': 'application/json',
+				Accept: 'text/event-stream'
+			};
+			if (resumeAccessToken) {
+				streamResumeHeaders['Authorization'] = `Bearer ${resumeAccessToken}`;
+			}
+
+			const response = await fetch('/api/analysis/resume', {
+				method: 'POST',
+				headers: streamResumeHeaders,
+				body: JSON.stringify({
+					showcaseItemId: form.id,
+					content: rawContent,
+					action
+				}),
+				signal: streamAbortController.signal
+			});
+
+			if (!response.ok) {
+				const payload = await response.json().catch(() => ({}));
+				throw new Error(payload?.error || 'Failed to resume analysis');
+			}
+
+			// Read the SSE stream (same as generateStreamingAnalysis)
+			const reader = response.body?.getReader();
+			if (!reader) {
+				throw new Error('No response body');
+			}
+
+			const decoder = new TextDecoder();
+			let buffer = '';
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += decoder.decode(value, { stream: true });
+
+				const messages = buffer.split('\n\n');
+				buffer = messages.pop() || '';
+
+				for (const message of messages) {
+					if (!message.trim()) continue;
+
+					const lines = message.split('\n');
+					let eventData: string | null = null;
+
+					for (const line of lines) {
+						if (line.startsWith('data: ')) {
+							eventData = line.slice(6);
+						}
+					}
+
+					if (eventData) {
+						const event = parseSSEMessage(eventData);
+						if (event) {
+							streamingProgress = event;
+
+							// Yield to browser to allow UI updates
+							await new Promise((resolve) => setTimeout(resolve, 0));
+
+							if (event.type === 'complete') {
+								const result = (event as any).result;
+								await handleAnalysisComplete(result, form.id!);
+								interruptedStatus = null;
+							} else if (event.type === 'error') {
+								analysisError = (event as any).error || 'Analysis failed';
+							}
+						}
+					}
+				}
+			}
+		} catch (e: any) {
+			if (e.name === 'AbortError') {
+				analysisStatus = 'Analysis cancelled.';
+			} else {
+				analysisError = e?.message || 'Failed to resume analysis.';
+			}
+		} finally {
+			analyzing = false;
+			streamAbortController = null;
+		}
+	}
+
+	/**
+	 * Clear interrupted status and allow starting fresh
+	 */
+	function dismissInterruptedBanner() {
+		showInterruptedBanner = false;
+		interruptedStatus = null;
 	}
 
 	async function removeItem(id: string) {
@@ -954,6 +1745,16 @@
 									Paste source content below and generate a structured good-faith analysis using AI.
 								</p>
 
+								<!-- Interrupted Analysis Banner -->
+								{#if interruptedStatus && showInterruptedBanner && !analyzing}
+									<InterruptedAnalysisBanner
+										status={interruptedStatus}
+										onResume={resumeAnalysis}
+										onStartFresh={dismissInterruptedBanner}
+										onDismiss={dismissInterruptedBanner}
+									/>
+								{/if}
+
 								<label class="field-full">
 									<span>Source Content</span>
 									<textarea
@@ -962,83 +1763,157 @@
 										bind:value={rawContent}
 										placeholder="Paste transcript excerpts, statements, or notes to analyze…"
 									></textarea>
+									<div class="token-counter">
+										{formatTokenCount(estimateTokens(rawContent))} tokens
+									</div>
 								</label>
 
 								<div class="analysis-controls">
 									<div class="control-group">
-										<span class="control-label">Model</span>
+										<span class="control-label">Mode</span>
 										<div class="button-toggle-group">
 											<button
 												type="button"
 												class="toggle-btn"
-												class:is-active={analysisProvider === 'claude'}
+												class:is-active={useStreamingAnalysis}
 												disabled={analyzing}
-												onclick={() => (analysisProvider = 'claude')}
+												onclick={() => (useStreamingAnalysis = true)}
+												title="Multi-pass analysis with real-time progress (recommended for long content)"
 											>
-												Claude
+												Multi-Pass
 											</button>
 											<button
 												type="button"
 												class="toggle-btn"
-												class:is-active={analysisProvider === 'openai'}
+												class:is-active={!useStreamingAnalysis}
 												disabled={analyzing}
-												onclick={() => (analysisProvider = 'openai')}
+												onclick={() => (useStreamingAnalysis = false)}
+												title="Single-pass analysis (faster for short content)"
 											>
-												OpenAI
+												Single
 											</button>
 										</div>
 									</div>
 
-									<div class="control-group">
-										<span class="control-label">Fact Check</span>
-										<div class="button-toggle-group">
-											<button
-												type="button"
-												class="toggle-btn"
-												class:is-active={!enableFactChecking}
-												disabled={analyzing}
-												onclick={() => (enableFactChecking = false)}
-											>
-												Off
-											</button>
-											<button
-												type="button"
-												class="toggle-btn"
-												class:is-active={enableFactChecking}
-												disabled={analyzing}
-												onclick={() => (enableFactChecking = true)}
-											>
-												On
-											</button>
+									{#if !useStreamingAnalysis}
+										<div class="control-group">
+											<span class="control-label">Model</span>
+											<div class="button-toggle-group">
+												<button
+													type="button"
+													class="toggle-btn"
+													class:is-active={analysisProvider === 'claude'}
+													disabled={analyzing}
+													onclick={() => (analysisProvider = 'claude')}
+												>
+													Claude
+												</button>
+												<button
+													type="button"
+													class="toggle-btn"
+													class:is-active={analysisProvider === 'openai'}
+													disabled={analyzing}
+													onclick={() => (analysisProvider = 'openai')}
+												>
+													OpenAI
+												</button>
+											</div>
 										</div>
-									</div>
+
+										<div class="control-group">
+											<span class="control-label">Fact Check</span>
+											<div class="button-toggle-group">
+												<button
+													type="button"
+													class="toggle-btn"
+													class:is-active={!enableFactChecking}
+													disabled={analyzing}
+													onclick={() => (enableFactChecking = false)}
+												>
+													Off
+												</button>
+												<button
+													type="button"
+													class="toggle-btn"
+													class:is-active={enableFactChecking}
+													disabled={analyzing}
+													onclick={() => (enableFactChecking = true)}
+												>
+													On
+												</button>
+											</div>
+										</div>
+									{/if}
 								</div>
+
+								<!-- Streaming progress indicator -->
+								{#if useStreamingAnalysis}
+									<MultiPassProgress
+										isAnalyzing={analyzing}
+										currentEvent={streamingProgress}
+										error={analysisError}
+										onCancel={cancelStreamingAnalysis}
+									/>
+								{/if}
 
 								<div class="analysis-actions">
 									<button
 										type="button"
 										class="btn-analyze"
-										onclick={() => generateFeaturedAnalysis()}
+										onclick={() =>
+											useStreamingAnalysis
+												? generateStreamingAnalysis()
+												: generateFeaturedAnalysis()}
 										disabled={analyzing || !rawContent.trim()}
 									>
-										{#if analyzing}
+										{#if analyzing && !useStreamingAnalysis}
 											<AnimatedLogo size="18px" isAnimating={true} />
 											<span>Analyzing…</span>
+										{:else if analyzing && useStreamingAnalysis}
+											<AnimatedLogo size="18px" isAnimating={true} />
+											<span>Streaming Analysis…</span>
 										{:else}
 											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 												<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
 											</svg>
-											<span>Generate Analysis</span>
+											<span
+												>{useStreamingAnalysis ? 'Multi-Pass Analysis' : 'Generate Analysis'}</span
+											>
 										{/if}
 									</button>
-									<button
-										type="button"
-										class="btn-secondary btn-small"
-										onclick={() => generateFeaturedAnalysis({ force: true })}
-										disabled={analyzing || !rawContent.trim()}
-									>
-										Force Refresh
-									</button>
+									{#if !useStreamingAnalysis}
+										<button
+											type="button"
+											class="btn-secondary btn-small"
+											onclick={() => generateFeaturedAnalysis({ force: true })}
+											disabled={analyzing || !rawContent.trim()}
+										>
+											Force Refresh
+										</button>
+									{/if}
+									{#if hasExistingClaimAnalyses && form.id}
+										<button
+											type="button"
+											class="btn-resynthesize btn-small"
+											onclick={resynthesizeAnalysis}
+											disabled={analyzing || resynthesizing}
+											title="Re-run synthesis (Pass 3) using existing claim analyses"
+										>
+											{#if resynthesizing}
+												<AnimatedLogo size="14px" isAnimating={true} />
+												<span>Resynthesizing…</span>
+											{:else}
+												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+													<path d="M1 4v6h6" />
+													<path d="M23 20v-6h-6" />
+													<path
+														d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"
+													/>
+												</svg>
+												<span>Resynthesize</span>
+											{/if}
+										</button>
+									{/if}
 								</div>
 
 								{#if analysisStatus}
@@ -1115,6 +1990,111 @@
 								</label>
 							</fieldset>
 
+							<!-- Analysis Versions Section -->
+							{#if form.id && analysisVersions.length > 0}
+								<fieldset class="form-section versions-section">
+									<legend>
+										<span class="section-number">4</span>
+										Analysis Versions
+										<button
+											type="button"
+											class="toggle-versions-btn"
+											onclick={() => (showVersionsPanel = !showVersionsPanel)}
+										>
+											{showVersionsPanel ? 'Hide' : 'Show'} ({analysisVersions.length})
+										</button>
+									</legend>
+
+									{#if showVersionsPanel}
+										{#if loadingVersions}
+											<p class="versions-loading">Loading versions...</p>
+										{:else}
+											<div class="versions-list">
+												{#each analysisVersions as version (version.id)}
+													<div class="version-card" class:is-active={version.is_active}>
+														<div class="version-header">
+															<div class="version-info">
+																<span class="version-number">v{version.version_number}</span>
+																{#if version.is_active}
+																	<span class="version-badge active">Active</span>
+																{/if}
+															</div>
+															<span class="version-date">
+																{new Date(version.created_at).toLocaleDateString()}
+																{new Date(version.created_at).toLocaleTimeString([], {
+																	hour: '2-digit',
+																	minute: '2-digit'
+																})}
+															</span>
+														</div>
+
+														<div class="version-meta">
+															{#if version.claims_analyzed !== null}
+																<span class="meta-item">
+																	<strong>{version.claims_analyzed}</strong> claims
+																	{#if version.claims_failed && version.claims_failed > 0}
+																		<span class="failed">({version.claims_failed} failed)</span>
+																	{/if}
+																</span>
+															{/if}
+															{#if version.estimated_cost_cents !== null}
+																<span class="meta-item cost">
+																	{version.estimated_cost_cents.toFixed(2)}¢
+																</span>
+															{/if}
+															{#if version.model_used}
+																<span class="meta-item model"
+																	>{version.model_used.split('-').slice(0, 2).join('-')}</span
+																>
+															{/if}
+														</div>
+
+														{#if version.summary}
+															<p class="version-summary">
+																{version.summary.slice(0, 150)}{version.summary.length > 150
+																	? '...'
+																	: ''}
+															</p>
+														{/if}
+
+														<div class="version-actions">
+															{#if !version.is_active}
+																<button
+																	type="button"
+																	class="btn-version-action btn-activate"
+																	onclick={() => setActiveVersion(version.id)}
+																	disabled={settingActiveVersion === version.id}
+																>
+																	{settingActiveVersion === version.id
+																		? 'Activating...'
+																		: 'Set Active'}
+																</button>
+																<button
+																	type="button"
+																	class="btn-version-action btn-delete"
+																	onclick={() => deleteAnalysisVersion(version.id)}
+																	disabled={deletingVersion === version.id}
+																>
+																	{deletingVersion === version.id ? 'Deleting...' : 'Delete'}
+																</button>
+															{:else}
+																<span class="active-label">Currently published</span>
+															{/if}
+														</div>
+													</div>
+												{/each}
+											</div>
+
+											{#if analysisVersions.length >= 10}
+												<p class="versions-limit-warning">
+													Maximum of 10 versions reached. Delete old versions to create new ones.
+												</p>
+											{/if}
+										{/if}
+									{/if}
+								</fieldset>
+							{/if}
+
 							<!-- Form Actions -->
 							<div class="form-actions">
 								{#if success}<p class="success">{success}</p>{/if}
@@ -1172,15 +2152,15 @@
 								</header>
 
 								{#if previewSummary()}
-									<div class="preview-section-body" style="margin-top: 1.5rem;">
-										<strong>Overall summary:</strong>
-										{@html formatMultiline(previewSummary())}
-									</div>
-								{/if}
-
-								{#if form.summary}
 									<section class="preview-section">
-										<h2>Highlights</h2>
+										<h2>Summary</h2>
+										<div class="preview-section-body">
+											{@html formatMultiline(previewSummary())}
+										</div>
+									</section>
+								{:else if form.summary}
+									<section class="preview-section">
+										<h2>Summary</h2>
 										<div class="preview-section-body">{@html formatMultiline(form.summary)}</div>
 									</section>
 								{/if}
@@ -1724,6 +2704,12 @@
 		font-size: 0.85rem;
 		line-height: 1.4;
 	}
+	.token-counter {
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+		text-align: right;
+		margin-top: 0.25rem;
+	}
 
 	/* Analysis Controls */
 	.analysis-controls {
@@ -1975,6 +2961,34 @@
 		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
 		transform: translateY(-1px);
 	}
+	.btn-resynthesize {
+		background: color-mix(in srgb, var(--color-accent) 15%, var(--color-surface));
+		color: var(--color-text-primary);
+		border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+		padding: 0.5rem 1rem;
+		border-radius: var(--border-radius-md);
+		cursor: pointer;
+		font-weight: 500;
+		font-size: 0.85rem;
+		transition: all 0.3s ease;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+	.btn-resynthesize svg {
+		width: 14px;
+		height: 14px;
+	}
+	.btn-resynthesize:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--color-accent) 25%, var(--color-surface));
+		border-color: var(--color-accent);
+		transform: translateY(-1px);
+	}
+	.btn-resynthesize:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+		transform: none;
+	}
 	.error {
 		color: #ef4444;
 		font-size: 0.9rem;
@@ -2124,6 +3138,38 @@
 		font-size: 1rem;
 		line-height: 1.6;
 		color: var(--color-text-primary);
+	}
+
+	/* Markdown styling for preview section */
+	.preview-section-body :global(h4.md-h2) {
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 1.25rem 0 0.5rem 0;
+		padding-bottom: 0.25rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+	}
+	.preview-section-body :global(h4.md-h2:first-child) {
+		margin-top: 0;
+	}
+	.preview-section-body :global(h5.md-h3) {
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 1rem 0 0.375rem 0;
+	}
+	.preview-section-body :global(h6.md-h4) {
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
+		margin: 0.75rem 0 0.25rem 0;
+	}
+	.preview-section-body :global(strong) {
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+	.preview-section-body :global(em) {
+		font-style: italic;
 	}
 	.preview-section-empty {
 		margin: 0;
@@ -2326,5 +3372,177 @@
 	}
 	.preview-fact-card.verdict-misleading::before {
 		background: linear-gradient(90deg, #f59e0b, #fbbf24);
+	}
+
+	/* Analysis Versions Section */
+	.versions-section {
+		background: color-mix(in srgb, var(--color-accent) 3%, var(--color-surface) 30%);
+		border-color: color-mix(in srgb, var(--color-accent) 15%, transparent);
+	}
+	.versions-section legend {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+	.toggle-versions-btn {
+		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+		color: var(--color-text-primary);
+		padding: 0.35rem 0.75rem;
+		border-radius: var(--border-radius-md);
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		margin-left: auto;
+	}
+	.toggle-versions-btn:hover {
+		background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+		border-color: var(--color-accent);
+	}
+	.versions-loading {
+		color: var(--color-text-secondary);
+		font-size: 0.9rem;
+		margin: 0;
+	}
+	.versions-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+	.version-card {
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: var(--border-radius-md);
+		padding: 1rem;
+		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+		transition: all 0.2s ease;
+	}
+	.version-card:hover {
+		border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+		box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent) 10%, transparent);
+	}
+	.version-card.is-active {
+		border-color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface) 60%);
+	}
+	.version-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.5rem;
+	}
+	.version-info {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.version-number {
+		font-weight: 700;
+		font-size: 1rem;
+		color: var(--color-text-primary);
+		font-family: var(--font-family-display);
+	}
+	.version-badge {
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 0.2rem 0.5rem;
+		border-radius: var(--border-radius-sm);
+	}
+	.version-badge.active {
+		background: var(--color-primary);
+		color: white;
+	}
+	.version-date {
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+	}
+	.version-meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+		margin-bottom: 0.5rem;
+	}
+	.version-meta .meta-item {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+	.version-meta .meta-item strong {
+		color: var(--color-text-primary);
+	}
+	.version-meta .failed {
+		color: #ef4444;
+	}
+	.version-meta .cost {
+		color: #10b981;
+		font-weight: 600;
+	}
+	.version-meta .model {
+		font-family: 'SF Mono', 'Monaco', monospace;
+		font-size: 0.75rem;
+		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
+		padding: 0.15rem 0.4rem;
+		border-radius: var(--border-radius-sm);
+	}
+	.version-summary {
+		margin: 0 0 0.75rem;
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+		line-height: 1.4;
+	}
+	.version-actions {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+	.btn-version-action {
+		padding: 0.4rem 0.75rem;
+		border-radius: var(--border-radius-sm);
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		border: 1px solid transparent;
+	}
+	.btn-version-action:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+	.btn-activate {
+		background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+		color: var(--color-primary);
+	}
+	.btn-activate:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--color-primary) 25%, transparent);
+		border-color: var(--color-primary);
+	}
+	.btn-delete {
+		background: color-mix(in srgb, #ef4444 10%, transparent);
+		border-color: color-mix(in srgb, #ef4444 25%, transparent);
+		color: #ef4444;
+	}
+	.btn-delete:hover:not(:disabled) {
+		background: color-mix(in srgb, #ef4444 20%, transparent);
+		border-color: #ef4444;
+	}
+	.active-label {
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+		font-style: italic;
+	}
+	.versions-limit-warning {
+		margin: 0.75rem 0 0;
+		padding: 0.75rem;
+		background: color-mix(in srgb, #f59e0b 10%, transparent);
+		border: 1px solid color-mix(in srgb, #f59e0b 25%, transparent);
+		border-radius: var(--border-radius-md);
+		font-size: 0.85rem;
+		color: #b45309;
 	}
 </style>

@@ -47,6 +47,7 @@ export interface SelectedComment {
 
 export interface DiscussionContext {
 	discussion?: {
+		id?: string;
 		title?: string;
 		description?: string;
 		citations?: Citation[];
@@ -75,6 +76,23 @@ export interface Argument {
 export interface Claim {
 	claim: string;
 	supportingArguments: Argument[];
+}
+
+/**
+ * Featured analysis finding structure (used by public showcase page)
+ */
+export interface AnalysisFinding {
+	name: string;
+	description: string;
+	examples: string[];
+	why: string;
+}
+
+export interface FactCheckFinding {
+	claim: string;
+	verdict: 'True' | 'False' | 'Misleading' | 'Unverified';
+	source: { name: string; url: string } | null;
+	relevance: string;
 }
 
 export interface GoodFaithResult {
@@ -113,6 +131,13 @@ export interface GoodFaithResult {
 	goodFaithScore?: number; // 0-100 scale (original)
 	goodFaithDescriptor?: string;
 	overallAnalysis?: string;
+
+	// Featured analysis format (used by public showcase page)
+	// These are populated by multi-pass synthesis for featured content
+	good_faith?: AnalysisFinding[];
+	logical_fallacies?: AnalysisFinding[];
+	cultish_language?: AnalysisFinding[];
+	fact_checking?: FactCheckFinding[];
 }
 
 // Provider-specific raw response types
@@ -163,7 +188,7 @@ export interface ProviderConfig {
 export const PROVIDER_CONFIGS: Record<ProviderName, ProviderConfig> = {
 	claude: {
 		name: 'claude',
-		model: 'claude-sonnet-4-5-20250929',
+		model: 'claude-sonnet-4-5',
 		maxTokens: 20000,
 		temperature: 0.2
 	},
@@ -180,3 +205,21 @@ export const PROVIDER_CONFIGS: Record<ProviderName, ProviderConfig> = {
 		temperature: 0.2
 	}
 };
+
+// Writing style to Claude model mapping
+export type WritingStyle = 'quick_point' | 'journalistic' | 'academic';
+
+export interface ModelConfig {
+	model: string;
+	maxTokens: number;
+}
+
+export const STYLE_MODEL_MAP: Record<WritingStyle, ModelConfig> = {
+	quick_point: { model: 'claude-haiku-4-5', maxTokens: 8192 },
+	journalistic: { model: 'claude-sonnet-4-5', maxTokens: 16384 },
+	academic: { model: 'claude-opus-4-5', maxTokens: 16384 }
+};
+
+// Default model when no style specified
+export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-5-20250514';
+export const DEFAULT_MAX_TOKENS = 16384;

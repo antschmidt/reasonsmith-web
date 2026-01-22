@@ -16,6 +16,7 @@
 	import { calculateUserStats, type UserStats } from '$lib/utils/userStats';
 	import { env as publicEnv } from '$env/dynamic/public';
 	import { getOAuthRedirectURL, isStandalone } from '$lib/utils/pwa';
+	import { getAvatarUrl } from '$lib/utils/imageUrl';
 	import ProfilePhotoUpload from '$lib/components/ProfilePhotoUpload.svelte';
 	import GrowthDashboard from '$lib/components/GrowthDashboard.svelte';
 	import {
@@ -1812,7 +1813,7 @@
 						<div class="profile-main">
 							{#if contributor?.avatar_url}
 								<img
-									src={contributor.avatar_url}
+									src={getAvatarUrl(contributor.avatar_url, 120)}
 									alt="{displayNameText(displayName)}'s profile photo"
 									class="profile-avatar"
 								/>

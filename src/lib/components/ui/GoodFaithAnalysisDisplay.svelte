@@ -31,6 +31,39 @@
 		collapsed?: boolean;
 		onToggle?: () => void;
 	}>();
+
+	/**
+	 * Convert simple markdown to HTML for analysis display
+	 * Handles: **bold**, *italic*, headers (##), and newlines
+	 */
+	function renderMarkdown(text: string): string {
+		if (!text) return '';
+
+		// First escape HTML entities
+		let html = text
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;');
+
+		// Convert headers (must be at start of line)
+		// #### Header 4
+		html = html.replace(/^####\s+(.+)$/gm, '<h6 class="analysis-h4">$1</h6>');
+		// ### Header 3
+		html = html.replace(/^###\s+(.+)$/gm, '<h5 class="analysis-h3">$1</h5>');
+		// ## Header 2
+		html = html.replace(/^##\s+(.+)$/gm, '<h4 class="analysis-h2">$1</h4>');
+
+		// Convert **bold** (must handle before single *)
+		html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+		// Convert *italic*
+		html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+		// Convert newlines to <br> for proper display
+		html = html.replace(/\n/g, '<br>');
+
+		return html;
+	}
 </script>
 
 {#if isLoading}
@@ -59,9 +92,8 @@
 			{/if}
 		</div>
 		{#if !collapsed && analysis.rationale}
-			<div class="analysis-section">
-				<strong>Analysis Summary:</strong>
-				{analysis.rationale}
+			<div class="analysis-section analysis-summary-content">
+				{@html renderMarkdown(analysis.rationale)}
 			</div>
 		{/if}
 		{#if !collapsed && analysis.claims && analysis.claims.length > 0}
@@ -165,6 +197,43 @@
 
 	.analysis-section {
 		margin-bottom: 1rem;
+	}
+
+	/* Markdown header styles for analysis summary */
+	.analysis-summary-content :global(h4.analysis-h2) {
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 1.25rem 0 0.5rem 0;
+		padding-bottom: 0.25rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+	}
+
+	.analysis-summary-content :global(h4.analysis-h2:first-child) {
+		margin-top: 0;
+	}
+
+	.analysis-summary-content :global(h5.analysis-h3) {
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 1rem 0 0.375rem 0;
+	}
+
+	.analysis-summary-content :global(h6.analysis-h4) {
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
+		margin: 0.75rem 0 0.25rem 0;
+	}
+
+	.analysis-summary-content :global(strong) {
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.analysis-summary-content :global(em) {
+		font-style: italic;
 		color: var(--color-text-primary);
 		line-height: 1.6;
 	}

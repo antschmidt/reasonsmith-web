@@ -11,13 +11,26 @@
 
 	const formatMultiline = (value?: string | null) => {
 		if (!value) return '';
-		const escaped = value
+		let html = value
 			.replaceAll('&', '&amp;')
 			.replaceAll('<', '&lt;')
 			.replaceAll('>', '&gt;')
 			.replaceAll('"', '&quot;')
 			.replaceAll("'", '&#39;');
-		return escaped.replace(/(?:\r\n|\r|\n)/g, '<br />');
+
+		// Convert markdown headers (must be at start of line)
+		html = html.replace(/^####\s+(.+)$/gm, '<h6 class="md-h4">$1</h6>');
+		html = html.replace(/^###\s+(.+)$/gm, '<h5 class="md-h3">$1</h5>');
+		html = html.replace(/^##\s+(.+)$/gm, '<h4 class="md-h2">$1</h4>');
+
+		// Convert **bold** (must handle before single *)
+		html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+		// Convert *italic*
+		html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+		// Convert newlines to <br>
+		return html.replace(/(?:\r\n|\r|\n)/g, '<br />');
 	};
 
 	const hasStructured = !!structuredAnalysis;
@@ -133,15 +146,13 @@
 		</header>
 
 		{#if summary}
-			<div class="section-body" style="margin-top: 1.5rem;">
-				<strong>Overall summary:</strong>
-				{@html formatMultiline(summary)}
-			</div>
-		{/if}
-
-		{#if item.summary}
 			<section class="section">
-				<h2>Highlights</h2>
+				<h2>Summary</h2>
+				<div class="section-body">{@html formatMultiline(summary)}</div>
+			</section>
+		{:else if item.summary}
+			<section class="section">
+				<h2>Summary</h2>
 				<div class="section-body">{@html formatMultiline(item.summary)}</div>
 			</section>
 		{/if}
@@ -435,6 +446,38 @@
 		font-size: 1.1rem;
 		line-height: 1.7;
 		color: var(--color-text-primary);
+	}
+
+	/* Markdown styling for section body */
+	.section-body :global(h4.md-h2) {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 1.5rem 0 0.75rem 0;
+		padding-bottom: 0.375rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+	}
+	.section-body :global(h4.md-h2:first-child) {
+		margin-top: 0;
+	}
+	.section-body :global(h5.md-h3) {
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 1.25rem 0 0.5rem 0;
+	}
+	.section-body :global(h6.md-h4) {
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
+		margin: 1rem 0 0.375rem 0;
+	}
+	.section-body :global(strong) {
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+	.section-body :global(em) {
+		font-style: italic;
 	}
 
 	.summary {

@@ -27,10 +27,17 @@ export type {
 	ClaudeRawResponse,
 	OpenAIRawResponse,
 	ProviderName,
-	ProviderConfig
+	ProviderConfig,
+	WritingStyle,
+	ModelConfig
 } from './types';
 
-export { PROVIDER_CONFIGS } from './types';
+export {
+	PROVIDER_CONFIGS,
+	STYLE_MODEL_MAP,
+	DEFAULT_CLAUDE_MODEL,
+	DEFAULT_MAX_TOKENS
+} from './types';
 
 // Context building
 export { buildAnalysisContext, buildFullContent, hasContext } from './context';

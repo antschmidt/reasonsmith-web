@@ -11,6 +11,7 @@
 	import ContributorChat from '$lib/components/ui/ContributorChat.svelte';
 	import { Sun, Moon, LogInIcon, LogOutIcon } from '@lucide/svelte';
 	import { collectRoles, getUserInitials } from '$lib/utils/authHelpers';
+	import { getAvatarUrl } from '$lib/utils/imageUrl';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -170,7 +171,10 @@
 
 		<a href="/" class="brand" aria-label="Go to Dashboard">
 			<span class="brand-icon">
-				<img src="/logo-only.png" alt="ReasonSmith Home" />
+				<picture>
+					<source srcset="/logo-only-82.webp 1x, /logo-only-164.webp 2x" type="image/webp" />
+					<img src="/logo-only.png" alt="ReasonSmith Home" width="82" height="84" />
+				</picture>
 			</span>
 			<span class="brand-text">ReasonSmith</span>
 		</a>
@@ -215,7 +219,7 @@
 				<a href="/profile" class="nav-profile" aria-label="Profile">
 					{#if contributor?.avatar_url}
 						<img
-							src={contributor.avatar_url}
+							src={getAvatarUrl(contributor.avatar_url, 42)}
 							alt="{contributor.display_name || 'Your'} profile photo"
 							class="nav-avatar"
 						/>
@@ -234,7 +238,10 @@
 	<nav class="top-nav" aria-label="Main navigation">
 		<a href="/" class="brand" aria-label="Go to Home">
 			<span class="brand-icon">
-				<img src="/logo-only.png" alt="ReasonSmith Home" />
+				<picture>
+					<source srcset="/logo-only-82.webp 1x, /logo-only-164.webp 2x" type="image/webp" />
+					<img src="/logo-only.png" alt="ReasonSmith Home" width="82" height="84" />
+				</picture>
 			</span>
 			<span class="sr-only">Home</span>
 		</a>
