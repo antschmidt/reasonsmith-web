@@ -94,7 +94,7 @@ if (isBrowser) {
 			const url = typeof input === 'string' ? input : input instanceof Request ? input.url : '';
 
 			// Log GraphQL requests with role headers
-			if (url.includes('/graphql')) {
+			if (url.includes('/graphql') || url.includes('/api/analysis')) {
 				const headers = init?.headers || {};
 				const headersObj: Record<string, string> =
 					headers instanceof Headers
@@ -114,11 +114,12 @@ if (isBrowser) {
 										return {};
 									})()
 								: (headers as Record<string, string>);
-				console.log('[GraphQL Request]', {
+				console.log('[Fetch Request]', {
 					url,
 					role: headersObj['x-hasura-role'] || headersObj['X-Hasura-Role'],
 					userId: headersObj['X-Hasura-User-Id'] || headersObj['x-hasura-user-id'],
-					hasAuth: !!(headersObj['Authorization'] || headersObj['authorization'])
+					hasAuth: !!(headersObj['Authorization'] || headersObj['authorization']),
+					authHeader: headersObj['Authorization'] || headersObj['authorization']
 				});
 			}
 

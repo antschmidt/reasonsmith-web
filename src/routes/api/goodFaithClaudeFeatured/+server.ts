@@ -7,9 +7,120 @@ import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
 import { logger } from '$lib/logger';
 import { logApiUsageAsync } from '$lib/server/apiUsageLogger';
 
+// Import multi-pass for deep claim analysis
+import { runMultiPassAnalysis, FEATURED_CONFIG, DEFAULT_MULTIPASS_MODELS } from '$lib/multipass';
+import type { MultiPassResult } from '$lib/multipass';
+
 const anthropic = new Anthropic({
 	apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-build'
 });
+
+/**
+ * Store claim analyses in database for featured content
+ */
+async function storeClaimAnalyses(result: MultiPassResult, showcaseItemId?: string): Promise<void> {
+	try {
+		const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+		const HASURA_GRAPHQL_ADMIN_SECRET =
+			process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+
+		if (!HASURA_GRAPHQL_ENDPOINT || !HASURA_GRAPHQL_ADMIN_SECRET) {
+			logger.warn('[Featured] Missing Hasura config, skipping claim analysis storage');
+			return;
+		}
+
+		// Showcase item ID is required to store claim analyses
+		if (!showcaseItemId) {
+			logger.warn('[Featured] No showcase item ID provided, skipping claim analysis storage');
+			return;
+		}
+
+		// Delete existing claim analyses for this showcase item (re-analysis replaces previous)
+		const deleteResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET
+			},
+			body: JSON.stringify({
+				query: `
+					mutation DeleteExistingClaimAnalyses($showcaseItemId: uuid!) {
+						delete_claim_analysis(where: { showcase_item_id: { _eq: $showcaseItemId } }) {
+							affected_rows
+						}
+					}
+				`,
+				variables: { showcaseItemId }
+			})
+		});
+
+		const deleteResult = await deleteResponse.json();
+		if (deleteResult.data?.delete_claim_analysis?.affected_rows > 0) {
+			logger.info(
+				`[Featured] Deleted ${deleteResult.data.delete_claim_analysis.affected_rows} existing claim analyses`
+			);
+		}
+
+		// Build claim analysis records with showcase_item_id
+		const claimRecords = result.claimAnalyses.map((analysis) => ({
+			post_id: null,
+			discussion_version_id: null,
+			showcase_item_id: showcaseItemId,
+			claim_index: analysis.claimIndex,
+			claim_text: analysis.claim.text,
+			claim_type: analysis.claim.type,
+			complexity_level: analysis.claim.complexity,
+			complexity_confidence: analysis.claim.complexityConfidence,
+			is_explicit: analysis.claim.explicit,
+			depends_on: analysis.claim.dependsOn,
+			analysis:
+				analysis.status === 'completed'
+					? {
+							validityScore: analysis.validityScore,
+							evidenceScore: analysis.evidenceScore,
+							fallacies: analysis.fallacies,
+							fallacyExplanations: analysis.fallacyExplanations,
+							assumptions: analysis.assumptions,
+							counterArguments: analysis.counterArguments,
+							improvements: analysis.improvements
+						}
+					: null,
+			model_used: analysis.modelUsed,
+			status: analysis.status,
+			error_message: analysis.error || null,
+			input_tokens: analysis.inputTokens,
+			output_tokens: analysis.outputTokens
+		}));
+
+		// Insert claim analyses
+		const insertResponse = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET
+			},
+			body: JSON.stringify({
+				query: `
+					mutation InsertClaimAnalyses($objects: [claim_analysis_insert_input!]!) {
+						insert_claim_analysis(objects: $objects) {
+							affected_rows
+						}
+					}
+				`,
+				variables: { objects: claimRecords }
+			})
+		});
+
+		const insertResult = await insertResponse.json();
+		if (insertResult.errors) {
+			logger.error('[Featured] Failed to store claim analyses:', insertResult.errors);
+		} else {
+			logger.info(`[Featured] Stored ${claimRecords.length} claim analyses`);
+		}
+	} catch (err) {
+		logger.error('[Featured] Error storing claim analyses:', err);
+	}
+}
 
 const openai = new OpenAI({
 	apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-build'
@@ -76,6 +187,86 @@ interface AnalysisResultWithUsage {
 	provider: 'claude' | 'openai';
 }
 
+// Tool definition for Claude to ensure valid JSON output
+const FEATURED_ANALYSIS_TOOL: Anthropic.Tool = {
+	name: 'submit_analysis',
+	description: 'Submit the complete rhetorical and argumentation analysis',
+	input_schema: {
+		type: 'object' as const,
+		properties: {
+			good_faith: {
+				type: 'array',
+				description: 'Good faith indicators found in the text',
+				items: {
+					type: 'object',
+					properties: {
+						name: { type: 'string' },
+						description: { type: 'string' },
+						examples: { type: 'array', items: { type: 'string' } },
+						why: { type: 'string' }
+					},
+					required: ['name', 'description', 'examples', 'why']
+				}
+			},
+			logical_fallacies: {
+				type: 'array',
+				description: 'Logical fallacies identified in the text',
+				items: {
+					type: 'object',
+					properties: {
+						name: { type: 'string' },
+						description: { type: 'string' },
+						examples: { type: 'array', items: { type: 'string' } },
+						why: { type: 'string' }
+					},
+					required: ['name', 'description', 'examples', 'why']
+				}
+			},
+			cultish_language: {
+				type: 'array',
+				description: 'Cultish or manipulative language patterns',
+				items: {
+					type: 'object',
+					properties: {
+						name: { type: 'string' },
+						description: { type: 'string' },
+						examples: { type: 'array', items: { type: 'string' } },
+						why: { type: 'string' }
+					},
+					required: ['name', 'description', 'examples', 'why']
+				}
+			},
+			fact_checking: {
+				type: 'array',
+				description: 'Fact-checking results for verifiable claims',
+				items: {
+					type: 'object',
+					properties: {
+						claim: { type: 'string' },
+						verdict: { type: 'string', enum: ['True', 'False', 'Misleading', 'Unverified'] },
+						relevance: { type: 'string' },
+						source: {
+							type: 'object',
+							properties: {
+								name: { type: 'string' },
+								url: { type: 'string' }
+							},
+							required: ['name', 'url']
+						}
+					},
+					required: ['claim', 'verdict', 'relevance']
+				}
+			},
+			summary: {
+				type: 'string',
+				description: 'Comprehensive summary of the analysis (3-5 paragraphs)'
+			}
+		},
+		required: ['good_faith', 'logical_fallacies', 'cultish_language', 'fact_checking', 'summary']
+	}
+};
+
+// Schema for OpenAI structured output (kept for compatibility)
 const featuredAnalysisSchema = {
 	type: 'object',
 	properties: {
@@ -310,29 +501,21 @@ async function analyzeWithClaude(content: string): Promise<AnalysisResultWithUsa
 		throw new Error('AI analysis is temporarily unavailable');
 	}
 
+	// Use tool calling for guaranteed valid JSON output
 	const message = await anthropic.messages.create({
 		model: CLAUDE_MODEL,
-		// Keep max tokens below Anthropic's non-streaming threshold to avoid streaming requirement errors
-		max_tokens: 6000,
+		max_tokens: 16000,
 		temperature: 0.2,
 		system: SYSTEM_PROMPT,
+		tools: [FEATURED_ANALYSIS_TOOL],
+		tool_choice: { type: 'tool', name: 'submit_analysis' },
 		messages: [
 			{
 				role: 'user',
-				content: [
-					{
-						type: 'text',
-						text: `Analyze the following text.
-
-Instructions:
-- Follow the system prompt exactly.
-- Respond with valid JSON matching the schema and nothing else.
-- Do not include code fences, commentary, or explanations outside the JSON object.
+				content: `Analyze the following text thoroughly using the submit_analysis tool.
 
 Text to analyze:
 ${content}`
-					}
-				]
 			}
 		]
 	});
@@ -346,71 +529,18 @@ ${content}`
 			}
 		: undefined;
 
-	const responseBlocks = message.content ?? [];
-	const textResponse = responseBlocks
-		.filter((block) => block.type === 'text')
-		.map((block) => (block as any).text)
-		.join('')
-		.trim();
+	// Extract tool use response - guaranteed valid JSON
+	const toolUseBlock = message.content.find(
+		(block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+	);
 
-	const responseText = textResponse;
-
-	if (!responseText) {
-		throw new Error('No response from Claude');
+	if (!toolUseBlock) {
+		throw new Error('No tool use response from Claude');
 	}
 
-	let cleaned = responseText.trim();
-	if (cleaned.startsWith('```json')) {
-		cleaned = cleaned.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-	} else if (cleaned.startsWith('```')) {
-		cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
-	}
-
-	if (!cleaned.trim().startsWith('{')) {
-		const start = cleaned.indexOf('{');
-		const end = cleaned.lastIndexOf('}');
-		if (start !== -1 && end !== -1 && end > start) {
-			cleaned = cleaned.slice(start, end + 1);
-		}
-	}
-
-	// Attempt to parse, with repair for common JSON issues
-	try {
-		const analysis = JSON.parse(cleaned) as FeaturedClaudeResponse;
-		return { analysis, usage, provider: 'claude' };
-	} catch (parseError) {
-		// Try to repair common JSON issues from LLM output
-		let repaired = cleaned
-			// Fix unescaped control characters in strings
-			.replace(/[\x00-\x1F\x7F]/g, (char) => {
-				if (char === '\n') return '\\n';
-				if (char === '\r') return '\\r';
-				if (char === '\t') return '\\t';
-				return '';
-			})
-			// Fix trailing commas before closing brackets
-			.replace(/,\s*([}\]])/g, '$1')
-			// Fix missing commas between array elements or object properties
-			.replace(/"\s*\n\s*"/g, '",\n"')
-			.replace(/}\s*\n\s*{/g, '},\n{')
-			// Fix unescaped quotes within strings (naive approach - look for patterns)
-			.replace(/: "([^"]*)"([^",}\]\n][^"]*)"([^"]*)",/g, ': "$1\\"$2\\"$3",');
-
-		try {
-			const analysis = JSON.parse(repaired) as FeaturedClaudeResponse;
-			return { analysis, usage, provider: 'claude' };
-		} catch (repairError) {
-			// Log the problematic JSON for debugging
-			logger.error('Failed to parse Claude response JSON:', {
-				original: responseText.substring(0, 500),
-				cleaned: cleaned.substring(0, 500),
-				parseError: parseError instanceof Error ? parseError.message : 'Unknown parse error'
-			});
-			throw new Error(
-				`Invalid JSON response from Claude: ${parseError instanceof Error ? parseError.message : 'Parse error'}`
-			);
-		}
-	}
+	// Tool input is already parsed JSON
+	const analysis = toolUseBlock.input as FeaturedClaudeResponse;
+	return { analysis, usage, provider: 'claude' };
 }
 
 async function analyzeWithOpenAI(content: string): Promise<AnalysisResultWithUsage> {
@@ -463,11 +593,23 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		const {
 			content,
 			provider,
-			skipFactChecking = true
+			skipFactChecking = true,
+			includeMultiPass = false,
+			discussionContext,
+			showcaseItemId
 		} = body as {
 			content?: string;
 			provider?: string;
 			skipFactChecking?: boolean;
+			includeMultiPass?: boolean;
+			discussionContext?: {
+				discussion?: {
+					id?: string;
+					title?: string;
+					description?: string;
+				};
+			};
+			showcaseItemId?: string;
 		};
 
 		if (typeof content !== 'string' || !content.trim()) {
@@ -592,6 +734,41 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 				analysis.fact_checking = [];
 			}
 
+			// Optionally run multi-pass claim analysis for deeper insights
+			let multiPassResult: MultiPassResult | null = null;
+			if (includeMultiPass) {
+				try {
+					logger.info('[Featured] Running multi-pass claim analysis');
+					multiPassResult = await runMultiPassAnalysis(
+						content,
+						{
+							discussion: discussionContext?.discussion
+								? {
+										id: discussionContext.discussion.id,
+										title: discussionContext.discussion.title,
+										description: discussionContext.discussion.description
+									}
+								: undefined
+						},
+						{
+							...FEATURED_CONFIG,
+							models: DEFAULT_MULTIPASS_MODELS,
+							cacheTTL: '5m'
+						},
+						anthropic
+					);
+					logger.info(
+						`[Featured] Multi-pass complete: ${multiPassResult.claimsAnalyzed} claims analyzed`
+					);
+
+					// Store claim analyses in database (requires showcase item ID)
+					await storeClaimAnalyses(multiPassResult, showcaseItemId);
+				} catch (multiPassError) {
+					logger.error('[Featured] Multi-pass analysis failed:', multiPassError);
+					// Continue without multi-pass - it's optional
+				}
+			}
+
 			// Increment usage count after successful analysis
 			if (contributorId) {
 				try {
@@ -636,10 +813,26 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			}
 
 			// Return the analysis with usage info
-			return json({
+			const response: any = {
 				...analysis,
 				usage
-			});
+			};
+
+			// Include multi-pass results if available
+			if (multiPassResult) {
+				response.multipass = {
+					result: multiPassResult.result,
+					strategy: multiPassResult.strategy,
+					claimsTotal: multiPassResult.claimsTotal,
+					claimsAnalyzed: multiPassResult.claimsAnalyzed,
+					claimsFailed: multiPassResult.claimsFailed,
+					claimAnalyses: multiPassResult.claimAnalyses,
+					usage: multiPassResult.usage,
+					estimatedCost: multiPassResult.estimatedCost
+				};
+			}
+
+			return json(response);
 		} catch (error) {
 			logger.error('Featured analysis generation failed.', error);
 			const message = error instanceof Error ? error.message : 'Analysis request failed';
