@@ -32,12 +32,14 @@ import {
 // Import multi-pass analysis
 import {
 	shouldUseMultiPass,
+	shouldRouteToJobsWorker,
 	runMultiPassAnalysis,
 	FEATURED_CONFIG,
 	ACADEMIC_CONFIG,
 	DEFAULT_MULTIPASS_MODELS
 } from '$lib/multipass';
 import type { AnalysisContext } from '$lib/multipass';
+import { env } from '$env/dynamic/private';
 
 const anthropic = new Anthropic({
 	apiKey: process.env.ANTHROPIC_API_KEY
@@ -236,6 +238,70 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			writingStyle,
 			input.showcaseContext
 		);
+
+		// Check if should route to external jobs worker (for long-running analyses)
+		const jobsWorkerDecision = await shouldRouteToJobsWorker(
+			input.content,
+			multiPassDecision,
+			input.showcaseContext
+		);
+
+		if (jobsWorkerDecision.routeToJobsWorker) {
+			logger.info(`[JobsWorker] Routing to jobs worker: ${jobsWorkerDecision.reason}`);
+
+			const JOBS_API_URL = env.JOBS_API_URL || 'https://jobs.reasonsmith.com';
+			const JOBS_API_KEY = env.JOBS_API_KEY || '';
+
+			if (!JOBS_API_KEY) {
+				logger.warn('[JobsWorker] JOBS_API_KEY not configured, falling back to in-process');
+			} else {
+				try {
+					// Forward to jobs worker
+					const jobResponse = await fetch(`${JOBS_API_URL}/api/v1/analyze`, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'X-API-Key': JOBS_API_KEY
+						},
+						body: JSON.stringify({
+							content: input.content,
+							postId: input.postId,
+							discussionContext: input.discussionContext,
+							showcaseContext: input.showcaseContext,
+							writingStyle,
+							// Include webhook URL for completion notification
+							webhookUrl: `${env.PUBLIC_SITE_URL || 'https://reasonsmith.com'}/api/analysis/webhook`
+						})
+					});
+
+					if (jobResponse.ok) {
+						const jobData = await jobResponse.json();
+						logger.info(`[JobsWorker] Job queued: ${jobData.jobId}`);
+
+						// Return queued response with job info
+						return json(
+							{
+								queued: true,
+								jobId: jobData.jobId,
+								status: 'queued',
+								statusUrl: `/api/analysis/queue/status?jobId=${jobData.jobId}`,
+								estimatedClaims: jobsWorkerDecision.estimatedClaims,
+								estimatedTimeMs: jobsWorkerDecision.estimatedTimeMs,
+								reason: jobsWorkerDecision.reason
+							},
+							{ status: 202 }
+						);
+					} else {
+						const errorData = await jobResponse.json().catch(() => ({}));
+						logger.error(`[JobsWorker] Failed to queue job: ${jobResponse.status}`, errorData);
+						// Fall through to in-process analysis
+					}
+				} catch (jobError) {
+					logger.error('[JobsWorker] Failed to contact jobs service:', jobError);
+					// Fall through to in-process analysis
+				}
+			}
+		}
 
 		if (multiPassDecision.useMultiPass) {
 			logger.info(`[MultiPass] Routing to multi-pass analysis: ${multiPassDecision.reason}`);

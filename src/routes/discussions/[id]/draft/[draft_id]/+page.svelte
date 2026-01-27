@@ -35,6 +35,8 @@
 	import RichTextEditor from '$lib/components/RichTextEditor.svelte';
 	import SocialMediaImportForm from '$lib/components/SocialMediaImportForm.svelte';
 	import SocialMediaImportDisplay from '$lib/components/SocialMediaImportDisplay.svelte';
+	import JobQueueProgress from '$lib/components/ui/JobQueueProgress.svelte';
+	import { jobQueue } from '$lib/stores/jobQueue.svelte';
 
 	// Get parameters
 	const discussionId = $page.params.id;
@@ -66,6 +68,10 @@
 	let isAnalyzing = $state(false);
 	let analysisCollapsed = $state(false);
 	let analysisResultsDismissed = $state(false);
+
+	// Job queue state (for long-running analyses routed to jobs worker)
+	let activeJobId = $state<string | null>(null);
+	let isJobQueued = $derived(activeJobId !== null && jobQueue.getJob(activeJobId) !== undefined);
 
 	// Draft data
 	let draft = $state<any>(null);
@@ -358,6 +364,13 @@
 					usedClaude: savedProvider === 'claude'
 				};
 				analysisCollapsed = true;
+			}
+
+			// Check for active job in job queue (persisted across page reloads)
+			const existingJob = jobQueue.getJobByPostId(draft.id);
+			if (existingJob && (existingJob.status === 'queued' || existingJob.status === 'processing')) {
+				console.log('[Draft] Found active job on load:', existingJob.jobId);
+				activeJobId = existingJob.jobId;
 			}
 
 			// Check if analysis was in progress when user navigated away
@@ -770,6 +783,27 @@
 
 				const data = await response.json();
 
+				// Check if the analysis was queued for background processing
+				if (data.queued && data.jobId) {
+					console.log('[Draft] Analysis queued:', data.jobId);
+
+					// Add to job queue store and start polling
+					jobQueue.addJob({
+						jobId: data.jobId,
+						postId: draft.id, // Use version ID as the post identifier
+						status: 'queued',
+						estimatedClaims: data.estimatedClaims,
+						estimatedTimeMs: data.estimatedTimeMs
+					});
+
+					activeJobId = data.jobId;
+					goodFaithTesting = false;
+
+					// Return null - the job will complete asynchronously
+					// The JobQueueProgress component will handle showing results
+					return null;
+				}
+
 				// Check if this was a real Claude analysis or heuristic fallback
 				if (data.usedClaude === false) {
 					goodFaithError =
@@ -865,6 +899,82 @@
 		} finally {
 			goodFaithTesting = false;
 		}
+	}
+
+	// Job queue completion handler
+	async function handleJobComplete(result: any) {
+		console.log('[Draft] Job completed with result:', result);
+
+		if (result?.result) {
+			const analysisResult = result.result;
+
+			// Store result for UI display
+			goodFaithResult = {
+				good_faith_score: analysisResult.good_faith_score,
+				good_faith_label: analysisResult.good_faith_label,
+				rationale: analysisResult.rationale || analysisResult.summary,
+				claims: analysisResult.claims || [],
+				provider: 'claude',
+				usedClaude: true
+			};
+
+			// Save to database
+			const { error: saveError } = await nhost.graphql.request(
+				UPDATE_DISCUSSION_VERSION_GOOD_FAITH,
+				{
+					versionId: draft.id,
+					score: analysisResult.good_faith_score,
+					label: analysisResult.good_faith_label,
+					analysis: result
+				}
+			);
+
+			if (saveError) {
+				console.error('Failed to save job result to database:', saveError);
+				goodFaithError = 'Analysis completed but failed to save to database';
+			} else {
+				// Update local draft state
+				draft.good_faith_score = analysisResult.good_faith_score;
+				draft.good_faith_label = analysisResult.good_faith_label;
+				draft.good_faith_last_evaluated = new Date().toISOString();
+
+				// Decrement credits
+				if (contributor) {
+					const monthlyRemaining = getMonthlyCreditsRemaining(contributor);
+					const purchasedRemaining = getPurchasedCreditsRemaining(contributor);
+
+					if (monthlyRemaining > 0) {
+						contributor.monthly_credits_remaining = monthlyRemaining - 1;
+					} else if (purchasedRemaining > 0) {
+						await nhost.graphql.request(INCREMENT_PURCHASED_CREDITS_USED, {
+							contributorId: contributor.id
+						});
+						contributor.purchased_credits_remaining = purchasedRemaining - 1;
+					}
+				}
+			}
+
+			isAnalyzing = true;
+			analysisCollapsed = true;
+		}
+
+		// Clear job tracking
+		activeJobId = null;
+		sessionStorage.removeItem(`analysis-${draftId}`);
+	}
+
+	function handleJobError(error: string) {
+		console.error('[Draft] Job failed:', error);
+		goodFaithError = error;
+		activeJobId = null;
+		isAnalyzing = false;
+		sessionStorage.removeItem(`analysis-${draftId}`);
+	}
+
+	function handleJobCancel() {
+		// Just stop tracking - the job continues on the server
+		activeJobId = null;
+		goodFaithTesting = false;
 	}
 
 	// Citation management functions
@@ -1372,7 +1482,14 @@
 				</div>
 			{/if}
 
-			{#if goodFaithTesting}
+			{#if isJobQueued && activeJobId}
+				<JobQueueProgress
+					jobId={activeJobId}
+					onComplete={handleJobComplete}
+					onError={handleJobError}
+					onCancel={handleJobCancel}
+				/>
+			{:else if goodFaithTesting}
 				<div class="good-faith-analysis">
 					<div class="analysis-progress">
 						<AnimatedLogo size="18px" isAnimating={true} />

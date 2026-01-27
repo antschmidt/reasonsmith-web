@@ -241,6 +241,33 @@ export const ACADEMIC_CONFIG: Partial<MultiPassConfig> = {
 };
 
 // ============================================================================
+// Jobs Worker Configuration
+// ============================================================================
+
+/** Configuration for routing to external jobs worker */
+export interface JobsWorkerConfig {
+	/** Maximum content length before routing to jobs worker (characters) */
+	maxContentLength: number;
+	/** Maximum estimated claims before routing to jobs worker (non-featured) */
+	maxClaimsInProcess: number;
+	/** Maximum estimated claims before routing to jobs worker (featured content) */
+	maxFeaturedClaimsInProcess: number;
+	/** Estimated time per claim in ms (for routing decisions) */
+	estimatedMsPerClaim: number;
+	/** Maximum in-process analysis time before routing to jobs (ms) */
+	maxInProcessTimeMs: number;
+}
+
+/** Default jobs worker routing configuration */
+export const JOBS_WORKER_CONFIG: JobsWorkerConfig = {
+	maxContentLength: 5000,
+	maxClaimsInProcess: 8,
+	maxFeaturedClaimsInProcess: 10,
+	estimatedMsPerClaim: 8000, // ~8 seconds per claim including API latency
+	maxInProcessTimeMs: 55000 // 55 seconds (under Vercel's 60s limit)
+};
+
+// ============================================================================
 // Context Types
 // ============================================================================
 

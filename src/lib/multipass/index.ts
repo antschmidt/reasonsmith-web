@@ -13,8 +13,12 @@
 export {
 	runMultiPassAnalysis,
 	runMultiPassAnalysisWithProgress,
-	shouldUseMultiPass
+	shouldUseMultiPass,
+	shouldRouteToJobsWorker,
+	estimateAnalysisTime
 } from './orchestrator';
+
+export type { JobsWorkerRoutingDecision } from './orchestrator';
 
 // Individual passes (for testing/debugging)
 export { runExtractionPass, quickClaimEstimate } from './passes/extraction';
@@ -99,8 +103,11 @@ export {
 	DEFAULT_MULTIPASS_MODELS,
 	FEATURED_CONFIG,
 	ACADEMIC_CONFIG,
-	DEFAULT_RATE_LIMIT_CONFIG
+	DEFAULT_RATE_LIMIT_CONFIG,
+	JOBS_WORKER_CONFIG
 } from './types';
+
+export type { JobsWorkerConfig } from './types';
 
 // Streaming utilities
 export {

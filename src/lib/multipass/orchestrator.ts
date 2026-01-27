@@ -218,6 +218,38 @@ function calculateTotalUsage(usage: MultiPassTokenUsage): TokenUsage {
 }
 
 /**
+ * Estimate total analysis time based on claim count and configuration
+ *
+ * @param estimatedClaims - Estimated number of claims to analyze
+ * @param config - Optional rate limit config overrides
+ * @returns Estimated time in milliseconds
+ */
+export function estimateAnalysisTime(
+	estimatedClaims: number,
+	config?: Partial<{
+		batchSize: number;
+		batchDelayMs: number;
+		msPerClaim: number;
+		pass1Ms: number;
+		pass3Ms: number;
+	}>
+): number {
+	const batchSize = config?.batchSize ?? DEFAULT_RATE_LIMIT_CONFIG.batchSize;
+	const batchDelayMs = config?.batchDelayMs ?? DEFAULT_RATE_LIMIT_CONFIG.batchDelayMs;
+	const msPerClaim = config?.msPerClaim ?? 8000; // ~8s per claim including API latency
+	const pass1Ms = config?.pass1Ms ?? 3000; // ~3s for extraction
+	const pass3Ms = config?.pass3Ms ?? 5000; // ~5s for synthesis
+
+	// Calculate number of batches
+	const numBatches = Math.ceil(estimatedClaims / batchSize);
+
+	// Time = Pass1 + (claims * claimTime) + (batches-1 * batchDelay) + Pass3
+	const pass2Time = estimatedClaims * msPerClaim + Math.max(0, numBatches - 1) * batchDelayMs;
+
+	return pass1Ms + pass2Time + pass3Ms;
+}
+
+/**
  * Determine if multi-pass analysis should be used
  */
 export async function shouldUseMultiPass(
@@ -264,6 +296,92 @@ export async function shouldUseMultiPass(
 	return {
 		useMultiPass: false,
 		reason: `Writing style "${writingStyle || 'unknown'}" does not qualify for multi-pass`
+	};
+}
+
+/**
+ * Decision result from jobs worker routing
+ */
+export interface JobsWorkerRoutingDecision {
+	routeToJobsWorker: boolean;
+	reason: string;
+	estimatedClaims?: number;
+	estimatedTimeMs?: number;
+}
+
+/**
+ * Determine if analysis should be routed to the external jobs worker
+ *
+ * Routes to jobs worker when analysis would likely exceed Vercel timeout limits.
+ */
+export async function shouldRouteToJobsWorker(
+	content: string,
+	multiPassDecision: { useMultiPass: boolean; strategy?: string },
+	showcaseContext: { title: string } | null | undefined,
+	config?: Partial<{
+		maxContentLength: number;
+		maxClaimsInProcess: number;
+		maxFeaturedClaimsInProcess: number;
+		maxInProcessTimeMs: number;
+	}>
+): Promise<JobsWorkerRoutingDecision> {
+	// Import config defaults
+	const { JOBS_WORKER_CONFIG } = await import('./types');
+
+	const maxContentLength = config?.maxContentLength ?? JOBS_WORKER_CONFIG.maxContentLength;
+	const maxClaimsInProcess = config?.maxClaimsInProcess ?? JOBS_WORKER_CONFIG.maxClaimsInProcess;
+	const maxFeaturedClaimsInProcess =
+		config?.maxFeaturedClaimsInProcess ?? JOBS_WORKER_CONFIG.maxFeaturedClaimsInProcess;
+	const maxInProcessTimeMs = config?.maxInProcessTimeMs ?? JOBS_WORKER_CONFIG.maxInProcessTimeMs;
+
+	// If not using multi-pass, no need for jobs worker
+	if (!multiPassDecision.useMultiPass) {
+		return {
+			routeToJobsWorker: false,
+			reason: 'Single-pass analysis runs quickly in-process'
+		};
+	}
+
+	// Check content length
+	if (content.length > maxContentLength) {
+		return {
+			routeToJobsWorker: true,
+			reason: `Content length (${content.length}) exceeds threshold (${maxContentLength})`
+		};
+	}
+
+	// Estimate claims
+	const { quickClaimEstimate } = await import('./passes/extraction');
+	const estimatedClaims = quickClaimEstimate(content);
+
+	// Determine claim threshold based on content type
+	const claimThreshold = showcaseContext ? maxFeaturedClaimsInProcess : maxClaimsInProcess;
+
+	if (estimatedClaims > claimThreshold) {
+		return {
+			routeToJobsWorker: true,
+			reason: `Estimated claims (${estimatedClaims}) exceeds threshold (${claimThreshold})`,
+			estimatedClaims
+		};
+	}
+
+	// Check estimated time
+	const estimatedTimeMs = estimateAnalysisTime(estimatedClaims);
+
+	if (estimatedTimeMs > maxInProcessTimeMs) {
+		return {
+			routeToJobsWorker: true,
+			reason: `Estimated time (${Math.round(estimatedTimeMs / 1000)}s) exceeds threshold (${Math.round(maxInProcessTimeMs / 1000)}s)`,
+			estimatedClaims,
+			estimatedTimeMs
+		};
+	}
+
+	return {
+		routeToJobsWorker: false,
+		reason: `Analysis can complete in-process (${estimatedClaims} claims, ~${Math.round(estimatedTimeMs / 1000)}s)`,
+		estimatedClaims,
+		estimatedTimeMs
 	};
 }
 
