@@ -6,9 +6,15 @@ import { print } from 'graphql';
 import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
 import { logger } from '$lib/logger';
 import { logApiUsageAsync } from '$lib/server/apiUsageLogger';
+import { env } from '$env/dynamic/private';
 
 // Import multi-pass for deep claim analysis
-import { runMultiPassAnalysis, FEATURED_CONFIG, DEFAULT_MULTIPASS_MODELS } from '$lib/multipass';
+import {
+	runMultiPassAnalysis,
+	FEATURED_CONFIG,
+	DEFAULT_MULTIPASS_MODELS,
+	shouldRouteToJobsWorker
+} from '$lib/multipass';
 import type { MultiPassResult } from '$lib/multipass';
 
 const anthropic = new Anthropic({
@@ -737,8 +743,74 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			// Optionally run multi-pass claim analysis for deeper insights
 			let multiPassResult: MultiPassResult | null = null;
 			if (includeMultiPass) {
+				// Check if we should route to the external jobs worker
+				const jobsWorkerDecision = await shouldRouteToJobsWorker(
+					content,
+					{ useMultiPass: true, strategy: 'multi_featured' },
+					{ title: 'Featured Content' } // Always treat as featured
+				);
+
+				if (jobsWorkerDecision.routeToJobsWorker) {
+					logger.info(`[Featured] Routing to jobs worker: ${jobsWorkerDecision.reason}`);
+
+					const JOBS_API_URL = env.JOBS_API_URL || 'https://jobs.reasonsmith.com';
+					const JOBS_API_KEY = env.JOBS_API_KEY || '';
+
+					if (!JOBS_API_KEY) {
+						logger.warn('[Featured] JOBS_API_KEY not configured, falling back to in-process');
+					} else {
+						try {
+							// Forward to jobs worker
+							const jobResponse = await fetch(`${JOBS_API_URL}/api/v1/analyze`, {
+								method: 'POST',
+								headers: {
+									'Content-Type': 'application/json',
+									'X-API-Key': JOBS_API_KEY
+								},
+								body: JSON.stringify({
+									content,
+									showcaseItemId,
+									discussionContext,
+									strategy: 'featured',
+									// Include webhook URL for completion notification
+									webhookUrl: `${env.PUBLIC_SITE_URL || 'https://reasonsmith.com'}/api/analysis/webhook`
+								})
+							});
+
+							if (jobResponse.ok) {
+								const jobData = await jobResponse.json();
+								logger.info(`[Featured] Job queued: ${jobData.jobId}`);
+
+								// Return queued response - client will poll for results
+								return json(
+									{
+										...analysis,
+										usage,
+										queued: true,
+										jobId: jobData.jobId,
+										status: 'queued',
+										statusUrl: `/api/analysis/queue/status?jobId=${jobData.jobId}`,
+										estimatedClaims: jobsWorkerDecision.estimatedClaims,
+										estimatedTimeMs: jobsWorkerDecision.estimatedTimeMs,
+										reason: jobsWorkerDecision.reason
+									},
+									{ status: 202 }
+								);
+							} else {
+								const errorData = await jobResponse.json().catch(() => ({}));
+								logger.error(`[Featured] Failed to queue job: ${jobResponse.status}`, errorData);
+								// Fall through to in-process analysis
+							}
+						} catch (jobError) {
+							logger.error('[Featured] Failed to contact jobs service:', jobError);
+							// Fall through to in-process analysis
+						}
+					}
+				}
+
+				// Run in-process if not routed to jobs worker (or if routing failed)
 				try {
-					logger.info('[Featured] Running multi-pass claim analysis');
+					logger.info('[Featured] Running multi-pass claim analysis in-process');
 					multiPassResult = await runMultiPassAnalysis(
 						content,
 						{
