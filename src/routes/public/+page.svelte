@@ -856,7 +856,7 @@
 					activeJobId = queueData.jobId;
 					isJobQueued = true;
 					queuedShowcaseItemId = showcaseItemId;
-					analysisStatus = `Analysis queued (${queueData.reason || 'large content'}). Estimated ${queueData.estimatedClaims || '?'} claims.`;
+					analysisStatus = `That's a lot! Sending to the analysis team... (${queueData.estimatedClaims || '?'} estimated claims)`;
 
 					// Add job to queue store and start polling
 					jobQueue.addJob({
