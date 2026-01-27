@@ -704,7 +704,11 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		const JOBS_API_KEY = env.JOBS_API_KEY || '';
 
 		if (!JOBS_API_KEY) {
-			logger.warn('[Stream] JOBS_API_KEY not configured, falling back to in-process');
+			logger.error('[Stream] JOBS_API_KEY not configured - cannot route to jobs worker');
+			return new Response(
+				JSON.stringify({ error: 'Jobs worker not configured. Please set JOBS_API_KEY.' }),
+				{ status: 503, headers: { 'Content-Type': 'application/json' } }
+			);
 		} else {
 			try {
 				// Forward to jobs worker
