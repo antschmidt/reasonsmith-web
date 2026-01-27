@@ -16,10 +16,17 @@
 	import AnimatedLogo from '$lib/components/ui/AnimatedLogo.svelte';
 	import MultiPassProgress from '$lib/components/ui/MultiPassProgress.svelte';
 	import InterruptedAnalysisBanner from '$lib/components/ui/InterruptedAnalysisBanner.svelte';
+	import JobQueueProgress from '$lib/components/ui/JobQueueProgress.svelte';
+	import { jobQueue, type Job } from '$lib/stores/jobQueue.svelte';
 	import { collectRoles } from '$lib/utils/authHelpers';
 	import { estimateTokens, formatTokenCount } from '$lib/utils/tokenEstimate';
 	import { parseSSEMessage } from '$lib/multipass';
-	import type { ProgressEvent, MultiPassResult, AnalysisStatusResponse, ResumeAction } from '$lib/multipass';
+	import type {
+		ProgressEvent,
+		MultiPassResult,
+		AnalysisStatusResponse,
+		ResumeAction
+	} from '$lib/multipass';
 
 	type ShowcaseItem = {
 		id: string;
@@ -95,6 +102,11 @@
 	let useStreamingAnalysis = $state(true); // Enable streaming by default
 	let streamingProgress = $state<ProgressEvent | null>(null);
 	let streamAbortController = $state<AbortController | null>(null);
+
+	// Job queue state (for long-running analyses routed to external worker)
+	let activeJobId = $state<string | null>(null);
+	let isJobQueued = $state(false);
+	let queuedShowcaseItemId = $state<string | null>(null);
 
 	// Interrupted analysis state
 	let interruptedStatus = $state<AnalysisStatusResponse | null>(null);
@@ -836,6 +848,32 @@
 				signal: streamAbortController.signal
 			});
 
+			// Check if job was queued to external worker (202 Accepted)
+			if (response.status === 202) {
+				const queueData = await response.json();
+				if (queueData.queued && queueData.jobId) {
+					// Switch to job queue tracking
+					activeJobId = queueData.jobId;
+					isJobQueued = true;
+					queuedShowcaseItemId = showcaseItemId;
+					analysisStatus = `Analysis queued (${queueData.reason || 'large content'}). Estimated ${queueData.estimatedClaims || '?'} claims.`;
+
+					// Add job to queue store and start polling
+					jobQueue.addJob({
+						jobId: queueData.jobId,
+						postId: showcaseItemId,
+						status: 'queued',
+						estimatedClaims: queueData.estimatedClaims,
+						estimatedTimeMs: queueData.estimatedTimeMs
+					});
+
+					// Exit early - job queue progress component will handle the rest
+					analyzing = false;
+					streamAbortController = null;
+					return;
+				}
+			}
+
 			if (!response.ok) {
 				const payload = await response.json().catch(() => ({}));
 				throw new Error(payload?.error || 'Failed to start analysis');
@@ -989,15 +1027,72 @@
 	}
 
 	/**
+	 * Handle job queue completion
+	 */
+	async function handleJobComplete(result: Job['result']) {
+		if (!result || !queuedShowcaseItemId) return;
+
+		// Convert job result to MultiPassResult format
+		const multipassResult: MultiPassResult = {
+			result: result.result,
+			strategy: result.strategy,
+			claimsTotal: result.claimsTotal,
+			claimsAnalyzed: result.claimsAnalyzed,
+			claimsFailed: result.claimsFailed,
+			claimAnalyses: result.claimAnalyses || [],
+			usage: { total: { inputTokens: 0, outputTokens: 0 }, byPass: {} },
+			estimatedCost: 0
+		};
+
+		// Use existing completion handler
+		await handleAnalysisComplete(multipassResult, queuedShowcaseItemId);
+
+		// Clear job queue state
+		activeJobId = null;
+		isJobQueued = false;
+		queuedShowcaseItemId = null;
+
+		// Clean up job from queue
+		if (activeJobId) {
+			jobQueue.removeJob(activeJobId);
+		}
+	}
+
+	/**
+	 * Handle job queue error
+	 */
+	function handleJobError(error: string) {
+		analysisError = error || 'Background analysis failed';
+		activeJobId = null;
+		isJobQueued = false;
+		queuedShowcaseItemId = null;
+	}
+
+	/**
+	 * Handle job queue cancel (stop tracking, job continues on server)
+	 */
+	function handleJobCancel() {
+		analysisStatus = 'Stopped tracking job. Analysis may continue in the background.';
+		activeJobId = null;
+		isJobQueued = false;
+		queuedShowcaseItemId = null;
+	}
+
+	/**
 	 * Check for interrupted analysis when editing an item
 	 */
-	async function checkForInterruptedAnalysis(showcaseItemId: string): Promise<AnalysisStatusResponse | null> {
+	async function checkForInterruptedAnalysis(
+		showcaseItemId: string
+	): Promise<AnalysisStatusResponse | null> {
 		try {
 			// Ensure auth is ready before checking
 			await nhost.auth.isAuthenticatedAsync();
 
 			const accessToken = nhost.auth.getAccessToken();
-			console.log('[checkForInterruptedAnalysis] accessToken:', accessToken ? 'present' : 'missing');
+			console.log(
+				'[checkForInterruptedAnalysis] accessToken:',
+				accessToken ? 'present' : 'missing'
+			);
 
 			const headers: Record<string, string> = {};
 			if (accessToken) {
@@ -1847,12 +1942,22 @@
 								</div>
 
 								<!-- Streaming progress indicator -->
-								{#if useStreamingAnalysis}
+								{#if useStreamingAnalysis && !isJobQueued}
 									<MultiPassProgress
 										isAnalyzing={analyzing}
 										currentEvent={streamingProgress}
 										error={analysisError}
 										onCancel={cancelStreamingAnalysis}
+									/>
+								{/if}
+
+								<!-- Job queue progress indicator (for long-running analyses) -->
+								{#if isJobQueued && activeJobId}
+									<JobQueueProgress
+										jobId={activeJobId}
+										onComplete={handleJobComplete}
+										onError={handleJobError}
+										onCancel={handleJobCancel}
 									/>
 								{/if}
 
