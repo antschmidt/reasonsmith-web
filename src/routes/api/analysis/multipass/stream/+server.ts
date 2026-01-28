@@ -689,12 +689,17 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 	}
 
 	logger.info(`[Stream] Starting SSE multi-pass analysis for contributor ${contributorId}`);
+	logger.info(`[Stream] Content length: ${content.length} chars`);
 
 	// Check if we should route to the external jobs worker instead of processing in-process
 	const jobsWorkerDecision = await shouldRouteToJobsWorker(
 		content,
 		{ useMultiPass: true, strategy: 'multi_featured' },
 		{ title: 'Featured Content' } // Always treat as featured for showcase items
+	);
+
+	logger.info(
+		`[Stream] Jobs worker decision: routeToJobsWorker=${jobsWorkerDecision.routeToJobsWorker}, reason=${jobsWorkerDecision.reason}`
 	);
 
 	if (jobsWorkerDecision.routeToJobsWorker) {
