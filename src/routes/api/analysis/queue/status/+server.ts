@@ -1,8 +1,8 @@
 /**
  * Job Status Proxy Endpoint
- * 
+ *
  * GET /api/analysis/queue/status?jobId=xxx
- * 
+ *
  * Proxies job status requests to the Go jobs worker service.
  */
 
@@ -11,10 +11,10 @@ import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { logger } from '$lib/logger';
 
-const JOBS_API_URL = env.JOBS_API_URL || 'https://jobs.reasonsmith.com';
-const JOBS_API_KEY = env.JOBS_API_KEY || '';
-
 export const GET: RequestHandler = async ({ url }) => {
+	const JOBS_API_URL = env.JOBS_API_URL || 'https://jobs.reasonsmith.com';
+	const JOBS_API_KEY = env.JOBS_API_KEY || '';
+
 	if (!JOBS_API_KEY) {
 		return json({ error: 'Jobs service not configured' }, { status: 503 });
 	}
