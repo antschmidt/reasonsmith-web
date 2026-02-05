@@ -636,6 +636,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 	let body: {
 		content?: string;
 		showcaseItemId?: string;
+		skipFactChecking?: boolean;
 		discussionContext?: {
 			discussion?: {
 				id?: string;
@@ -654,7 +655,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		});
 	}
 
-	const { content, showcaseItemId, discussionContext } = body;
+	const { content, showcaseItemId, skipFactChecking = true, discussionContext } = body;
 
 	// Validate content
 	if (typeof content !== 'string' || !content.trim()) {
@@ -912,7 +913,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 					{
 						...FEATURED_CONFIG,
 						models: DEFAULT_MULTIPASS_MODELS,
-						cacheTTL: '5m'
+						cacheTTL: '5m',
+						skipFactChecking
 					},
 					sendEvent,
 					{
@@ -920,6 +922,11 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						anthropic
 					}
 				);
+
+				// Strip fact_checking from result if disabled
+				if (skipFactChecking && result.result) {
+					(result.result as any).fact_checking = [];
+				}
 
 				// Store claim analyses in database
 				await storeClaimAnalyses(result, showcaseItemId);

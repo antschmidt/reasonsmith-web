@@ -65,7 +65,8 @@ export async function runMultiPassAnalysis(
 		complexityConfidenceThreshold:
 			config.complexityConfidenceThreshold ?? DEFAULT_CONFIG.complexityConfidenceThreshold!,
 		cacheTTL: config.cacheTTL ?? DEFAULT_CONFIG.cacheTTL!,
-		rateLimiting: config.rateLimiting ?? DEFAULT_RATE_LIMIT_CONFIG
+		rateLimiting: config.rateLimiting ?? DEFAULT_RATE_LIMIT_CONFIG,
+		skipFactChecking: config.skipFactChecking ?? true
 	};
 
 	const passes: PassSummary[] = [];
@@ -442,7 +443,8 @@ export async function runMultiPassAnalysisWithProgress(
 		complexityConfidenceThreshold:
 			config.complexityConfidenceThreshold ?? DEFAULT_CONFIG.complexityConfidenceThreshold!,
 		cacheTTL: config.cacheTTL ?? DEFAULT_CONFIG.cacheTTL!,
-		rateLimiting: config.rateLimiting ?? DEFAULT_RATE_LIMIT_CONFIG
+		rateLimiting: config.rateLimiting ?? DEFAULT_RATE_LIMIT_CONFIG,
+		skipFactChecking: config.skipFactChecking ?? true
 	};
 
 	const passes: PassSummary[] = [];

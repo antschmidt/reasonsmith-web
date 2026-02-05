@@ -222,6 +222,8 @@ export interface MultiPassConfig {
 	cacheTTL: 'off' | '5m' | '1h';
 	/** Rate limiting configuration */
 	rateLimiting: RateLimitConfig;
+	/** Whether to skip fact-checking in synthesis (default: true) */
+	skipFactChecking: boolean;
 }
 
 /** Default configuration for featured analyses */

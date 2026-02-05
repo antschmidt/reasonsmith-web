@@ -843,6 +843,7 @@
 				body: JSON.stringify({
 					content: rawContent,
 					showcaseItemId,
+					skipFactChecking: !enableFactChecking,
 					discussionContext: {}
 				}),
 				signal: streamAbortController.signal

@@ -116,7 +116,7 @@ const FEATURED_SYNTHESIS_TOOL: Anthropic.Tool = {
 			fact_checking: {
 				type: 'array',
 				description:
-					'Fact-checking results for verifiable claims (can be empty if no fact-checking was done)',
+					'Fact-checking results for verifiable claims. ONLY populate this if fact-checking was explicitly requested. Otherwise, always provide an empty array.',
 				items: {
 					type: 'object',
 					properties: {
@@ -140,7 +140,7 @@ const FEATURED_SYNTHESIS_TOOL: Anthropic.Tool = {
 					'Comprehensive summary of the analysis (3-5 paragraphs) covering tone, tactics, impact, and constructive observations'
 			}
 		},
-		required: ['good_faith', 'logical_fallacies', 'cultish_language', 'fact_checking', 'summary']
+		required: ['good_faith', 'logical_fallacies', 'cultish_language', 'summary']
 	}
 };
 
@@ -178,7 +178,8 @@ export async function runSynthesisPass(
 			originalContent,
 			completedAnalyses,
 			failedAnalyses,
-			context
+			context,
+			config.skipFactChecking
 		);
 
 		const requestOptions: Parameters<typeof anthropic.messages.create>[0] = {
@@ -332,7 +333,7 @@ GENUINE good faith requires:
 
 3. **Identify Cultish/Manipulative Language**: Report each instance of manipulative language patterns found. Include any performative/fake good faith patterns here.
 
-4. **Fact Checking**: Note any factual claims that were evaluated (can be empty if not applicable).
+4. **Fact Checking**: Only include fact-checking results if explicitly requested in the instructions below. If not requested, omit or leave empty.
 
 5. **Write a Comprehensive Summary** (3-5 paragraphs) covering:
    - Tone & Voice Analysis
@@ -349,7 +350,8 @@ function buildFeaturedSynthesisUserMessage(
 	originalContent: string,
 	completedAnalyses: ClaimAnalysisResult[],
 	failedAnalyses: ClaimAnalysisResult[],
-	context: AnalysisContext
+	context: AnalysisContext,
+	skipFactChecking: boolean = true
 ): string {
 	// Calculate summary statistics to guide balanced assessment
 	const avgValidity =
@@ -406,13 +408,17 @@ ${failedAnalyses.length} claims could not be analyzed. Please note this in your 
 `;
 	}
 
+	const factCheckingInstruction = skipFactChecking
+		? '4. Do NOT include fact_checking - omit it entirely or provide an empty array. Fact-checking has not been requested for this analysis.'
+		: '4. Evaluate verifiable factual claims and provide fact_checking results with verdicts and sources.';
+
 	message += `
 ## Instructions
 Based on these detailed claim analyses, create a featured analysis that:
 1. Identifies good_faith indicators for EACH claim with high validity or evidence scores (≥7) - these represent sound reasoning
 2. Reports each fallacy instance found in the claim analyses with proper names, descriptions, examples, and explanations
 3. Reports each cultish_language pattern instance (us-vs-them, loaded language, etc.)
-4. Leaves fact_checking empty (not applicable for this analysis)
+${factCheckingInstruction}
 5. Writes a comprehensive summary covering tone, tactics, impact, and constructive observations
 
 Use the submit_featured_synthesis tool to provide your analysis.`;
