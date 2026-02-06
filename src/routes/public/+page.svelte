@@ -1915,31 +1915,31 @@
 												</button>
 											</div>
 										</div>
-
-										<div class="control-group">
-											<span class="control-label">Fact Check</span>
-											<div class="button-toggle-group">
-												<button
-													type="button"
-													class="toggle-btn"
-													class:is-active={!enableFactChecking}
-													disabled={analyzing}
-													onclick={() => (enableFactChecking = false)}
-												>
-													Off
-												</button>
-												<button
-													type="button"
-													class="toggle-btn"
-													class:is-active={enableFactChecking}
-													disabled={analyzing}
-													onclick={() => (enableFactChecking = true)}
-												>
-													On
-												</button>
-											</div>
-										</div>
 									{/if}
+
+									<div class="control-group">
+										<span class="control-label">Fact Check</span>
+										<div class="button-toggle-group">
+											<button
+												type="button"
+												class="toggle-btn"
+												class:is-active={!enableFactChecking}
+												disabled={analyzing}
+												onclick={() => (enableFactChecking = false)}
+											>
+												Off
+											</button>
+											<button
+												type="button"
+												class="toggle-btn"
+												class:is-active={enableFactChecking}
+												disabled={analyzing}
+												onclick={() => (enableFactChecking = true)}
+											>
+												On
+											</button>
+										</div>
+									</div>
 								</div>
 
 								<!-- Streaming progress indicator -->
