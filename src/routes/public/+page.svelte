@@ -42,6 +42,7 @@
 		date_published?: string | null;
 		display_order: number;
 		published: boolean;
+		hide_fact_checking: boolean;
 		created_at: string;
 		updated_at: string;
 	};
@@ -59,6 +60,7 @@
 		date_published: string;
 		display_order: number;
 		published: boolean;
+		hide_fact_checking: boolean;
 	};
 
 	const blankForm: ShowcaseForm = {
@@ -73,7 +75,8 @@
 		tags: '',
 		date_published: '',
 		display_order: 0,
-		published: true
+		published: true,
+		hide_fact_checking: false
 	};
 
 	let checkingAuth = $state(true);
@@ -317,7 +320,8 @@
 			tags: item.tags?.join(', ') ?? '',
 			date_published: item.date_published ?? '',
 			display_order: item.display_order ?? 0,
-			published: !!item.published
+			published: !!item.published,
+			hide_fact_checking: !!item.hide_fact_checking
 		};
 		// Load saved source content if available
 		rawContent = item.source_content ?? '';
@@ -390,7 +394,8 @@
 			tags: parseTags(form.tags),
 			date_published: form.date_published.trim() || null,
 			display_order: newDisplayOrder,
-			published: form.published
+			published: form.published,
+			hide_fact_checking: form.hide_fact_checking
 		};
 		try {
 			if (form.id) {
@@ -417,8 +422,8 @@
 				items = [created, ...items];
 				success = 'Showcase item created.';
 				clearDraft();
-				resetForm(true);
-				showForm = false;
+				// Transition to edit mode so the form stays open with the saved data
+				form = { ...form, id: created.id };
 			}
 		} catch (e: any) {
 			error = e?.message ?? 'Failed to save showcase item.';
@@ -1031,7 +1036,16 @@
 	 * Handle job queue completion
 	 */
 	async function handleJobComplete(result: Job['result']) {
-		if (!result || !queuedShowcaseItemId) return;
+		console.log('[handleJobComplete] called with:', {
+			hasResult: !!result,
+			queuedShowcaseItemId,
+			activeJobId,
+			isJobQueued
+		});
+		if (!result || !queuedShowcaseItemId) {
+			console.warn('[handleJobComplete] early return - missing result or showcaseItemId');
+			return;
+		}
 
 		// Convert job result to MultiPassResult format
 		const multipassResult: MultiPassResult = {
@@ -2087,13 +2101,27 @@
 									<span class="field-hint">Tags help categorize and filter showcase items</span>
 								</label>
 
-								<label class="publish-toggle">
-									<span class="toggle-track" class:is-active={form.published}>
-										<span class="toggle-thumb"></span>
-									</span>
-									<input type="checkbox" bind:checked={form.published} class="sr-only" />
-									<span class="toggle-label">{form.published ? 'Published' : 'Draft'}</span>
-								</label>
+								<div class="toggle-row">
+									<label class="publish-toggle">
+										<span class="toggle-track" class:is-active={form.published}>
+											<span class="toggle-thumb"></span>
+										</span>
+										<input type="checkbox" bind:checked={form.published} class="sr-only" />
+										<span class="toggle-label">{form.published ? 'Published' : 'Draft'}</span>
+									</label>
+
+									<label class="publish-toggle">
+										<span class="toggle-track" class:is-active={form.hide_fact_checking}>
+											<span class="toggle-thumb"></span>
+										</span>
+										<input type="checkbox" bind:checked={form.hide_fact_checking} class="sr-only" />
+										<span class="toggle-label"
+											>{form.hide_fact_checking
+												? 'Fact Checks Hidden'
+												: 'Fact Checks Visible'}</span
+										>
+									</label>
+								</div>
 							</fieldset>
 
 							<!-- Analysis Versions Section -->
@@ -2332,9 +2360,15 @@
 										</section>
 									{/each}
 
-									<section class="preview-section">
+									<section
+										class="preview-section"
+										class:preview-hidden-section={form.hide_fact_checking}
+									>
 										<div class="preview-section-heading">
 											<h2>🔍 Fact Checking</h2>
+											{#if form.hide_fact_checking}
+												<span class="preview-hidden-badge">Hidden from public</span>
+											{/if}
 											{#if previewFactChecks().length > 0}
 												<span class="preview-section-count">
 													{previewFactChecks().length} claim{previewFactChecks().length === 1
@@ -2964,6 +2998,13 @@
 		overflow-y: auto;
 	}
 
+	/* Toggle Row */
+	.toggle-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 1.5rem;
+	}
+
 	/* Publish Toggle */
 	.publish-toggle {
 		display: flex;
@@ -3239,6 +3280,18 @@
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		border-radius: var(--border-radius-md);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+	}
+	.preview-hidden-section {
+		opacity: 0.5;
+	}
+	.preview-hidden-badge {
+		font-size: 0.75rem;
+		font-weight: 600;
+		padding: 0.2rem 0.6rem;
+		background: color-mix(in srgb, #f59e0b 15%, transparent);
+		color: #b45309;
+		border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+		border-radius: var(--border-radius-md);
 	}
 	.preview-section-body {
 		font-size: 1rem;

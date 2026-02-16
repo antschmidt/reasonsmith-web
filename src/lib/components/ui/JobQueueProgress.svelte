@@ -1,7 +1,12 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-	import { jobQueue, getTimeRemaining, getProgressPercent, type Job } from '$lib/stores/jobQueue.svelte';
+	import {
+		jobQueue,
+		getTimeRemaining,
+		getProgressPercent,
+		type Job
+	} from '$lib/stores/jobQueue.svelte';
 	import AnimatedLogo from './AnimatedLogo.svelte';
 
 	type Props = {
@@ -28,9 +33,15 @@
 
 		// Detect status changes
 		if (previousStatus !== job.status) {
+			console.log(`[JobQueueProgress] status change: ${previousStatus} -> ${job.status}`, {
+				hasResult: !!job.result,
+				hasError: !!job.error
+			});
 			if (job.status === 'completed' && job.result) {
+				console.log('[JobQueueProgress] calling onComplete');
 				onComplete?.(job.result);
 			} else if (job.status === 'failed' && job.error) {
+				console.log('[JobQueueProgress] calling onError');
 				onError?.(job.error);
 			}
 			previousStatus = job.status;
@@ -151,9 +162,7 @@
 				<span class="job-badge">Job</span>
 			</div>
 			{#if phase !== 'complete' && phase !== 'error' && onCancel}
-				<button type="button" class="cancel-btn" onclick={handleCancel}>
-					Stop Tracking
-				</button>
+				<button type="button" class="cancel-btn" onclick={handleCancel}> Stop Tracking </button>
 			{/if}
 		</div>
 
@@ -204,7 +213,9 @@
 				{/if}
 				{#if job.progress.totalBatches}
 					<div class="stat">
-						<span class="stat-value">{job.progress.currentBatch || 0}/{job.progress.totalBatches}</span>
+						<span class="stat-value"
+							>{job.progress.currentBatch || 0}/{job.progress.totalBatches}</span
+						>
 						<span class="stat-label">Batches</span>
 					</div>
 				{/if}
@@ -217,8 +228,15 @@
 					<span class="phase-dot"></span>
 					<span class="phase-name">Extract</span>
 				</div>
-				<div class="phase-line" class:completed={phase === 'analysis' || phase === 'synthesis'}></div>
-				<div class="phase" class:active={phase === 'analysis'} class:completed={phase === 'synthesis'}>
+				<div
+					class="phase-line"
+					class:completed={phase === 'analysis' || phase === 'synthesis'}
+				></div>
+				<div
+					class="phase"
+					class:active={phase === 'analysis'}
+					class:completed={phase === 'synthesis'}
+				>
 					<span class="phase-dot"></span>
 					<span class="phase-name">Analyze</span>
 				</div>

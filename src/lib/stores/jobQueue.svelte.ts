@@ -139,7 +139,9 @@ class JobQueueStore {
 			createdAt: new Date().toISOString()
 		};
 
-		this._jobs.set(job.jobId, fullJob);
+		const newMap = new Map(this._jobs);
+		newMap.set(job.jobId, fullJob);
+		this._jobs = newMap;
 		this.saveToStorage();
 
 		// Start polling for this job
@@ -152,7 +154,11 @@ class JobQueueStore {
 	updateJob(jobId: string, updates: Partial<Job>): void {
 		const existing = this._jobs.get(jobId);
 		if (existing) {
-			this._jobs.set(jobId, { ...existing, ...updates });
+			const updated = { ...existing, ...updates };
+			// Reassign the entire Map to guarantee Svelte 5 reactivity
+			const newMap = new Map(this._jobs);
+			newMap.set(jobId, updated);
+			this._jobs = newMap;
 			this.saveToStorage();
 		}
 	}
@@ -162,7 +168,9 @@ class JobQueueStore {
 	 */
 	removeJob(jobId: string): void {
 		this.stopPolling(jobId);
-		this._jobs.delete(jobId);
+		const newMap = new Map(this._jobs);
+		newMap.delete(jobId);
+		this._jobs = newMap;
 		this.saveToStorage();
 	}
 
@@ -244,6 +252,14 @@ class JobQueueStore {
 			}
 
 			const data = await response.json();
+
+			console.log(`[JobQueue] Poll response for ${jobId}:`, {
+				status: data.status,
+				hasProgress: !!data.progress,
+				progress: data.progress,
+				hasResult: !!data.result,
+				error: data.error
+			});
 
 			// Update job with latest status
 			this.updateJob(jobId, {

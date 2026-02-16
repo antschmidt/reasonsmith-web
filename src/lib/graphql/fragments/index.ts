@@ -229,6 +229,7 @@ export const PUBLIC_SHOWCASE_ITEM_FIELDS = gql`
 		tags
 		display_order
 		published
+		hide_fact_checking
 		created_at
 	}
 `;
@@ -248,6 +249,7 @@ export const PUBLIC_SHOWCASE_ITEM_ADMIN_FIELDS = gql`
 		tags
 		display_order
 		published
+		hide_fact_checking
 		created_at
 		updated_at
 	}
