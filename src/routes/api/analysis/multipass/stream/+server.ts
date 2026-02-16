@@ -729,6 +729,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						showcaseItemId,
 						discussionContext,
 						strategy: 'featured',
+						skipFactChecking,
 						// Include webhook URL for completion notification
 						webhookUrl: `${env.PUBLIC_SITE_URL || 'https://reasonsmith.com'}/api/analysis/webhook`
 					})

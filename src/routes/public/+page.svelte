@@ -1048,14 +1048,14 @@
 		// Use existing completion handler
 		await handleAnalysisComplete(multipassResult, queuedShowcaseItemId);
 
-		// Clear job queue state
+		// Clean up job from queue (must capture ID before clearing state)
+		const completedJobId = activeJobId;
 		activeJobId = null;
 		isJobQueued = false;
 		queuedShowcaseItemId = null;
 
-		// Clean up job from queue
-		if (activeJobId) {
-			jobQueue.removeJob(activeJobId);
+		if (completedJobId) {
+			jobQueue.removeJob(completedJobId);
 		}
 	}
 

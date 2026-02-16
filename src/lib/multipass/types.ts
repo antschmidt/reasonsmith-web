@@ -262,14 +262,11 @@ export interface JobsWorkerConfig {
 
 /** Default jobs worker routing configuration */
 export const JOBS_WORKER_CONFIG: JobsWorkerConfig = {
-	// TESTING: Lowered thresholds to force jobs worker routing
-	// TODO: Restore to production values after testing:
-	// maxContentLength: 5000, maxClaimsInProcess: 8, maxFeaturedClaimsInProcess: 10
-	maxContentLength: 100, // Any content over 100 chars routes to jobs worker
+	maxContentLength: 100, // Route most content to jobs worker for featured analysis
 	maxClaimsInProcess: 1,
 	maxFeaturedClaimsInProcess: 1,
 	estimatedMsPerClaim: 8000, // ~8 seconds per claim including API latency
-	maxInProcessTimeMs: 1000 // 1 second - almost always routes to jobs worker
+	maxInProcessTimeMs: 1000 // Route to jobs worker to avoid Vercel function timeout
 };
 
 // ============================================================================
