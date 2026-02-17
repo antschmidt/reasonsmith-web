@@ -222,6 +222,8 @@ export interface MultiPassConfig {
 	cacheTTL: 'off' | '5m' | '1h';
 	/** Rate limiting configuration */
 	rateLimiting: RateLimitConfig;
+	/** Whether to skip fact-checking in synthesis (default: true) */
+	skipFactChecking: boolean;
 }
 
 /** Default configuration for featured analyses */
@@ -238,6 +240,33 @@ export const ACADEMIC_CONFIG: Partial<MultiPassConfig> = {
 	maxIndividualClaims: 15,
 	isFeatured: false,
 	complexityConfidenceThreshold: 0.65
+};
+
+// ============================================================================
+// Jobs Worker Configuration
+// ============================================================================
+
+/** Configuration for routing to external jobs worker */
+export interface JobsWorkerConfig {
+	/** Maximum content length before routing to jobs worker (characters) */
+	maxContentLength: number;
+	/** Maximum estimated claims before routing to jobs worker (non-featured) */
+	maxClaimsInProcess: number;
+	/** Maximum estimated claims before routing to jobs worker (featured content) */
+	maxFeaturedClaimsInProcess: number;
+	/** Estimated time per claim in ms (for routing decisions) */
+	estimatedMsPerClaim: number;
+	/** Maximum in-process analysis time before routing to jobs (ms) */
+	maxInProcessTimeMs: number;
+}
+
+/** Default jobs worker routing configuration */
+export const JOBS_WORKER_CONFIG: JobsWorkerConfig = {
+	maxContentLength: 100, // Route most content to jobs worker for featured analysis
+	maxClaimsInProcess: 1,
+	maxFeaturedClaimsInProcess: 1,
+	estimatedMsPerClaim: 8000, // ~8 seconds per claim including API latency
+	maxInProcessTimeMs: 1000 // Route to jobs worker to avoid Vercel function timeout
 };
 
 // ============================================================================

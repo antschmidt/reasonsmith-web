@@ -20,6 +20,7 @@
 		summary?: string | null;
 		analysis?: string | null;
 		tags?: string[] | null;
+		hide_fact_checking?: boolean;
 	}
 
 	interface StructuredAnalysis {
@@ -105,15 +106,19 @@
 				tone: section.tone,
 				count: Array.isArray(section.items) ? section.items.length : 0
 			}))
-			.concat([
-				{
-					key: 'fact_checking',
-					label: 'Fact Checks',
-					icon: '🔍',
-					tone: 'fact',
-					count: Array.isArray(factChecks) ? factChecks.length : 0
-				}
-			]);
+			.concat(
+				props.item.hide_fact_checking
+					? []
+					: [
+							{
+								key: 'fact_checking',
+								label: 'Fact Checks',
+								icon: '🔍',
+								tone: 'fact',
+								count: Array.isArray(factChecks) ? factChecks.length : 0
+							}
+						]
+			);
 	});
 
 	function formatDate(dateStr?: string | null): string {
@@ -251,7 +256,7 @@
 					{/if}
 				{/each}
 
-				{#if factChecks.length > 0}
+				{#if factChecks.length > 0 && !props.item.hide_fact_checking}
 					<div class="analysis-section">
 						<h4>🔍 Fact Checking</h4>
 						<div class="findings-list">

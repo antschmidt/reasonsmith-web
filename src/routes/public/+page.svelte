@@ -16,10 +16,17 @@
 	import AnimatedLogo from '$lib/components/ui/AnimatedLogo.svelte';
 	import MultiPassProgress from '$lib/components/ui/MultiPassProgress.svelte';
 	import InterruptedAnalysisBanner from '$lib/components/ui/InterruptedAnalysisBanner.svelte';
+	import JobQueueProgress from '$lib/components/ui/JobQueueProgress.svelte';
+	import { jobQueue, type Job } from '$lib/stores/jobQueue.svelte';
 	import { collectRoles } from '$lib/utils/authHelpers';
 	import { estimateTokens, formatTokenCount } from '$lib/utils/tokenEstimate';
 	import { parseSSEMessage } from '$lib/multipass';
-	import type { ProgressEvent, MultiPassResult, AnalysisStatusResponse, ResumeAction } from '$lib/multipass';
+	import type {
+		ProgressEvent,
+		MultiPassResult,
+		AnalysisStatusResponse,
+		ResumeAction
+	} from '$lib/multipass';
 
 	type ShowcaseItem = {
 		id: string;
@@ -35,6 +42,7 @@
 		date_published?: string | null;
 		display_order: number;
 		published: boolean;
+		hide_fact_checking: boolean;
 		created_at: string;
 		updated_at: string;
 	};
@@ -52,6 +60,7 @@
 		date_published: string;
 		display_order: number;
 		published: boolean;
+		hide_fact_checking: boolean;
 	};
 
 	const blankForm: ShowcaseForm = {
@@ -66,7 +75,8 @@
 		tags: '',
 		date_published: '',
 		display_order: 0,
-		published: true
+		published: true,
+		hide_fact_checking: false
 	};
 
 	let checkingAuth = $state(true);
@@ -95,6 +105,11 @@
 	let useStreamingAnalysis = $state(true); // Enable streaming by default
 	let streamingProgress = $state<ProgressEvent | null>(null);
 	let streamAbortController = $state<AbortController | null>(null);
+
+	// Job queue state (for long-running analyses routed to external worker)
+	let activeJobId = $state<string | null>(null);
+	let isJobQueued = $state(false);
+	let queuedShowcaseItemId = $state<string | null>(null);
 
 	// Interrupted analysis state
 	let interruptedStatus = $state<AnalysisStatusResponse | null>(null);
@@ -266,6 +281,11 @@
 		} finally {
 			loading = false;
 		}
+
+		// After items load, check if there's an active background job to reconnect to
+		if (items.length > 0 && !isJobQueued) {
+			reconnectToActiveJob();
+		}
 	}
 
 	function resetForm(keepOrder = false, hideForm = false) {
@@ -305,7 +325,8 @@
 			tags: item.tags?.join(', ') ?? '',
 			date_published: item.date_published ?? '',
 			display_order: item.display_order ?? 0,
-			published: !!item.published
+			published: !!item.published,
+			hide_fact_checking: !!item.hide_fact_checking
 		};
 		// Load saved source content if available
 		rawContent = item.source_content ?? '';
@@ -378,7 +399,8 @@
 			tags: parseTags(form.tags),
 			date_published: form.date_published.trim() || null,
 			display_order: newDisplayOrder,
-			published: form.published
+			published: form.published,
+			hide_fact_checking: form.hide_fact_checking
 		};
 		try {
 			if (form.id) {
@@ -405,8 +427,8 @@
 				items = [created, ...items];
 				success = 'Showcase item created.';
 				clearDraft();
-				resetForm(true);
-				showForm = false;
+				// Transition to edit mode so the form stays open with the saved data
+				form = { ...form, id: created.id };
 			}
 		} catch (e: any) {
 			error = e?.message ?? 'Failed to save showcase item.';
@@ -831,10 +853,37 @@
 				body: JSON.stringify({
 					content: rawContent,
 					showcaseItemId,
+					skipFactChecking: !enableFactChecking,
 					discussionContext: {}
 				}),
 				signal: streamAbortController.signal
 			});
+
+			// Check if job was queued to external worker (202 Accepted)
+			if (response.status === 202) {
+				const queueData = await response.json();
+				if (queueData.queued && queueData.jobId) {
+					// Switch to job queue tracking
+					activeJobId = queueData.jobId;
+					isJobQueued = true;
+					queuedShowcaseItemId = showcaseItemId;
+					analysisStatus = `That's a lot! Sending to the analysis team... (${queueData.estimatedClaims || '?'} estimated claims)`;
+
+					// Add job to queue store and start polling
+					jobQueue.addJob({
+						jobId: queueData.jobId,
+						postId: showcaseItemId,
+						status: 'queued',
+						estimatedClaims: queueData.estimatedClaims,
+						estimatedTimeMs: queueData.estimatedTimeMs
+					});
+
+					// Exit early - job queue progress component will handle the rest
+					analyzing = false;
+					streamAbortController = null;
+					return;
+				}
+			}
 
 			if (!response.ok) {
 				const payload = await response.json().catch(() => ({}));
@@ -886,6 +935,7 @@
 								const result = (event as any).result as MultiPassResult;
 								await handleAnalysisComplete(result, showcaseItemId!);
 							} else if (event.type === 'error') {
+								analysisStatus = null;
 								analysisError = (event as any).error || 'Analysis failed';
 							}
 						}
@@ -896,6 +946,7 @@
 			if (e.name === 'AbortError') {
 				analysisStatus = 'Analysis cancelled.';
 			} else {
+				analysisStatus = null;
 				analysisError = e?.message || 'Failed to generate analysis.';
 			}
 		} finally {
@@ -989,15 +1040,117 @@
 	}
 
 	/**
+	 * Handle job queue completion
+	 */
+	async function handleJobComplete(result: Job['result']) {
+		console.log('[handleJobComplete] called with:', {
+			hasResult: !!result,
+			queuedShowcaseItemId,
+			activeJobId,
+			isJobQueued
+		});
+		if (!result || !queuedShowcaseItemId) {
+			console.warn('[handleJobComplete] early return - missing result or showcaseItemId');
+			return;
+		}
+
+		// Convert job result to MultiPassResult format
+		const multipassResult: MultiPassResult = {
+			result: result.result,
+			strategy: result.strategy,
+			claimsTotal: result.claimsTotal,
+			claimsAnalyzed: result.claimsAnalyzed,
+			claimsFailed: result.claimsFailed,
+			claimAnalyses: result.claimAnalyses || [],
+			usage: { total: { inputTokens: 0, outputTokens: 0 }, byPass: {} },
+			estimatedCost: 0
+		};
+
+		// Use existing completion handler
+		await handleAnalysisComplete(multipassResult, queuedShowcaseItemId);
+
+		// Clean up job from queue (must capture ID before clearing state)
+		const completedJobId = activeJobId;
+		activeJobId = null;
+		isJobQueued = false;
+		queuedShowcaseItemId = null;
+
+		if (completedJobId) {
+			jobQueue.removeJob(completedJobId);
+		}
+	}
+
+	/**
+	 * Handle job queue error
+	 */
+	function handleJobError(error: string) {
+		analysisStatus = null;
+		analysisError = error || 'Background analysis failed';
+		activeJobId = null;
+		isJobQueued = false;
+		queuedShowcaseItemId = null;
+	}
+
+	/**
+	 * Handle job queue cancel (stop tracking, job continues on server)
+	 */
+	function handleJobCancel() {
+		analysisStatus = 'Stopped tracking job. Analysis may continue in the background.';
+		activeJobId = null;
+		isJobQueued = false;
+		queuedShowcaseItemId = null;
+	}
+
+	/**
+	 * Reconnect to an active background job after page refresh.
+	 * The job queue store persists to sessionStorage and resumes polling automatically,
+	 * but the page-level state (activeJobId, isJobQueued, etc.) resets on refresh.
+	 * This restores that state and opens the edit form so JobQueueProgress renders.
+	 */
+	function reconnectToActiveJob() {
+		for (const [jobId, job] of jobQueue.jobs) {
+			const matchingItem = job.postId ? items.find((it) => it.id === job.postId) : null;
+			if (!matchingItem) continue;
+
+			if (job.status === 'queued' || job.status === 'processing') {
+				// Job still running — open the form and show progress
+				editItem(matchingItem);
+				activeJobId = jobId;
+				isJobQueued = true;
+				queuedShowcaseItemId = matchingItem.id;
+				analysisStatus = `Reconnected to background analysis (${job.estimatedClaims || '?'} estimated claims)`;
+				break;
+			} else if (job.status === 'completed' && job.result) {
+				// Job finished while page was loading — process the result
+				editItem(matchingItem);
+				queuedShowcaseItemId = matchingItem.id;
+				handleJobComplete(job.result);
+				break;
+			} else if (job.status === 'failed') {
+				// Job failed while page was loading — show the error
+				editItem(matchingItem);
+				handleJobError(job.error || 'Background analysis failed');
+				jobQueue.removeJob(jobId);
+				break;
+			}
+		}
+	}
+
+	/**
 	 * Check for interrupted analysis when editing an item
 	 */
-	async function checkForInterruptedAnalysis(showcaseItemId: string): Promise<AnalysisStatusResponse | null> {
+	async function checkForInterruptedAnalysis(
+		showcaseItemId: string
+	): Promise<AnalysisStatusResponse | null> {
 		try {
 			// Ensure auth is ready before checking
 			await nhost.auth.isAuthenticatedAsync();
 
 			const accessToken = nhost.auth.getAccessToken();
-			console.log('[checkForInterruptedAnalysis] accessToken:', accessToken ? 'present' : 'missing');
+			console.log(
+				'[checkForInterruptedAnalysis] accessToken:',
+				accessToken ? 'present' : 'missing'
+			);
 
 			const headers: Record<string, string> = {};
 			if (accessToken) {
@@ -1393,6 +1546,7 @@
 								await handleAnalysisComplete(result, form.id!);
 								interruptedStatus = null;
 							} else if (event.type === 'error') {
+								analysisStatus = null;
 								analysisError = (event as any).error || 'Analysis failed';
 							}
 						}
@@ -1403,6 +1557,7 @@
 			if (e.name === 'AbortError') {
 				analysisStatus = 'Analysis cancelled.';
 			} else {
+				analysisStatus = null;
 				analysisError = e?.message || 'Failed to resume analysis.';
 			}
 		} finally {
@@ -1819,40 +1974,50 @@
 												</button>
 											</div>
 										</div>
-
-										<div class="control-group">
-											<span class="control-label">Fact Check</span>
-											<div class="button-toggle-group">
-												<button
-													type="button"
-													class="toggle-btn"
-													class:is-active={!enableFactChecking}
-													disabled={analyzing}
-													onclick={() => (enableFactChecking = false)}
-												>
-													Off
-												</button>
-												<button
-													type="button"
-													class="toggle-btn"
-													class:is-active={enableFactChecking}
-													disabled={analyzing}
-													onclick={() => (enableFactChecking = true)}
-												>
-													On
-												</button>
-											</div>
-										</div>
 									{/if}
+
+									<div class="control-group">
+										<span class="control-label">Fact Check</span>
+										<div class="button-toggle-group">
+											<button
+												type="button"
+												class="toggle-btn"
+												class:is-active={!enableFactChecking}
+												disabled={analyzing}
+												onclick={() => (enableFactChecking = false)}
+											>
+												Off
+											</button>
+											<button
+												type="button"
+												class="toggle-btn"
+												class:is-active={enableFactChecking}
+												disabled={analyzing}
+												onclick={() => (enableFactChecking = true)}
+											>
+												On
+											</button>
+										</div>
+									</div>
 								</div>
 
 								<!-- Streaming progress indicator -->
-								{#if useStreamingAnalysis}
+								{#if useStreamingAnalysis && !isJobQueued}
 									<MultiPassProgress
 										isAnalyzing={analyzing}
 										currentEvent={streamingProgress}
 										error={analysisError}
 										onCancel={cancelStreamingAnalysis}
+									/>
+								{/if}
+
+								<!-- Job queue progress indicator (for long-running analyses) -->
+								{#if isJobQueued && activeJobId}
+									<JobQueueProgress
+										jobId={activeJobId}
+										onComplete={handleJobComplete}
+										onError={handleJobError}
+										onCancel={handleJobCancel}
 									/>
 								{/if}
 
@@ -1981,13 +2146,27 @@
 									<span class="field-hint">Tags help categorize and filter showcase items</span>
 								</label>
 
-								<label class="publish-toggle">
-									<span class="toggle-track" class:is-active={form.published}>
-										<span class="toggle-thumb"></span>
-									</span>
-									<input type="checkbox" bind:checked={form.published} class="sr-only" />
-									<span class="toggle-label">{form.published ? 'Published' : 'Draft'}</span>
-								</label>
+								<div class="toggle-row">
+									<label class="publish-toggle">
+										<span class="toggle-track" class:is-active={form.published}>
+											<span class="toggle-thumb"></span>
+										</span>
+										<input type="checkbox" bind:checked={form.published} class="sr-only" />
+										<span class="toggle-label">{form.published ? 'Published' : 'Draft'}</span>
+									</label>
+
+									<label class="publish-toggle">
+										<span class="toggle-track" class:is-active={form.hide_fact_checking}>
+											<span class="toggle-thumb"></span>
+										</span>
+										<input type="checkbox" bind:checked={form.hide_fact_checking} class="sr-only" />
+										<span class="toggle-label"
+											>{form.hide_fact_checking
+												? 'Fact Checks Hidden'
+												: 'Fact Checks Visible'}</span
+										>
+									</label>
+								</div>
 							</fieldset>
 
 							<!-- Analysis Versions Section -->
@@ -2226,9 +2405,15 @@
 										</section>
 									{/each}
 
-									<section class="preview-section">
+									<section
+										class="preview-section"
+										class:preview-hidden-section={form.hide_fact_checking}
+									>
 										<div class="preview-section-heading">
 											<h2>🔍 Fact Checking</h2>
+											{#if form.hide_fact_checking}
+												<span class="preview-hidden-badge">Hidden from public</span>
+											{/if}
 											{#if previewFactChecks().length > 0}
 												<span class="preview-section-count">
 													{previewFactChecks().length} claim{previewFactChecks().length === 1
@@ -2858,6 +3043,13 @@
 		overflow-y: auto;
 	}
 
+	/* Toggle Row */
+	.toggle-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 1.5rem;
+	}
+
 	/* Publish Toggle */
 	.publish-toggle {
 		display: flex;
@@ -3133,6 +3325,18 @@
 		background: color-mix(in srgb, var(--color-surface-alt) 60%, transparent);
 		border-radius: var(--border-radius-md);
 		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+	}
+	.preview-hidden-section {
+		opacity: 0.5;
+	}
+	.preview-hidden-badge {
+		font-size: 0.75rem;
+		font-weight: 600;
+		padding: 0.2rem 0.6rem;
+		background: color-mix(in srgb, #f59e0b 15%, transparent);
+		color: #b45309;
+		border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+		border-radius: var(--border-radius-md);
 	}
 	.preview-section-body {
 		font-size: 1rem;

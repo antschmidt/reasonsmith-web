@@ -98,15 +98,19 @@
 					tone: section.tone,
 					count: Array.isArray(section.items) ? section.items.length : 0
 				}))
-				.concat([
-					{
-						key: 'fact_checking',
-						label: 'Fact Checks',
-						icon: '🔍',
-						tone: 'fact',
-						count: Array.isArray(factChecks) ? factChecks.length : 0
-					}
-				])
+				.concat(
+					item.hide_fact_checking
+						? []
+						: [
+								{
+									key: 'fact_checking',
+									label: 'Fact Checks',
+									icon: '🔍',
+									tone: 'fact',
+									count: Array.isArray(factChecks) ? factChecks.length : 0
+								}
+							]
+				)
 		: [];
 </script>
 
@@ -215,44 +219,48 @@
 				</section>
 			{/each}
 
-			<section class="section">
-				<div class="section-heading">
-					<h2>🔍 Fact Checking</h2>
-					{#if factChecks.length > 0}
-						<span class="section-count"
-							>{factChecks.length} claim{factChecks.length === 1 ? '' : 's'}</span
-						>
-					{/if}
-				</div>
-				{#if factChecks.length > 0}
-					<div class="fact-grid">
-						{#each factChecks as check}
-							<article class={`fact-card verdict-${(check.verdict || 'Unverified').toLowerCase()}`}>
-								<header>
-									<h3>{check.verdict || 'Unverified'}</h3>
-								</header>
-								{#if check.claim}
-									<p class="claim">{check.claim}</p>
-								{/if}
-								{#if check.source?.name || check.source?.url}
-									<p class="source">
-										<strong>Source:</strong>
-										{#if check.source?.url}
-											<a href={check.source.url} target="_blank" rel="noopener"
-												>{check.source?.name || check.source.url}</a
-											>
-										{:else if check.source?.name}
-											{check.source.name}
-										{/if}
-									</p>
-								{/if}
-							</article>
-						{/each}
+			{#if !item.hide_fact_checking}
+				<section class="section">
+					<div class="section-heading">
+						<h2>🔍 Fact Checking</h2>
+						{#if factChecks.length > 0}
+							<span class="section-count"
+								>{factChecks.length} claim{factChecks.length === 1 ? '' : 's'}</span
+							>
+						{/if}
 					</div>
-				{:else}
-					<p class="section-empty">No fact-checkable claims were highlighted.</p>
-				{/if}
-			</section>
+					{#if factChecks.length > 0}
+						<div class="fact-grid">
+							{#each factChecks as check}
+								<article
+									class={`fact-card verdict-${(check.verdict || 'Unverified').toLowerCase()}`}
+								>
+									<header>
+										<h3>{check.verdict || 'Unverified'}</h3>
+									</header>
+									{#if check.claim}
+										<p class="claim">{check.claim}</p>
+									{/if}
+									{#if check.source?.name || check.source?.url}
+										<p class="source">
+											<strong>Source:</strong>
+											{#if check.source?.url}
+												<a href={check.source.url} target="_blank" rel="noopener"
+													>{check.source?.name || check.source.url}</a
+												>
+											{:else if check.source?.name}
+												{check.source.name}
+											{/if}
+										</p>
+									{/if}
+								</article>
+							{/each}
+						</div>
+					{:else}
+						<p class="section-empty">No fact-checkable claims were highlighted.</p>
+					{/if}
+				</section>
+			{/if}
 		{:else if item.analysis}
 			<section class="section">
 				<h2>Analysis</h2>

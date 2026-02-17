@@ -90,7 +90,7 @@
 			try {
 				// Generate QR code pointing to the ICS file endpoint
 				const icsUrl = `${window.location.origin}/api/event/${event.id}/calendar.ics`;
-				qrCodeUrl = await generateQRCode(icsUrl);
+				qrCodeUrl = await generateQRCode(icsUrl, { width: 512 });
 			} catch (error) {
 				console.error('Failed to generate QR code:', error);
 			}
@@ -412,8 +412,8 @@
 	}
 
 	.qr-code {
-		width: 200px;
-		height: 200px;
+		width: 480px;
+		height: 480px;
 	}
 
 	.qr-label {

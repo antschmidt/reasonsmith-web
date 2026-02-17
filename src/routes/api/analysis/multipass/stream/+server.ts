@@ -19,12 +19,14 @@ import { print } from 'graphql';
 import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
 import { logger } from '$lib/logger';
 import { logApiUsageAsync } from '$lib/server/apiUsageLogger';
+import { env } from '$env/dynamic/private';
 import {
 	runMultiPassAnalysisWithProgress,
 	FEATURED_CONFIG,
 	DEFAULT_MULTIPASS_MODELS,
 	formatSSEMessage,
-	createProgressEvent
+	createProgressEvent,
+	shouldRouteToJobsWorker
 } from '$lib/multipass';
 import type {
 	ProgressEvent,
@@ -634,6 +636,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 	let body: {
 		content?: string;
 		showcaseItemId?: string;
+		skipFactChecking?: boolean;
 		discussionContext?: {
 			discussion?: {
 				id?: string;
@@ -652,7 +655,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		});
 	}
 
-	const { content, showcaseItemId, discussionContext } = body;
+	const { content, showcaseItemId, skipFactChecking = true, discussionContext } = body;
 
 	// Validate content
 	if (typeof content !== 'string' || !content.trim()) {
@@ -687,6 +690,85 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 	}
 
 	logger.info(`[Stream] Starting SSE multi-pass analysis for contributor ${contributorId}`);
+	logger.info(`[Stream] Content length: ${content.length} chars`);
+
+	// Check if we should route to the external jobs worker instead of processing in-process
+	const jobsWorkerDecision = await shouldRouteToJobsWorker(
+		content,
+		{ useMultiPass: true, strategy: 'multi_featured' },
+		{ title: 'Featured Content' } // Always treat as featured for showcase items
+	);
+
+	logger.info(
+		`[Stream] Jobs worker decision: routeToJobsWorker=${jobsWorkerDecision.routeToJobsWorker}, reason=${jobsWorkerDecision.reason}`
+	);
+
+	if (jobsWorkerDecision.routeToJobsWorker) {
+		logger.info(`[Stream] Routing to jobs worker: ${jobsWorkerDecision.reason}`);
+
+		const JOBS_API_URL = env.JOBS_API_URL || 'https://jobs.reasonsmith.com';
+		const JOBS_API_KEY = env.JOBS_API_KEY || '';
+
+		if (!JOBS_API_KEY) {
+			logger.error('[Stream] JOBS_API_KEY not configured - cannot route to jobs worker');
+			return new Response(
+				JSON.stringify({ error: 'Jobs worker not configured. Please set JOBS_API_KEY.' }),
+				{ status: 503, headers: { 'Content-Type': 'application/json' } }
+			);
+		} else {
+			try {
+				// Forward to jobs worker
+				const jobResponse = await fetch(`${JOBS_API_URL}/api/v1/analyze`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-API-Key': JOBS_API_KEY
+					},
+					body: JSON.stringify({
+						content,
+						showcaseItemId,
+						discussionContext,
+						strategy: 'featured',
+						skipFactChecking,
+						// Include webhook URL for completion notification
+						webhookUrl: `${env.PUBLIC_SITE_URL || 'https://reasonsmith.com'}/api/analysis/webhook`
+					})
+				});
+
+				if (jobResponse.ok) {
+					const jobData = await jobResponse.json();
+					logger.info(`[Stream] Job queued: ${jobData.jobId}`);
+
+					// Return JSON response instead of SSE - client will poll for results
+					return new Response(
+						JSON.stringify({
+							queued: true,
+							jobId: jobData.jobId,
+							status: 'queued',
+							statusUrl: `/api/analysis/queue/status?jobId=${jobData.jobId}`,
+							estimatedClaims: jobsWorkerDecision.estimatedClaims,
+							estimatedTimeMs: jobsWorkerDecision.estimatedTimeMs,
+							reason: jobsWorkerDecision.reason
+						}),
+						{
+							status: 202,
+							headers: { 'Content-Type': 'application/json' }
+						}
+					);
+				} else {
+					const errorData = await jobResponse.json().catch(() => ({}));
+					logger.error(`[Stream] Failed to queue job: ${jobResponse.status}`, errorData);
+					// Fall through to in-process analysis
+				}
+			} catch (jobError) {
+				logger.error('[Stream] Failed to contact jobs service:', jobError);
+				// Fall through to in-process analysis
+			}
+		}
+	}
+
+	// Continue with in-process SSE streaming if not routed to jobs worker
+	logger.info('[Stream] Processing in-process (not routed to jobs worker)');
 
 	// Build analysis context
 	const analysisContext: AnalysisContext = {
@@ -832,7 +914,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 					{
 						...FEATURED_CONFIG,
 						models: DEFAULT_MULTIPASS_MODELS,
-						cacheTTL: '5m'
+						cacheTTL: '5m',
+						skipFactChecking
 					},
 					sendEvent,
 					{
@@ -840,6 +923,11 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						anthropic
 					}
 				);
+
+				// Strip fact_checking from result if disabled
+				if (skipFactChecking && result.result) {
+					(result.result as any).fact_checking = [];
+				}
 
 				// Store claim analyses in database
 				await storeClaimAnalyses(result, showcaseItemId);
