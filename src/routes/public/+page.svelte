@@ -930,6 +930,7 @@
 								const result = (event as any).result as MultiPassResult;
 								await handleAnalysisComplete(result, showcaseItemId!);
 							} else if (event.type === 'error') {
+								analysisStatus = null;
 								analysisError = (event as any).error || 'Analysis failed';
 							}
 						}
@@ -940,6 +941,7 @@
 			if (e.name === 'AbortError') {
 				analysisStatus = 'Analysis cancelled.';
 			} else {
+				analysisStatus = null;
 				analysisError = e?.message || 'Failed to generate analysis.';
 			}
 		} finally {
@@ -1077,6 +1079,7 @@
 	 * Handle job queue error
 	 */
 	function handleJobError(error: string) {
+		analysisStatus = null;
 		analysisError = error || 'Background analysis failed';
 		activeJobId = null;
 		isJobQueued = false;
@@ -1503,6 +1506,7 @@
 								await handleAnalysisComplete(result, form.id!);
 								interruptedStatus = null;
 							} else if (event.type === 'error') {
+								analysisStatus = null;
 								analysisError = (event as any).error || 'Analysis failed';
 							}
 						}
@@ -1513,6 +1517,7 @@
 			if (e.name === 'AbortError') {
 				analysisStatus = 'Analysis cancelled.';
 			} else {
+				analysisStatus = null;
 				analysisError = e?.message || 'Failed to resume analysis.';
 			}
 		} finally {

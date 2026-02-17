@@ -22,8 +22,8 @@
 
 	let { jobId, onComplete, onError, onCancel }: Props = $props();
 
-	// Get job from store
-	let job = $derived(jobQueue.getJob(jobId));
+	// Get job from store - access .jobs directly so Svelte 5 tracks the Map reactively
+	let job = $derived(jobQueue.jobs.get(jobId));
 
 	// Track previous status to detect completion
 	let previousStatus = $state<string | null>(null);
