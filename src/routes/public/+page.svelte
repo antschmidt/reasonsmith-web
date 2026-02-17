@@ -281,6 +281,11 @@
 		} finally {
 			loading = false;
 		}
+
+		// After items load, check if there's an active background job to reconnect to
+		if (items.length > 0 && !isJobQueued) {
+			reconnectToActiveJob();
+		}
 	}
 
 	function resetForm(keepOrder = false, hideForm = false) {
@@ -1094,6 +1099,41 @@
 		activeJobId = null;
 		isJobQueued = false;
 		queuedShowcaseItemId = null;
+	}
+
+	/**
+	 * Reconnect to an active background job after page refresh.
+	 * The job queue store persists to sessionStorage and resumes polling automatically,
+	 * but the page-level state (activeJobId, isJobQueued, etc.) resets on refresh.
+	 * This restores that state and opens the edit form so JobQueueProgress renders.
+	 */
+	function reconnectToActiveJob() {
+		for (const [jobId, job] of jobQueue.jobs) {
+			const matchingItem = job.postId ? items.find((it) => it.id === job.postId) : null;
+			if (!matchingItem) continue;
+
+			if (job.status === 'queued' || job.status === 'processing') {
+				// Job still running — open the form and show progress
+				editItem(matchingItem);
+				activeJobId = jobId;
+				isJobQueued = true;
+				queuedShowcaseItemId = matchingItem.id;
+				analysisStatus = `Reconnected to background analysis (${job.estimatedClaims || '?'} estimated claims)`;
+				break;
+			} else if (job.status === 'completed' && job.result) {
+				// Job finished while page was loading — process the result
+				editItem(matchingItem);
+				queuedShowcaseItemId = matchingItem.id;
+				handleJobComplete(job.result);
+				break;
+			} else if (job.status === 'failed') {
+				// Job failed while page was loading — show the error
+				editItem(matchingItem);
+				handleJobError(job.error || 'Background analysis failed');
+				jobQueue.removeJob(jobId);
+				break;
+			}
+		}
 	}
 
 	/**
