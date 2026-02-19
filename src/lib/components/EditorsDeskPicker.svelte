@@ -26,7 +26,7 @@
 	let error = $state<string | null>(null);
 	let success = $state(false);
 
-	const user = $derived(nhost.auth.getUser());
+	let user = $state(nhost.auth.getUser());
 	const curatorId = $derived(user?.id);
 
 	// Auto-populate fields when dialog opens

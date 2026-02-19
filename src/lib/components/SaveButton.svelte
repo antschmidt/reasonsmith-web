@@ -16,15 +16,17 @@
 	let savedItemId = $state<string | null>(null);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
+	let checked = $state(false);
 
-	const user = $derived(nhost.auth.getUser());
+	let user = $state(nhost.auth.getUser());
 	const contributorId = $derived(user?.id);
 	const size = $derived(props.size || 'medium');
 	const showLabel = $derived(props.showLabel ?? false);
 
 	// Check if item is already saved
 	async function checkSavedStatus() {
-		if (!contributorId) return;
+		if (!contributorId || checked) return;
+		checked = true;
 
 		try {
 			// Build the where clause based on which prop is provided
@@ -64,11 +66,22 @@
 		}
 	}
 
-	// Check saved status on mount and when user changes
-	$effect(() => {
+	import { onMount, onDestroy } from 'svelte';
+	let unsubAuth: (() => void) | undefined;
+	onMount(() => {
 		if (contributorId) {
 			checkSavedStatus();
 		}
+		unsubAuth = nhost.auth.onAuthStateChanged(() => {
+			const newUser = nhost.auth.getUser();
+			user = newUser;
+			if (newUser && !checked) {
+				checkSavedStatus();
+			}
+		});
+	});
+	onDestroy(() => {
+		unsubAuth?.();
 	});
 
 	async function toggleSave(e: MouseEvent) {
