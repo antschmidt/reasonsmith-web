@@ -506,6 +506,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		showcaseItemId?: string;
 		content?: string;
 		action?: ResumeAction;
+		analystNotes?: string;
 	};
 
 	try {
@@ -514,7 +515,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		return json({ error: 'Invalid JSON body' }, { status: 400 });
 	}
 
-	const { showcaseItemId, content, action } = body;
+	const { showcaseItemId, content, action, analystNotes } = body;
 
 	// Validate required fields
 	if (!showcaseItemId) {
@@ -575,7 +576,9 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		rateLimiting: DEFAULT_RATE_LIMIT_CONFIG
 	};
 
-	const analysisContext: AnalysisContext = {};
+	const analysisContext: AnalysisContext = {
+		analystNotes: analystNotes || undefined
+	};
 
 	// Handle resynthesize action (non-streaming)
 	if (action === 'resynthesize') {

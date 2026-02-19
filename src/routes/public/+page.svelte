@@ -43,6 +43,7 @@
 		display_order: number;
 		published: boolean;
 		hide_fact_checking: boolean;
+		analyst_notes?: string | null;
 		created_at: string;
 		updated_at: string;
 	};
@@ -61,6 +62,7 @@
 		display_order: number;
 		published: boolean;
 		hide_fact_checking: boolean;
+		analyst_notes: string;
 	};
 
 	const blankForm: ShowcaseForm = {
@@ -76,7 +78,8 @@
 		date_published: '',
 		display_order: 0,
 		published: true,
-		hide_fact_checking: false
+		hide_fact_checking: false,
+		analyst_notes: ''
 	};
 
 	let checkingAuth = $state(true);
@@ -326,7 +329,8 @@
 			date_published: item.date_published ?? '',
 			display_order: item.display_order ?? 0,
 			published: !!item.published,
-			hide_fact_checking: !!item.hide_fact_checking
+			hide_fact_checking: !!item.hide_fact_checking,
+			analyst_notes: item.analyst_notes ?? ''
 		};
 		// Load saved source content if available
 		rawContent = item.source_content ?? '';
@@ -400,7 +404,8 @@
 			date_published: form.date_published.trim() || null,
 			display_order: newDisplayOrder,
 			published: form.published,
-			hide_fact_checking: form.hide_fact_checking
+			hide_fact_checking: form.hide_fact_checking,
+			analyst_notes: form.analyst_notes.trim() || null
 		};
 		try {
 			if (form.id) {
@@ -854,6 +859,7 @@
 					content: rawContent,
 					showcaseItemId,
 					skipFactChecking: !enableFactChecking,
+					analystNotes: form.analyst_notes || undefined,
 					discussionContext: {}
 				}),
 				signal: streamAbortController.signal
@@ -1221,7 +1227,8 @@
 				body: JSON.stringify({
 					showcaseItemId: form.id,
 					content: rawContent,
-					action: 'resynthesize'
+					action: 'resynthesize',
+					analystNotes: form.analyst_notes || undefined
 				})
 			});
 
@@ -1420,7 +1427,8 @@
 					body: JSON.stringify({
 						showcaseItemId: form.id,
 						content: rawContent,
-						action: 'resynthesize'
+						action: 'resynthesize',
+						analystNotes: form.analyst_notes || undefined
 					})
 				});
 
@@ -2106,6 +2114,56 @@
 										<pre>{extractedExamples}</pre>
 									</details>
 								{/if}
+
+								<!-- Analyst Notes -->
+								<details class="analyst-notes-panel" open={!!form.analyst_notes}>
+									<summary>
+										Analyst Notes
+										{#if form.analyst_notes}
+											<span class="analyst-notes-badge">Active</span>
+										{/if}
+									</summary>
+									<div class="analyst-notes-content">
+										<p class="analyst-notes-description">
+											Provide guidance to refine the AI analysis. These notes are injected into the
+											synthesis prompt when resynthesizing.
+										</p>
+										<textarea
+											class="analyst-notes-textarea"
+											bind:value={form.analyst_notes}
+											placeholder="e.g., 'Ignore biographical introductions as good faith indicators — stating your name and title is not an argument.' or 'The speaker uses sarcasm frequently — evaluate tone carefully.'"
+											rows="4"
+										></textarea>
+										{#if hasExistingClaimAnalyses && form.id && form.analyst_notes}
+											<button
+												type="button"
+												class="btn-resynthesize-notes btn-small"
+												onclick={resynthesizeAnalysis}
+												disabled={analyzing || resynthesizing}
+												title="Re-run synthesis (Pass 3) with analyst notes applied"
+											>
+												{#if resynthesizing}
+													<AnimatedLogo size="14px" isAnimating={true} />
+													<span>Resynthesizing with notes…</span>
+												{:else}
+													<svg
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="2"
+													>
+														<path d="M1 4v6h6" />
+														<path d="M23 20v-6h-6" />
+														<path
+															d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"
+														/>
+													</svg>
+													<span>Resynthesize with Notes</span>
+												{/if}
+											</button>
+										{/if}
+									</div>
+								</details>
 							</fieldset>
 
 							<!-- Results Section -->
@@ -2329,6 +2387,23 @@
 										{/if}
 									{/if}
 								</header>
+
+								{#if form.analyst_notes}
+									<div class="analyst-notes-indicator">
+										<svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											width="14"
+											height="14"
+										>
+											<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+											<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+										</svg>
+										Analyst Notes Applied
+									</div>
+								{/if}
 
 								{#if previewSummary()}
 									<section class="preview-section">
@@ -3041,6 +3116,114 @@
 		border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 		max-height: 300px;
 		overflow-y: auto;
+	}
+
+	/* Analyst Notes Panel */
+	.analyst-notes-panel {
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: var(--border-radius-md);
+		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+		overflow: hidden;
+		margin-top: 0.75rem;
+	}
+	.analyst-notes-panel summary {
+		padding: 0.75rem 1rem;
+		cursor: pointer;
+		font-weight: 600;
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		transition: all 0.2s ease;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.analyst-notes-panel summary:hover {
+		color: var(--color-text-primary);
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+	}
+	.analyst-notes-badge {
+		font-size: 0.7rem;
+		font-weight: 500;
+		padding: 0.15rem 0.4rem;
+		background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+		color: var(--color-accent);
+		border-radius: var(--border-radius-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	.analyst-notes-content {
+		padding: 0.75rem 1rem;
+		border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+	}
+	.analyst-notes-description {
+		margin: 0 0 0.5rem;
+		font-size: 0.8rem;
+		color: var(--color-text-tertiary);
+		line-height: 1.4;
+	}
+	.analyst-notes-textarea {
+		width: 100%;
+		min-height: 80px;
+		padding: 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-sm);
+		background: var(--color-surface);
+		color: var(--color-text-primary);
+		font-family: inherit;
+		font-size: 0.85rem;
+		line-height: 1.5;
+		resize: vertical;
+	}
+	.analyst-notes-textarea:focus {
+		outline: none;
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+	}
+	.analyst-notes-textarea::placeholder {
+		color: var(--color-text-tertiary);
+		font-style: italic;
+	}
+	.btn-resynthesize-notes {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		margin-top: 0.75rem;
+		padding: 0.4rem 0.8rem;
+		border: 1px solid color-mix(in srgb, var(--color-accent) 50%, transparent);
+		border-radius: var(--border-radius-sm);
+		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+		color: var(--color-accent);
+		cursor: pointer;
+		font-size: 0.85rem;
+		font-weight: 500;
+		transition: all 0.2s ease;
+	}
+	.btn-resynthesize-notes svg {
+		width: 14px;
+		height: 14px;
+	}
+	.btn-resynthesize-notes:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+		border-color: var(--color-accent);
+	}
+	.btn-resynthesize-notes:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	/* Analyst Notes Indicator (Preview) */
+	.analyst-notes-indicator {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.3rem 0.6rem;
+		margin-bottom: 1rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-accent);
+		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+		border-radius: var(--border-radius-sm);
 	}
 
 	/* Toggle Row */

@@ -250,6 +250,7 @@ export const PUBLIC_SHOWCASE_ITEM_ADMIN_FIELDS = gql`
 		display_order
 		published
 		hide_fact_checking
+		analyst_notes
 		created_at
 		updated_at
 	}

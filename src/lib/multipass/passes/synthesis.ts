@@ -408,6 +408,18 @@ ${failedAnalyses.length} claims could not be analyzed. Please note this in your 
 `;
 	}
 
+	if (context.analystNotes) {
+		message += `
+## Analyst Guidance
+
+The following notes are from a human analyst who has reviewed the content and/or previous analysis results. Treat these as authoritative editorial direction that should influence your synthesis:
+
+${context.analystNotes}
+
+Apply this guidance when evaluating claims, identifying good faith indicators, and writing your summary.
+`;
+	}
+
 	const factCheckingInstruction = skipFactChecking
 		? '4. Do NOT include fact_checking - omit it entirely or provide an empty array. Fact-checking has not been requested for this analysis.'
 		: '4. Evaluate verifiable factual claims and provide fact_checking results with verdicts and sources.';
