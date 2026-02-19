@@ -43,15 +43,7 @@
 	let error = $state<string | null>(null);
 	let user = $state(nhost.auth.getUser());
 
-	nhost.auth.onAuthStateChanged(() => {
-		const newUser = nhost.auth.getUser();
-		const wasLoggedOut = !user;
-		user = newUser;
-		// Load discussions when user logs in (not on every token refresh)
-		if (wasLoggedOut && newUser && !loaded && !loading) {
-			loadDiscussions();
-		}
-	});
+	let unsubAuth: (() => void) | undefined;
 
 	async function loadDiscussions() {
 		loading = true;
@@ -128,12 +120,24 @@
 		return cleanContent.replace(/<[^>]*>/g, '').trim();
 	}
 
-	// Load discussions on mount if user is already authenticated
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	onMount(() => {
+		// Load discussions if user is already authenticated
 		if (!loaded && user) {
 			loadDiscussions();
 		}
+		// Listen for login (not token refreshes) to load discussions
+		unsubAuth = nhost.auth.onAuthStateChanged(() => {
+			const newUser = nhost.auth.getUser();
+			const wasLoggedOut = !user;
+			user = newUser;
+			if (wasLoggedOut && newUser && !loaded && !loading) {
+				loadDiscussions();
+			}
+		});
+	});
+	onDestroy(() => {
+		unsubAuth?.();
 	});
 </script>
 
