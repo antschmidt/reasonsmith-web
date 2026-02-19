@@ -39,6 +39,7 @@
 
 	let discussions = $state<Discussion[]>(initialDiscussions);
 	let loading = $state(false);
+	let loaded = $state(initialDiscussions.length > 0);
 	let error = $state<string | null>(null);
 	let user = $state(nhost.auth.getUser());
 
@@ -59,6 +60,7 @@
 					: gqlError;
 			}
 			discussions = (data as any)?.discussion ?? [];
+			loaded = true;
 		} catch (e: any) {
 			error = e?.message ?? 'Failed to load discussions';
 		} finally {
@@ -123,14 +125,14 @@
 	// Load discussions on mount if not provided and user is authenticated
 	import { onMount } from 'svelte';
 	onMount(() => {
-		if (initialDiscussions.length === 0 && user) {
+		if (!loaded && user) {
 			loadDiscussions();
 		}
 	});
 
-	// Reload discussions when user logs in
+	// Reload discussions when user logs in (after initial mount)
 	$effect(() => {
-		if (user && discussions.length === 0 && !loading && !error) {
+		if (user && !loaded && !loading && !error) {
 			loadDiscussions();
 		}
 	});
