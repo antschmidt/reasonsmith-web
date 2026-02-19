@@ -44,7 +44,13 @@
 	let user = $state(nhost.auth.getUser());
 
 	nhost.auth.onAuthStateChanged(() => {
-		user = nhost.auth.getUser();
+		const newUser = nhost.auth.getUser();
+		const wasLoggedOut = !user;
+		user = newUser;
+		// Load discussions when user logs in (not on every token refresh)
+		if (wasLoggedOut && newUser && !loaded && !loading) {
+			loadDiscussions();
+		}
 	});
 
 	async function loadDiscussions() {
@@ -122,17 +128,10 @@
 		return cleanContent.replace(/<[^>]*>/g, '').trim();
 	}
 
-	// Load discussions on mount if not provided and user is authenticated
+	// Load discussions on mount if user is already authenticated
 	import { onMount } from 'svelte';
 	onMount(() => {
 		if (!loaded && user) {
-			loadDiscussions();
-		}
-	});
-
-	// Reload discussions when user logs in (after initial mount)
-	$effect(() => {
-		if (user && !loaded && !loading && !error) {
 			loadDiscussions();
 		}
 	});
