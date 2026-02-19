@@ -42,10 +42,15 @@
 	let loaded = $state(initialDiscussions.length > 0);
 	let error = $state<string | null>(null);
 	let user = $state(nhost.auth.getUser());
-
-	let unsubAuth: (() => void) | undefined;
+	let fetchCount = 0;
 
 	async function loadDiscussions() {
+		if (loaded || loading) return;
+		fetchCount++;
+		if (fetchCount > 2) {
+			console.warn('[ShowcaseDiscussions] Blocked excessive fetch attempt #' + fetchCount);
+			return;
+		}
 		loading = true;
 		error = null;
 		try {
@@ -58,10 +63,10 @@
 					: gqlError;
 			}
 			discussions = (data as any)?.discussion ?? [];
-			loaded = true;
 		} catch (e: any) {
 			error = e?.message ?? 'Failed to load discussions';
 		} finally {
+			loaded = true;
 			loading = false;
 		}
 	}
@@ -121,17 +126,16 @@
 	}
 
 	import { onMount, onDestroy } from 'svelte';
+	let unsubAuth: (() => void) | undefined;
 	onMount(() => {
-		// Load discussions if user is already authenticated
-		if (!loaded && user) {
+		if (user) {
 			loadDiscussions();
 		}
-		// Listen for login (not token refreshes) to load discussions
 		unsubAuth = nhost.auth.onAuthStateChanged(() => {
 			const newUser = nhost.auth.getUser();
 			const wasLoggedOut = !user;
 			user = newUser;
-			if (wasLoggedOut && newUser && !loaded && !loading) {
+			if (wasLoggedOut && newUser) {
 				loadDiscussions();
 			}
 		});
