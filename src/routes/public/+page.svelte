@@ -43,6 +43,7 @@
 		display_order: number;
 		published: boolean;
 		hide_fact_checking: boolean;
+		podcast_audio_url?: string | null;
 		analyst_notes?: string | null;
 		created_at: string;
 		updated_at: string;
@@ -62,6 +63,7 @@
 		display_order: number;
 		published: boolean;
 		hide_fact_checking: boolean;
+		podcast_audio_url: string;
 		analyst_notes: string;
 	};
 
@@ -79,6 +81,7 @@
 		display_order: 0,
 		published: true,
 		hide_fact_checking: false,
+		podcast_audio_url: '',
 		analyst_notes: ''
 	};
 
@@ -117,6 +120,9 @@
 	// Interrupted analysis state
 	let interruptedStatus = $state<AnalysisStatusResponse | null>(null);
 	let showInterruptedBanner = $state(true);
+
+	// Podcast audio upload state
+	let podcastUploadStatus = $state<string | null>(null);
 
 	// Resynthesize state - tracks if current item has existing claim analyses
 	let hasExistingClaimAnalyses = $state(false);
@@ -330,6 +336,7 @@
 			display_order: item.display_order ?? 0,
 			published: !!item.published,
 			hide_fact_checking: !!item.hide_fact_checking,
+			podcast_audio_url: item.podcast_audio_url ?? '',
 			analyst_notes: item.analyst_notes ?? ''
 		};
 		// Load saved source content if available
@@ -364,6 +371,56 @@
 			});
 			// Load analysis versions
 			loadAnalysisVersions(item.id);
+		}
+	}
+
+	async function handlePodcastAudioUpload(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+
+		const maxSize = 50 * 1024 * 1024; // 50MB
+		if (file.size > maxSize) {
+			podcastUploadStatus = 'File too large (max 50MB)';
+			return;
+		}
+
+		podcastUploadStatus = 'Uploading...';
+		try {
+			const formData = new FormData();
+			formData.append('file[]', file);
+			formData.append('bucket-id', 'audio');
+
+			const session = nhost.getUserSession();
+			const accessToken = session?.accessToken;
+			if (!accessToken) {
+				podcastUploadStatus = 'Not authenticated';
+				return;
+			}
+
+			const response = await fetch(
+				'https://cgjvstxytfoblxzoljqz.storage.us-east-1.nhost.run/v1/files',
+				{
+					method: 'POST',
+					headers: { Authorization: `Bearer ${accessToken}` },
+					body: formData
+				}
+			);
+
+			if (!response.ok) {
+				const text = await response.text();
+				throw new Error(text || `Upload failed (${response.status})`);
+			}
+
+			const result = await response.json();
+			const fileId =
+				result?.processedFiles?.[0]?.id ?? result?.ProcessedFiles?.[0]?.id ?? result?.id;
+			if (!fileId) throw new Error('No file ID in upload response');
+
+			form.podcast_audio_url = `/api/audio/${fileId}`;
+			podcastUploadStatus = null;
+		} catch (err: any) {
+			podcastUploadStatus = `Upload failed: ${err.message}`;
 		}
 	}
 
@@ -405,6 +462,7 @@
 			display_order: newDisplayOrder,
 			published: form.published,
 			hide_fact_checking: form.hide_fact_checking,
+			podcast_audio_url: form.podcast_audio_url.trim() || null,
 			analyst_notes: form.analyst_notes.trim() || null
 		};
 		try {
@@ -1896,6 +1954,38 @@
 										/>
 									</label>
 								</div>
+
+								<!-- Podcast Audio -->
+								<div class="podcast-audio-section">
+									<label>
+										<span>Podcast Audio</span>
+										{#if form.podcast_audio_url}
+											<div class="podcast-audio-preview">
+												<audio controls src={form.podcast_audio_url} preload="metadata">
+													<track kind="captions" />
+												</audio>
+												<button
+													type="button"
+													class="btn-remove-audio"
+													onclick={() => {
+														form.podcast_audio_url = '';
+													}}
+												>
+													Remove Audio
+												</button>
+											</div>
+										{:else}
+											<input
+												type="file"
+												accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/wav"
+												onchange={handlePodcastAudioUpload}
+											/>
+											{#if podcastUploadStatus}
+												<p class="upload-status">{podcastUploadStatus}</p>
+											{/if}
+										{/if}
+									</label>
+								</div>
 							</fieldset>
 
 							<!-- AI Analysis Section -->
@@ -3116,6 +3206,44 @@
 		border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 		max-height: 300px;
 		overflow-y: auto;
+	}
+
+	/* Podcast Audio Section */
+	.podcast-audio-section {
+		margin-top: 0.75rem;
+		padding: 0.75rem;
+		border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+		border-radius: var(--border-radius-md);
+		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+	}
+	.podcast-audio-preview {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+	.podcast-audio-preview audio {
+		width: 100%;
+		border-radius: var(--border-radius-sm);
+	}
+	.btn-remove-audio {
+		align-self: flex-start;
+		padding: 0.375rem 0.75rem;
+		font-size: 0.8rem;
+		background: color-mix(in srgb, #ef4444 15%, transparent);
+		color: #ef4444;
+		border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+		border-radius: var(--border-radius-sm);
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+	.btn-remove-audio:hover {
+		background: color-mix(in srgb, #ef4444 25%, transparent);
+	}
+	.upload-status {
+		margin: 0.25rem 0 0;
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
 	}
 
 	/* Analyst Notes Panel */

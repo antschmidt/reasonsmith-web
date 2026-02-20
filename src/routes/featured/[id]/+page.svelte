@@ -149,6 +149,15 @@
 			{/if}
 		</header>
 
+		{#if item.podcast_audio_url}
+			<section class="podcast-player">
+				<div class="podcast-player-label">Listen to the analysis breakdown</div>
+				<audio controls preload="metadata" src={item.podcast_audio_url}>
+					Your browser does not support the audio element.
+				</audio>
+			</section>
+		{/if}
+
 		{#if summary}
 			<section class="section">
 				<h2>Summary</h2>
@@ -788,6 +797,29 @@
 
 	.section-body :global(br) {
 		content: '';
+	}
+
+	/* Podcast Player */
+	.podcast-player {
+		margin-top: 2rem;
+		padding: 1.5rem 2rem;
+		border-radius: var(--border-radius-lg);
+		background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+	}
+
+	.podcast-player-label {
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
+		margin-bottom: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.podcast-player audio {
+		width: 100%;
+		border-radius: var(--border-radius-md);
 	}
 
 	/* Mobile Responsiveness */

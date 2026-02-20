@@ -144,6 +144,15 @@
 	const isDashboard = $derived($page.url.pathname === '/');
 </script>
 
+<svelte:head>
+	<link
+		rel="alternate"
+		type="application/rss+xml"
+		title="ReasonSmith Podcast"
+		href="/podcast.xml"
+	/>
+</svelte:head>
+
 {#if user}
 	<nav class="top-nav" aria-label="Main navigation">
 		<div class="nav-left" role="group" aria-label="Navigation">
