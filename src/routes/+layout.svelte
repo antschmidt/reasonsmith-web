@@ -145,12 +145,7 @@
 </script>
 
 <svelte:head>
-	<link
-		rel="alternate"
-		type="application/rss+xml"
-		title="ReasonSmith Podcast"
-		href="/podcast.xml"
-	/>
+	<link rel="alternate" type="application/rss+xml" title="ReasonSmith Podcast" href="/podcast" />
 </svelte:head>
 
 {#if user}
