@@ -230,6 +230,7 @@ export const PUBLIC_SHOWCASE_ITEM_FIELDS = gql`
 		display_order
 		published
 		hide_fact_checking
+		podcast_audio_url
 		created_at
 	}
 `;
@@ -250,6 +251,8 @@ export const PUBLIC_SHOWCASE_ITEM_ADMIN_FIELDS = gql`
 		display_order
 		published
 		hide_fact_checking
+		podcast_audio_url
+		analyst_notes
 		created_at
 		updated_at
 	}

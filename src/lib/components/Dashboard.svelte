@@ -197,12 +197,10 @@
 		loading = false;
 	}
 
-	$effect(() => {
-		// Only run on client side
-		if (typeof window !== 'undefined') {
-			loadData();
-			fetchSavedItems();
-		}
+	import { onMount } from 'svelte';
+	onMount(() => {
+		loadData();
+		fetchSavedItems();
 	});
 
 	function getDraftHref(d: {

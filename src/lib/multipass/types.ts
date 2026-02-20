@@ -300,6 +300,8 @@ export interface AnalysisContext {
 		subtitle?: string;
 		summary?: string;
 	};
+	/** Editorial guidance from the admin to refine the synthesis */
+	analystNotes?: string;
 }
 
 // ============================================================================

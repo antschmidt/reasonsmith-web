@@ -637,6 +637,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		content?: string;
 		showcaseItemId?: string;
 		skipFactChecking?: boolean;
+		analystNotes?: string;
 		discussionContext?: {
 			discussion?: {
 				id?: string;
@@ -655,7 +656,13 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		});
 	}
 
-	const { content, showcaseItemId, skipFactChecking = true, discussionContext } = body;
+	const {
+		content,
+		showcaseItemId,
+		skipFactChecking = true,
+		discussionContext,
+		analystNotes
+	} = body;
 
 	// Validate content
 	if (typeof content !== 'string' || !content.trim()) {
@@ -730,6 +737,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						discussionContext,
 						strategy: 'featured',
 						skipFactChecking,
+						analystNotes: analystNotes || undefined,
 						// Include webhook URL for completion notification
 						webhookUrl: `${env.PUBLIC_SITE_URL || 'https://reasonsmith.com'}/api/analysis/webhook`
 					})
@@ -778,7 +786,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 					title: discussionContext.discussion.title,
 					description: discussionContext.discussion.description
 				}
-			: undefined
+			: undefined,
+		analystNotes: analystNotes || undefined
 	};
 
 	// Create the SSE stream

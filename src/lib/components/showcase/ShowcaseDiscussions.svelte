@@ -39,14 +39,18 @@
 
 	let discussions = $state<Discussion[]>(initialDiscussions);
 	let loading = $state(false);
+	let loaded = $state(initialDiscussions.length > 0);
 	let error = $state<string | null>(null);
 	let user = $state(nhost.auth.getUser());
-
-	nhost.auth.onAuthStateChanged(() => {
-		user = nhost.auth.getUser();
-	});
+	let fetchCount = 0;
 
 	async function loadDiscussions() {
+		if (loaded || loading) return;
+		fetchCount++;
+		if (fetchCount > 2) {
+			console.warn('[ShowcaseDiscussions] Blocked excessive fetch attempt #' + fetchCount);
+			return;
+		}
 		loading = true;
 		error = null;
 		try {
@@ -62,6 +66,7 @@
 		} catch (e: any) {
 			error = e?.message ?? 'Failed to load discussions';
 		} finally {
+			loaded = true;
 			loading = false;
 		}
 	}
@@ -120,19 +125,23 @@
 		return cleanContent.replace(/<[^>]*>/g, '').trim();
 	}
 
-	// Load discussions on mount if not provided and user is authenticated
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	let unsubAuth: (() => void) | undefined;
 	onMount(() => {
-		if (initialDiscussions.length === 0 && user) {
+		if (user) {
 			loadDiscussions();
 		}
+		unsubAuth = nhost.auth.onAuthStateChanged(() => {
+			const newUser = nhost.auth.getUser();
+			const wasLoggedOut = !user;
+			user = newUser;
+			if (wasLoggedOut && newUser) {
+				loadDiscussions();
+			}
+		});
 	});
-
-	// Reload discussions when user logs in
-	$effect(() => {
-		if (user && discussions.length === 0 && !loading && !error) {
-			loadDiscussions();
-		}
+	onDestroy(() => {
+		unsubAuth?.();
 	});
 </script>
 

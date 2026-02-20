@@ -41,6 +41,31 @@ export const GET_PUBLIC_SHOWCASE_ADMIN = gql`
 `;
 
 // ============================================
+// Podcast Feed
+// ============================================
+
+export const GET_PODCAST_FEED_ITEMS = gql`
+	query GetPodcastFeedItems {
+		public_showcase_item(
+			where: { published: { _eq: true }, podcast_audio_url: { _is_null: false } }
+			order_by: [{ date_published: desc_nulls_last }, { created_at: desc }]
+		) {
+			id
+			title
+			subtitle
+			summary
+			creator
+			media_type
+			podcast_audio_url
+			source_url
+			tags
+			date_published
+			created_at
+		}
+	}
+`;
+
+// ============================================
 // Public Showcase Mutations
 // ============================================
 
