@@ -76,7 +76,7 @@
 		success = null;
 
 		try {
-			const result = await nhost.graphql.request(CREATE_PUBLIC_SHOWCASE_ITEM, itemData);
+			const result = await nhost.graphql.request(CREATE_PUBLIC_SHOWCASE_ITEM, { input: itemData });
 
 			if (result.error) {
 				const errorMessage = Array.isArray(result.error)
@@ -102,11 +102,25 @@
 		error = null;
 		success = null;
 
+		console.log('=== UPDATE ITEM DEBUG ===');
+		console.log('updateItem called with id:', id);
+		console.log('date_published value specifically:', itemData.date_published);
+		console.log('date_published type:', typeof itemData.date_published);
+		console.log('Full itemData:', JSON.stringify(itemData, null, 2));
+
 		try {
-			const result = await nhost.graphql.request(UPDATE_PUBLIC_SHOWCASE_ITEM, {
+			const variables = {
 				id,
-				...itemData
-			});
+				changes: itemData
+			};
+			console.log('GraphQL variables being sent:', JSON.stringify(variables, null, 2));
+
+			const result = await nhost.graphql.request(UPDATE_PUBLIC_SHOWCASE_ITEM, variables);
+
+			console.log('GraphQL result:', JSON.stringify(result, null, 2));
+			console.log('GraphQL error (if any):', result.error);
+			console.log('GraphQL data (if any):', result.data);
+			console.log('=== END UPDATE DEBUG ===');
 
 			if (result.error) {
 				const errorMessage = Array.isArray(result.error)
