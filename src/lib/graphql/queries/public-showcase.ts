@@ -57,6 +57,7 @@ export const GET_PODCAST_FEED_ITEMS = gql`
 			creator
 			media_type
 			podcast_audio_url
+			podcast_audio_size
 			source_url
 			tags
 			date_published
