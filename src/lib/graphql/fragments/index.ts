@@ -232,6 +232,7 @@ export const PUBLIC_SHOWCASE_ITEM_FIELDS = gql`
 		published
 		hide_fact_checking
 		podcast_audio_url
+		podcast_audio_size
 		created_at
 	}
 `;
@@ -254,6 +255,7 @@ export const PUBLIC_SHOWCASE_ITEM_ADMIN_FIELDS = gql`
 		published
 		hide_fact_checking
 		podcast_audio_url
+		podcast_audio_size
 		analyst_notes
 		created_at
 		updated_at

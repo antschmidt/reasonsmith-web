@@ -15,6 +15,7 @@ interface PodcastItem {
 	creator?: string | null;
 	media_type?: string | null;
 	podcast_audio_url: string;
+	podcast_audio_size?: number | null;
 	source_url?: string | null;
 	tags?: string[] | null;
 	date_published?: string | null;
@@ -49,7 +50,8 @@ function buildItemXml(item: PodcastItem): string {
 	xml += `      <guid isPermaLink="false">${item.id}</guid>\n`;
 	xml += `      <pubDate>${pubDate}</pubDate>\n`;
 	xml += `      <description>${escapeXml(description)}</description>\n`;
-	xml += `      <enclosure url="${escapeXml(audioUrl)}" type="audio/mpeg" />\n`;
+	const audioSize = item.podcast_audio_size ?? 0;
+	xml += `      <enclosure url="${escapeXml(audioUrl)}" length="${audioSize}" type="audio/mpeg" />\n`;
 	xml += `      <itunes:summary>${escapeXml(description)}</itunes:summary>\n`;
 	xml += `      <itunes:author>The ReasonSmith Review</itunes:author>\n`;
 	xml += `      <itunes:explicit>false</itunes:explicit>\n`;
