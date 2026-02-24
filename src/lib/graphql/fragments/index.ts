@@ -227,6 +227,7 @@ export const PUBLIC_SHOWCASE_ITEM_FIELDS = gql`
 		summary
 		analysis
 		tags
+		date_published
 		display_order
 		published
 		hide_fact_checking
@@ -248,6 +249,7 @@ export const PUBLIC_SHOWCASE_ITEM_ADMIN_FIELDS = gql`
 		summary
 		analysis
 		tags
+		date_published
 		display_order
 		published
 		hide_fact_checking
