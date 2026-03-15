@@ -115,16 +115,58 @@ export const GET: RequestHandler = async ({ params, cookies, request }) => {
 
 		// No session found
 		if (!session) {
+			// No session found - but check if there are claim analyses directly
+			// (e.g., from jobs-worker that might not have created a session)
+			let hasClaimAnalyses = false;
+			let claimCount = 0;
+			try {
+				const claimCountResult = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET
+					},
+					body: JSON.stringify({
+						query: `
+							query GetClaimAnalysisCount($showcaseItemId: uuid!) {
+								claim_analysis_aggregate(
+									where: {
+										showcase_item_id: { _eq: $showcaseItemId },
+										status: { _eq: "completed" }
+									}
+								) {
+									aggregate {
+										count
+									}
+								}
+							}
+						`,
+						variables: { showcaseItemId }
+					})
+				});
+
+				const claimCountData = await claimCountResult.json();
+				claimCount = claimCountData.data?.claim_analysis_aggregate?.aggregate?.count || 0;
+				hasClaimAnalyses = claimCount > 0;
+				if (hasClaimAnalyses) {
+					logger.info(
+						`[Status] No session but found ${claimCount} claim analyses for ${showcaseItemId}`
+					);
+				}
+			} catch (claimErr) {
+				logger.warn('[Status] Failed to check claim_analysis table:', claimErr);
+			}
+
 			const response: AnalysisStatusResponse = {
 				hasSession: false,
-				phase: 'not_started',
+				phase: hasClaimAnalyses ? 'ready_for_synthesis' : 'not_started',
 				canResume: false,
 				canRetryFailed: false,
-				canResynthesize: false,
-				claimsTotal: 0,
-				claimsCompleted: 0,
+				canResynthesize: hasClaimAnalyses,
+				claimsTotal: claimCount,
+				claimsCompleted: claimCount,
 				claimsFailed: 0,
-				resumeActions: ['start_fresh']
+				resumeActions: hasClaimAnalyses ? ['resynthesize', 'start_fresh'] : ['start_fresh']
 			};
 			return json(response);
 		}
@@ -136,6 +178,10 @@ export const GET: RequestHandler = async ({ params, cookies, request }) => {
 		if (session.status === 'completed') {
 			// Analysis completed successfully
 			phase = 'completed';
+			// Allow resynthesize for completed sessions (to re-run Pass 3 with new analyst notes)
+			if (session.claims_completed > 0) {
+				resumeActions.push('resynthesize');
+			}
 			resumeActions.push('start_fresh');
 		} else if (session.status === 'failed') {
 			// Analysis failed
@@ -198,6 +244,53 @@ export const GET: RequestHandler = async ({ params, cookies, request }) => {
 			resumeActions.push('start_fresh');
 		}
 
+		// Also check claim_analysis table directly in case session doesn't reflect actual claims
+		// (e.g., if jobs-worker stored claims but session wasn't updated properly)
+		let actualClaimsCompleted = session.claims_completed;
+		if (actualClaimsCompleted === 0) {
+			try {
+				const claimCountResult = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET
+					},
+					body: JSON.stringify({
+						query: `
+							query GetClaimAnalysisCount($showcaseItemId: uuid!) {
+								claim_analysis_aggregate(
+									where: {
+										showcase_item_id: { _eq: $showcaseItemId },
+										status: { _eq: "completed" }
+									}
+								) {
+									aggregate {
+										count
+									}
+								}
+							}
+						`,
+						variables: { showcaseItemId }
+					})
+				});
+
+				const claimCountData = await claimCountResult.json();
+				const count = claimCountData.data?.claim_analysis_aggregate?.aggregate?.count || 0;
+				if (count > 0) {
+					actualClaimsCompleted = count;
+					// Add resynthesize option if we found claims but session didn't show them
+					if (!resumeActions.includes('resynthesize')) {
+						resumeActions.push('resynthesize');
+					}
+					logger.info(
+						`[Status] Found ${count} claim analyses directly (session showed ${session.claims_completed})`
+					);
+				}
+			} catch (claimErr) {
+				logger.warn('[Status] Failed to check claim_analysis table:', claimErr);
+			}
+		}
+
 		const response: AnalysisStatusResponse = {
 			hasSession: true,
 			session,
@@ -206,7 +299,7 @@ export const GET: RequestHandler = async ({ params, cookies, request }) => {
 			canRetryFailed: resumeActions.includes('retry_failed'),
 			canResynthesize: resumeActions.includes('resynthesize'),
 			claimsTotal: session.total_claims || 0,
-			claimsCompleted: session.claims_completed,
+			claimsCompleted: actualClaimsCompleted,
 			claimsFailed: session.claims_failed,
 			resumeActions
 		};

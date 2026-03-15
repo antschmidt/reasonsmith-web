@@ -99,6 +99,9 @@ export async function runExtractionPass(
 	logger.info(
 		`[Pass 1] Starting claim extraction with ${isLongContent ? 'Sonnet (long content)' : 'Haiku'} (using tool calling)`
 	);
+	logger.info(
+		`[Pass 1] Content length: ${content.length} chars (~${Math.ceil(content.length / 4)} tokens estimate)`
+	);
 
 	try {
 		const systemPrompt = buildExtractionSystemPromptWithExamples();
@@ -195,6 +198,15 @@ export async function runExtractionPass(
 		logger.info(
 			`[Pass 1] Extracted ${result.totalCount} claims in ${Date.now() - startTime}ms (${usage.inputTokens} in, ${usage.outputTokens} out)`
 		);
+		logger.info(
+			`[Pass 1] Claim breakdown - Total: ${result.totalCount}, Processed: ${result.claims.length}, ` +
+				`Grouped: ${result.groupedCount}, TooMany: ${result.tooManyClaims}`
+		);
+		if (result.tooManyClaims) {
+			logger.warn(
+				`[Pass 1] Content has many claims (${result.totalCount}). RecommendSplit: ${result.recommendSplit || 'none'}`
+			);
+		}
 
 		return {
 			...result,

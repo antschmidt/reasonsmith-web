@@ -573,7 +573,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		models: DEFAULT_MULTIPASS_MODELS,
 		complexityConfidenceThreshold: 0.65,
 		cacheTTL: '5m',
-		rateLimiting: DEFAULT_RATE_LIMIT_CONFIG
+		rateLimiting: DEFAULT_RATE_LIMIT_CONFIG,
+		skipFactChecking: true
 	};
 
 	const analysisContext: AnalysisContext = {

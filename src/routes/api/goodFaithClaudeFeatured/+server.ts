@@ -22,6 +22,139 @@ const anthropic = new Anthropic({
 });
 
 /**
+ * Get the next version number for a showcase item
+ */
+async function getNextVersionNumber(showcaseItemId: string): Promise<number> {
+	const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+	const HASURA_GRAPHQL_ADMIN_SECRET =
+		process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+
+	if (!HASURA_GRAPHQL_ENDPOINT || !HASURA_GRAPHQL_ADMIN_SECRET) {
+		return 1;
+	}
+
+	try {
+		const response = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET
+			},
+			body: JSON.stringify({
+				query: `
+					query GetNextVersionNumber($showcaseItemId: uuid!) {
+						showcase_analysis_version(
+							where: { showcase_item_id: { _eq: $showcaseItemId } }
+							order_by: { version_number: desc }
+							limit: 1
+						) {
+							version_number
+						}
+					}
+				`,
+				variables: { showcaseItemId }
+			})
+		});
+
+		const data = await response.json();
+		const versions = data.data?.showcase_analysis_version ?? [];
+		return versions.length > 0 ? versions[0].version_number + 1 : 1;
+	} catch (error) {
+		logger.error('Failed to get next version number:', error);
+		return 1;
+	}
+}
+
+/**
+ * Create an analysis version with multipass metadata
+ */
+async function createAnalysisVersion(
+	showcaseItemId: string,
+	result: MultiPassResult,
+	goodFaithResult: any
+): Promise<void> {
+	const HASURA_GRAPHQL_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT || process.env.GRAPHQL_URL;
+	const HASURA_GRAPHQL_ADMIN_SECRET =
+		process.env.HASURA_GRAPHQL_ADMIN_SECRET || process.env.HASURA_ADMIN_SECRET;
+
+	if (!HASURA_GRAPHQL_ENDPOINT || !HASURA_GRAPHQL_ADMIN_SECRET) {
+		logger.warn('[Featured] Cannot create analysis version: missing Hasura config');
+		return;
+	}
+
+	try {
+		// Get next version number
+		const versionNumber = await getNextVersionNumber(showcaseItemId);
+
+		// Build combined result with multipass metadata
+		const combinedResult = {
+			...goodFaithResult,
+			multipass: {
+				strategy: result.strategy,
+				claimsTotal: result.claimsTotal,
+				claimsAnalyzed: result.claimsAnalyzed,
+				claimsFailed: result.claimsFailed
+			}
+		};
+
+		// Calculate estimated cost in cents
+		const totalUsage = result.usage.total;
+		// Use actual estimatedCost from multipass if available, otherwise calculate
+		const estimatedCostCents =
+			result.estimatedCost ||
+			(totalUsage.inputTokens / 1_000_000) * 300 + (totalUsage.outputTokens / 1_000_000) * 1500;
+
+		// Create the new version
+		const response = await fetch(HASURA_GRAPHQL_ENDPOINT, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-hasura-admin-secret': HASURA_GRAPHQL_ADMIN_SECRET
+			},
+			body: JSON.stringify({
+				query: `
+					mutation CreateAnalysisVersion($input: showcase_analysis_version_insert_input!) {
+						insert_showcase_analysis_version_one(object: $input) {
+							id
+							version_number
+							is_active
+						}
+					}
+				`,
+				variables: {
+					input: {
+						showcase_item_id: showcaseItemId,
+						version_number: versionNumber,
+						is_active: true,
+						analysis: combinedResult,
+						summary: goodFaithResult.summary || null,
+						analysis_strategy: result.strategy,
+						claims_total: result.claimsTotal,
+						claims_analyzed: result.claimsAnalyzed,
+						claims_failed: result.claimsFailed,
+						model_used: DEFAULT_MULTIPASS_MODELS.simple,
+						input_tokens: totalUsage.inputTokens,
+						output_tokens: totalUsage.outputTokens,
+						estimated_cost_cents: estimatedCostCents
+					}
+				}
+			})
+		});
+
+		const data = await response.json();
+		if (data.errors) {
+			logger.error('[Featured] Failed to create analysis version:', data.errors);
+		} else {
+			logger.info(
+				`[Featured] Created analysis version ${versionNumber} for showcase item ${showcaseItemId}`
+			);
+		}
+	} catch (error) {
+		logger.error('[Featured] Error creating analysis version:', error);
+	}
+}
+
+/**
  * Store claim analyses in database for featured content
  */
 async function storeClaimAnalyses(result: MultiPassResult, showcaseItemId?: string): Promise<void> {
@@ -602,7 +735,9 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			skipFactChecking = true,
 			includeMultiPass = false,
 			discussionContext,
-			showcaseItemId
+			showcaseItemId,
+			analystNotes,
+			showcaseContext
 		} = body as {
 			content?: string;
 			provider?: string;
@@ -616,6 +751,14 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 				};
 			};
 			showcaseItemId?: string;
+			/** Editorial guidance from admin to refine the synthesis */
+			analystNotes?: string;
+			/** Context about the showcase item being analyzed */
+			showcaseContext?: {
+				title?: string;
+				subtitle?: string;
+				summary?: string;
+			};
 		};
 
 		if (typeof content !== 'string' || !content.trim()) {
@@ -815,17 +958,38 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 				// Run in-process if not routed to jobs worker (or if routing failed)
 				try {
 					logger.info('[Featured] Running multi-pass claim analysis in-process');
+
+					// Build full analysis context with all available information
+					const analysisContext = {
+						discussion: discussionContext?.discussion
+							? {
+									id: discussionContext.discussion.id,
+									title: discussionContext.discussion.title,
+									description: discussionContext.discussion.description
+								}
+							: undefined,
+						// Include showcase context if provided
+						showcaseContext: showcaseContext
+							? {
+									title: showcaseContext.title || '',
+									subtitle: showcaseContext.subtitle,
+									summary: showcaseContext.summary
+								}
+							: undefined,
+						// Include analyst notes for editorial guidance in synthesis
+						analystNotes: analystNotes || undefined
+					};
+
+					logger.info('[Featured] Analysis context:', {
+						hasDiscussion: !!analysisContext.discussion,
+						hasShowcaseContext: !!analysisContext.showcaseContext,
+						hasAnalystNotes: !!analysisContext.analystNotes,
+						analystNotesLength: analystNotes?.length || 0
+					});
+
 					multiPassResult = await runMultiPassAnalysis(
 						content,
-						{
-							discussion: discussionContext?.discussion
-								? {
-										id: discussionContext.discussion.id,
-										title: discussionContext.discussion.title,
-										description: discussionContext.discussion.description
-									}
-								: undefined
-						},
+						analysisContext,
 						{
 							...FEATURED_CONFIG,
 							models: DEFAULT_MULTIPASS_MODELS,
@@ -839,6 +1003,11 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
 					// Store claim analyses in database (requires showcase item ID)
 					await storeClaimAnalyses(multiPassResult, showcaseItemId);
+
+					// Create analysis version with multipass metadata
+					if (showcaseItemId) {
+						await createAnalysisVersion(showcaseItemId, multiPassResult, multiPassResult.result);
+					}
 				} catch (multiPassError) {
 					logger.error('[Featured] Multi-pass analysis failed:', multiPassError);
 					// Continue without multi-pass - it's optional

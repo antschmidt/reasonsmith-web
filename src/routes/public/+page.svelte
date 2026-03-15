@@ -768,7 +768,15 @@
 					provider: analysisProvider,
 					skipFactChecking: !enableFactChecking,
 					includeMultiPass: true,
-					showcaseItemId
+					showcaseItemId,
+					// Include analyst notes for editorial guidance in synthesis
+					analystNotes: form.analyst_notes?.trim() || undefined,
+					// Include showcase context for better analysis framing
+					showcaseContext: {
+						title: form.title?.trim() || undefined,
+						subtitle: form.subtitle?.trim() || undefined,
+						summary: form.summary?.trim() || undefined
+					}
 				})
 			});
 			if (!response.ok) {
@@ -1254,8 +1262,9 @@
 			if (!response.ok) return false;
 
 			const status: AnalysisStatusResponse = await response.json();
-			// Has existing analyses if session exists and has completed claims
-			return status.hasSession && status.claimsCompleted > 0;
+			// Use canResynthesize flag which checks both session and direct claim analyses
+			// This handles cases where jobs-worker stored claims without creating a session
+			return status.canResynthesize || status.claimsCompleted > 0;
 		} catch (err) {
 			console.error('Failed to check for existing claim analyses:', err);
 			return false;

@@ -29,6 +29,15 @@ export {
 	getModelForClaim
 } from './passes/claimAnalysis';
 export { runSynthesisPass } from './passes/synthesis';
+export {
+	runWebSearchVerification,
+	isWebSearchAvailable,
+	DEFAULT_VERIFICATION_CONFIG
+} from './passes/webSearchVerification';
+export type {
+	WebSearchVerificationResult,
+	VerificationResult
+} from './passes/webSearchVerification';
 
 // Utilities
 export { calculateCost, estimateCost, formatCost, isWithinBudget } from './utils/costEstimator';
@@ -85,6 +94,9 @@ export type {
 	RetryClaimsRequest,
 	RetryClaimsResponse,
 
+	// Web search verification types
+	WebSearchVerificationConfig,
+
 	// Session types (for reconnection/resume)
 	AnalysisSessionStatus,
 	AnalysisPhase,
@@ -104,7 +116,8 @@ export {
 	FEATURED_CONFIG,
 	ACADEMIC_CONFIG,
 	DEFAULT_RATE_LIMIT_CONFIG,
-	JOBS_WORKER_CONFIG
+	JOBS_WORKER_CONFIG,
+	DEFAULT_WEB_SEARCH_VERIFICATION_CONFIG
 } from './types';
 
 export type { JobsWorkerConfig } from './types';
