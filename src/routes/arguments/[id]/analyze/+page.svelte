@@ -3,8 +3,18 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { nhost } from '$lib/nhostClient';
-	import { GET_ARGUMENT, BULK_INSERT_NODES, BULK_INSERT_EDGES, UPDATE_NODE } from '$lib/graphql/queries';
-	import type { ArgumentNode, ArgumentEdge, ArgumentNodeType, ArgumentEdgeType } from '$lib/types/argument';
+	import {
+		GET_ARGUMENT,
+		BULK_INSERT_NODES,
+		BULK_INSERT_EDGES,
+		UPDATE_NODE
+	} from '$lib/graphql/queries';
+	import type {
+		ArgumentNode,
+		ArgumentEdge,
+		ArgumentNodeType,
+		ArgumentEdgeType
+	} from '$lib/types/argument';
 	import { NODE_TYPE_CONFIGS, EDGE_TYPE_CONFIGS } from '$lib/types/argument';
 	import type { ExtractionResult, ExtractedNode, ExtractedEdge } from '$lib/types/argument';
 	import { computeCompletenessScore, computeStructuralFlags } from '$lib/utils/argumentUtils';
@@ -84,9 +94,7 @@
 			const result = await nhost.graphql.request(GET_ARGUMENT, { id: argumentId });
 
 			if (result.error) {
-				const msg = Array.isArray(result.error)
-					? result.error[0]?.message
-					: result.error.message;
+				const msg = Array.isArray(result.error) ? result.error[0]?.message : result.error.message;
 				throw new Error(msg || 'Failed to load argument');
 			}
 
@@ -452,7 +460,8 @@ You can paste:
 						{#if hasExistingGraph}
 							<p class="overwrite-warning">
 								<AlertTriangle size={14} />
-								This argument already has {existingNodes.length} nodes. Extraction will replace the existing graph.
+								This argument already has {existingNodes.length} nodes. Extraction will replace the existing
+								graph.
 							</p>
 						{/if}
 
@@ -527,12 +536,14 @@ You can paste:
 					<!-- Structural flags from extraction -->
 					{#if extractionResult.structural_flags.length > 0}
 						<div class="extraction-flags">
-							<button
-								class="flags-toggle"
-								onclick={() => (expandedFlags = !expandedFlags)}
-							>
+							<button class="flags-toggle" onclick={() => (expandedFlags = !expandedFlags)}>
 								<AlertTriangle size={14} />
-								<span>{extractionResult.structural_flags.length} structural {extractionResult.structural_flags.length === 1 ? 'issue' : 'issues'} detected</span>
+								<span
+									>{extractionResult.structural_flags.length} structural {extractionResult
+										.structural_flags.length === 1
+										? 'issue'
+										: 'issues'} detected</span
+								>
 								{#if expandedFlags}
 									<ChevronUp size={14} />
 								{:else}
@@ -563,12 +574,8 @@ You can paste:
 							{@const isRemoved = removedNodeIds.has(node.id)}
 							{@const isRoot = extractionResult.root_claim === node.id}
 							{@const isEditing = editingNodeId === node.id}
-							{@const nodeEdges = activeEdges.filter(
-								(e) => e.from === node.id || e.to === node.id
-							)}
-							{@const warrantConn = warrantConnections.find(
-								(w) => w.warrant_node_id === node.id
-							)}
+							{@const nodeEdges = activeEdges.filter((e) => e.from === node.id || e.to === node.id)}
+							{@const warrantConn = warrantConnections.find((w) => w.warrant_node_id === node.id)}
 
 							<div
 								class="review-card"
@@ -657,9 +664,9 @@ You can paste:
 
 								<!-- Warrant connections -->
 								{#if node.type === 'warrant' && warrantConn && !isRemoved}
+									{@const drawsFromNode = getNodeById(warrantConn.draws_from)}
+									{@const justifiesNode = getNodeById(warrantConn.justifies)}
 									<div class="warrant-links">
-										{@const drawsFromNode = getNodeById(warrantConn.draws_from)}
-										{@const justifiesNode = getNodeById(warrantConn.justifies)}
 										{#if drawsFromNode}
 											<div class="warrant-link-row">
 												<span
@@ -704,7 +711,8 @@ You can paste:
 														{truncate(otherNode.content, 35)}
 													</span>
 													{#if edge.confidence < 1}
-														<span class="edge-confidence">{Math.round(edge.confidence * 100)}%</span>
+														<span class="edge-confidence">{Math.round(edge.confidence * 100)}%</span
+														>
 													{/if}
 												</div>
 											{/if}
