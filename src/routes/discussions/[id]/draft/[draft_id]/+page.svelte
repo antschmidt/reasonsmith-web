@@ -37,6 +37,7 @@
 	import SocialMediaImportDisplay from '$lib/components/SocialMediaImportDisplay.svelte';
 	import JobQueueProgress from '$lib/components/ui/JobQueueProgress.svelte';
 	import { jobQueue } from '$lib/stores/jobQueue.svelte';
+	import DiscussionArgumentGraph from '$lib/components/arguments/DiscussionArgumentGraph.svelte';
 
 	// Get parameters
 	const discussionId = $page.params.id;
@@ -99,6 +100,7 @@
 	let showCitationForm = $state(false);
 	let editingCitation = $state<Citation | null>(null);
 	let expandedCitationIds = $state<Set<string>>(new Set());
+	let argumentGraphExpanded = $state(false);
 
 	// User
 	let user = $state(nhost.auth.getUser());
@@ -1816,6 +1818,30 @@
 				</div>
 			{/if}
 
+			<!-- Argument Graph Section -->
+			<div class="argument-graph-section">
+				<button
+					class="argument-graph-toggle"
+					onclick={() => (argumentGraphExpanded = !argumentGraphExpanded)}
+				>
+					<span class="toggle-icon">{argumentGraphExpanded ? '▾' : '▸'}</span>
+					<span class="toggle-label">Argument Graph</span>
+					{#if !argumentGraphExpanded}
+						<span class="toggle-hint">Map out the claims, evidence, and reasoning</span>
+					{/if}
+				</button>
+				{#if argumentGraphExpanded}
+					<div class="argument-graph-content">
+						<DiscussionArgumentGraph
+							{discussionId}
+							discussionTitle={title || ''}
+							discussionDescription={description || ''}
+							userId={user?.id ?? null}
+						/>
+					</div>
+				{/if}
+			</div>
+
 			<footer class="editor-footer">
 				<div class="status-info">
 					{#if saving}
@@ -2459,6 +2485,57 @@
 	.close-btn:hover {
 		background: var(--color-surface-alt);
 		color: var(--color-text-primary);
+	}
+
+	/* Argument Graph Section */
+	.argument-graph-section {
+		margin-top: 2rem;
+		border: 1px solid var(--color-border, #333);
+		border-radius: var(--border-radius-md, 8px);
+		overflow: hidden;
+	}
+
+	.argument-graph-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: 100%;
+		padding: 0.875rem 1rem;
+		background: var(--color-surface-elevated, #1e1e1e);
+		border: none;
+		cursor: pointer;
+		font-family: var(--font-family-sans);
+		font-size: 0.9375rem;
+		font-weight: 600;
+		color: var(--color-text-primary, #e0e0e0);
+		transition: background 0.15s ease;
+		text-align: left;
+	}
+
+	.argument-graph-toggle:hover {
+		background: var(--color-surface-hover, #2a2a2a);
+	}
+
+	.toggle-icon {
+		font-size: 0.8rem;
+		color: var(--color-text-secondary, #888);
+		width: 1rem;
+		flex-shrink: 0;
+	}
+
+	.toggle-label {
+		flex-shrink: 0;
+	}
+
+	.toggle-hint {
+		font-size: 0.8rem;
+		font-weight: 400;
+		color: var(--color-text-tertiary, #666);
+		margin-left: 0.25rem;
+	}
+
+	.argument-graph-content {
+		border-top: 1px solid var(--color-border, #333);
 	}
 
 	@media (max-width: 768px) {

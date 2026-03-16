@@ -103,10 +103,40 @@
 		filterType === 'all' ? nodes : nodes.filter((n) => n.type === filterType)
 	);
 
+	/**
+	 * Strip HTML tags and decode entities to get plain text for AI extraction.
+	 * Handles rich text editor output (TipTap HTML).
+	 */
+	function stripHtml(html: string): string {
+		if (!html) return '';
+		// Replace block-level tags with newlines for paragraph separation
+		let text = html
+			.replace(/<br\s*\/?>/gi, '\n')
+			.replace(/<\/p>/gi, '\n\n')
+			.replace(/<\/h[1-6]>/gi, '\n\n')
+			.replace(/<\/li>/gi, '\n')
+			.replace(/<\/div>/gi, '\n');
+		// Strip remaining tags
+		text = text.replace(/<[^>]*>/g, '');
+		// Decode common HTML entities
+		text = text
+			.replace(/&amp;/g, '&')
+			.replace(/&lt;/g, '<')
+			.replace(/&gt;/g, '>')
+			.replace(/&quot;/g, '"')
+			.replace(/&#39;/g, "'")
+			.replace(/&nbsp;/g, ' ');
+		// Collapse excessive whitespace but preserve paragraph breaks
+		text = text.replace(/\n{3,}/g, '\n\n').trim();
+		return text;
+	}
+
+	/** Plain text version of the description for length checks and extraction */
+	const plainDescription = $derived(stripHtml(discussionDescription));
+
 	/** Whether there's enough discussion content to generate a graph from */
 	const canGenerate = $derived(
-		userId != null &&
-			(discussionDescription.trim().length >= 20 || discussionTitle.trim().length >= 20)
+		userId != null && (plainDescription.length >= 20 || discussionTitle.trim().length >= 20)
 	);
 
 	/** Whether the graph has real content beyond just the root claim */
@@ -205,12 +235,14 @@
 
 		try {
 			// Build the text to analyze from discussion title + description
+			// Strip HTML since description may come from the rich text editor
 			const textParts: string[] = [];
 			if (discussionTitle.trim()) {
 				textParts.push(discussionTitle.trim());
 			}
-			if (discussionDescription.trim()) {
-				textParts.push(discussionDescription.trim());
+			const plainDescription = stripHtml(discussionDescription);
+			if (plainDescription) {
+				textParts.push(plainDescription);
 			}
 			const text = textParts.join('\n\n');
 
