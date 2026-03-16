@@ -2,7 +2,7 @@
 	import type { ArgumentNode, ArgumentEdge } from '$lib/types/argument';
 	import { NODE_TYPE_CONFIGS, EDGE_TYPE_CONFIGS } from '$lib/types/argument';
 	import { slide } from 'svelte/transition';
-	import { ChevronDown, ChevronUp, Trash2, Link, Star } from '@lucide/svelte';
+	import { ChevronDown, ChevronUp, Trash2, Link, Star, Edit3, Save, X } from '@lucide/svelte';
 
 	interface Props {
 		node: ArgumentNode;
@@ -12,11 +12,16 @@
 		connectionCount: number;
 		onSelect: () => void;
 		onDelete: () => void;
+		onEdit?: (nodeId: string, content: string) => Promise<void> | void;
 	}
 
-	let { node, nodes, edges, isSelected, connectionCount, onSelect, onDelete }: Props = $props();
+	let { node, nodes, edges, isSelected, connectionCount, onSelect, onDelete, onEdit }: Props =
+		$props();
 
 	let expanded = $state(false);
+	let editing = $state(false);
+	let editContent = $state('');
+	let saving = $state(false);
 
 	const config = $derived(NODE_TYPE_CONFIGS[node.type]);
 
@@ -85,6 +90,46 @@
 		onDelete();
 	}
 
+	function startEdit(e: Event) {
+		e.stopPropagation();
+		editContent = node.content;
+		editing = true;
+	}
+
+	function cancelEdit(e: Event) {
+		e.stopPropagation();
+		editing = false;
+		editContent = '';
+		saving = false;
+	}
+
+	async function saveEdit(e: Event) {
+		e.stopPropagation();
+		if (!onEdit || !editContent.trim() || editContent.trim() === node.content) {
+			editing = false;
+			return;
+		}
+
+		saving = true;
+		try {
+			await onEdit(node.id, editContent.trim());
+			editing = false;
+		} catch {
+			// stay in edit mode on error so user doesn't lose their changes
+		} finally {
+			saving = false;
+		}
+	}
+
+	function handleEditKeydown(e: KeyboardEvent) {
+		e.stopPropagation();
+		if (e.key === 'Escape') {
+			cancelEdit(e);
+		} else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+			saveEdit(e);
+		}
+	}
+
 	function truncate(text: string, maxLength: number = 60): string {
 		if (text.length <= maxLength) return text;
 		return text.slice(0, maxLength - 3) + '...';
@@ -96,9 +141,10 @@
 	class:selected={isSelected}
 	class:is-root={node.is_root}
 	class:implied={node.implied}
+	class:editing
 	style="--node-color: {config.color}; --node-bg: {config.bgColor}"
-	onclick={onSelect}
-	onkeydown={(e) => e.key === 'Enter' && onSelect()}
+	onclick={editing ? undefined : onSelect}
+	onkeydown={(e) => !editing && e.key === 'Enter' && onSelect()}
 	role="button"
 	tabindex="0"
 	aria-expanded={expanded}
@@ -121,43 +167,87 @@
 		</div>
 
 		<div class="card-actions">
-			{#if connectionCount > 0}
+			{#if editing}
 				<button
-					class="expand-btn"
-					onclick={toggleExpand}
-					title={expanded ? 'Collapse connections' : 'Show connections'}
-					aria-label={expanded ? 'Collapse connections' : 'Show connections'}
+					class="action-btn save-btn"
+					onclick={saveEdit}
+					disabled={saving || !editContent.trim()}
+					title="Save (⌘+Enter)"
+					aria-label="Save edit"
 				>
-					<Link size={12} />
-					<span class="connection-count">{connectionCount}</span>
-					{#if expanded}
-						<ChevronUp size={12} />
-					{:else}
-						<ChevronDown size={12} />
-					{/if}
+					<Save size={13} />
 				</button>
-			{/if}
+				<button
+					class="action-btn cancel-btn"
+					onclick={cancelEdit}
+					disabled={saving}
+					title="Cancel (Esc)"
+					aria-label="Cancel edit"
+				>
+					<X size={13} />
+				</button>
+			{:else}
+				{#if connectionCount > 0}
+					<button
+						class="expand-btn"
+						onclick={toggleExpand}
+						title={expanded ? 'Collapse connections' : 'Show connections'}
+						aria-label={expanded ? 'Collapse connections' : 'Show connections'}
+					>
+						<Link size={12} />
+						<span class="connection-count">{connectionCount}</span>
+						{#if expanded}
+							<ChevronUp size={12} />
+						{:else}
+							<ChevronDown size={12} />
+						{/if}
+					</button>
+				{/if}
 
-			{#if !node.is_root}
-				<button
-					class="delete-btn"
-					onclick={handleDelete}
-					title="Delete node"
-					aria-label="Delete node"
-				>
-					<Trash2 size={13} />
-				</button>
+				{#if onEdit}
+					<button class="edit-btn" onclick={startEdit} title="Edit node" aria-label="Edit node">
+						<Edit3 size={13} />
+					</button>
+				{/if}
+
+				{#if !node.is_root}
+					<button
+						class="delete-btn"
+						onclick={handleDelete}
+						title="Delete node"
+						aria-label="Delete node"
+					>
+						<Trash2 size={13} />
+					</button>
+				{/if}
 			{/if}
 		</div>
 	</header>
 
 	<!-- Content -->
 	<div class="card-content">
-		<p class="node-content">{node.content}</p>
+		{#if editing}
+			<textarea
+				class="edit-textarea"
+				bind:value={editContent}
+				onkeydown={handleEditKeydown}
+				onclick={(e) => e.stopPropagation()}
+				disabled={saving}
+				rows="3"
+				placeholder={config.placeholder}
+			></textarea>
+			{#if saving}
+				<p class="edit-hint saving">Saving...</p>
+			{:else}
+				<p class="edit-hint"><kbd>⌘</kbd>+<kbd>Enter</kbd> to save · <kbd>Esc</kbd> to cancel</p>
+			{/if}
+		{:else}
+			<p class="node-content">{node.content}</p>
+		{/if}
 	</div>
 
 	<!-- Warrant Special Display -->
-	{#if node.type === 'warrant' && (warrantDrawsFrom || warrantJustifies)}
+	{#if !editing && node.type === 'warrant' && (warrantDrawsFrom || warrantJustifies)}
 		<div class="warrant-connections">
 			{#if warrantDrawsFrom}
 				<div class="warrant-link">
@@ -197,7 +287,7 @@
 	{/if}
 
 	<!-- Expanded Connections -->
-	{#if expanded && connections.length > 0}
+	{#if !editing && expanded && connections.length > 0}
 		<div class="connections-panel" transition:slide={{ duration: 200 }}>
 			<div class="connections-divider"></div>
 			<ul class="connections-list">
@@ -223,7 +313,7 @@
 	{/if}
 
 	<!-- Score indicator (if present) -->
-	{#if node.score !== null && node.score !== undefined}
+	{#if !editing && node.score !== null && node.score !== undefined}
 		<div class="score-indicator" title="Confidence score: {node.score.toFixed(2)}">
 			<div class="score-bar">
 				<div class="score-fill" style="width: {Math.round(node.score * 100)}%"></div>
@@ -252,8 +342,17 @@
 	.node-card.selected {
 		border-color: var(--node-color);
 		background: color-mix(in srgb, var(--node-color) 4%, var(--color-surface));
-		box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-color) 20%, transparent),
+		box-shadow:
+			0 0 0 1px color-mix(in srgb, var(--node-color) 20%, transparent),
 			0 2px 8px rgba(0, 0, 0, 0.1);
+	}
+
+	.node-card.editing {
+		border-color: var(--node-color);
+		cursor: default;
+		box-shadow:
+			0 0 0 1px color-mix(in srgb, var(--node-color) 30%, transparent),
+			0 4px 12px rgba(0, 0, 0, 0.12);
 	}
 
 	.node-card.is-root {
@@ -362,6 +461,7 @@
 		font-variant-numeric: tabular-nums;
 	}
 
+	.edit-btn,
 	.delete-btn {
 		display: inline-flex;
 		align-items: center;
@@ -378,14 +478,65 @@
 		transition: all var(--transition-fast) ease;
 	}
 
+	.node-card:hover .edit-btn,
 	.node-card:hover .delete-btn {
 		opacity: 0.6;
+	}
+
+	.edit-btn:hover {
+		opacity: 1 !important;
+		color: var(--node-color);
+		background: color-mix(in srgb, var(--node-color) 8%, transparent);
 	}
 
 	.delete-btn:hover {
 		opacity: 1 !important;
 		color: var(--color-error);
 		background: color-mix(in srgb, var(--color-error) 8%, transparent);
+	}
+
+	.action-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 26px;
+		height: 26px;
+		padding: 0;
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-sm);
+		cursor: pointer;
+		transition: all var(--transition-fast) ease;
+	}
+
+	.save-btn {
+		color: var(--color-success, #4be87a);
+		border-color: color-mix(in srgb, var(--color-success, #4be87a) 30%, var(--color-border));
+	}
+
+	.save-btn:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--color-success, #4be87a) 10%, transparent);
+		border-color: var(--color-success, #4be87a);
+	}
+
+	.save-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.cancel-btn {
+		color: var(--color-text-tertiary);
+	}
+
+	.cancel-btn:hover:not(:disabled) {
+		color: var(--color-error);
+		border-color: var(--color-error);
+		background: color-mix(in srgb, var(--color-error) 8%, transparent);
+	}
+
+	.cancel-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
 	}
 
 	/* Content */
@@ -400,6 +551,59 @@
 		line-height: 1.5;
 		color: var(--color-text-primary);
 		word-break: break-word;
+	}
+
+	/* Edit Textarea */
+	.edit-textarea {
+		display: block;
+		width: 100%;
+		padding: 8px;
+		margin: 0;
+		background: var(--color-input-bg, var(--color-surface-alt));
+		border: 1px solid color-mix(in srgb, var(--node-color) 40%, var(--color-border));
+		border-radius: var(--border-radius-sm);
+		font-family: var(--font-family-serif);
+		font-size: 0.85rem;
+		line-height: 1.5;
+		color: var(--color-text-primary);
+		resize: vertical;
+		min-height: 60px;
+		box-sizing: border-box;
+		transition: border-color var(--transition-fast) ease;
+	}
+
+	.edit-textarea:focus {
+		outline: none;
+		border-color: var(--node-color);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-color) 15%, transparent);
+	}
+
+	.edit-textarea:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.edit-hint {
+		margin: 4px 0 0 0;
+		font-size: 0.65rem;
+		color: var(--color-text-tertiary);
+		font-family: var(--font-family-ui);
+	}
+
+	.edit-hint.saving {
+		color: var(--node-color);
+		font-weight: 600;
+	}
+
+	.edit-hint kbd {
+		display: inline-block;
+		padding: 0 3px;
+		background: var(--color-surface-alt);
+		border: 1px solid var(--color-border);
+		border-radius: 3px;
+		font-family: var(--font-family-ui);
+		font-size: 0.6rem;
+		line-height: 1.4;
 	}
 
 	/* Warrant Connections */
@@ -563,6 +767,7 @@
 			font-size: 0.82rem;
 		}
 
+		.edit-btn,
 		.delete-btn {
 			opacity: 0.5;
 		}

@@ -3,8 +3,15 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { nhost } from '$lib/nhostClient';
-	import { GET_ARGUMENT, DELETE_NODE, DELETE_EDGE } from '$lib/graphql/queries';
-	import type { ArgumentNode, ArgumentEdge, ArgumentNodeType, CoachPrompt, CompletenessScore, StructuralFlag } from '$lib/types/argument';
+	import { GET_ARGUMENT, DELETE_NODE, DELETE_EDGE, UPDATE_NODE } from '$lib/graphql/queries';
+	import type {
+		ArgumentNode,
+		ArgumentEdge,
+		ArgumentNodeType,
+		CoachPrompt,
+		CompletenessScore,
+		StructuralFlag
+	} from '$lib/types/argument';
 	import { NODE_TYPE_CONFIGS } from '$lib/types/argument';
 	import {
 		computeCompletenessScore,
@@ -22,14 +29,29 @@
 	import AddNodeSheet from '$lib/components/arguments/AddNodeSheet.svelte';
 	import ArgumentGraph from '$lib/components/arguments/ArgumentGraph.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
-	import { Plus, PanelRightOpen, PanelRightClose, List, Network, ArrowLeft, FileText } from '@lucide/svelte';
+	import {
+		Plus,
+		PanelRightOpen,
+		PanelRightClose,
+		List,
+		Network,
+		ArrowLeft,
+		FileText
+	} from '@lucide/svelte';
 
 	const argumentId = $derived($page.params.id);
 
 	let user = $state(nhost.auth.getUser());
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	let argumentData = $state<{ id: string; user_id: string; title: string; description: string | null; created_at: string; updated_at: string } | null>(null);
+	let argumentData = $state<{
+		id: string;
+		user_id: string;
+		title: string;
+		description: string | null;
+		created_at: string;
+		updated_at: string;
+	} | null>(null);
 	let nodes = $state<ArgumentNode[]>([]);
 	let edges = $state<ArgumentEdge[]>([]);
 
@@ -53,9 +75,7 @@
 	let dismissedFlags = $state<Set<string>>(new Set());
 
 	let filteredNodes = $derived(
-		filterType === 'all'
-			? nodes
-			: nodes.filter((n) => n.type === filterType)
+		filterType === 'all' ? nodes : nodes.filter((n) => n.type === filterType)
 	);
 
 	nhost.auth.onAuthStateChanged(() => {
@@ -78,9 +98,7 @@
 			const result = await nhost.graphql.request(GET_ARGUMENT, { id: argumentId });
 
 			if (result.error) {
-				const msg = Array.isArray(result.error)
-					? result.error[0]?.message
-					: result.error.message;
+				const msg = Array.isArray(result.error) ? result.error[0]?.message : result.error.message;
 				throw new Error(msg || 'Failed to load argument');
 			}
 
@@ -145,9 +163,7 @@
 			const result = await nhost.graphql.request(DELETE_NODE, { id: nodeId });
 
 			if (result.error) {
-				const msg = Array.isArray(result.error)
-					? result.error[0]?.message
-					: result.error.message;
+				const msg = Array.isArray(result.error) ? result.error[0]?.message : result.error.message;
 				throw new Error(msg || 'Failed to delete node');
 			}
 
@@ -160,6 +176,26 @@
 			}
 		} catch (err: any) {
 			error = err.message || 'Failed to delete node';
+		}
+	}
+
+	async function handleEditNode(nodeId: string, content: string) {
+		try {
+			const result = await nhost.graphql.request(UPDATE_NODE, {
+				id: nodeId,
+				content
+			});
+
+			if (result.error) {
+				const msg = Array.isArray(result.error) ? result.error[0]?.message : result.error.message;
+				throw new Error(msg || 'Failed to update node');
+			}
+
+			// Update local state
+			nodes = nodes.map((n) => (n.id === nodeId ? { ...n, content } : n));
+		} catch (err: any) {
+			error = err.message || 'Failed to update node';
+			throw err; // re-throw so NodeCard stays in edit mode
 		}
 	}
 
@@ -179,9 +215,7 @@
 		return `${flag.type}-${flag.nodeId || ''}-${flag.edgeId || ''}`;
 	}
 
-	let visibleFlags = $derived(
-		structuralFlags.filter((f) => !dismissedFlags.has(getFlagKey(f)))
-	);
+	let visibleFlags = $derived(structuralFlags.filter((f) => !dismissedFlags.has(getFlagKey(f))));
 </script>
 
 <svelte:head>
@@ -258,11 +292,7 @@
 			{/if}
 
 			{#if coachPrompt && !coachDismissed}
-				<CoachBanner
-					prompt={coachPrompt}
-					onAction={handleCoachAction}
-					onDismiss={dismissCoach}
-				/>
+				<CoachBanner prompt={coachPrompt} onAction={handleCoachAction} onDismiss={dismissCoach} />
 			{/if}
 		</div>
 
@@ -327,6 +357,7 @@
 								connectionCount={getConnectionCount(node.id, edges)}
 								onSelect={() => selectNode(node.id)}
 								onDelete={() => handleDeleteNode(node.id)}
+								onEdit={handleEditNode}
 							/>
 						{/each}
 					{/if}
@@ -336,12 +367,7 @@
 			<!-- Right Panel: Graph Visualization -->
 			{#if showGraph}
 				<div class="panel-right" class:mobile-hidden={mobileTab !== 'graph'}>
-					<ArgumentGraph
-						{nodes}
-						{edges}
-						{selectedNodeId}
-						onNodeSelect={selectNode}
-					/>
+					<ArgumentGraph {nodes} {edges} {selectedNodeId} onNodeSelect={selectNode} />
 				</div>
 			{/if}
 		</div>
