@@ -47,9 +47,31 @@
 		discussionTitle: string;
 		discussionDescription: string;
 		userId: string | null;
+		discussionPosts?: Array<{
+			id: string;
+			content: string;
+			contributor?: { display_name?: string; handle?: string };
+		}>;
+		discussionCitations?: Array<{
+			id: string;
+			title: string;
+			url: string;
+			author?: string | null;
+			publisher?: string | null;
+			publish_date?: string | null;
+			point_supported?: string;
+			relevant_quote?: string;
+		}>;
 	}
 
-	let { discussionId, discussionTitle, discussionDescription, userId }: Props = $props();
+	let {
+		discussionId,
+		discussionTitle,
+		discussionDescription,
+		userId,
+		discussionPosts = [],
+		discussionCitations = []
+	}: Props = $props();
 
 	// Core data state
 	let loading = $state(true);
@@ -134,10 +156,27 @@
 	/** Plain text version of the description for length checks and extraction */
 	const plainDescription = $derived(stripHtml(discussionDescription));
 
-	/** Whether there's enough discussion content to generate a graph from */
-	const canGenerate = $derived(
-		userId != null && (plainDescription.length >= 20 || discussionTitle.trim().length >= 20)
+	/** Plain text from all discussion posts combined */
+	const plainPostsText = $derived(
+		discussionPosts
+			.map((p) => stripHtml(p.content))
+			.filter((t) => t.length > 0)
+			.join('\n\n')
 	);
+
+	/** Total combined text length for generation eligibility */
+	const totalTextLength = $derived(
+		plainDescription.length +
+			discussionTitle.trim().length +
+			plainPostsText.length +
+			discussionCitations.reduce(
+				(sum, c) => sum + (c.title?.length || 0) + (c.relevant_quote?.length || 0),
+				0
+			)
+	);
+
+	/** Whether there's enough discussion content to generate a graph from */
+	const canGenerate = $derived(userId != null && totalTextLength >= 20);
 
 	/** Whether the graph has real content beyond just the root claim */
 	const hasExistingContent = $derived(nodes.length > 1 || edges.length > 0);
@@ -244,6 +283,20 @@
 			if (plainDescription) {
 				textParts.push(plainDescription);
 			}
+			// Include discussion posts/comments as additional context
+			if (discussionPosts.length > 0) {
+				const postTexts = discussionPosts
+					.map((p) => {
+						const authorName = p.contributor?.display_name || p.contributor?.handle || 'Anonymous';
+						const postText = stripHtml(p.content);
+						return postText ? `${authorName}: ${postText}` : '';
+					})
+					.filter((t) => t.length > 0);
+				if (postTexts.length > 0) {
+					textParts.push('--- Discussion Comments ---');
+					textParts.push(...postTexts);
+				}
+			}
 			const text = textParts.join('\n\n');
 
 			if (text.length < 20) {
@@ -253,10 +306,25 @@
 
 			// Step 1: Call the extraction API
 			generateStatus = 'Extracting argument structure with AI...';
+			// Build citations payload for the extraction API
+			const citationsPayload =
+				discussionCitations.length > 0
+					? discussionCitations.map((c, i) => ({
+							number: i + 1,
+							title: c.title,
+							url: c.url,
+							author: c.author || undefined,
+							publisher: c.publisher || undefined,
+							publish_date: c.publish_date || undefined,
+							point_supported: c.point_supported || undefined,
+							relevant_quote: c.relevant_quote || undefined
+						}))
+					: undefined;
+
 			const response = await fetch('/api/arguments/extract', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ text })
+				body: JSON.stringify({ text, citations: citationsPayload })
 			});
 
 			if (!response.ok) {
@@ -637,6 +705,18 @@
 		<h3>No Argument Graph Yet</h3>
 		<p class="empty-description">
 			Create an argument graph to map out the claims, evidence, and reasoning in this discussion.
+			{#if discussionPosts.length > 0 || discussionCitations.length > 0}
+				The graph will include content from
+				{#if discussionPosts.length > 0}
+					{discussionPosts.length} discussion post{discussionPosts.length === 1 ? '' : 's'}
+				{/if}
+				{#if discussionPosts.length > 0 && discussionCitations.length > 0}
+					{' '}and{' '}
+				{/if}
+				{#if discussionCitations.length > 0}
+					{discussionCitations.length} citation{discussionCitations.length === 1 ? '' : 's'}
+				{/if}.
+			{/if}
 		</p>
 		{#if userId}
 			<div class="empty-actions">

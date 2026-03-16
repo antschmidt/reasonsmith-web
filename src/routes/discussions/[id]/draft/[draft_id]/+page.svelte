@@ -209,6 +209,15 @@
 								good_faith_label
 								good_faith_last_evaluated
 							}
+							posts(where: { status: { _eq: "approved" } }, order_by: { created_at: asc }) {
+								id
+								content
+								contributor {
+									id
+									handle
+									display_name
+								}
+							}
 						}
 					}
 				`,
@@ -1837,6 +1846,8 @@
 							discussionTitle={title || ''}
 							discussionDescription={description || ''}
 							userId={user?.id ?? null}
+							discussionPosts={discussion?.posts || []}
+							discussionCitations={styleMetadata.citations || []}
 						/>
 					</div>
 				{/if}

@@ -3490,11 +3490,18 @@
 		</div>
 
 		{#if activeTab === 'argument-graph'}
+			{@const extraction = extractCitationData(getDiscussionDescription(discussion) || '')}
+			{@const jsonCitations = extraction.citationData?.style_metadata?.citations || []}
+			{@const tableCitations = discussion?.current_version?.[0]?.citationsFromTable || []}
+			{@const versionCitations = discussion?.current_version?.[0]?.citations || []}
+			{@const allCitations = [...tableCitations, ...versionCitations, ...jsonCitations]}
 			<DiscussionArgumentGraph
 				discussionId={discussion.id}
 				discussionTitle={getDiscussionTitle(discussion)}
 				discussionDescription={getDiscussionDescription(discussion) || ''}
 				userId={user?.id ?? null}
+				discussionPosts={discussion.posts || []}
+				discussionCitations={allCitations}
 			/>
 		{:else}
 			<div class="posts-list">

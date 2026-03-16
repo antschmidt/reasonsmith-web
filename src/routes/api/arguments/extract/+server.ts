@@ -56,7 +56,17 @@ And the following edge types:
 - Be charitable: represent the author's arguments in their strongest form.
 - Mark implied elements clearly.
 - Confidence scores for edges should reflect how explicitly the connection is stated (1.0 = explicit, 0.5-0.8 = strongly implied, < 0.5 = weakly implied).
-- The completeness score should reflect: evidence present (+20), source present (+20), counter present (+20), rebuttal present (+20), warrant present (+20).`;
+- The completeness score should reflect: evidence present (+20), source present (+20), counter present (+20), rebuttal present (+20), warrant present (+20).
+
+## Handling Citations / References
+
+When the input includes a "CITATIONS / REFERENCES" section, these are formal references provided by the author. For each citation:
+1. Create a **source** node using the citation's title, author, and URL as the node content. Format as: "Author. \"Title.\" Publisher, Date. URL"
+2. If the citation has a \`relevant_quote\`, create an **evidence** node with the quote content.
+3. If the citation has a \`point_supported\`, use that to determine which claim(s) the evidence supports — create the appropriate **supports** edges.
+4. Create a **cites** edge from each evidence node to its corresponding source node.
+5. If the citation's \`point_supported\` text maps to an existing claim in the text, connect the evidence to that claim with a **supports** edge rather than creating a duplicate claim.
+6. Citations are numbered [1], [2], etc. in the text. When you see a citation reference like [1] in the text, connect the surrounding argument to the corresponding citation's source and evidence nodes.`;
 
 const EXTRACTION_TOOL = {
 	name: 'extract_argument_graph',
@@ -81,15 +91,7 @@ const EXTRACTION_TOOL = {
 						},
 						type: {
 							type: 'string',
-							enum: [
-								'claim',
-								'evidence',
-								'source',
-								'warrant',
-								'qualifier',
-								'counter',
-								'rebuttal'
-							],
+							enum: ['claim', 'evidence', 'source', 'warrant', 'qualifier', 'counter', 'rebuttal'],
 							description: 'The type of argument element'
 						},
 						content: {
@@ -104,8 +106,7 @@ const EXTRACTION_TOOL = {
 						},
 						implied: {
 							type: 'boolean',
-							description:
-								'Whether this element is implicit/unstated in the original text'
+							description: 'Whether this element is implicit/unstated in the original text'
 						}
 					},
 					required: ['id', 'type', 'content', 'implied']
@@ -164,8 +165,7 @@ const EXTRACTION_TOOL = {
 						},
 						draws_from: {
 							type: 'string',
-							description:
-								'The temporary ID of the evidence node this warrant draws from'
+							description: 'The temporary ID of the evidence node this warrant draws from'
 						},
 						justifies: {
 							type: 'string',
@@ -196,8 +196,7 @@ const EXTRACTION_TOOL = {
 			},
 			notes: {
 				type: 'string',
-				description:
-					'Brief analyst notes about the argument structure, strengths, and weaknesses'
+				description: 'Brief analyst notes about the argument structure, strengths, and weaknesses'
 			}
 		},
 		required: [
@@ -272,8 +271,7 @@ function validateExtractionResult(data: Record<string, unknown>): ExtractionResu
 			id: node.id,
 			type: node.type as ArgumentNodeType,
 			content: node.content.trim(),
-			verbatim_span:
-				typeof node.verbatim_span === 'string' ? node.verbatim_span : undefined,
+			verbatim_span: typeof node.verbatim_span === 'string' ? node.verbatim_span : undefined,
 			implied: Boolean(node.implied)
 		};
 	});
@@ -300,28 +298,20 @@ function validateExtractionResult(data: Record<string, unknown>): ExtractionResu
 						edge.id = `e${i + 1}`;
 					}
 					if (typeof edge.from !== 'string' || !nodeIds.has(edge.from)) {
-						logger.warn(
-							`Edge ${edge.id} references invalid from node: ${edge.from}, skipping`
-						);
+						logger.warn(`Edge ${edge.id} references invalid from node: ${edge.from}, skipping`);
 						return null;
 					}
 					if (typeof edge.to !== 'string' || !nodeIds.has(edge.to)) {
-						logger.warn(
-							`Edge ${edge.id} references invalid to node: ${edge.to}, skipping`
-						);
+						logger.warn(`Edge ${edge.id} references invalid to node: ${edge.to}, skipping`);
 						return null;
 					}
 					if (typeof edge.type !== 'string' || !VALID_EDGE_TYPES.has(edge.type)) {
-						logger.warn(
-							`Edge ${edge.id} has invalid type: ${edge.type}, skipping`
-						);
+						logger.warn(`Edge ${edge.id} has invalid type: ${edge.type}, skipping`);
 						return null;
 					}
 
 					const confidence =
-						typeof edge.confidence === 'number'
-							? Math.max(0, Math.min(1, edge.confidence))
-							: 1.0;
+						typeof edge.confidence === 'number' ? Math.max(0, Math.min(1, edge.confidence)) : 1.0;
 
 					return {
 						id: edge.id as string,
@@ -338,10 +328,7 @@ function validateExtractionResult(data: Record<string, unknown>): ExtractionResu
 	const validatedWarrantConnections = Array.isArray(data.warrant_connections)
 		? data.warrant_connections
 				.map((wc: Record<string, unknown>) => {
-					if (
-						typeof wc.warrant_node_id !== 'string' ||
-						!nodeIds.has(wc.warrant_node_id)
-					) {
+					if (typeof wc.warrant_node_id !== 'string' || !nodeIds.has(wc.warrant_node_id)) {
 						logger.warn(
 							`Warrant connection references invalid warrant node: ${wc.warrant_node_id}, skipping`
 						);
@@ -410,13 +397,22 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		const body = await request.json();
-		const { text } = body as { text?: string };
+		const { text, citations } = body as {
+			text?: string;
+			citations?: Array<{
+				number: number;
+				title: string;
+				url: string;
+				author?: string;
+				publisher?: string;
+				publish_date?: string;
+				point_supported?: string;
+				relevant_quote?: string;
+			}>;
+		};
 
 		if (typeof text !== 'string' || !text.trim()) {
-			return json(
-				{ error: 'Text content is required for extraction.' },
-				{ status: 400 }
-			);
+			return json({ error: 'Text content is required for extraction.' }, { status: 400 });
 		}
 
 		const trimmedText = text.trim();
@@ -427,32 +423,58 @@ export const POST: RequestHandler = async ({ request }) => {
 		// Enforce reasonable limits
 		if (textLength < 20) {
 			return json(
-				{ error: 'Text is too short for meaningful argument extraction. Please provide at least a paragraph.' },
+				{
+					error:
+						'Text is too short for meaningful argument extraction. Please provide at least a paragraph.'
+				},
 				{ status: 400 }
 			);
 		}
 
 		if (textLength > 100_000) {
 			return json(
-				{ error: 'Text exceeds the maximum length of 100,000 characters. Please shorten your input.' },
+				{
+					error: 'Text exceeds the maximum length of 100,000 characters. Please shorten your input.'
+				},
 				{ status: 400 }
 			);
 		}
 
 		// Choose model and max_tokens based on content length
-		const model =
-			textLength > 10_000 ? 'claude-sonnet-4-20250514' : 'claude-sonnet-4-20250514';
+		const model = textLength > 10_000 ? 'claude-sonnet-4-20250514' : 'claude-sonnet-4-20250514';
 		const maxTokens = textLength > 10_000 ? 16384 : 8192;
 
 		logger.info(`Using model: ${model}, max_tokens: ${maxTokens}`);
 
+		// Build citations section if citations are provided
+		let citationsSection = '';
+		if (citations && citations.length > 0) {
+			const citationLines = citations.map((c) => {
+				const parts: string[] = [];
+				parts.push(`[${c.number}] ${c.title}`);
+				if (c.author) parts.push(`  Author: ${c.author}`);
+				if (c.publisher) parts.push(`  Publisher: ${c.publisher}`);
+				if (c.url) parts.push(`  URL: ${c.url}`);
+				if (c.publish_date) parts.push(`  Published: ${c.publish_date}`);
+				if (c.point_supported) parts.push(`  Point Supported: ${c.point_supported}`);
+				if (c.relevant_quote) parts.push(`  Relevant Quote: "${c.relevant_quote}"`);
+				return parts.join('\n');
+			});
+			citationsSection = `\n\n<citations>
+CITATIONS / REFERENCES
+The following citations/references are provided by the author(s). Create source nodes for each, and connect them to the claims they support. If a citation has a relevant quote, create an evidence node with that quote.
+
+${citationLines.join('\n\n')}
+</citations>`;
+		}
+
 		const userPrompt = `Analyze the following text and extract its complete argument structure using the extract_argument_graph tool.
 
-Be thorough — identify every claim, piece of evidence, source, warrant (especially implied ones), qualifier, counter-argument, and rebuttal present in the text. For warrants, articulate the unstated reasoning principle that connects evidence to claims.
+Be thorough — identify every claim, piece of evidence, source, warrant (especially implied ones), qualifier, counter-argument, and rebuttal present in the text. For warrants, articulate the unstated reasoning principle that connects evidence to claims.${citations && citations.length > 0 ? ' Pay special attention to the citations/references section — create source nodes for each citation and connect them to the evidence and claims they support.' : ''}
 
 <text>
 ${trimmedText}
-</text>`;
+</text>${citationsSection}`;
 
 		const message = await anthropic.messages.create({
 			model,
@@ -469,7 +491,9 @@ ${trimmedText}
 			]
 		});
 
-		logger.info(`Claude response: stop_reason=${message.stop_reason}, usage=${JSON.stringify(message.usage)}`);
+		logger.info(
+			`Claude response: stop_reason=${message.stop_reason}, usage=${JSON.stringify(message.usage)}`
+		);
 
 		// Check for truncation
 		if (message.stop_reason === 'max_tokens') {
@@ -516,9 +540,7 @@ ${trimmedText}
 		logger.info(
 			`Extraction validated: ${result.nodes.length} nodes, ${result.edges.length} edges, completeness=${result.completeness_score}`
 		);
-		logger.info(
-			`Node types: ${result.nodes.map((n) => n.type).join(', ')}`
-		);
+		logger.info(`Node types: ${result.nodes.map((n) => n.type).join(', ')}`);
 		logger.info(
 			`Structural flags: ${result.structural_flags.length > 0 ? result.structural_flags.join(', ') : 'none'}`
 		);
