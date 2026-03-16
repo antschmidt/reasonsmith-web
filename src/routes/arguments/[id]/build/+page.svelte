@@ -3,11 +3,18 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { nhost } from '$lib/nhostClient';
-	import { GET_ARGUMENT, DELETE_NODE, DELETE_EDGE, UPDATE_NODE } from '$lib/graphql/queries';
+	import {
+		GET_ARGUMENT,
+		DELETE_NODE,
+		DELETE_EDGE,
+		UPDATE_NODE,
+		UPDATE_EDGE
+	} from '$lib/graphql/queries';
 	import type {
 		ArgumentNode,
 		ArgumentEdge,
 		ArgumentNodeType,
+		ArgumentEdgeType,
 		CoachPrompt,
 		CompletenessScore,
 		StructuralFlag
@@ -179,11 +186,15 @@
 		}
 	}
 
-	async function handleEditNode(nodeId: string, content: string) {
+	async function handleEditNode(
+		nodeId: string,
+		updates: { content?: string; type?: ArgumentNodeType }
+	) {
 		try {
 			const result = await nhost.graphql.request(UPDATE_NODE, {
 				id: nodeId,
-				content
+				...(updates.content !== undefined ? { content: updates.content } : {}),
+				...(updates.type !== undefined ? { type: updates.type } : {})
 			});
 
 			if (result.error) {
@@ -192,10 +203,43 @@
 			}
 
 			// Update local state
-			nodes = nodes.map((n) => (n.id === nodeId ? { ...n, content } : n));
+			nodes = nodes.map((n) => {
+				if (n.id !== nodeId) return n;
+				return {
+					...n,
+					...(updates.content !== undefined ? { content: updates.content } : {}),
+					...(updates.type !== undefined ? { type: updates.type } : {})
+				};
+			});
 		} catch (err: any) {
 			error = err.message || 'Failed to update node';
 			throw err; // re-throw so NodeCard stays in edit mode
+		}
+	}
+
+	async function handleEditEdge(edgeId: string, updates: { type?: ArgumentEdgeType }) {
+		try {
+			const result = await nhost.graphql.request(UPDATE_EDGE, {
+				id: edgeId,
+				...(updates.type !== undefined ? { type: updates.type } : {})
+			});
+
+			if (result.error) {
+				const msg = Array.isArray(result.error) ? result.error[0]?.message : result.error.message;
+				throw new Error(msg || 'Failed to update edge');
+			}
+
+			// Update local state
+			edges = edges.map((e) => {
+				if (e.id !== edgeId) return e;
+				return {
+					...e,
+					...(updates.type !== undefined ? { type: updates.type } : {})
+				};
+			});
+		} catch (err: any) {
+			error = err.message || 'Failed to update edge';
+			throw err;
 		}
 	}
 
@@ -358,6 +402,7 @@
 								onSelect={() => selectNode(node.id)}
 								onDelete={() => handleDeleteNode(node.id)}
 								onEdit={handleEditNode}
+								onEditEdge={handleEditEdge}
 							/>
 						{/each}
 					{/if}

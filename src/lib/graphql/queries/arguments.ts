@@ -339,13 +339,20 @@ export const UPDATE_NODE = gql`
 	mutation UpdateNode(
 		$id: uuid!
 		$content: String
+		$type: String
 		$implied: Boolean
 		$score: float8
 		$metadata: jsonb
 	) {
 		update_argument_node_by_pk(
 			pk_columns: { id: $id }
-			_set: { content: $content, implied: $implied, score: $score, metadata: $metadata }
+			_set: {
+				content: $content
+				type: $type
+				implied: $implied
+				score: $score
+				metadata: $metadata
+			}
 		) {
 			...ArgumentNodeFields
 		}
@@ -399,10 +406,16 @@ export const ADD_EDGE = gql`
  * Update an edge's confidence or weight
  */
 export const UPDATE_EDGE = gql`
-	mutation UpdateEdge($id: uuid!, $confidence: float8, $weight: float8, $metadata: jsonb) {
+	mutation UpdateEdge(
+		$id: uuid!
+		$type: String
+		$confidence: float8
+		$weight: float8
+		$metadata: jsonb
+	) {
 		update_argument_edge_by_pk(
 			pk_columns: { id: $id }
-			_set: { confidence: $confidence, weight: $weight, metadata: $metadata }
+			_set: { type: $type, confidence: $confidence, weight: $weight, metadata: $metadata }
 		) {
 			...ArgumentEdgeFields
 		}
