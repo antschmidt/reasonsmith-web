@@ -388,8 +388,11 @@
 		try {
 			const result = await nhost.graphql.request(UPDATE_NODE, {
 				id: nodeId,
-				...(updates.content !== undefined ? { content: updates.content } : {}),
-				...(updates.type !== undefined ? { type: updates.type } : {})
+				content: updates.content !== undefined ? updates.content : nodeToEdit!.content,
+				type: updates.type !== undefined ? updates.type : nodeToEdit!.type,
+				implied: nodeToEdit!.implied,
+				score: nodeToEdit!.score,
+				metadata: nodeToEdit!.metadata
 			});
 
 			if (result.error) {
