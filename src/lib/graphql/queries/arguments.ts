@@ -170,7 +170,12 @@ export const GET_ARGUMENT_STATS = gql`
  * Create a new argument with an initial root claim node
  */
 export const CREATE_ARGUMENT = gql`
-	mutation CreateArgument($userId: uuid!, $title: String!, $rootClaimContent: String!, $description: String) {
+	mutation CreateArgument(
+		$userId: uuid!
+		$title: String!
+		$rootClaimContent: String!
+		$description: String
+	) {
 		insert_argument_one(
 			object: {
 				user_id: $userId
@@ -194,7 +199,10 @@ export const CREATE_ARGUMENT = gql`
  */
 export const UPDATE_ARGUMENT = gql`
 	mutation UpdateArgument($id: uuid!, $title: String, $description: String) {
-		update_argument_by_pk(pk_columns: { id: $id }, _set: { title: $title, description: $description }) {
+		update_argument_by_pk(
+			pk_columns: { id: $id }
+			_set: { title: $title, description: $description }
+		) {
 			...ArgumentFields
 		}
 	}
@@ -222,11 +230,11 @@ export const ADD_NODE = gql`
 		$content: String!
 		$implied: Boolean = false
 		$verbatimSpan: String
-		$score: Float
+		$score: float8
 		$metadata: jsonb = {}
 		$connectToNodeId: uuid!
 		$edgeType: String!
-		$edgeConfidence: Float = 1.0
+		$edgeConfidence: float8 = 1.0
 	) {
 		insert_argument_node_one(
 			object: {
@@ -269,9 +277,9 @@ export const ADD_WARRANT_NODE = gql`
 		$justifiesNodeId: uuid!
 		$implied: Boolean = false
 		$verbatimSpan: String
-		$score: Float
+		$score: float8
 		$metadata: jsonb = {}
-		$confidence: Float = 1.0
+		$confidence: float8 = 1.0
 	) {
 		insert_argument_node_one(
 			object: {
@@ -316,7 +324,13 @@ export const ADD_WARRANT_NODE = gql`
  * Update a node's content or metadata
  */
 export const UPDATE_NODE = gql`
-	mutation UpdateNode($id: uuid!, $content: String, $implied: Boolean, $score: Float, $metadata: jsonb) {
+	mutation UpdateNode(
+		$id: uuid!
+		$content: String
+		$implied: Boolean
+		$score: float8
+		$metadata: jsonb
+	) {
 		update_argument_node_by_pk(
 			pk_columns: { id: $id }
 			_set: { content: $content, implied: $implied, score: $score, metadata: $metadata }
@@ -348,8 +362,8 @@ export const ADD_EDGE = gql`
 		$fromNode: uuid!
 		$toNode: uuid!
 		$type: String!
-		$confidence: Float = 1.0
-		$weight: Float = 1.0
+		$confidence: float8 = 1.0
+		$weight: float8 = 1.0
 		$metadata: jsonb = {}
 	) {
 		insert_argument_edge_one(
@@ -373,7 +387,7 @@ export const ADD_EDGE = gql`
  * Update an edge's confidence or weight
  */
 export const UPDATE_EDGE = gql`
-	mutation UpdateEdge($id: uuid!, $confidence: Float, $weight: Float, $metadata: jsonb) {
+	mutation UpdateEdge($id: uuid!, $confidence: float8, $weight: float8, $metadata: jsonb) {
 		update_argument_edge_by_pk(
 			pk_columns: { id: $id }
 			_set: { confidence: $confidence, weight: $weight, metadata: $metadata }
