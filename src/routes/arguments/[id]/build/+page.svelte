@@ -632,7 +632,7 @@
 		display: flex;
 		flex-direction: column;
 		border-right: 1px solid var(--color-border);
-		overflow: hidden;
+		overflow: auto;
 	}
 
 	.graph-hidden .panel-left {
@@ -651,6 +651,7 @@
 
 	.node-list {
 		flex: 1;
+		min-height: fit-content;
 		overflow-y: auto;
 		padding: var(--space-sm);
 		display: flex;

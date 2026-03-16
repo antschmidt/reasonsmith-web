@@ -176,11 +176,124 @@
 	].join(';');
 
 	// Pan handlers
+	// Check if an event target is inside a node group (should not trigger panning)
+	function isNodeTarget(target: EventTarget | null): boolean {
+		let el = target as Element | null;
+		while (el && el !== svgElement) {
+			if (el.classList?.contains('node-group')) return true;
+			el = el.parentElement;
+		}
+		return false;
+	}
+
 	function handleMouseDown(e: MouseEvent) {
-		if (e.target === svgElement || (e.target as Element)?.classList?.contains('graph-bg')) {
+		// Pan on any click that isn't on a node — nodes handle their own mousedown
+		if (!isNodeTarget(e.target)) {
 			isPanning = true;
 			panStart = { x: e.clientX, y: e.clientY };
 			e.preventDefault();
+		}
+	}
+
+	// Touch support state
+	let lastTouchDist = $state<number | null>(null);
+	let lastTouchCenter = $state<{ x: number; y: number } | null>(null);
+	let isTouchPanning = $state(false);
+
+	function getTouchDistance(touches: TouchList): number {
+		const dx = touches[1].clientX - touches[0].clientX;
+		const dy = touches[1].clientY - touches[0].clientY;
+		return Math.sqrt(dx * dx + dy * dy);
+	}
+
+	function getTouchCenter(touches: TouchList): { x: number; y: number } {
+		return {
+			x: (touches[0].clientX + touches[1].clientX) / 2,
+			y: (touches[0].clientY + touches[1].clientY) / 2
+		};
+	}
+
+	function handleTouchStart(e: TouchEvent) {
+		if (isNodeTarget(e.target)) return;
+
+		if (e.touches.length === 1) {
+			// Single touch → pan
+			isTouchPanning = true;
+			panStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+			e.preventDefault();
+		} else if (e.touches.length === 2) {
+			// Two-finger → pinch zoom
+			isTouchPanning = false;
+			lastTouchDist = getTouchDistance(e.touches);
+			lastTouchCenter = getTouchCenter(e.touches);
+			e.preventDefault();
+		}
+	}
+
+	function handleTouchMove(e: TouchEvent) {
+		if (e.touches.length === 1 && isTouchPanning) {
+			const svgRect = svgElement?.getBoundingClientRect();
+			if (!svgRect) return;
+
+			const scaleX = viewBox.w / svgRect.width;
+			const scaleY = viewBox.h / svgRect.height;
+
+			const dx = (e.touches[0].clientX - panStart.x) * scaleX;
+			const dy = (e.touches[0].clientY - panStart.y) * scaleY;
+
+			viewBox = {
+				...viewBox,
+				x: viewBox.x - dx,
+				y: viewBox.y - dy
+			};
+
+			panStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+			e.preventDefault();
+		} else if (e.touches.length === 2 && lastTouchDist !== null) {
+			const newDist = getTouchDistance(e.touches);
+			const newCenter = getTouchCenter(e.touches);
+			const factor = lastTouchDist / newDist;
+
+			const svgRect = svgElement?.getBoundingClientRect();
+			if (!svgRect) return;
+
+			// Zoom center in SVG coordinates
+			const cx = viewBox.x + ((newCenter.x - svgRect.left) / svgRect.width) * viewBox.w;
+			const cy = viewBox.y + ((newCenter.y - svgRect.top) / svgRect.height) * viewBox.h;
+
+			const newW = viewBox.w * factor;
+			const newH = viewBox.h * factor;
+
+			viewBox = {
+				x: cx - ((cx - viewBox.x) / viewBox.w) * newW,
+				y: cy - ((cy - viewBox.y) / viewBox.h) * newH,
+				w: newW,
+				h: newH
+			};
+
+			// Also pan with the center movement
+			if (lastTouchCenter) {
+				const panScaleX = viewBox.w / svgRect.width;
+				const panScaleY = viewBox.h / svgRect.height;
+				const pdx = (newCenter.x - lastTouchCenter.x) * panScaleX;
+				const pdy = (newCenter.y - lastTouchCenter.y) * panScaleY;
+				viewBox = { ...viewBox, x: viewBox.x - pdx, y: viewBox.y - pdy };
+			}
+
+			lastTouchDist = newDist;
+			lastTouchCenter = newCenter;
+			zoom = zoom / factor;
+			e.preventDefault();
+		}
+	}
+
+	function handleTouchEnd(e: TouchEvent) {
+		if (e.touches.length < 2) {
+			lastTouchDist = null;
+			lastTouchCenter = null;
+		}
+		if (e.touches.length === 0) {
+			isTouchPanning = false;
 		}
 	}
 
@@ -228,6 +341,7 @@
 	function handleMouseUp() {
 		isPanning = false;
 		dragNodeId = null;
+		isTouchPanning = false;
 	}
 
 	function handleWheel(e: WheelEvent) {
@@ -397,6 +511,11 @@
 			onmouseup={handleMouseUp}
 			onmouseleave={handleMouseUp}
 			onwheel={handleWheel}
+			ontouchstart={handleTouchStart}
+			ontouchmove={handleTouchMove}
+			ontouchend={handleTouchEnd}
+			ontouchcancel={handleTouchEnd}
+			style="touch-action: none"
 		>
 			<!-- Background -->
 			<rect
@@ -639,6 +758,11 @@
 		height: 100%;
 		display: block;
 		user-select: none;
+		cursor: grab;
+	}
+
+	.graph-svg:active {
+		cursor: grabbing;
 	}
 
 	/* Controls */
