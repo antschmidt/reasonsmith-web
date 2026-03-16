@@ -2,11 +2,16 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { nhost } from '$lib/nhostClient';
-	import { LIST_ARGUMENTS, CREATE_ARGUMENT, DELETE_ARGUMENT } from '$lib/graphql/queries';
+	import {
+		LIST_ARGUMENTS,
+		CREATE_ARGUMENT,
+		CREATE_ARGUMENT_SHELL,
+		DELETE_ARGUMENT
+	} from '$lib/graphql/queries';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import type { Argument } from '$lib/types/argument';
-	import { Plus, Trash2, ChevronRight, Network } from '@lucide/svelte';
+	import { Plus, Trash2, ChevronRight, Network, Sparkles, FileText } from '@lucide/svelte';
 
 	let user = $state(nhost.auth.getUser());
 	let loading = $state(true);
@@ -20,6 +25,13 @@
 	let newDescription = $state('');
 	let creating = $state(false);
 	let createError = $state<string | null>(null);
+
+	// Extract modal state
+	let showExtractModal = $state(false);
+	let extractTitle = $state('');
+	let extractDescription = $state('');
+	let creatingForExtract = $state(false);
+	let extractCreateError = $state<string | null>(null);
 
 	// Delete confirmation
 	let deleteTarget = $state<Argument | null>(null);
@@ -51,9 +63,7 @@
 			});
 
 			if (result.error) {
-				const msg = Array.isArray(result.error)
-					? result.error[0]?.message
-					: result.error.message;
+				const msg = Array.isArray(result.error) ? result.error[0]?.message : result.error.message;
 				throw new Error(msg || 'Failed to load arguments');
 			}
 
@@ -77,6 +87,46 @@
 		showNewModal = false;
 	}
 
+	function openExtractModal() {
+		extractTitle = '';
+		extractDescription = '';
+		extractCreateError = null;
+		showExtractModal = true;
+	}
+
+	function closeExtractModal() {
+		showExtractModal = false;
+	}
+
+	async function createArgumentForExtraction() {
+		if (!user || !extractTitle.trim()) return;
+
+		creatingForExtract = true;
+		extractCreateError = null;
+
+		try {
+			const result = await nhost.graphql.request(CREATE_ARGUMENT_SHELL, {
+				userId: user.id,
+				title: extractTitle.trim(),
+				description: extractDescription.trim() || null
+			});
+
+			if (result.error) {
+				const msg = Array.isArray(result.error) ? result.error[0]?.message : result.error.message;
+				throw new Error(msg || 'Failed to create argument');
+			}
+
+			const newArg = result.data?.insert_argument_one;
+			if (newArg) {
+				goto(`/arguments/${newArg.id}/analyze`);
+			}
+		} catch (err: any) {
+			extractCreateError = err.message || 'Failed to create argument';
+		} finally {
+			creatingForExtract = false;
+		}
+	}
+
 	async function createArgument() {
 		if (!user || !newTitle.trim() || !newRootClaim.trim()) return;
 
@@ -92,9 +142,7 @@
 			});
 
 			if (result.error) {
-				const msg = Array.isArray(result.error)
-					? result.error[0]?.message
-					: result.error.message;
+				const msg = Array.isArray(result.error) ? result.error[0]?.message : result.error.message;
 				throw new Error(msg || 'Failed to create argument');
 			}
 
@@ -129,9 +177,7 @@
 			});
 
 			if (result.error) {
-				const msg = Array.isArray(result.error)
-					? result.error[0]?.message
-					: result.error.message;
+				const msg = Array.isArray(result.error) ? result.error[0]?.message : result.error.message;
 				throw new Error(msg || 'Failed to delete argument');
 			}
 
@@ -176,10 +222,16 @@
 					Construct structured arguments with claims, evidence, warrants, and counter-arguments.
 				</p>
 			</div>
-			<Button variant="primary" onclick={openNewModal}>
-				{#snippet icon()}<Plus size={18} />{/snippet}
-				New Argument
-			</Button>
+			<div class="header-actions">
+				<Button variant="secondary" onclick={openExtractModal}>
+					{#snippet icon()}<Sparkles size={18} />{/snippet}
+					Extract from Text
+				</Button>
+				<Button variant="primary" onclick={openNewModal}>
+					{#snippet icon()}<Plus size={18} />{/snippet}
+					Build Manually
+				</Button>
+			</div>
 		</div>
 	</header>
 
@@ -200,11 +252,17 @@
 			<div class="empty-state">
 				<Network size={64} strokeWidth={1} />
 				<h2>No arguments yet</h2>
-				<p>Create your first structured argument to get started.</p>
-				<Button variant="primary" onclick={openNewModal}>
-					{#snippet icon()}<Plus size={18} />{/snippet}
-					Create Your First Argument
-				</Button>
+				<p>Build an argument manually or paste text to extract one with AI.</p>
+				<div class="empty-state-actions">
+					<Button variant="secondary" onclick={openExtractModal}>
+						{#snippet icon()}<Sparkles size={18} />{/snippet}
+						Extract from Text
+					</Button>
+					<Button variant="primary" onclick={openNewModal}>
+						{#snippet icon()}<Plus size={18} />{/snippet}
+						Build Manually
+					</Button>
+				</div>
 			</div>
 		{:else}
 			<div class="arguments-grid">
@@ -318,22 +376,78 @@
 </Modal>
 
 <!-- Delete Confirmation Modal -->
-<Modal
-	show={deleteTarget !== null}
-	onClose={cancelDelete}
-	title="Delete Argument?"
-	size="sm"
->
+<Modal show={deleteTarget !== null} onClose={cancelDelete} title="Delete Argument?" size="sm">
 	{#snippet children()}
 		<p class="delete-warning">
-			Are you sure you want to delete "<strong>{deleteTarget?.title}</strong>"?
-			This will permanently remove the argument and all its nodes.
+			Are you sure you want to delete "<strong>{deleteTarget?.title}</strong>"? This will
+			permanently remove the argument and all its nodes.
 		</p>
 	{/snippet}
 
 	{#snippet footer()}
 		<Button variant="ghost" onclick={cancelDelete}>Cancel</Button>
 		<Button variant="danger" onclick={executeDelete} loading={deleting}>Delete</Button>
+	{/snippet}
+</Modal>
+
+<!-- Extract from Text Modal -->
+<Modal show={showExtractModal} onClose={closeExtractModal} title="Extract from Text" size="md">
+	{#snippet children()}
+		<form
+			class="new-argument-form"
+			onsubmit={(e) => {
+				e.preventDefault();
+				createArgumentForExtraction();
+			}}
+		>
+			{#if extractCreateError}
+				<div class="form-error">{extractCreateError}</div>
+			{/if}
+
+			<div class="extract-intro">
+				<div class="extract-intro-icon">
+					<Sparkles size={24} />
+				</div>
+				<p>
+					Give your argument a title, then paste or type the text you want to analyze. AI will
+					extract claims, evidence, warrants, and more into a structured argument graph.
+				</p>
+			</div>
+
+			<div class="form-group">
+				<label for="extractTitle">Title</label>
+				<input
+					id="extractTitle"
+					type="text"
+					bind:value={extractTitle}
+					placeholder="Give your argument a descriptive title..."
+					required
+				/>
+			</div>
+
+			<div class="form-group">
+				<label for="extractDescription">Description (optional)</label>
+				<textarea
+					id="extractDescription"
+					bind:value={extractDescription}
+					placeholder="Add context or background..."
+					rows="2"
+				></textarea>
+			</div>
+		</form>
+	{/snippet}
+
+	{#snippet footer()}
+		<Button variant="ghost" onclick={closeExtractModal}>Cancel</Button>
+		<Button
+			variant="primary"
+			onclick={createArgumentForExtraction}
+			disabled={!extractTitle.trim()}
+			loading={creatingForExtract}
+		>
+			{#snippet icon()}<FileText size={16} />{/snippet}
+			Continue to Extract
+		</Button>
 	{/snippet}
 </Modal>
 
@@ -370,6 +484,13 @@
 		color: var(--color-text-secondary);
 		font-size: 1rem;
 		margin: 0;
+	}
+
+	.header-actions {
+		display: flex;
+		gap: var(--space-sm);
+		align-items: center;
+		flex-shrink: 0;
 	}
 
 	.main-content {
@@ -447,6 +568,38 @@
 
 	.empty-state p {
 		margin: 0 0 var(--space-lg) 0;
+	}
+
+	.empty-state-actions {
+		display: flex;
+		gap: var(--space-sm);
+		align-items: center;
+		flex-wrap: wrap;
+		justify-content: center;
+	}
+
+	/* Extract intro */
+	.extract-intro {
+		display: flex;
+		gap: var(--space-md);
+		align-items: flex-start;
+		padding: var(--space-md);
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 15%, transparent);
+		border-radius: var(--border-radius-md);
+	}
+
+	.extract-intro-icon {
+		flex-shrink: 0;
+		color: var(--color-primary);
+		padding-top: 2px;
+	}
+
+	.extract-intro p {
+		margin: 0;
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		line-height: 1.5;
 	}
 
 	/* Arguments Grid */
@@ -642,6 +795,16 @@
 		}
 
 		.header-content {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.header-actions {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.empty-state-actions {
 			flex-direction: column;
 			align-items: stretch;
 		}

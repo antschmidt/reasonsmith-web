@@ -195,6 +195,18 @@ export const CREATE_ARGUMENT = gql`
 `;
 
 /**
+ * Create a new argument without any nodes (for AI extraction flow)
+ */
+export const CREATE_ARGUMENT_SHELL = gql`
+	mutation CreateArgumentShell($userId: uuid!, $title: String!, $description: String) {
+		insert_argument_one(object: { user_id: $userId, title: $title, description: $description }) {
+			...ArgumentFields
+		}
+	}
+	${ARGUMENT_FIELDS}
+`;
+
+/**
  * Update argument title/description
  */
 export const UPDATE_ARGUMENT = gql`
