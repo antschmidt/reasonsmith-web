@@ -338,6 +338,7 @@
 	class:is-root={node.is_root}
 	class:implied={node.implied}
 	class:editing
+	data-node-id={node.id}
 	style="--node-color: {editing ? editConfig.color : config.color}; --node-bg: {editing
 		? editConfig.bgColor
 		: config.bgColor}"

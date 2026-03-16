@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { nhost } from '$lib/nhostClient';
@@ -308,6 +308,15 @@
 
 	function selectNode(nodeId: string) {
 		selectedNodeId = selectedNodeId === nodeId ? null : nodeId;
+
+		if (selectedNodeId) {
+			tick().then(() => {
+				const el = document.querySelector(`.node-list [data-node-id="${selectedNodeId}"]`);
+				if (el) {
+					el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+				}
+			});
+		}
 	}
 
 	async function handleDeleteNode(nodeId: string) {
