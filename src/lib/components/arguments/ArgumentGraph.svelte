@@ -27,8 +27,8 @@
 	let dragOffset = $state({ x: 0, y: 0 });
 
 	// Node dimensions
-	const NODE_WIDTH = 200;
-	const NODE_HEIGHT = 70;
+	const NODE_WIDTH = 220;
+	const NODE_HEIGHT = 100;
 	const NODE_RX = 6;
 
 	// Compute positions reactively
@@ -143,48 +143,14 @@
 		}
 	}
 
-	function truncate(text: string, maxLength: number = 45): string {
+	function truncate(text: string, maxLength: number = 120): string {
 		if (text.length <= maxLength) return text;
-		return text.slice(0, maxLength - 3) + '...';
+		return text.slice(0, maxLength - 1) + '…';
 	}
 
-	// Split text into lines that fit within the node width
-	function wrapText(text: string, maxCharsPerLine: number = 28): string[] {
-		const truncated = truncate(text, 80);
-		const words = truncated.split(' ');
-		const lines: string[] = [];
-		let currentLine = '';
-
-		for (const word of words) {
-			// Force-break words longer than the max line width (e.g. URLs)
-			if (word.length > maxCharsPerLine) {
-				if (currentLine) {
-					lines.push(currentLine);
-					currentLine = '';
-				}
-				let remaining = word;
-				while (remaining.length > maxCharsPerLine) {
-					lines.push(remaining.slice(0, maxCharsPerLine));
-					remaining = remaining.slice(maxCharsPerLine);
-				}
-				if (remaining) currentLine = remaining;
-			} else if (currentLine.length + word.length + 1 > maxCharsPerLine) {
-				if (currentLine) lines.push(currentLine);
-				currentLine = word;
-			} else {
-				currentLine = currentLine ? `${currentLine} ${word}` : word;
-			}
-		}
-
-		if (currentLine) lines.push(currentLine);
-
-		// Limit to 3 lines
-		if (lines.length > 3) {
-			lines.length = 3;
-			lines[2] = lines[2].slice(0, -3) + '...';
-		}
-
-		return lines;
+	// Truncate text for foreignObject display (CSS handles actual wrapping)
+	function getDisplayText(text: string): string {
+		return truncate(text, 120);
 	}
 
 	// Pan handlers
@@ -432,6 +398,13 @@
 					/>
 				</pattern>
 
+				<!-- Clip paths for each node -->
+				{#each nodes as node (node.id)}
+					<clipPath id="clip-{node.id}">
+						<rect width={NODE_WIDTH} height={NODE_HEIGHT} rx={NODE_RX} />
+					</clipPath>
+				{/each}
+
 				<!-- Arrow markers for each edge type -->
 				{#each ['supports', 'contradicts', 'rebuts', 'warrants', 'cites', 'qualifies', 'derives_from'] as edgeType}
 					<marker
@@ -515,7 +488,7 @@
 					{@const pos = positions.get(node.id)}
 					{@const config = NODE_TYPE_CONFIGS[node.type]}
 					{@const isSelected = selectedNodeId === node.id}
-					{@const lines = wrapText(node.content)}
+					{@const displayText = getDisplayText(node.content)}
 					{#if pos}
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<g
@@ -555,77 +528,74 @@
 								class="node-rect"
 							/>
 
-							<!-- Root indicator -->
-							{#if node.is_root}
+							<!-- Clipped content group -->
+							<g clip-path="url(#clip-{node.id})">
+								<!-- Root indicator -->
+								{#if node.is_root}
+									<rect
+										width={NODE_WIDTH}
+										height="3"
+										fill={config.color}
+										opacity="0.6"
+										rx="0"
+										class="root-indicator"
+									/>
+								{/if}
+
+								<!-- Type label background -->
 								<rect
-									width={NODE_WIDTH}
-									height="3"
+									x="6"
+									y="6"
+									width={config.label.length * 6.5 + 16}
+									height="16"
+									rx="8"
 									fill={config.color}
-									opacity="0.6"
-									rx="0"
-									class="root-indicator"
+									opacity="0.15"
 								/>
-							{/if}
 
-							<!-- Type label background -->
-							<rect
-								x="6"
-								y="6"
-								width={config.label.length * 6.5 + 16}
-								height="16"
-								rx="8"
-								fill={config.color}
-								opacity="0.15"
-							/>
+								<!-- Type dot -->
+								<circle cx="14" cy="14" r="3" fill={config.color} opacity="0.9" />
 
-							<!-- Type dot -->
-							<circle cx="14" cy="14" r="3" fill={config.color} opacity="0.9" />
-
-							<!-- Type label -->
-							<text
-								x="22"
-								y="14"
-								dominant-baseline="central"
-								fill={config.color}
-								font-size="9"
-								font-weight="700"
-								font-family="var(--font-family-ui, sans-serif)"
-								letter-spacing="0.08em"
-								text-transform="uppercase"
-							>
-								{config.label.toUpperCase()}{#if node.is_root}
-									★{/if}
-							</text>
-
-							<!-- Content text -->
-							{#each lines as line, i}
+								<!-- Type label -->
 								<text
-									x="10"
-									y={32 + i * 14}
-									fill="var(--color-text-primary, #eceff1)"
-									font-size="11"
-									font-family="var(--font-family-serif, serif)"
-									class="node-text"
-								>
-									{line}
-								</text>
-							{/each}
-
-							<!-- Implied indicator -->
-							{#if node.implied}
-								<text
-									x={NODE_WIDTH - 8}
+									x="22"
 									y="14"
-									text-anchor="end"
 									dominant-baseline="central"
-									fill="var(--color-text-tertiary, #607d8b)"
-									font-size="8"
-									font-style="italic"
+									fill={config.color}
+									font-size="9"
+									font-weight="700"
 									font-family="var(--font-family-ui, sans-serif)"
+									letter-spacing="0.08em"
+									text-transform="uppercase"
 								>
-									implied
+									{config.label.toUpperCase()}{#if node.is_root}
+										★{/if}
 								</text>
-							{/if}
+
+								<!-- Implied indicator -->
+								{#if node.implied}
+									<text
+										x={NODE_WIDTH - 8}
+										y="14"
+										text-anchor="end"
+										dominant-baseline="central"
+										fill="var(--color-text-tertiary, #607d8b)"
+										font-size="8"
+										font-style="italic"
+										font-family="var(--font-family-ui, sans-serif)"
+									>
+										implied
+									</text>
+								{/if}
+
+								<!-- Content text via foreignObject for proper wrapping -->
+								<foreignObject x="8" y="28" width={NODE_WIDTH - 16} height={NODE_HEIGHT - 34}>
+									<!-- @ts-ignore xmlns needed for foreignObject -->
+									<div class="node-text-content">
+										{displayText}
+									</div>
+								</foreignObject>
+							</g>
 						</g>
 					{/if}
 				{/each}
@@ -740,8 +710,22 @@
 		}
 	}
 
-	.node-text {
+	.node-text-content {
 		pointer-events: none;
+		color: var(--color-text-primary, #eceff1);
+		font-size: 11px;
+		font-family: var(--font-family-serif, serif);
+		line-height: 1.35;
+		overflow: hidden;
+		word-wrap: break-word;
+		overflow-wrap: break-word;
+		hyphens: auto;
+		display: -webkit-box;
+		-webkit-line-clamp: 4;
+		-webkit-box-orient: vertical;
+		text-overflow: ellipsis;
+		margin: 0;
+		padding: 0;
 	}
 
 	.root-indicator {
