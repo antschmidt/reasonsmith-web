@@ -59,6 +59,7 @@
 	import GoodFaithModal from '$lib/components/ui/GoodFaithModal.svelte';
 	import EditorsDeskApprovalCard from '$lib/components/EditorsDeskApprovalCard.svelte';
 	import EventList from '$lib/components/EventList.svelte';
+	import DiscussionArgumentGraph from '$lib/components/arguments/DiscussionArgumentGraph.svelte';
 	import {
 		canUseAnalysis,
 		getMonthlyCreditsRemaining,
@@ -99,6 +100,7 @@
 	let submitError = $state<string | null>(null);
 	let showOutOfCreditsModal = $state(false);
 	let selectedContextCommentIds = $state<string[]>([]);
+	let activeTab = $state<'discussion' | 'argument-graph'>('discussion');
 	let user = $state(nhost.auth.getUser());
 	nhost.auth.onAuthStateChanged(() => {
 		user = nhost.auth.getUser();
@@ -3466,100 +3468,131 @@
 			{/if}
 		</header>
 
-		<div class="posts-list">
-			{#each discussion.posts as post}
-				<PostItem
-					{post}
-					isOwner={user && post.contributor.id === user.id}
-					canDelete={postDeletionStatus[post.id]?.canDelete !== false}
-					isEditing={editingPostId === post.id}
-					bind:editContent={editingPostContent}
-					editError={editPostError}
-					editSaving={editPostSaving}
-					showGoodFaithModal={showGoodFaithAnalysisFor === post.id}
-					showHistoricalContext={showingContextForPost === post.id}
-					historicalVersion={post.context_version_id
-						? historicalVersions[post.context_version_id]
-						: null}
-					versionLoading={post.context_version_id ? versionLoading[post.context_version_id] : false}
-					versionError={post.context_version_id ? versionError[post.context_version_id] : null}
-					onReply={startReply}
-					onEdit={startEditPost}
-					onSaveEdit={savePostEdit}
-					onCancelEdit={cancelEditPost}
-					onDelete={handleDeletePost}
-					onAnonymize={handleAnonymizePost}
-					onUnanonymize={handleUnanonymizePost}
-					onToggleGoodFaith={(postId) =>
-						(showGoodFaithAnalysisFor = showGoodFaithAnalysisFor === postId ? null : postId)}
-					onToggleContext={toggleHistoricalContext}
-					{displayName}
-					{extractReplyRef}
-					{extractCitationData}
-					{processCitationReferences}
-					{ensureIdsForCitationData}
-					{formatChicagoCitation}
-					{getStyleConfig}
-				/>
-
-				<!-- Display events for this post -->
-				<EventList postId={post.id} />
-			{:else}
-				<p>No posts in this discussion yet. Be the first to contribute!</p>
-			{/each}
+		<!-- Tab Navigation -->
+		<div class="discussion-tabs">
+			<button
+				class="tab-btn"
+				class:active={activeTab === 'discussion'}
+				onclick={() => (activeTab = 'discussion')}
+			>
+				Discussion
+				{#if discussion.posts?.length}
+					<span class="tab-badge">{discussion.posts.length}</span>
+				{/if}
+			</button>
+			<button
+				class="tab-btn"
+				class:active={activeTab === 'argument-graph'}
+				onclick={() => (activeTab = 'argument-graph')}
+			>
+				Argument Graph
+			</button>
 		</div>
 
-		<CommentComposer
-			{user}
-			bind:expanded={commentFormExpanded}
-			bind:comment={newComment}
-			bind:postType={commentPostType}
-			bind:postTypeExpanded
-			bind:showAdvancedFeatures
-			wordCount={commentWordCount}
-			selectedStyle={commentSelectedStyle}
-			bind:styleMetadata={commentStyleMetadata}
-			bind:showCitationForm={showCommentCitationForm}
-			bind:showCitationEditForm={showCommentCitationEditForm}
-			bind:editingCitation={editingCommentCitation}
-			showCitationReminder={showCommentCitationReminder}
-			bind:showCitationPicker={showCommentCitationPicker}
-			heuristicScore={commentHeuristicScore}
-			heuristicPassed={commentHeuristicPassed}
-			{draftPostId}
-			{draftGoodFaithAnalysis}
-			bind:draftAnalysisExpanded
-			goodFaithResult={commentGoodFaithResult}
-			goodFaithError={commentGoodFaithError}
-			{submitError}
-			{hasPending}
-			{lastSavedAt}
-			{contributor}
-			{replyingToPost}
-			{analysisBlockedReason}
-			{canUserUseAnalysis}
-			{submitting}
-			discussionId={discussion?.id}
-			discussionTitle={discussion ? getDiscussionTitle(discussion) : 'Discussion'}
-			discussionPosts={discussion?.posts || []}
-			bind:selectedContextCommentIds
-			onInput={onCommentInput}
-			onFocus={loadExistingDraft}
-			onAddCitation={addCommentCitation}
-			onUpdateCitation={updateCommentCitation}
-			onCancelCitationEdit={cancelCommentCitationEdit}
-			onInsertCitationReference={insertCommentCitationReference}
-			onOpenCitationPicker={openCommentCitationPicker}
-			onTestGoodFaith={testCommentGoodFaith}
-			onTestGoodFaithClaude={testCommentGoodFaithClaude}
-			onPublish={publishDraft}
-			onClearReplying={clearReplying}
-			getStyleConfig={(style: string) => getStyleConfig(style as WritingStyle)}
-			{getPostTypeConfig}
-			{getAnalysisLimitText}
-			{formatChicagoCitation}
-			{assessContentQuality}
-		/>
+		{#if activeTab === 'argument-graph'}
+			<DiscussionArgumentGraph
+				discussionId={discussion.id}
+				discussionTitle={getDiscussionTitle(discussion)}
+				userId={user?.id ?? null}
+			/>
+		{:else}
+			<div class="posts-list">
+				{#each discussion.posts as post}
+					<PostItem
+						{post}
+						isOwner={user && post.contributor.id === user.id}
+						canDelete={postDeletionStatus[post.id]?.canDelete !== false}
+						isEditing={editingPostId === post.id}
+						bind:editContent={editingPostContent}
+						editError={editPostError}
+						editSaving={editPostSaving}
+						showGoodFaithModal={showGoodFaithAnalysisFor === post.id}
+						showHistoricalContext={showingContextForPost === post.id}
+						historicalVersion={post.context_version_id
+							? historicalVersions[post.context_version_id]
+							: null}
+						versionLoading={post.context_version_id
+							? versionLoading[post.context_version_id]
+							: false}
+						versionError={post.context_version_id ? versionError[post.context_version_id] : null}
+						onReply={startReply}
+						onEdit={startEditPost}
+						onSaveEdit={savePostEdit}
+						onCancelEdit={cancelEditPost}
+						onDelete={handleDeletePost}
+						onAnonymize={handleAnonymizePost}
+						onUnanonymize={handleUnanonymizePost}
+						onToggleGoodFaith={(postId) =>
+							(showGoodFaithAnalysisFor = showGoodFaithAnalysisFor === postId ? null : postId)}
+						onToggleContext={toggleHistoricalContext}
+						{displayName}
+						{extractReplyRef}
+						{extractCitationData}
+						{processCitationReferences}
+						{ensureIdsForCitationData}
+						{formatChicagoCitation}
+						{getStyleConfig}
+					/>
+
+					<!-- Display events for this post -->
+					<EventList postId={post.id} />
+				{:else}
+					<p>No posts in this discussion yet. Be the first to contribute!</p>
+				{/each}
+			</div>
+
+			<CommentComposer
+				{user}
+				bind:expanded={commentFormExpanded}
+				bind:comment={newComment}
+				bind:postType={commentPostType}
+				bind:postTypeExpanded
+				bind:showAdvancedFeatures
+				wordCount={commentWordCount}
+				selectedStyle={commentSelectedStyle}
+				bind:styleMetadata={commentStyleMetadata}
+				bind:showCitationForm={showCommentCitationForm}
+				bind:showCitationEditForm={showCommentCitationEditForm}
+				bind:editingCitation={editingCommentCitation}
+				showCitationReminder={showCommentCitationReminder}
+				bind:showCitationPicker={showCommentCitationPicker}
+				heuristicScore={commentHeuristicScore}
+				heuristicPassed={commentHeuristicPassed}
+				{draftPostId}
+				{draftGoodFaithAnalysis}
+				bind:draftAnalysisExpanded
+				goodFaithResult={commentGoodFaithResult}
+				goodFaithError={commentGoodFaithError}
+				{submitError}
+				{hasPending}
+				{lastSavedAt}
+				{contributor}
+				{replyingToPost}
+				{analysisBlockedReason}
+				{canUserUseAnalysis}
+				{submitting}
+				discussionId={discussion?.id}
+				discussionTitle={discussion ? getDiscussionTitle(discussion) : 'Discussion'}
+				discussionPosts={discussion?.posts || []}
+				bind:selectedContextCommentIds
+				onInput={onCommentInput}
+				onFocus={loadExistingDraft}
+				onAddCitation={addCommentCitation}
+				onUpdateCitation={updateCommentCitation}
+				onCancelCitationEdit={cancelCommentCitationEdit}
+				onInsertCitationReference={insertCommentCitationReference}
+				onOpenCitationPicker={openCommentCitationPicker}
+				onTestGoodFaith={testCommentGoodFaith}
+				onTestGoodFaithClaude={testCommentGoodFaithClaude}
+				onPublish={publishDraft}
+				onClearReplying={clearReplying}
+				getStyleConfig={(style: string) => getStyleConfig(style as WritingStyle)}
+				{getPostTypeConfig}
+				{getAnalysisLimitText}
+				{formatChicagoCitation}
+				{assessContentQuality}
+			/>
+		{/if}
 	{:else}
 		<p>Discussion not found.</p>
 	{/if}
@@ -3601,9 +3634,73 @@
 	}
 	/* Editorial Article Header */
 	.discussion-header {
-		margin-bottom: 3rem;
+		margin-bottom: 0;
 		padding-bottom: 2rem;
 		border-bottom: 1px solid var(--color-border);
+	}
+
+	/* Tab Navigation */
+	.discussion-tabs {
+		display: flex;
+		gap: 0;
+		border-bottom: 2px solid var(--color-border);
+		margin-bottom: 2rem;
+	}
+
+	.tab-btn {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.875rem 1.5rem;
+		font-size: 0.9375rem;
+		font-weight: 500;
+		color: var(--color-text-secondary);
+		background: transparent;
+		border: none;
+		border-bottom: 2px solid transparent;
+		margin-bottom: -2px;
+		cursor: pointer;
+		transition: all var(--transition-speed) ease;
+		font-family: var(--font-family-sans);
+	}
+
+	.tab-btn:hover {
+		color: var(--color-text-primary);
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+	}
+
+	.tab-btn.active {
+		color: var(--color-primary);
+		border-bottom-color: var(--color-primary);
+		font-weight: 600;
+	}
+
+	.tab-badge {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 1.25rem;
+		height: 1.25rem;
+		padding: 0 0.375rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		background: color-mix(in srgb, var(--color-text-secondary) 15%, transparent);
+		color: var(--color-text-secondary);
+		border-radius: 10px;
+	}
+
+	.tab-btn.active .tab-badge {
+		background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+		color: var(--color-primary);
+	}
+
+	@media (max-width: 768px) {
+		.tab-btn {
+			padding: 0.75rem 1rem;
+			font-size: 0.875rem;
+			flex: 1;
+			justify-content: center;
+		}
 	}
 
 	.discussion-description {
