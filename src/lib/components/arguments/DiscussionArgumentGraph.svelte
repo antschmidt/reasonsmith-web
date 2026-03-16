@@ -164,10 +164,15 @@
 			.join('\n\n')
 	);
 
+	/** Title length excluding the "Untitled Discussion" placeholder */
+	const effectiveTitleLength = $derived(
+		discussionTitle.trim() === 'Untitled Discussion' ? 0 : discussionTitle.trim().length
+	);
+
 	/** Total combined text length for generation eligibility */
 	const totalTextLength = $derived(
 		plainDescription.length +
-			discussionTitle.trim().length +
+			effectiveTitleLength +
 			plainPostsText.length +
 			discussionCitations.reduce(
 				(sum, c) => sum + (c.title?.length || 0) + (c.relevant_quote?.length || 0),
@@ -699,42 +704,91 @@
 {:else if !argumentData}
 	<!-- No graph exists yet -->
 	<div class="graph-empty">
-		<div class="empty-icon">
-			<Network size={48} />
-		</div>
-		<h3>No Argument Graph Yet</h3>
-		<p class="empty-description">
-			Create an argument graph to map out the claims, evidence, and reasoning in this discussion.
-			{#if discussionPosts.length > 0 || discussionCitations.length > 0}
-				The graph will include content from
-				{#if discussionPosts.length > 0}
-					{discussionPosts.length} discussion post{discussionPosts.length === 1 ? '' : 's'}
+		{#if totalTextLength >= 20}
+			<!-- Primary path: Generate from existing content -->
+			<div class="empty-icon">
+				<Sparkles size={48} />
+			</div>
+			<h3>Generate Argument Graph</h3>
+			<p class="empty-description">
+				Analyze this discussion's content and automatically map out the claims, evidence, sources,
+				and reasoning.
+			</p>
+			<div class="content-summary">
+				{#if discussionTitle.trim() && discussionTitle.trim() !== 'Untitled Discussion'}
+					<div class="content-summary-item">
+						<span class="summary-icon">📝</span>
+						<span
+							>Discussion: <strong
+								>{discussionTitle.trim().length > 60
+									? discussionTitle.trim().slice(0, 60) + '…'
+									: discussionTitle.trim()}</strong
+							></span
+						>
+					</div>
 				{/if}
-				{#if discussionPosts.length > 0 && discussionCitations.length > 0}
-					{' '}and{' '}
+				{#if plainDescription.length > 0}
+					<div class="content-summary-item">
+						<span class="summary-icon">📄</span>
+						<span>Description ({plainDescription.length} characters)</span>
+					</div>
+				{/if}
+				{#if discussionPosts.length > 0}
+					<div class="content-summary-item">
+						<span class="summary-icon">💬</span>
+						<span
+							>{discussionPosts.length} discussion post{discussionPosts.length === 1
+								? ''
+								: 's'}</span
+						>
+					</div>
 				{/if}
 				{#if discussionCitations.length > 0}
-					{discussionCitations.length} citation{discussionCitations.length === 1 ? '' : 's'}
-				{/if}.
-			{/if}
-		</p>
-		{#if userId}
-			<div class="empty-actions">
-				{#if canGenerate}
-					<Button variant="primary" onclick={generateGraph} disabled={generating}>
-						{#snippet icon()}
-							<Sparkles size={16} />
-						{/snippet}
-						Generate with AI
-					</Button>
-					<span class="or-divider">or</span>
+					<div class="content-summary-item">
+						<span class="summary-icon">📚</span>
+						<span
+							>{discussionCitations.length} citation{discussionCitations.length === 1 ? '' : 's'} / reference{discussionCitations.length ===
+							1
+								? ''
+								: 's'}</span
+						>
+					</div>
 				{/if}
-				<Button variant="secondary" onclick={createGraph} disabled={creatingGraph}>
-					{creatingGraph ? 'Creating...' : 'Start from Scratch'}
-				</Button>
 			</div>
+			{#if userId}
+				<div class="empty-actions-stacked">
+					<Button variant="accent" onclick={generateGraph} disabled={generating}>
+						{#snippet icon()}
+							<Sparkles size={18} />
+						{/snippet}
+						Generate from Existing Content
+					</Button>
+					<button class="text-link" onclick={createGraph} disabled={creatingGraph}>
+						{creatingGraph ? 'Creating...' : 'or start from scratch'}
+					</button>
+				</div>
+			{:else}
+				<p class="sign-in-prompt">Sign in to generate an argument graph.</p>
+			{/if}
 		{:else}
-			<p class="sign-in-prompt">Sign in to create an argument graph.</p>
+			<!-- Fallback: Not enough content to generate -->
+			<div class="empty-icon">
+				<Network size={48} />
+			</div>
+			<h3>No Argument Graph Yet</h3>
+			<p class="empty-description">
+				Create an argument graph to map out the claims, evidence, and reasoning in this discussion.
+				Add more content to the discussion to enable AI generation.
+			</p>
+			{#if userId}
+				<div class="empty-actions">
+					<Button variant="secondary" onclick={createGraph} disabled={creatingGraph}>
+						{creatingGraph ? 'Creating...' : 'Start from Scratch'}
+					</Button>
+				</div>
+			{:else}
+				<p class="sign-in-prompt">Sign in to create an argument graph.</p>
+			{/if}
 		{/if}
 	</div>
 {:else}
@@ -1072,6 +1126,67 @@
 		line-height: 1.5;
 	}
 
+	.content-summary {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		padding: 0.75rem 1rem;
+		background: var(--color-surface-elevated, #1e1e1e);
+		border: 1px solid var(--color-border, #333);
+		border-radius: var(--border-radius-md, 8px);
+		max-width: 400px;
+		width: 100%;
+		text-align: left;
+	}
+
+	.content-summary-item {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.82rem;
+		color: var(--color-text-secondary, #aaa);
+		line-height: 1.3;
+	}
+
+	.content-summary-item strong {
+		color: var(--color-text-primary, #e0e0e0);
+		font-weight: 500;
+	}
+
+	.summary-icon {
+		flex-shrink: 0;
+		font-size: 0.85rem;
+	}
+
+	.empty-actions-stacked {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.6rem;
+		margin-top: 0.5rem;
+	}
+
+	.text-link {
+		background: none;
+		border: none;
+		color: var(--color-text-tertiary, #666);
+		font-size: 0.8rem;
+		cursor: pointer;
+		text-decoration: underline;
+		text-decoration-style: dotted;
+		padding: 0.25rem;
+		transition: color 0.15s;
+	}
+
+	.text-link:hover {
+		color: var(--color-text-secondary, #aaa);
+	}
+
+	.text-link:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
 	.empty-actions {
 		display: flex;
 		align-items: center;
@@ -1082,12 +1197,10 @@
 	.or-divider {
 		font-size: 0.8rem;
 		color: var(--color-text-tertiary, #666);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		font-style: italic;
 	}
 
 	.sign-in-prompt {
-		margin: 0;
 		font-size: 0.85rem;
 		color: var(--color-text-tertiary, #666);
 		font-style: italic;
