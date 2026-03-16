@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { nhost } from '$lib/nhostClient';
@@ -28,6 +28,12 @@
 		countNodesByType,
 		getNodeTypesPresent
 	} from '$lib/utils/argumentUtils';
+	import {
+		analyzeNodeImmediate,
+		buildContextForNode,
+		cancelAIAnalysis,
+		type AIAnalysisState
+	} from '$lib/utils/aiRhetoricalAnalysis';
 	import ArgumentHeader from '$lib/components/arguments/ArgumentHeader.svelte';
 	import CompletenessBar from '$lib/components/arguments/CompletenessBar.svelte';
 	import CoachBanner from '$lib/components/arguments/CoachBanner.svelte';
@@ -70,6 +76,138 @@
 	let showGraph = $state(true);
 	let coachDismissed = $state(false);
 
+	// AI analysis state per node
+	let aiAnalysisStates = $state<Map<string, AIAnalysisState>>(new Map());
+
+	function triggerAIAnalysis(nodeId: string, content: string, nodeType: ArgumentNodeType) {
+		// Set pending state immediately
+		aiAnalysisStates = new Map(aiAnalysisStates).set(nodeId, {
+			status: 'pending',
+			result: null,
+			error: null
+		});
+
+		// Build context from connected nodes
+		const context = buildContextForNode(nodeId, nodes, edges);
+
+		// Fire the analysis (no debounce — content is final)
+		analyzeNodeImmediate(nodeId, content, nodeType, context).then((result) => {
+			if (result) {
+				aiAnalysisStates = new Map(aiAnalysisStates).set(nodeId, {
+					status: 'done',
+					result,
+					error: null
+				});
+
+				// Persist to node metadata so we don't re-run on next page load
+				persistAIAnalysisToMetadata(nodeId, result);
+			} else {
+				aiAnalysisStates = new Map(aiAnalysisStates).set(nodeId, {
+					status: 'idle',
+					result: null,
+					error: null
+				});
+			}
+		});
+	}
+
+	/**
+	 * Save AI analysis result into the node's metadata.ai_analysis field
+	 * so it persists across page loads without re-calling the API.
+	 */
+	async function persistAIAnalysisToMetadata(
+		nodeId: string,
+		result: import('$lib/utils/aiRhetoricalAnalysis').AIAnalysisResult
+	) {
+		try {
+			const node = nodes.find((n) => n.id === nodeId);
+			if (!node) return;
+
+			const existingMetadata =
+				node.metadata && typeof node.metadata === 'object' ? node.metadata : {};
+
+			const updatedMetadata = {
+				...existingMetadata,
+				ai_analysis: {
+					...result,
+					contentHash: hashContent(node.content)
+				}
+			};
+
+			await nhost.graphql.request(UPDATE_NODE, {
+				id: nodeId,
+				metadata: updatedMetadata
+			});
+
+			// Update local state metadata too
+			nodes = nodes.map((n) => {
+				if (n.id !== nodeId) return n;
+				return { ...n, metadata: updatedMetadata };
+			});
+		} catch {
+			// Non-critical — analysis is still shown from in-memory state
+		}
+	}
+
+	/**
+	 * Simple content hash to detect if node content changed since last analysis.
+	 * Uses a basic DJB2 hash for speed — not cryptographic, just cache-busting.
+	 */
+	function hashContent(content: string): string {
+		let hash = 5381;
+		for (let i = 0; i < content.length; i++) {
+			hash = ((hash << 5) + hash + content.charCodeAt(i)) & 0xffffffff;
+		}
+		return hash.toString(36);
+	}
+
+	/**
+	 * Try to load AI analysis from the node's persisted metadata.
+	 * Returns the cached result if the content hasn't changed, otherwise null.
+	 */
+	function loadCachedAnalysis(
+		node: ArgumentNode
+	): import('$lib/utils/aiRhetoricalAnalysis').AIAnalysisResult | null {
+		const meta = node.metadata as Record<string, unknown> | null;
+		if (!meta || typeof meta !== 'object') return null;
+
+		const cached = meta.ai_analysis as
+			| (import('$lib/utils/aiRhetoricalAnalysis').AIAnalysisResult & { contentHash?: string })
+			| undefined;
+		if (!cached || !cached.analyzedAt || !cached.alerts) return null;
+
+		// Check if content has changed since the analysis was cached
+		if (cached.contentHash && cached.contentHash !== hashContent(node.content)) {
+			return null; // Content changed — need fresh analysis
+		}
+
+		return {
+			alerts: cached.alerts,
+			overallQuality: cached.overallQuality,
+			suggestion: cached.suggestion,
+			analyzedAt: cached.analyzedAt,
+			model: cached.model
+		};
+	}
+
+	function triggerAIAnalysisForAllNodes() {
+		for (const node of nodes) {
+			if (node.content && node.content.trim().length >= 10) {
+				// First check if we have a valid cached result in metadata
+				const cached = loadCachedAnalysis(node);
+				if (cached) {
+					aiAnalysisStates = new Map(aiAnalysisStates).set(node.id, {
+						status: 'done',
+						result: cached,
+						error: null
+					});
+				} else {
+					triggerAIAnalysis(node.id, node.content, node.type);
+				}
+			}
+		}
+	}
+
 	// Mobile tab state
 	let mobileTab = $state<'list' | 'graph'>('list');
 
@@ -95,6 +233,13 @@
 			return;
 		}
 		loadArgument();
+	});
+
+	onDestroy(() => {
+		// Cancel any in-flight AI analysis requests on unmount
+		for (const nodeId of aiAnalysisStates.keys()) {
+			cancelAIAnalysis(nodeId);
+		}
 	});
 
 	async function loadArgument() {
@@ -128,6 +273,9 @@
 			};
 			nodes = arg.argument_nodes || [];
 			edges = arg.argument_edges || [];
+
+			// Trigger AI analysis for all loaded nodes
+			triggerAIAnalysisForAllNodes();
 		} catch (err: any) {
 			error = err.message || 'Failed to load argument';
 		} finally {
@@ -151,6 +299,11 @@
 		edges = [...edges, ...event.edges];
 		closeAddNode();
 		coachDismissed = false;
+
+		// Trigger AI analysis for the new node
+		if (event.node.content && event.node.content.trim().length >= 10) {
+			triggerAIAnalysis(event.node.id, event.node.content, event.node.type);
+		}
 	}
 
 	function selectNode(nodeId: string) {
@@ -203,6 +356,9 @@
 			}
 
 			// Update local state
+			const updatedContent = updates.content ?? nodes.find((n) => n.id === nodeId)?.content ?? '';
+			const updatedType = updates.type ?? nodes.find((n) => n.id === nodeId)?.type ?? 'claim';
+
 			nodes = nodes.map((n) => {
 				if (n.id !== nodeId) return n;
 				return {
@@ -211,6 +367,11 @@
 					...(updates.type !== undefined ? { type: updates.type } : {})
 				};
 			});
+
+			// Re-trigger AI analysis after edit
+			if (updatedContent.trim().length >= 10) {
+				triggerAIAnalysis(nodeId, updatedContent, updatedType);
+			}
 		} catch (err: any) {
 			error = err.message || 'Failed to update node';
 			throw err; // re-throw so NodeCard stays in edit mode
@@ -403,6 +564,7 @@
 								onDelete={() => handleDeleteNode(node.id)}
 								onEdit={handleEditNode}
 								onEditEdge={handleEditEdge}
+								aiAnalysis={aiAnalysisStates.get(node.id)}
 							/>
 						{/each}
 					{/if}

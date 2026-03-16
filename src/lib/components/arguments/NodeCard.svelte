@@ -21,7 +21,10 @@
 		Eye,
 		HelpCircle,
 		Brain,
-		Target
+		Target,
+		LoaderCircle,
+		Sparkles,
+		Regex
 	} from '@lucide/svelte';
 	import {
 		analyzeNodeContent,
@@ -30,6 +33,12 @@
 		getSeverityColor,
 		type RhetoricalAlert
 	} from '$lib/utils/rhetoricalAnalysis';
+	import type {
+		AIAnalysisState,
+		AIAnalysisAlert,
+		AIAnalysisResult
+	} from '$lib/utils/aiRhetoricalAnalysis';
+	import { getQualityColor } from '$lib/utils/aiRhetoricalAnalysis';
 
 	interface Props {
 		node: ArgumentNode;
@@ -44,6 +53,8 @@
 			updates: { content?: string; type?: ArgumentNodeType }
 		) => Promise<void> | void;
 		onEditEdge?: (edgeId: string, updates: { type?: ArgumentEdgeType }) => Promise<void> | void;
+		/** AI analysis state for this node, managed by the parent */
+		aiAnalysis?: AIAnalysisState;
 	}
 
 	let {
@@ -55,7 +66,8 @@
 		onSelect,
 		onDelete,
 		onEdit,
-		onEditEdge
+		onEditEdge,
+		aiAnalysis
 	}: Props = $props();
 
 	let expanded = $state(false);
@@ -73,8 +85,51 @@
 	const allNodeTypes = Object.keys(NODE_TYPE_CONFIGS) as ArgumentNodeType[];
 	const allEdgeTypes = Object.keys(EDGE_TYPE_CONFIGS) as ArgumentEdgeType[];
 
-	// Rhetorical analysis
-	const alerts = $derived(analyzeNodeContent(node.content, node.type));
+	// Regex-based rhetorical analysis (instant, local)
+	const regexAlerts = $derived(analyzeNodeContent(node.content, node.type));
+
+	// AI-powered rhetorical analysis (async, from parent)
+	const aiAlerts = $derived<AIAnalysisAlert[]>(
+		aiAnalysis?.status === 'done' && aiAnalysis.result ? aiAnalysis.result.alerts : []
+	);
+	const aiQuality = $derived<AIAnalysisResult['overallQuality'] | null>(
+		aiAnalysis?.status === 'done' && aiAnalysis.result ? aiAnalysis.result.overallQuality : null
+	);
+	const aiSuggestion = $derived<string | null>(
+		aiAnalysis?.status === 'done' && aiAnalysis.result?.suggestion
+			? aiAnalysis.result.suggestion
+			: null
+	);
+	const aiPending = $derived(aiAnalysis?.status === 'pending');
+
+	// Merge regex + AI alerts, deduplicating by category+label similarity
+	type MergedAlert = (RhetoricalAlert | AIAnalysisAlert) & { source: 'regex' | 'ai' };
+	const alerts = $derived.by((): MergedAlert[] => {
+		const merged: MergedAlert[] = [];
+		const seenLabels = new Set<string>();
+
+		// AI alerts take priority (more nuanced)
+		for (const alert of aiAlerts) {
+			const key = `${alert.category}::${alert.label.toLowerCase()}`;
+			seenLabels.add(key);
+			merged.push({ ...alert, source: 'ai' });
+		}
+
+		// Add regex alerts that don't overlap with AI alerts
+		for (const alert of regexAlerts) {
+			const key = `${alert.category}::${alert.label.toLowerCase()}`;
+			if (!seenLabels.has(key)) {
+				merged.push({ ...alert, source: 'regex' });
+			}
+		}
+
+		// Sort by severity: error > warning > info
+		const severityOrder: Record<string, number> = { error: 0, warning: 1, info: 2 };
+		merged.sort((a, b) => (severityOrder[a.severity] ?? 2) - (severityOrder[b.severity] ?? 2));
+
+		return merged;
+	});
+
 	let expandedAlertId = $state<string | null>(null);
 
 	function toggleAlert(e: Event, alertId: string) {
@@ -415,7 +470,27 @@
 		{/if}
 	</div>
 
-	<!-- Rhetorical Alerts -->
+	<!-- AI Analysis Status + Quality Badge -->
+	{#if !editing && (aiPending || aiQuality)}
+		<div class="ai-status-bar">
+			{#if aiPending}
+				<span class="ai-status-pending">
+					<LoaderCircle size={11} class="spin-icon" />
+					<span>Analyzing…</span>
+				</span>
+			{:else if aiQuality}
+				<span class="ai-quality-badge" style="color: {getQualityColor(aiQuality)}">
+					<Sparkles size={11} />
+					<span>{aiQuality}</span>
+				</span>
+				{#if aiSuggestion}
+					<span class="ai-suggestion">{aiSuggestion}</span>
+				{/if}
+			{/if}
+		</div>
+	{/if}
+
+	<!-- Rhetorical Alerts (merged regex + AI) -->
 	{#if !editing && alerts.length > 0}
 		<div class="alerts-section" transition:slide={{ duration: 150 }}>
 			<div class="alerts-pills">
@@ -423,13 +498,18 @@
 					<button
 						class="alert-pill"
 						class:expanded={expandedAlertId === alert.id}
+						class:ai-source={alert.source === 'ai'}
 						style="--alert-color: {getCategoryColor(
 							alert.category
 						)}; --severity-color: {getSeverityColor(alert.severity)}"
 						onclick={(e) => toggleAlert(e, alert.id)}
 						title={alert.description}
 					>
-						<svelte:component this={getAlertIcon(alert.icon)} size={11} />
+						{#if alert.source === 'ai'}
+							<Sparkles size={10} />
+						{:else}
+							<svelte:component this={getAlertIcon(alert.icon)} size={11} />
+						{/if}
 						<span class="alert-pill-label">{alert.label}</span>
 					</button>
 				{/each}
@@ -454,6 +534,13 @@
 								style="color: {getSeverityColor(expanded_alert.severity)}"
 							>
 								{expanded_alert.severity}
+							</span>
+							<span class="alert-source-badge" class:ai={expanded_alert.source === 'ai'}>
+								{#if expanded_alert.source === 'ai'}
+									<Sparkles size={9} /> AI
+								{:else}
+									<Regex size={9} /> Pattern
+								{/if}
 							</span>
 						</div>
 						<p class="alert-detail-desc">{expanded_alert.description}</p>
@@ -576,6 +663,79 @@
 </article>
 
 <style>
+	/* AI status bar */
+	.ai-status-bar {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 10px;
+		font-size: 0.68rem;
+		border-top: 1px solid color-mix(in srgb, var(--node-color, #888) 12%, transparent);
+	}
+
+	.ai-status-pending {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: #8b8b8b;
+		font-style: italic;
+	}
+
+	.ai-status-pending :global(.spin-icon) {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	.ai-quality-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		font-weight: 600;
+		text-transform: capitalize;
+	}
+
+	.ai-suggestion {
+		color: #8b8b8b;
+		font-style: italic;
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	/* Alert source badges */
+	.alert-source-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		font-size: 0.6rem;
+		padding: 1px 5px;
+		border-radius: 3px;
+		background: color-mix(in srgb, #8b8b8b 15%, transparent);
+		color: #8b8b8b;
+		text-transform: uppercase;
+		font-weight: 600;
+		letter-spacing: 0.03em;
+	}
+
+	.alert-source-badge.ai {
+		background: color-mix(in srgb, #b44be8 15%, transparent);
+		color: #b44be8;
+	}
+
+	/* AI-sourced alert pills get a subtle sparkle border */
+	.alert-pill.ai-source {
+		border-style: dashed;
+	}
+
 	.node-card {
 		background: var(--node-bg, var(--color-surface));
 		border: 1px solid color-mix(in srgb, var(--node-color) 20%, var(--color-border));
