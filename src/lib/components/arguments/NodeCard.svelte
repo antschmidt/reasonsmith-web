@@ -7,7 +7,29 @@
 	} from '$lib/types/argument';
 	import { NODE_TYPE_CONFIGS, EDGE_TYPE_CONFIGS } from '$lib/types/argument';
 	import { slide } from 'svelte/transition';
-	import { ChevronDown, ChevronUp, Trash2, Link, Star, Edit3, Save, X } from '@lucide/svelte';
+	import {
+		ChevronDown,
+		ChevronUp,
+		Trash2,
+		Link,
+		Star,
+		Edit3,
+		Save,
+		X,
+		AlertTriangle,
+		ShieldAlert,
+		Eye,
+		HelpCircle,
+		Brain,
+		Target
+	} from '@lucide/svelte';
+	import {
+		analyzeNodeContent,
+		getCategoryColor,
+		getCategoryLabel,
+		getSeverityColor,
+		type RhetoricalAlert
+	} from '$lib/utils/rhetoricalAnalysis';
 
 	interface Props {
 		node: ArgumentNode;
@@ -50,6 +72,34 @@
 
 	const allNodeTypes = Object.keys(NODE_TYPE_CONFIGS) as ArgumentNodeType[];
 	const allEdgeTypes = Object.keys(EDGE_TYPE_CONFIGS) as ArgumentEdgeType[];
+
+	// Rhetorical analysis
+	const alerts = $derived(analyzeNodeContent(node.content, node.type));
+	let expandedAlertId = $state<string | null>(null);
+
+	function toggleAlert(e: Event, alertId: string) {
+		e.stopPropagation();
+		expandedAlertId = expandedAlertId === alertId ? null : alertId;
+	}
+
+	function getAlertIcon(icon: RhetoricalAlert['icon']) {
+		switch (icon) {
+			case 'alert-triangle':
+				return AlertTriangle;
+			case 'shield-alert':
+				return ShieldAlert;
+			case 'eye':
+				return Eye;
+			case 'help-circle':
+				return HelpCircle;
+			case 'brain':
+				return Brain;
+			case 'target':
+				return Target;
+			default:
+				return AlertTriangle;
+		}
+	}
 
 	// Get connected nodes with their role labels
 	const connections = $derived.by(() => {
@@ -364,6 +414,61 @@
 			<p class="node-content">{node.content}</p>
 		{/if}
 	</div>
+
+	<!-- Rhetorical Alerts -->
+	{#if !editing && alerts.length > 0}
+		<div class="alerts-section" transition:slide={{ duration: 150 }}>
+			<div class="alerts-pills">
+				{#each alerts as alert (alert.id)}
+					<button
+						class="alert-pill"
+						class:expanded={expandedAlertId === alert.id}
+						style="--alert-color: {getCategoryColor(
+							alert.category
+						)}; --severity-color: {getSeverityColor(alert.severity)}"
+						onclick={(e) => toggleAlert(e, alert.id)}
+						title={alert.description}
+					>
+						<svelte:component this={getAlertIcon(alert.icon)} size={11} />
+						<span class="alert-pill-label">{alert.label}</span>
+					</button>
+				{/each}
+			</div>
+			{#if expandedAlertId}
+				{@const expanded_alert = alerts.find((a) => a.id === expandedAlertId)}
+				{#if expanded_alert}
+					<div
+						class="alert-detail"
+						style="--alert-color: {getCategoryColor(expanded_alert.category)}"
+						transition:slide={{ duration: 150 }}
+					>
+						<div class="alert-detail-header">
+							<span
+								class="alert-category-badge"
+								style="color: {getCategoryColor(expanded_alert.category)}"
+							>
+								{getCategoryLabel(expanded_alert.category)}
+							</span>
+							<span
+								class="alert-severity-badge"
+								style="color: {getSeverityColor(expanded_alert.severity)}"
+							>
+								{expanded_alert.severity}
+							</span>
+						</div>
+						<p class="alert-detail-desc">{expanded_alert.description}</p>
+						<p class="alert-detail-explain">{expanded_alert.explanation}</p>
+						{#if expanded_alert.matchedText}
+							<p class="alert-matched">
+								<span class="alert-matched-label">Matched:</span>
+								<span class="alert-matched-text">"{expanded_alert.matchedText}"</span>
+							</p>
+						{/if}
+					</div>
+				{/if}
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Warrant Special Display -->
 	{#if !editing && node.type === 'warrant' && (warrantDrawsFrom || warrantJustifies)}
@@ -729,6 +834,121 @@
 	/* Content */
 	.card-content {
 		padding: 0 var(--space-sm, 10px) var(--space-xs, 6px);
+	}
+
+	/* Rhetorical Alerts */
+	.alerts-section {
+		padding: 0 var(--space-sm, 10px) var(--space-xs, 6px);
+	}
+
+	.alerts-pills {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+
+	.alert-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		padding: 2px 7px;
+		border-radius: 10px;
+		border: 1px solid color-mix(in srgb, var(--alert-color) 30%, transparent);
+		background: color-mix(in srgb, var(--alert-color) 8%, transparent);
+		color: var(--alert-color);
+		font-size: 0.6rem;
+		font-weight: 600;
+		font-family: var(--font-family-ui, sans-serif);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		cursor: pointer;
+		transition: all var(--transition-fast, 0.1s) ease;
+		line-height: 1.4;
+	}
+
+	.alert-pill:hover {
+		background: color-mix(in srgb, var(--alert-color) 15%, transparent);
+		border-color: color-mix(in srgb, var(--alert-color) 50%, transparent);
+	}
+
+	.alert-pill.expanded {
+		background: color-mix(in srgb, var(--alert-color) 15%, transparent);
+		border-color: var(--alert-color);
+	}
+
+	.alert-pill-label {
+		white-space: nowrap;
+	}
+
+	.alert-detail {
+		margin-top: 6px;
+		padding: 8px 10px;
+		background: color-mix(in srgb, var(--alert-color) 5%, var(--color-surface, #1a1a1a));
+		border: 1px solid color-mix(in srgb, var(--alert-color) 20%, var(--color-border));
+		border-radius: var(--border-radius-sm, 4px);
+	}
+
+	.alert-detail-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 4px;
+	}
+
+	.alert-category-badge {
+		font-size: 0.6rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		font-family: var(--font-family-ui, sans-serif);
+	}
+
+	.alert-severity-badge {
+		font-size: 0.55rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		font-family: var(--font-family-ui, sans-serif);
+		opacity: 0.7;
+	}
+
+	.alert-detail-desc {
+		margin: 0 0 6px 0;
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--color-text-primary, #eceff1);
+		font-family: var(--font-family-ui, sans-serif);
+		line-height: 1.4;
+	}
+
+	.alert-detail-explain {
+		margin: 0;
+		font-size: 0.78rem;
+		color: var(--color-text-secondary, #90a4ae);
+		font-family: var(--font-family-serif, serif);
+		line-height: 1.55;
+	}
+
+	.alert-matched {
+		margin: 6px 0 0 0;
+		font-size: 0.7rem;
+		color: var(--color-text-tertiary, #607d8b);
+		font-family: var(--font-family-ui, sans-serif);
+	}
+
+	.alert-matched-label {
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		font-size: 0.6rem;
+		margin-right: 4px;
+	}
+
+	.alert-matched-text {
+		font-style: italic;
+		color: var(--alert-color);
+		font-family: var(--font-family-serif, serif);
+		font-size: 0.75rem;
 	}
 
 	.node-content {
