@@ -91,8 +91,8 @@
 		// Offset the control point perpendicular to the line
 		const dist = Math.sqrt(dx * dx + dy * dy);
 		const curvature = Math.min(dist * 0.15, 40);
-		const perpX = -dy / (dist || 1) * curvature;
-		const perpY = dx / (dist || 1) * curvature;
+		const perpX = (-dy / (dist || 1)) * curvature;
+		const perpY = (dx / (dist || 1)) * curvature;
 
 		const controlX = midX + perpX;
 		const controlY = midY + perpY;
@@ -156,7 +156,19 @@
 		let currentLine = '';
 
 		for (const word of words) {
-			if (currentLine.length + word.length + 1 > maxCharsPerLine) {
+			// Force-break words longer than the max line width (e.g. URLs)
+			if (word.length > maxCharsPerLine) {
+				if (currentLine) {
+					lines.push(currentLine);
+					currentLine = '';
+				}
+				let remaining = word;
+				while (remaining.length > maxCharsPerLine) {
+					lines.push(remaining.slice(0, maxCharsPerLine));
+					remaining = remaining.slice(maxCharsPerLine);
+				}
+				if (remaining) currentLine = remaining;
+			} else if (currentLine.length + word.length + 1 > maxCharsPerLine) {
 				if (currentLine) lines.push(currentLine);
 				currentLine = word;
 			} else {
@@ -581,7 +593,8 @@
 								letter-spacing="0.08em"
 								text-transform="uppercase"
 							>
-								{config.label.toUpperCase()}{#if node.is_root} ★{/if}
+								{config.label.toUpperCase()}{#if node.is_root}
+									★{/if}
 							</text>
 
 							<!-- Content text -->

@@ -461,7 +461,29 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	.edit-btn,
+	.edit-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		padding: 0;
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-sm);
+		color: var(--color-text-tertiary);
+		cursor: pointer;
+		opacity: 0.7;
+		transition: all var(--transition-fast) ease;
+	}
+
+	.edit-btn:hover {
+		opacity: 1;
+		color: var(--node-color);
+		border-color: var(--node-color);
+		background: color-mix(in srgb, var(--node-color) 8%, transparent);
+	}
+
 	.delete-btn {
 		display: inline-flex;
 		align-items: center;
@@ -478,15 +500,8 @@
 		transition: all var(--transition-fast) ease;
 	}
 
-	.node-card:hover .edit-btn,
 	.node-card:hover .delete-btn {
 		opacity: 0.6;
-	}
-
-	.edit-btn:hover {
-		opacity: 1 !important;
-		color: var(--node-color);
-		background: color-mix(in srgb, var(--node-color) 8%, transparent);
 	}
 
 	.delete-btn:hover {
@@ -767,7 +782,10 @@
 			font-size: 0.82rem;
 		}
 
-		.edit-btn,
+		.edit-btn {
+			opacity: 0.8;
+		}
+
 		.delete-btn {
 			opacity: 0.5;
 		}
