@@ -146,7 +146,7 @@
 
 	let warrantConnections = $derived(extractionResult?.warrant_connections || []);
 
-	let hasExistingGraph = $derived(existingNodes.length > 1 || existingEdges.length > 0);
+	let hasExistingGraph = $derived(existingNodes.length > 0 || existingEdges.length > 0);
 
 	let nodeTypeSummary = $derived.by(() => {
 		const counts: Record<string, number> = {};
@@ -289,27 +289,25 @@
 				return resolved;
 			});
 
-			// Step 2: If existing graph, delete old nodes and edges first
-			if (hasExistingGraph) {
-				// Delete existing edges and nodes via GraphQL
-				const deleteResult = await nhost.graphql.request(
-					`mutation DeleteExistingGraph($argumentId: uuid!) {
-						delete_argument_edge(where: { argument_id: { _eq: $argumentId } }) {
-							affected_rows
-						}
-						delete_argument_node(where: { argument_id: { _eq: $argumentId } }) {
-							affected_rows
-						}
-					}`,
-					{ argumentId }
-				);
+			// Step 2: Always delete old nodes and edges first to avoid
+			// unique constraint violations (idx_argument_single_root)
+			const deleteResult = await nhost.graphql.request(
+				`mutation DeleteExistingGraph($argumentId: uuid!) {
+					delete_argument_edge(where: { argument_id: { _eq: $argumentId } }) {
+						affected_rows
+					}
+					delete_argument_node(where: { argument_id: { _eq: $argumentId } }) {
+						affected_rows
+					}
+				}`,
+				{ argumentId }
+			);
 
-				if (deleteResult.error) {
-					const msg = Array.isArray(deleteResult.error)
-						? deleteResult.error[0]?.message
-						: deleteResult.error.message;
-					throw new Error(msg || 'Failed to clear existing graph');
-				}
+			if (deleteResult.error) {
+				const msg = Array.isArray(deleteResult.error)
+					? deleteResult.error[0]?.message
+					: deleteResult.error.message;
+				throw new Error(msg || 'Failed to clear existing graph');
 			}
 
 			// Step 3: Insert nodes
