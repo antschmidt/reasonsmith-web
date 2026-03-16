@@ -153,6 +153,28 @@
 		return truncate(text, 120);
 	}
 
+	// Inline style for foreignObject text — Svelte scoped styles don't penetrate into
+	// foreignObject HTML, so we must inline. word-break:break-all ensures long strings
+	// like URLs wrap within the node rect.
+	const nodeTextStyle = [
+		'margin:0',
+		'padding:0',
+		`width:${NODE_WIDTH - 16}px`,
+		`height:${NODE_HEIGHT - 34}px`,
+		'color:var(--color-text-primary,#eceff1)',
+		'font-size:11px',
+		'font-family:var(--font-family-serif,serif)',
+		'line-height:1.35',
+		'overflow:hidden',
+		'word-break:break-all',
+		'overflow-wrap:break-word',
+		'display:-webkit-box',
+		'-webkit-line-clamp:4',
+		'-webkit-box-orient:vertical',
+		'box-sizing:border-box',
+		'pointer-events:none'
+	].join(';');
+
 	// Pan handlers
 	function handleMouseDown(e: MouseEvent) {
 		if (e.target === svgElement || (e.target as Element)?.classList?.contains('graph-bg')) {
@@ -590,10 +612,9 @@
 
 								<!-- Content text via foreignObject for proper wrapping -->
 								<foreignObject x="8" y="28" width={NODE_WIDTH - 16} height={NODE_HEIGHT - 34}>
-									<!-- @ts-ignore xmlns needed for foreignObject -->
-									<div class="node-text-content">
+									<p style={nodeTextStyle}>
 										{displayText}
-									</div>
+									</p>
 								</foreignObject>
 							</g>
 						</g>
@@ -708,24 +729,6 @@
 		50% {
 			stroke-opacity: 0.6;
 		}
-	}
-
-	.node-text-content {
-		pointer-events: none;
-		color: var(--color-text-primary, #eceff1);
-		font-size: 11px;
-		font-family: var(--font-family-serif, serif);
-		line-height: 1.35;
-		overflow: hidden;
-		word-wrap: break-word;
-		overflow-wrap: break-word;
-		hyphens: auto;
-		display: -webkit-box;
-		-webkit-line-clamp: 4;
-		-webkit-box-orient: vertical;
-		text-overflow: ellipsis;
-		margin: 0;
-		padding: 0;
 	}
 
 	.root-indicator {
