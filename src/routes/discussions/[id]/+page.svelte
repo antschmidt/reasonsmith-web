@@ -3493,6 +3493,7 @@
 			<DiscussionArgumentGraph
 				discussionId={discussion.id}
 				discussionTitle={getDiscussionTitle(discussion)}
+				discussionDescription={getDiscussionDescription(discussion) || ''}
 				userId={user?.id ?? null}
 			/>
 		{:else}

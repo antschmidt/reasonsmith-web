@@ -9,7 +9,9 @@
 		UPDATE_NODE,
 		UPDATE_EDGE,
 		ADD_NODE,
-		ADD_WARRANT_NODE
+		ADD_WARRANT_NODE,
+		BULK_INSERT_NODES,
+		BULK_INSERT_EDGES
 	} from '$lib/graphql/queries';
 	import type {
 		ArgumentNode,
@@ -18,7 +20,8 @@
 		ArgumentEdgeType,
 		CoachPrompt,
 		CompletenessScore,
-		StructuralFlag
+		StructuralFlag,
+		ExtractionResult
 	} from '$lib/types/argument';
 	import { NODE_TYPE_CONFIGS } from '$lib/types/argument';
 	import {
@@ -37,15 +40,16 @@
 	import AddNodeSheet from '$lib/components/arguments/AddNodeSheet.svelte';
 	import ArgumentGraph from '$lib/components/arguments/ArgumentGraph.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
-	import { Plus, List, Network } from '@lucide/svelte';
+	import { Plus, List, Network, Sparkles, RotateCcw } from '@lucide/svelte';
 
 	interface Props {
 		discussionId: string;
 		discussionTitle: string;
+		discussionDescription: string;
 		userId: string | null;
 	}
 
-	let { discussionId, discussionTitle, userId }: Props = $props();
+	let { discussionId, discussionTitle, discussionDescription, userId }: Props = $props();
 
 	// Core data state
 	let loading = $state(true);
@@ -77,6 +81,11 @@
 	let creatingGraph = $state(false);
 	let dismissedFlags = $state<Set<string>>(new Set());
 
+	// AI generation state
+	let generating = $state(false);
+	let generateStatus = $state<string | null>(null);
+	let showRegenerateConfirm = $state(false);
+
 	// Derived values
 	const completeness = $derived(computeCompletenessScore(nodes));
 	const structuralFlags = $derived(computeStructuralFlags(nodes, edges));
@@ -93,6 +102,15 @@
 	const filteredNodes = $derived(
 		filterType === 'all' ? nodes : nodes.filter((n) => n.type === filterType)
 	);
+
+	/** Whether there's enough discussion content to generate a graph from */
+	const canGenerate = $derived(
+		userId != null &&
+			(discussionDescription.trim().length >= 20 || discussionTitle.trim().length >= 20)
+	);
+
+	/** Whether the graph has real content beyond just the root claim */
+	const hasExistingContent = $derived(nodes.length > 1 || edges.length > 0);
 
 	onMount(() => {
 		loadGraph();
@@ -169,6 +187,214 @@
 			error = e.message || 'Failed to create argument graph';
 		} finally {
 			creatingGraph = false;
+		}
+	}
+
+	/**
+	 * Generate an argument graph from the discussion content using AI extraction.
+	 * If no argument container exists yet, creates one first.
+	 * If one already exists, replaces its nodes/edges with the extraction result.
+	 */
+	async function generateGraph() {
+		if (!userId || !canGenerate) return;
+
+		generating = true;
+		generateStatus = 'Analyzing discussion content...';
+		error = null;
+		showRegenerateConfirm = false;
+
+		try {
+			// Build the text to analyze from discussion title + description
+			const textParts: string[] = [];
+			if (discussionTitle.trim()) {
+				textParts.push(discussionTitle.trim());
+			}
+			if (discussionDescription.trim()) {
+				textParts.push(discussionDescription.trim());
+			}
+			const text = textParts.join('\n\n');
+
+			if (text.length < 20) {
+				error = 'Not enough discussion content to generate a graph (minimum 20 characters).';
+				return;
+			}
+
+			// Step 1: Call the extraction API
+			generateStatus = 'Extracting argument structure with AI...';
+			const response = await fetch('/api/arguments/extract', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ text })
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json().catch(() => null);
+				throw new Error(errorData?.error || `Extraction failed (${response.status})`);
+			}
+
+			const extraction: ExtractionResult = await response.json();
+
+			if (!extraction.nodes || extraction.nodes.length === 0) {
+				throw new Error(
+					'AI extraction returned no argument nodes. Try adding more detail to the discussion.'
+				);
+			}
+
+			// Step 2: Ensure argument container exists
+			generateStatus = 'Setting up argument graph...';
+			let argId = argumentData?.id;
+
+			if (!argId) {
+				// Create the argument container first
+				const createResult = await nhost.graphql.request(CREATE_DISCUSSION_ARGUMENT, {
+					userId,
+					discussionId,
+					title: discussionTitle,
+					rootClaimContent: discussionTitle
+				});
+				if (createResult.error) {
+					const msg = Array.isArray(createResult.error)
+						? createResult.error[0]?.message
+						: createResult.error.message;
+					throw new Error(msg || 'Failed to create argument container');
+				}
+				const arg = createResult.data?.insert_argument_one;
+				if (!arg) throw new Error('Failed to create argument container');
+
+				argId = arg.id;
+				argumentData = {
+					id: arg.id,
+					user_id: arg.user_id,
+					title: arg.title,
+					description: arg.description ?? null,
+					discussion_id: arg.discussion_id ?? null,
+					post_id: arg.post_id ?? null,
+					created_at: arg.created_at,
+					updated_at: arg.updated_at
+				};
+			}
+
+			// Step 3: Delete existing nodes/edges (the creation step may have made a root node)
+			generateStatus = 'Clearing existing graph...';
+			await nhost.graphql.request(
+				`mutation DeleteExistingGraph($argumentId: uuid!) {
+					delete_argument_edge(where: { argument_id: { _eq: $argumentId } }) {
+						affected_rows
+					}
+					delete_argument_node(where: { argument_id: { _eq: $argumentId } }) {
+						affected_rows
+					}
+				}`,
+				{ argumentId: argId }
+			);
+
+			// Step 4: Map temp IDs to real UUIDs and build node objects
+			generateStatus = 'Building graph nodes...';
+			const warrantConnections = extraction.warrant_connections || [];
+
+			const nodesToInsert = extraction.nodes.map((n) => {
+				const isRoot = extraction.root_claim === n.id;
+				const warrantConn = warrantConnections.find((w) => w.warrant_node_id === n.id);
+
+				return {
+					id: crypto.randomUUID(),
+					argument_id: argId!,
+					type: n.type,
+					content: n.content,
+					is_root: isRoot,
+					implied: n.implied || false,
+					verbatim_span: n.verbatim_span || null,
+					metadata: {},
+					_temp_id: n.id,
+					_draws_from_temp: warrantConn?.draws_from || null,
+					_justifies_temp: warrantConn?.justifies || null
+				};
+			});
+
+			// Build temp->real ID map
+			const idMap = new Map<string, string>();
+			for (const node of nodesToInsert) {
+				idMap.set(node._temp_id, node.id);
+			}
+
+			// Resolve warrant draws_from/justifies to real UUIDs
+			const dbNodes = nodesToInsert.map((n) => {
+				const resolved: Record<string, unknown> = {
+					id: n.id,
+					argument_id: n.argument_id,
+					type: n.type,
+					content: n.content,
+					is_root: n.is_root,
+					implied: n.implied,
+					verbatim_span: n.verbatim_span,
+					metadata: n.metadata
+				};
+
+				if (n._draws_from_temp) {
+					resolved.draws_from = idMap.get(n._draws_from_temp) || null;
+				}
+				if (n._justifies_temp) {
+					resolved.justifies = idMap.get(n._justifies_temp) || null;
+				}
+
+				return resolved;
+			});
+
+			// Step 5: Insert nodes
+			generateStatus = `Inserting ${dbNodes.length} nodes...`;
+			const nodeResult = await nhost.graphql.request(BULK_INSERT_NODES, {
+				nodes: dbNodes
+			});
+			if (nodeResult.error) {
+				const msg = Array.isArray(nodeResult.error)
+					? nodeResult.error[0]?.message
+					: nodeResult.error.message;
+				throw new Error(msg || 'Failed to insert nodes');
+			}
+
+			// Step 6: Build and insert edges with resolved IDs
+			const dbEdges = (extraction.edges || [])
+				.map((e) => {
+					const fromId = idMap.get(e.from);
+					const toId = idMap.get(e.to);
+
+					if (!fromId || !toId) return null;
+
+					return {
+						argument_id: argId!,
+						from_node: fromId,
+						to_node: toId,
+						type: e.type,
+						confidence: e.confidence ?? 1.0,
+						weight: 1.0,
+						metadata: {}
+					};
+				})
+				.filter(Boolean);
+
+			if (dbEdges.length > 0) {
+				generateStatus = `Inserting ${dbEdges.length} edges...`;
+				const edgeResult = await nhost.graphql.request(BULK_INSERT_EDGES, {
+					edges: dbEdges
+				});
+				if (edgeResult.error) {
+					const msg = Array.isArray(edgeResult.error)
+						? edgeResult.error[0]?.message
+						: edgeResult.error.message;
+					throw new Error(msg || 'Failed to insert edges');
+				}
+			}
+
+			// Step 7: Reload the graph to get properly structured data from the server
+			generateStatus = 'Loading generated graph...';
+			await loadGraph();
+
+			generateStatus = null;
+		} catch (e: any) {
+			error = e.message || 'Failed to generate argument graph';
+			generateStatus = null;
+		} finally {
+			generating = false;
 		}
 	}
 
@@ -327,12 +553,43 @@
 		showAddNode = false;
 		addNodeDefaultType = null;
 	}
+
+	function requestRegenerate() {
+		if (hasExistingContent) {
+			showRegenerateConfirm = true;
+		} else {
+			generateGraph();
+		}
+	}
+
+	function confirmRegenerate() {
+		showRegenerateConfirm = false;
+		generateGraph();
+	}
+
+	function cancelRegenerate() {
+		showRegenerateConfirm = false;
+	}
 </script>
 
 {#if loading}
 	<div class="graph-loading">
 		<div class="spinner"></div>
 		<p>Loading argument graph...</p>
+	</div>
+{:else if generating}
+	<div class="graph-generating">
+		<div class="generate-animation">
+			<Sparkles size={36} />
+		</div>
+		<h3>Generating Argument Graph</h3>
+		{#if generateStatus}
+			<p class="generate-status">{generateStatus}</p>
+		{/if}
+		<div class="generate-progress">
+			<div class="generate-progress-bar"></div>
+		</div>
+		<p class="generate-hint">This typically takes 10–20 seconds</p>
 	</div>
 {:else if error && !argumentData}
 	<div class="graph-error">
@@ -350,9 +607,20 @@
 			Create an argument graph to map out the claims, evidence, and reasoning in this discussion.
 		</p>
 		{#if userId}
-			<Button onclick={createGraph} disabled={creatingGraph}>
-				{creatingGraph ? 'Creating...' : 'Create Argument Graph'}
-			</Button>
+			<div class="empty-actions">
+				{#if canGenerate}
+					<Button variant="primary" onclick={generateGraph} disabled={generating}>
+						{#snippet icon()}
+							<Sparkles size={16} />
+						{/snippet}
+						Generate with AI
+					</Button>
+					<span class="or-divider">or</span>
+				{/if}
+				<Button variant="secondary" onclick={createGraph} disabled={creatingGraph}>
+					{creatingGraph ? 'Creating...' : 'Start from Scratch'}
+				</Button>
+			</div>
 		{:else}
 			<p class="sign-in-prompt">Sign in to create an argument graph.</p>
 		{/if}
@@ -394,6 +662,26 @@
 			</div>
 		{/if}
 
+		{#if showRegenerateConfirm}
+			<div class="regenerate-confirm">
+				<div class="regenerate-confirm-content">
+					<p>
+						<strong>Regenerate graph?</strong> This will replace all {nodes.length} existing nodes and
+						{edges.length} edges with a new AI-generated graph.
+					</p>
+					<div class="regenerate-confirm-actions">
+						<Button variant="danger" size="sm" onclick={confirmRegenerate}>
+							{#snippet icon()}
+								<RotateCcw size={14} />
+							{/snippet}
+							Replace Graph
+						</Button>
+						<Button variant="ghost" size="sm" onclick={cancelRegenerate}>Cancel</Button>
+					</div>
+				</div>
+			</div>
+		{/if}
+
 		<!-- Mobile view toggle -->
 		<div class="mobile-tabs">
 			<button
@@ -427,12 +715,32 @@
 						activeFilter={filterType}
 						onFilterChange={(type) => (filterType = type)}
 					/>
-					<Button variant="primary" size="sm" onclick={() => openAddNode()}>
-						{#snippet icon()}
-							<Plus size={16} />
-						{/snippet}
-						Add Node
-					</Button>
+					<div class="panel-actions">
+						{#if canGenerate}
+							<Button
+								variant="ghost"
+								size="sm"
+								onclick={requestRegenerate}
+								disabled={generating}
+								title={hasExistingContent ? 'Regenerate graph with AI' : 'Generate graph with AI'}
+							>
+								{#snippet icon()}
+									{#if hasExistingContent}
+										<RotateCcw size={14} />
+									{:else}
+										<Sparkles size={14} />
+									{/if}
+								{/snippet}
+								{hasExistingContent ? 'Regenerate' : 'Generate'}
+							</Button>
+						{/if}
+						<Button variant="primary" size="sm" onclick={() => openAddNode()}>
+							{#snippet icon()}
+								<Plus size={16} />
+							{/snippet}
+							Add Node
+						</Button>
+					</div>
 				</div>
 
 				<div class="node-list">
@@ -512,6 +820,84 @@
 		}
 	}
 
+	/* Generating state */
+	.graph-generating {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 3rem 1.5rem;
+		gap: 1rem;
+		text-align: center;
+	}
+
+	.generate-animation {
+		color: var(--color-primary, #6366f1);
+		animation: pulse-glow 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse-glow {
+		0%,
+		100% {
+			opacity: 0.6;
+			transform: scale(1);
+		}
+		50% {
+			opacity: 1;
+			transform: scale(1.1);
+		}
+	}
+
+	.graph-generating h3 {
+		margin: 0;
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--color-text-primary, #e0e0e0);
+	}
+
+	.generate-status {
+		margin: 0;
+		font-size: 0.9rem;
+		color: var(--color-primary, #6366f1);
+		font-weight: 500;
+	}
+
+	.generate-progress {
+		width: 200px;
+		height: 4px;
+		background: var(--color-surface-elevated, #1e1e1e);
+		border-radius: 2px;
+		overflow: hidden;
+	}
+
+	.generate-progress-bar {
+		height: 100%;
+		width: 30%;
+		background: var(--color-primary, #6366f1);
+		border-radius: 2px;
+		animation: progress-slide 1.5s ease-in-out infinite;
+	}
+
+	@keyframes progress-slide {
+		0% {
+			transform: translateX(-100%);
+			width: 30%;
+		}
+		50% {
+			width: 60%;
+		}
+		100% {
+			transform: translateX(350%);
+			width: 30%;
+		}
+	}
+
+	.generate-hint {
+		margin: 0;
+		font-size: 0.8rem;
+		color: var(--color-text-tertiary, #666);
+	}
+
 	/* Error state */
 	.graph-error {
 		display: flex;
@@ -572,6 +958,20 @@
 		color: var(--color-text-secondary, #888);
 		max-width: 400px;
 		line-height: 1.5;
+	}
+
+	.empty-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-top: 0.5rem;
+	}
+
+	.or-divider {
+		font-size: 0.8rem;
+		color: var(--color-text-tertiary, #666);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
 
 	.sign-in-prompt {
@@ -678,6 +1078,34 @@
 		opacity: 1;
 	}
 
+	/* Regenerate confirmation */
+	.regenerate-confirm {
+		padding: 0.75rem 1rem;
+		background: color-mix(in srgb, var(--color-warning, #eab308) 8%, transparent);
+		border-bottom: 1px solid color-mix(in srgb, var(--color-warning, #eab308) 25%, transparent);
+	}
+
+	.regenerate-confirm-content {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+
+	.regenerate-confirm-content p {
+		margin: 0;
+		font-size: 0.85rem;
+		color: var(--color-text-primary, #e0e0e0);
+		line-height: 1.4;
+	}
+
+	.regenerate-confirm-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-shrink: 0;
+	}
+
 	/* Mobile tabs */
 	.mobile-tabs {
 		display: none;
@@ -743,6 +1171,13 @@
 		flex-wrap: wrap;
 	}
 
+	.panel-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		flex-shrink: 0;
+	}
+
 	/* Node list */
 	.node-list {
 		flex: 1;
@@ -791,6 +1226,23 @@
 
 		.node-list {
 			max-height: 500px;
+		}
+
+		.empty-actions {
+			flex-direction: column;
+		}
+
+		.or-divider {
+			display: none;
+		}
+
+		.regenerate-confirm-content {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+
+		.panel-actions {
+			flex-wrap: wrap;
 		}
 	}
 
