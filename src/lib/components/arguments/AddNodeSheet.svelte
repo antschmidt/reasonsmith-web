@@ -20,9 +20,20 @@
 		defaultType: ArgumentNodeType | null;
 		onClose: () => void;
 		onNodeAdded: (event: { node: ArgumentNode; edges: ArgumentEdge[] }) => void;
+		/** When true, new nodes are created as unpublished drafts (for shared discussion graphs) */
+		isSharedGraph?: boolean;
 	}
 
-	let { show, argumentId, nodes, edges, defaultType, onClose, onNodeAdded }: Props = $props();
+	let {
+		show,
+		argumentId,
+		nodes,
+		edges,
+		defaultType,
+		onClose,
+		onNodeAdded,
+		isSharedGraph = false
+	}: Props = $props();
 
 	// Form state
 	let selectedType = $state<ArgumentNodeType | null>(null);
@@ -63,7 +74,9 @@
 	const currentConfig = $derived(selectedType ? NODE_TYPE_CONFIGS[selectedType] : null);
 
 	// Target nodes for non-warrant types
-	const targetNodes = $derived(selectedType && !isWarrant ? getValidTargetNodes(selectedType, nodes) : []);
+	const targetNodes = $derived(
+		selectedType && !isWarrant ? getValidTargetNodes(selectedType, nodes) : []
+	);
 
 	// Evidence and claim nodes for warrant type
 	const evidenceNodes = $derived(getEvidenceNodes(nodes));
@@ -123,7 +136,8 @@
 
 	function truncateNodeLabel(node: ArgumentNode, maxLen: number = 50): string {
 		const prefix = NODE_TYPE_CONFIGS[node.type]?.label || node.type;
-		const text = node.content.length > maxLen ? node.content.slice(0, maxLen - 3) + '...' : node.content;
+		const text =
+			node.content.length > maxLen ? node.content.slice(0, maxLen - 3) + '...' : node.content;
 		return `${prefix}: ${text}`;
 	}
 
@@ -140,13 +154,12 @@
 					argumentId,
 					content: content.trim(),
 					drawsFromNodeId,
-					justifiesNodeId
+					justifiesNodeId,
+					isPublished: !isSharedGraph
 				});
 
 				if (result.error) {
-					const msg = Array.isArray(result.error)
-						? result.error[0]?.message
-						: result.error.message;
+					const msg = Array.isArray(result.error) ? result.error[0]?.message : result.error.message;
 					throw new Error(msg || 'Failed to add warrant node');
 				}
 
@@ -164,7 +177,8 @@
 				const variables: Record<string, unknown> = {
 					argumentId,
 					type: selectedType,
-					content: content.trim()
+					content: content.trim(),
+					isPublished: !isSharedGraph
 				};
 
 				if (connectToNodeId) {
@@ -224,13 +238,12 @@
 					type: selectedType,
 					content: content.trim(),
 					connectToNodeId,
-					edgeType
+					edgeType,
+					isPublished: !isSharedGraph
 				});
 
 				if (result.error) {
-					const msg = Array.isArray(result.error)
-						? result.error[0]?.message
-						: result.error.message;
+					const msg = Array.isArray(result.error) ? result.error[0]?.message : result.error.message;
 					throw new Error(msg || 'Failed to add node');
 				}
 
@@ -281,12 +294,7 @@
 	>
 		<header class="sheet-header">
 			<h2>Add Node</h2>
-			<button
-				class="close-btn"
-				onclick={onClose}
-				disabled={saving}
-				aria-label="Close"
-			>
+			<button class="close-btn" onclick={onClose} disabled={saving} aria-label="Close">
 				<X size={20} />
 			</button>
 		</header>
@@ -390,7 +398,7 @@
 						</div>
 					{/if}
 
-				<!-- Non-warrant: Single Dropdown -->
+					<!-- Non-warrant: Single Dropdown -->
 				{:else if selectedType !== 'source' || evidenceNodes.length > 0}
 					<div class="form-section">
 						<label class="section-label" for="connect-to">
@@ -437,14 +445,7 @@
 		</div>
 
 		<footer class="sheet-footer">
-			<button
-				class="cancel-btn"
-				onclick={onClose}
-				disabled={saving}
-				type="button"
-			>
-				Cancel
-			</button>
+			<button class="cancel-btn" onclick={onClose} disabled={saving} type="button"> Cancel </button>
 			<button
 				class="submit-btn"
 				onclick={handleSubmit}
@@ -686,7 +687,8 @@
 	.content-textarea:focus {
 		outline: none;
 		border-color: var(--focus-color, var(--color-primary));
-		box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-color, var(--color-primary)) 15%, transparent);
+		box-shadow: 0 0 0 2px
+			color-mix(in srgb, var(--focus-color, var(--color-primary)) 15%, transparent);
 	}
 
 	.content-textarea::placeholder {
@@ -714,7 +716,8 @@
 	.node-select:focus {
 		outline: none;
 		border-color: var(--focus-color, var(--color-primary));
-		box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-color, var(--color-primary)) 15%, transparent);
+		box-shadow: 0 0 0 2px
+			color-mix(in srgb, var(--focus-color, var(--color-primary)) 15%, transparent);
 	}
 
 	.no-targets-message {

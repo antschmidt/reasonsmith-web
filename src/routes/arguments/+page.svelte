@@ -58,6 +58,7 @@
 
 		try {
 			const result = await nhost.graphql.request(LIST_ARGUMENTS, {
+				userId: user?.id,
 				limit: 50,
 				offset: 0
 			});
@@ -207,7 +208,7 @@
 </script>
 
 <svelte:head>
-	<title>Arguments | ReasonSmith</title>
+	<title>My Argument Drafts | ReasonSmith</title>
 </svelte:head>
 
 <div class="page-container">
@@ -216,10 +217,10 @@
 			<div class="header-text">
 				<h1>
 					<Network size={32} strokeWidth={1.5} />
-					Argument Builder
+					My Argument Drafts
 				</h1>
 				<p class="subtitle">
-					Construct structured arguments with claims, evidence, warrants, and counter-arguments.
+					Build and refine arguments for your discussions, posts, and comments.
 				</p>
 			</div>
 			<div class="header-actions">
@@ -251,8 +252,8 @@
 		{:else if arguments_.length === 0}
 			<div class="empty-state">
 				<Network size={64} strokeWidth={1} />
-				<h2>No arguments yet</h2>
-				<p>Build an argument manually or paste text to extract one with AI.</p>
+				<h2>No argument drafts yet</h2>
+				<p>Start building an argument to structure your next discussion, post, or comment.</p>
 				<div class="empty-state-actions">
 					<Button variant="secondary" onclick={openExtractModal}>
 						{#snippet icon()}<Sparkles size={18} />{/snippet}
@@ -273,6 +274,14 @@
 								<h2>{arg.title}</h2>
 								<ChevronRight size={20} />
 							</header>
+
+							{#if arg.discussion_id}
+								<span class="linked-badge discussion-linked"> Linked to discussion </span>
+							{:else if arg.post_id}
+								<span class="linked-badge post-linked"> Linked to comment </span>
+							{:else}
+								<span class="linked-badge standalone"> Standalone draft </span>
+							{/if}
 
 							{#if arg.root_node?.[0]?.content}
 								<p class="root-claim">
@@ -695,6 +704,32 @@
 	.node-count {
 		font-family: var(--font-family-ui);
 		font-weight: 500;
+	}
+
+	.linked-badge {
+		display: inline-block;
+		font-size: 0.7rem;
+		font-weight: 600;
+		padding: 2px 8px;
+		border-radius: 3px;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		margin-bottom: var(--space-xs);
+	}
+
+	.linked-badge.discussion-linked {
+		background: color-mix(in srgb, #4bc4e8 12%, transparent);
+		color: #4bc4e8;
+	}
+
+	.linked-badge.post-linked {
+		background: color-mix(in srgb, #b44be8 12%, transparent);
+		color: #b44be8;
+	}
+
+	.linked-badge.standalone {
+		background: color-mix(in srgb, #8b8b8b 12%, transparent);
+		color: #8b8b8b;
 	}
 
 	.delete-button {

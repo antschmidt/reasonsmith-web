@@ -31,6 +31,9 @@ export interface ArgumentNode {
 	// Warrant-specific fields
 	draws_from: string | null;
 	justifies: string | null;
+	// Multi-user ownership
+	owner_id: string | null;
+	is_published: boolean;
 	created_at: string;
 	// Relationships (populated by GraphQL)
 	outgoing_edges?: ArgumentEdge[];
@@ -59,6 +62,9 @@ export interface ArgumentEdge {
 	confidence: number;
 	weight: number;
 	metadata: Record<string, unknown>;
+	// Multi-user ownership
+	owner_id: string | null;
+	is_published: boolean;
 	created_at: string;
 }
 
@@ -71,6 +77,9 @@ export interface Argument {
 	user_id: string;
 	title: string;
 	description: string | null;
+	// Discussion/post linkage
+	discussion_id: string | null;
+	post_id: string | null;
 	created_at: string;
 	updated_at: string;
 	// Relationships

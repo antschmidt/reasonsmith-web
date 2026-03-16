@@ -62,9 +62,15 @@
 		user_id: string;
 		title: string;
 		description: string | null;
+		discussion_id: string | null;
+		post_id: string | null;
 		created_at: string;
 		updated_at: string;
 	} | null>(null);
+
+	// Multi-user shared graph state
+	const currentUserId = $derived(user?.id ?? null);
+	const isSharedGraph = $derived(argumentData?.discussion_id != null);
 	let nodes = $state<ArgumentNode[]>([]);
 	let edges = $state<ArgumentEdge[]>([]);
 
@@ -259,7 +265,9 @@
 				throw new Error('Argument not found');
 			}
 
-			if (arg.user_id !== user?.id) {
+			// For standalone arguments, only the owner can access
+			// For discussion-linked arguments, any authenticated user can view/contribute
+			if (arg.user_id !== user?.id && !arg.discussion_id) {
 				throw new Error('You do not have permission to edit this argument');
 			}
 
@@ -268,6 +276,8 @@
 				user_id: arg.user_id,
 				title: arg.title,
 				description: arg.description ?? null,
+				discussion_id: arg.discussion_id ?? null,
+				post_id: arg.post_id ?? null,
 				created_at: arg.created_at,
 				updated_at: arg.updated_at
 			};
@@ -319,12 +329,28 @@
 		}
 	}
 
+	function isOwnNode(node: ArgumentNode): boolean {
+		return node.owner_id === currentUserId || node.owner_id === null;
+	}
+
+	function getNodeOwnerName(node: ArgumentNode): string | undefined {
+		if (!isSharedGraph || isOwnNode(node)) return undefined;
+		// In a shared graph, show a short label for other users' nodes
+		return 'Other';
+	}
+
 	async function handleDeleteNode(nodeId: string) {
 		const nodeToDelete = nodes.find((n) => n.id === nodeId);
 		if (!nodeToDelete) return;
 
 		if (nodeToDelete.is_root) {
 			error = 'Cannot delete the root claim';
+			return;
+		}
+
+		// Can only delete your own nodes
+		if (!isOwnNode(nodeToDelete)) {
+			error = 'You can only delete your own nodes';
 			return;
 		}
 
@@ -352,6 +378,13 @@
 		nodeId: string,
 		updates: { content?: string; type?: ArgumentNodeType }
 	) {
+		// Can only edit your own nodes
+		const nodeToEdit = nodes.find((n) => n.id === nodeId);
+		if (nodeToEdit && !isOwnNode(nodeToEdit)) {
+			error = 'You can only edit your own nodes';
+			return;
+		}
+
 		try {
 			const result = await nhost.graphql.request(UPDATE_NODE, {
 				id: nodeId,
@@ -563,6 +596,7 @@
 						</p>
 					{:else}
 						{#each filteredNodes as node (node.id)}
+							{@const nodeIsReadOnly = isSharedGraph && !isOwnNode(node)}
 							<NodeCard
 								{node}
 								{nodes}
@@ -570,10 +604,12 @@
 								isSelected={selectedNodeId === node.id}
 								connectionCount={getConnectionCount(node.id, edges)}
 								onSelect={() => selectNode(node.id)}
-								onDelete={() => handleDeleteNode(node.id)}
-								onEdit={handleEditNode}
-								onEditEdge={handleEditEdge}
+								onDelete={nodeIsReadOnly ? () => {} : () => handleDeleteNode(node.id)}
+								onEdit={nodeIsReadOnly ? undefined : handleEditNode}
+								onEditEdge={nodeIsReadOnly ? undefined : handleEditEdge}
 								aiAnalysis={aiAnalysisStates.get(node.id)}
+								isReadOnly={nodeIsReadOnly}
+								ownerName={getNodeOwnerName(node)}
 							/>
 						{/each}
 					{/if}
@@ -598,6 +634,7 @@
 		defaultType={addNodeDefaultType}
 		onClose={closeAddNode}
 		onNodeAdded={handleNodeAdded}
+		{isSharedGraph}
 	/>
 {/if}
 

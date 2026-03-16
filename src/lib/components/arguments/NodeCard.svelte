@@ -55,6 +55,10 @@
 		onEditEdge?: (edgeId: string, updates: { type?: ArgumentEdgeType }) => Promise<void> | void;
 		/** AI analysis state for this node, managed by the parent */
 		aiAnalysis?: AIAnalysisState;
+		/** If true, the node belongs to another user and cannot be edited or deleted */
+		isReadOnly?: boolean;
+		/** Display name of the node's owner (shown on read-only nodes) */
+		ownerName?: string;
 	}
 
 	let {
@@ -67,7 +71,9 @@
 		onDelete,
 		onEdit,
 		onEditEdge,
-		aiAnalysis
+		aiAnalysis,
+		isReadOnly = false,
+		ownerName
 	}: Props = $props();
 
 	let expanded = $state(false);
@@ -338,6 +344,7 @@
 	class:is-root={node.is_root}
 	class:implied={node.implied}
 	class:editing
+	class:read-only={isReadOnly}
 	data-node-id={node.id}
 	style="--node-color: {editing ? editConfig.color : config.color}; --node-bg: {editing
 		? editConfig.bgColor
@@ -375,6 +382,11 @@
 				<span class="type-dot" aria-hidden="true"></span>
 				<span class="type-label">{config.label}</span>
 			{/if}
+			{#if isReadOnly && ownerName}
+				<span class="owner-badge" title="Added by {ownerName}">
+					{ownerName}
+				</span>
+			{/if}
 			{#if node.is_root}
 				<span class="root-badge" title="Root claim">
 					<Star size={10} />
@@ -387,7 +399,26 @@
 		</div>
 
 		<div class="card-actions">
-			{#if editing}
+			{#if isReadOnly}
+				{#if connectionCount > 0}
+					<button
+						class="expand-btn"
+						onclick={(e) => {
+							e.stopPropagation();
+							toggleExpand();
+						}}
+						title={expanded ? 'Hide connections' : 'Show connections'}
+					>
+						<Link size={12} />
+						<span class="connection-count">{connectionCount}</span>
+						{#if expanded}
+							<ChevronUp size={12} />
+						{:else}
+							<ChevronDown size={12} />
+						{/if}
+					</button>
+				{/if}
+			{:else if editing}
 				<button
 					class="action-btn save-btn"
 					onclick={saveEdit}
@@ -735,6 +766,33 @@
 	/* AI-sourced alert pills get a subtle sparkle border */
 	.alert-pill.ai-source {
 		border-style: dashed;
+	}
+
+	/* Read-only node styling */
+	.node-card.read-only {
+		opacity: 0.85;
+		border-style: dashed;
+	}
+
+	.node-card.read-only:hover {
+		transform: none;
+	}
+
+	.owner-badge {
+		display: inline-flex;
+		align-items: center;
+		font-size: 0.6rem;
+		padding: 1px 5px;
+		border-radius: 3px;
+		background: color-mix(in srgb, var(--node-color, #888) 12%, transparent);
+		color: var(--node-color, #888);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		max-width: 80px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.node-card {

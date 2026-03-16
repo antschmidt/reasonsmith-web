@@ -17,6 +17,8 @@ export const ARGUMENT_NODE_FIELDS = gql`
 		metadata
 		draws_from
 		justifies
+		owner_id
+		is_published
 		created_at
 	}
 `;
@@ -31,6 +33,8 @@ export const ARGUMENT_EDGE_FIELDS = gql`
 		confidence
 		weight
 		metadata
+		owner_id
+		is_published
 		created_at
 	}
 `;
@@ -41,6 +45,8 @@ export const ARGUMENT_FIELDS = gql`
 		user_id
 		title
 		description
+		discussion_id
+		post_id
 		created_at
 		updated_at
 	}
@@ -77,11 +83,18 @@ export const GET_ARGUMENT = gql`
 `;
 
 /**
- * List all arguments for the current user
+ * List all arguments owned by the current user (standalone drafts + linked).
+ * Uses $userId to filter at the query level since the Hasura permission now
+ * also allows seeing discussion-linked arguments from other users.
  */
 export const LIST_ARGUMENTS = gql`
-	query ListArguments($limit: Int = 50, $offset: Int = 0) {
-		argument(order_by: { updated_at: desc }, limit: $limit, offset: $offset) {
+	query ListArguments($userId: uuid!, $limit: Int = 50, $offset: Int = 0) {
+		argument(
+			order_by: { updated_at: desc }
+			limit: $limit
+			offset: $offset
+			where: { user_id: { _eq: $userId } }
+		) {
 			...ArgumentFields
 			argument_nodes_aggregate {
 				aggregate {
@@ -95,6 +108,33 @@ export const LIST_ARGUMENTS = gql`
 		}
 	}
 	${ARGUMENT_FIELDS}
+`;
+
+/**
+ * Get the shared argument graph for a discussion.
+ * Returns published nodes/edges from all users, plus the current user's unpublished nodes/edges.
+ */
+export const GET_DISCUSSION_ARGUMENT = gql`
+	query GetDiscussionArgument($discussionId: uuid!) {
+		argument(where: { discussion_id: { _eq: $discussionId } }, limit: 1) {
+			...ArgumentFields
+			argument_nodes(order_by: { created_at: asc }) {
+				...ArgumentNodeFields
+				outgoing_edges: argument_edges_by_from_node {
+					...ArgumentEdgeFields
+				}
+				incoming_edges: argument_edges_by_to_node {
+					...ArgumentEdgeFields
+				}
+			}
+			argument_edges(order_by: { created_at: asc }) {
+				...ArgumentEdgeFields
+			}
+		}
+	}
+	${ARGUMENT_FIELDS}
+	${ARGUMENT_NODE_FIELDS}
+	${ARGUMENT_EDGE_FIELDS}
 `;
 
 /**
@@ -175,12 +215,16 @@ export const CREATE_ARGUMENT = gql`
 		$title: String!
 		$rootClaimContent: String!
 		$description: String
+		$discussionId: uuid
+		$postId: uuid
 	) {
 		insert_argument_one(
 			object: {
 				user_id: $userId
 				title: $title
 				description: $description
+				discussion_id: $discussionId
+				post_id: $postId
 				argument_nodes: { data: { type: "claim", content: $rootClaimContent, is_root: true } }
 			}
 		) {
@@ -198,12 +242,55 @@ export const CREATE_ARGUMENT = gql`
  * Create a new argument without any nodes (for AI extraction flow)
  */
 export const CREATE_ARGUMENT_SHELL = gql`
-	mutation CreateArgumentShell($userId: uuid!, $title: String!, $description: String) {
-		insert_argument_one(object: { user_id: $userId, title: $title, description: $description }) {
+	mutation CreateArgumentShell(
+		$userId: uuid!
+		$title: String!
+		$description: String
+		$discussionId: uuid
+		$postId: uuid
+	) {
+		insert_argument_one(
+			object: {
+				user_id: $userId
+				title: $title
+				description: $description
+				discussion_id: $discussionId
+				post_id: $postId
+			}
+		) {
 			...ArgumentFields
 		}
 	}
 	${ARGUMENT_FIELDS}
+`;
+
+/**
+ * Create the shared argument graph for a discussion.
+ * Called once when a discussion is first created or when a user first opens the builder for a discussion.
+ */
+export const CREATE_DISCUSSION_ARGUMENT = gql`
+	mutation CreateDiscussionArgument(
+		$userId: uuid!
+		$discussionId: uuid!
+		$title: String!
+		$rootClaimContent: String!
+	) {
+		insert_argument_one(
+			object: {
+				user_id: $userId
+				title: $title
+				discussion_id: $discussionId
+				argument_nodes: { data: { type: "claim", content: $rootClaimContent, is_root: true } }
+			}
+		) {
+			...ArgumentFields
+			argument_nodes {
+				...ArgumentNodeFields
+			}
+		}
+	}
+	${ARGUMENT_FIELDS}
+	${ARGUMENT_NODE_FIELDS}
 `;
 
 /**
@@ -247,6 +334,7 @@ export const ADD_NODE = gql`
 		$connectToNodeId: uuid!
 		$edgeType: String!
 		$edgeConfidence: float8 = 1.0
+		$isPublished: Boolean = true
 	) {
 		insert_argument_node_one(
 			object: {
@@ -257,12 +345,14 @@ export const ADD_NODE = gql`
 				verbatim_span: $verbatimSpan
 				score: $score
 				metadata: $metadata
+				is_published: $isPublished
 				argument_edges_by_from_node: {
 					data: {
 						argument_id: $argumentId
 						to_node: $connectToNodeId
 						type: $edgeType
 						confidence: $edgeConfidence
+						is_published: $isPublished
 					}
 				}
 			}
@@ -292,6 +382,7 @@ export const ADD_WARRANT_NODE = gql`
 		$score: float8
 		$metadata: jsonb = {}
 		$confidence: float8 = 1.0
+		$isPublished: Boolean = true
 	) {
 		insert_argument_node_one(
 			object: {
@@ -302,6 +393,7 @@ export const ADD_WARRANT_NODE = gql`
 				verbatim_span: $verbatimSpan
 				score: $score
 				metadata: $metadata
+				is_published: $isPublished
 				draws_from: $drawsFromNodeId
 				justifies: $justifiesNodeId
 				argument_edges_by_from_node: {
@@ -311,12 +403,14 @@ export const ADD_WARRANT_NODE = gql`
 							to_node: $drawsFromNodeId
 							type: "warrants"
 							confidence: $confidence
+							is_published: $isPublished
 						}
 						{
 							argument_id: $argumentId
 							to_node: $justifiesNodeId
 							type: "warrants"
 							confidence: $confidence
+							is_published: $isPublished
 						}
 					]
 				}
@@ -384,6 +478,7 @@ export const ADD_EDGE = gql`
 		$confidence: float8 = 1.0
 		$weight: float8 = 1.0
 		$metadata: jsonb = {}
+		$isPublished: Boolean = true
 	) {
 		insert_argument_edge_one(
 			object: {
@@ -394,6 +489,7 @@ export const ADD_EDGE = gql`
 				confidence: $confidence
 				weight: $weight
 				metadata: $metadata
+				is_published: $isPublished
 			}
 		) {
 			...ArgumentEdgeFields
@@ -489,5 +585,46 @@ export const BULK_INSERT_EDGES = gql`
 			}
 		}
 	}
+	${ARGUMENT_EDGE_FIELDS}
+`;
+
+// ============================================
+// Publish mutations (for commenter workflow)
+// ============================================
+
+/**
+ * Publish a user's unpublished nodes and edges in one go.
+ * Used when a commenter publishes their comment — their draft graph additions become visible.
+ */
+export const PUBLISH_USER_NODES = gql`
+	mutation PublishUserNodes($argumentId: uuid!, $userId: uuid!) {
+		update_argument_node(
+			where: {
+				argument_id: { _eq: $argumentId }
+				owner_id: { _eq: $userId }
+				is_published: { _eq: false }
+			}
+			_set: { is_published: true }
+		) {
+			affected_rows
+			returning {
+				...ArgumentNodeFields
+			}
+		}
+		update_argument_edge(
+			where: {
+				argument_id: { _eq: $argumentId }
+				owner_id: { _eq: $userId }
+				is_published: { _eq: false }
+			}
+			_set: { is_published: true }
+		) {
+			affected_rows
+			returning {
+				...ArgumentEdgeFields
+			}
+		}
+	}
+	${ARGUMENT_NODE_FIELDS}
 	${ARGUMENT_EDGE_FIELDS}
 `;
