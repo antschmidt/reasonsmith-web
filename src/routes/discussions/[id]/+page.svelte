@@ -3307,12 +3307,18 @@
 
 	async function checkForArgumentGraph() {
 		try {
+			console.log('[checkForArgumentGraph] Checking for discussion:', $page.params.id);
 			const result = await nhost.graphql.request(GET_DISCUSSION_ARGUMENT, {
 				discussionId: $page.params.id
 			});
+			console.log('[checkForArgumentGraph] Raw result:', JSON.stringify(result));
 			const args = (result as any).data?.argument;
-			hasArgumentGraph = args && args.length > 0;
-		} catch {
+			console.log('[checkForArgumentGraph] args:', args, 'length:', args?.length);
+			hasArgumentGraph = Array.isArray(args) && args.length > 0;
+			console.log('[checkForArgumentGraph] hasArgumentGraph set to:', hasArgumentGraph);
+			console.log('[checkForArgumentGraph] user:', !!user);
+		} catch (e) {
+			console.error('[checkForArgumentGraph] Error:', e);
 			hasArgumentGraph = null;
 		}
 	}
