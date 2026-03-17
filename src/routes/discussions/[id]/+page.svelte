@@ -102,6 +102,7 @@
 	let showOutOfCreditsModal = $state(false);
 	let selectedContextCommentIds = $state<string[]>([]);
 	let activeTab = $state<'discussion' | 'argument-graph'>('discussion');
+	let graphPanelOpen = $state(true);
 	let user = $state(nhost.auth.getUser());
 	nhost.auth.onAuthStateChanged(() => {
 		user = nhost.auth.getUser();
@@ -126,6 +127,16 @@
 
 	// Argument graph existence state
 	let hasArgumentGraph = $state<boolean | null>(null);
+
+	// Derived citations for the argument graph panel
+	const graphCitations = $derived.by(() => {
+		if (!discussion) return [];
+		const extraction = extractCitationData(getDiscussionDescription(discussion) || '');
+		const jsonCitations = extraction.citationData?.style_metadata?.citations || [];
+		const tableCitations = (discussion as any)?.current_version?.[0]?.citationsFromTable || [];
+		const versionCitations = (discussion as any)?.current_version?.[0]?.citations || [];
+		return [...tableCitations, ...versionCitations, ...jsonCitations];
+	});
 
 	const GET_EXISTING_DRAFT = `
     query GetExistingDraft($discussionId: uuid!, $authorId: uuid!) {
@@ -3307,18 +3318,12 @@
 
 	async function checkForArgumentGraph() {
 		try {
-			console.log('[checkForArgumentGraph] Checking for discussion:', $page.params.id);
 			const result = await nhost.graphql.request(GET_DISCUSSION_ARGUMENT, {
 				discussionId: $page.params.id
 			});
-			console.log('[checkForArgumentGraph] Raw result:', JSON.stringify(result));
 			const args = (result as any).data?.argument;
-			console.log('[checkForArgumentGraph] args:', args, 'length:', args?.length);
 			hasArgumentGraph = Array.isArray(args) && args.length > 0;
-			console.log('[checkForArgumentGraph] hasArgumentGraph set to:', hasArgumentGraph);
-			console.log('[checkForArgumentGraph] user:', !!user);
-		} catch (e) {
-			console.error('[checkForArgumentGraph] Error:', e);
+		} catch {
 			hasArgumentGraph = null;
 		}
 	}
@@ -3339,167 +3344,14 @@
 	}
 </script>
 
-<article class="discussion-article">
+<article class="discussion-article" class:graph-panel-open={graphPanelOpen}>
 	{#if loading}
 		<p>Loading...</p>
 	{:else if error}
 		<p class="error-message">Error: {error.message}</p>
 	{:else if discussion}
-		<header class="discussion-header">
-			<DiscussionHeader
-				discussion={{
-					id: discussion.id,
-					created_at: discussion.created_at,
-					is_anonymous: discussion.is_anonymous,
-					contributor: discussion.contributor
-				}}
-				title={getDiscussionTitle(discussion)}
-				tags={getDiscussionTags(discussion)}
-				audioUrl={discussion?.current_version?.[0]?.audio_url}
-				isOwner={user ? discussion.contributor.id === user.id : false}
-				canDelete={discussionCanDelete}
-				onEdit={startEdit}
-				onDelete={handleDeleteDiscussion}
-				onAnonymize={handleAnonymizeDiscussion}
-				onRevealIdentity={handleUnanonymizeDiscussion}
-			/>
-
-			{#if discussion.showcase_item}
-				<FeaturedAnalysisContext item={discussion.showcase_item} />
-			{/if}
-
-			{#if pendingApprovalForThisDiscussion}
-				<EditorsDeskApprovalCard
-					pick={pendingApprovalForThisDiscussion}
-					onResponse={handleApprovalStatusChange}
-				/>
-			{/if}
-
-			{#if editing}
-				<DiscussionEditForm
-					bind:title={editTitle}
-					bind:description={editDescription}
-					bind:styleMetadata={editStyleMetadata}
-					bind:showCitationForm={showEditCitationForm}
-					bind:showCitationEditForm={showEditCitationForm}
-					bind:editingCitation={editingEditCitation}
-					bind:showCitationPicker={showEditCitationPicker}
-					heuristicScore={editHeuristicScore}
-					heuristicPassed={editHeuristicPassed}
-					{goodFaithTesting}
-					{claudeGoodFaithTesting}
-					bind:goodFaithResult
-					bind:goodFaithError
-					bind:claudeGoodFaithResult
-					bind:claudeGoodFaithError
-					lastSavedAt={editLastSavedAt}
-					bind:submitError={editError}
-					{publishLoading}
-					{hasUnsavedChanges}
-					{contributor}
-					onTitleInput={onEditTitleInput}
-					onDescriptionInput={onEditDescriptionInput}
-					onAddCitation={addEditCitation}
-					onUpdateCitation={updateEditCitation}
-					onRemoveCitation={removeEditCitation}
-					onStartEditCitation={startEditCitation}
-					onCancelCitationEdit={cancelEditCitation}
-					onInsertCitationReference={insertEditCitationReference}
-					onOpenCitationPicker={openEditCitationPicker}
-					onTestGoodFaith={testGoodFaith}
-					onTestGoodFaithClaude={testGoodFaithClaude}
-					onPublish={publishDraftChanges}
-					onCancel={cancelEdit}
-					{getAnalysisLimitText}
-					{formatChicagoCitation}
-					{assessContentQuality}
-				/>
-			{/if}
-
-			<!-- Social Media Import Display -->
-			{#if discussion?.current_version?.[0]?.import_content && discussion?.current_version?.[0]?.import_source && discussion?.current_version?.[0]?.import_author}
-				{@const currentVersion = discussion.current_version[0]}
-				<SocialMediaImportDisplay
-					source={currentVersion.import_source}
-					url={currentVersion.import_url}
-					content={currentVersion.import_content}
-					author={currentVersion.import_author}
-					date={currentVersion.import_date}
-				/>
-			{/if}
-
-			{#if getDiscussionDescription(discussion)}
-				{@const extraction = extractCitationData(getDiscussionDescription(discussion))}
-				{@const jsonCitations = extraction.citationData?.style_metadata?.citations || []}
-				{@const tableCitations = discussion?.current_version?.[0]?.citationsFromTable || []}
-				{@const versionCitations = discussion?.current_version?.[0]?.citations || []}
-				{@const allCitations = [...tableCitations, ...versionCitations, ...jsonCitations]}
-				{@const processedContent = processCitationReferences(extraction.cleanContent, allCitations)}
-				<div class="discussion-description">{@html processedContent.replace(/\n/g, '<br>')}</div>
-
-				<DiscussionReferencesDisplay citations={allCitations} {formatChicagoCitation} />
-
-				<!-- Audio Player and Upload (Admin Only) -->
-				{@const audioUrl = discussion?.current_version?.[0]?.audio_url}
-				{@const hasAudioManagementAccess = hasAdminAccess(contributor)}
-
-				{#if hasAudioManagementAccess && !editing}
-					<div class="audio-admin-section">
-						<h3>Audio Management</h3>
-
-						{#if audioUrl}
-							<button
-								type="button"
-								class="remove-audio-button"
-								onclick={handleRemoveAudio}
-								disabled={audioUploading}
-							>
-								Remove Audio
-							</button>
-						{:else}
-							<label class="audio-upload-label">
-								<input
-									type="file"
-									accept="audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/wav"
-									onchange={handleAudioUpload}
-									disabled={audioUploading}
-									class="audio-file-input"
-								/>
-								<span class="audio-upload-button">
-									{audioUploading ? 'Uploading...' : 'Upload Audio Reading'}
-								</span>
-							</label>
-
-							{#if audioUploading && audioUploadProgress > 0}
-								<div class="audio-upload-progress">
-									<div class="progress-bar">
-										<div class="progress-fill" style="width: {audioUploadProgress}%"></div>
-									</div>
-									<span class="progress-text">{audioUploadProgress}%</span>
-								</div>
-							{/if}
-
-							{#if audioUploadError}
-								<p class="audio-error">{audioUploadError}</p>
-							{/if}
-						{/if}
-					</div>
-				{/if}
-
-				{#if !editing}
-					<DiscussionGoodFaithBadge
-						score={getDiscussionGoodFaithScore(discussion)}
-						label={getDiscussionGoodFaithLabel(discussion)}
-						onClick={() =>
-							(showGoodFaithAnalysisFor =
-								showGoodFaithAnalysisFor === 'discussion' ? null : 'discussion')}
-					/>
-				{/if}
-			{/if}
-		</header>
-
-		<!-- Tab Navigation -->
-		<div class="discussion-tabs">
+		<!-- Mobile Tab Navigation (hidden on wide screens) -->
+		<div class="discussion-tabs mobile-only-tabs">
 			<button
 				class="tab-btn"
 				class:active={activeTab === 'discussion'}
@@ -3519,133 +3371,313 @@
 			</button>
 		</div>
 
-		{#if activeTab === 'argument-graph'}
-			{@const extraction = extractCitationData(getDiscussionDescription(discussion) || '')}
-			{@const jsonCitations = extraction.citationData?.style_metadata?.citations || []}
-			{@const tableCitations = discussion?.current_version?.[0]?.citationsFromTable || []}
-			{@const versionCitations = discussion?.current_version?.[0]?.citations || []}
-			{@const allCitations = [...tableCitations, ...versionCitations, ...jsonCitations]}
-			<DiscussionArgumentGraph
-				discussionId={discussion.id}
-				discussionTitle={getDiscussionTitle(discussion)}
-				discussionDescription={getDiscussionDescription(discussion) || ''}
-				userId={user?.id ?? null}
-				discussionPosts={discussion.posts || []}
-				discussionCitations={allCitations}
-			/>
-		{:else}
-			{#if hasArgumentGraph === false && user}
-				<div class="graph-generation-banner">
-					<div class="graph-banner-content">
-						<div class="graph-banner-icon">✨</div>
-						<div class="graph-banner-text">
-							<h4>Argument Graph Available</h4>
-							<p>
-								Analyze this discussion's content and map out the claims, evidence, and reasoning.
-							</p>
-						</div>
-						<button class="graph-banner-btn" onclick={() => (activeTab = 'argument-graph')}>
-							View Argument Graph
-						</button>
-					</div>
-				</div>
-			{/if}
-			<div class="posts-list">
-				{#each discussion.posts as post}
-					<PostItem
-						{post}
-						isOwner={user && post.contributor.id === user.id}
-						canDelete={postDeletionStatus[post.id]?.canDelete !== false}
-						isEditing={editingPostId === post.id}
-						bind:editContent={editingPostContent}
-						editError={editPostError}
-						editSaving={editPostSaving}
-						showGoodFaithModal={showGoodFaithAnalysisFor === post.id}
-						showHistoricalContext={showingContextForPost === post.id}
-						historicalVersion={post.context_version_id
-							? historicalVersions[post.context_version_id]
-							: null}
-						versionLoading={post.context_version_id
-							? versionLoading[post.context_version_id]
-							: false}
-						versionError={post.context_version_id ? versionError[post.context_version_id] : null}
-						onReply={startReply}
-						onEdit={startEditPost}
-						onSaveEdit={savePostEdit}
-						onCancelEdit={cancelEditPost}
-						onDelete={handleDeletePost}
-						onAnonymize={handleAnonymizePost}
-						onUnanonymize={handleUnanonymizePost}
-						onToggleGoodFaith={(postId) =>
-							(showGoodFaithAnalysisFor = showGoodFaithAnalysisFor === postId ? null : postId)}
-						onToggleContext={toggleHistoricalContext}
-						{displayName}
-						{extractReplyRef}
-						{extractCitationData}
-						{processCitationReferences}
-						{ensureIdsForCitationData}
-						{formatChicagoCitation}
-						{getStyleConfig}
+		<div class="discussion-layout" class:graph-panel-open={graphPanelOpen}>
+			<!-- Left column: entire discussion (header + article + posts + composer) -->
+			<div class="discussion-panel" class:mobile-hidden={activeTab !== 'discussion'}>
+				<header class="discussion-header">
+					<DiscussionHeader
+						discussion={{
+							id: discussion.id,
+							created_at: discussion.created_at,
+							is_anonymous: discussion.is_anonymous,
+							contributor: discussion.contributor
+						}}
+						title={getDiscussionTitle(discussion)}
+						tags={getDiscussionTags(discussion)}
+						audioUrl={discussion?.current_version?.[0]?.audio_url}
+						isOwner={user ? discussion.contributor.id === user.id : false}
+						canDelete={discussionCanDelete}
+						onEdit={startEdit}
+						onDelete={handleDeleteDiscussion}
+						onAnonymize={handleAnonymizeDiscussion}
+						onRevealIdentity={handleUnanonymizeDiscussion}
 					/>
 
-					<!-- Display events for this post -->
-					<EventList postId={post.id} />
-				{:else}
-					<p>No posts in this discussion yet. Be the first to contribute!</p>
-				{/each}
+					{#if discussion.showcase_item}
+						<FeaturedAnalysisContext item={discussion.showcase_item} />
+					{/if}
+
+					{#if pendingApprovalForThisDiscussion}
+						<EditorsDeskApprovalCard
+							pick={pendingApprovalForThisDiscussion}
+							onResponse={handleApprovalStatusChange}
+						/>
+					{/if}
+
+					{#if editing}
+						<DiscussionEditForm
+							bind:title={editTitle}
+							bind:description={editDescription}
+							bind:styleMetadata={editStyleMetadata}
+							bind:showCitationForm={showEditCitationForm}
+							bind:showCitationEditForm={showEditCitationForm}
+							bind:editingCitation={editingEditCitation}
+							bind:showCitationPicker={showEditCitationPicker}
+							heuristicScore={editHeuristicScore}
+							heuristicPassed={editHeuristicPassed}
+							{goodFaithTesting}
+							{claudeGoodFaithTesting}
+							bind:goodFaithResult
+							bind:goodFaithError
+							bind:claudeGoodFaithResult
+							bind:claudeGoodFaithError
+							lastSavedAt={editLastSavedAt}
+							bind:submitError={editError}
+							{publishLoading}
+							{hasUnsavedChanges}
+							{contributor}
+							onTitleInput={onEditTitleInput}
+							onDescriptionInput={onEditDescriptionInput}
+							onAddCitation={addEditCitation}
+							onUpdateCitation={updateEditCitation}
+							onRemoveCitation={removeEditCitation}
+							onStartEditCitation={startEditCitation}
+							onCancelCitationEdit={cancelEditCitation}
+							onInsertCitationReference={insertEditCitationReference}
+							onOpenCitationPicker={openEditCitationPicker}
+							onTestGoodFaith={testGoodFaith}
+							onTestGoodFaithClaude={testGoodFaithClaude}
+							onPublish={publishDraftChanges}
+							onCancel={cancelEdit}
+							{getAnalysisLimitText}
+							{formatChicagoCitation}
+							{assessContentQuality}
+						/>
+					{/if}
+
+					<!-- Social Media Import Display -->
+					{#if discussion?.current_version?.[0]?.import_content && discussion?.current_version?.[0]?.import_source && discussion?.current_version?.[0]?.import_author}
+						{@const currentVersion = discussion.current_version[0]}
+						<SocialMediaImportDisplay
+							source={currentVersion.import_source}
+							url={currentVersion.import_url}
+							content={currentVersion.import_content}
+							author={currentVersion.import_author}
+							date={currentVersion.import_date}
+						/>
+					{/if}
+
+					{#if getDiscussionDescription(discussion)}
+						{@const extraction = extractCitationData(getDiscussionDescription(discussion))}
+						{@const jsonCitations = extraction.citationData?.style_metadata?.citations || []}
+						{@const tableCitations = discussion?.current_version?.[0]?.citationsFromTable || []}
+						{@const versionCitations = discussion?.current_version?.[0]?.citations || []}
+						{@const allCitations = [...tableCitations, ...versionCitations, ...jsonCitations]}
+						{@const processedContent = processCitationReferences(
+							extraction.cleanContent,
+							allCitations
+						)}
+						<div class="discussion-description">
+							{@html processedContent.replace(/\n/g, '<br>')}
+						</div>
+
+						<DiscussionReferencesDisplay citations={allCitations} {formatChicagoCitation} />
+
+						<!-- Audio Player and Upload (Admin Only) -->
+						{@const audioUrl = discussion?.current_version?.[0]?.audio_url}
+						{@const hasAudioManagementAccess = hasAdminAccess(contributor)}
+
+						{#if hasAudioManagementAccess && !editing}
+							<div class="audio-admin-section">
+								<h3>Audio Management</h3>
+
+								{#if audioUrl}
+									<button
+										type="button"
+										class="remove-audio-button"
+										onclick={handleRemoveAudio}
+										disabled={audioUploading}
+									>
+										Remove Audio
+									</button>
+								{:else}
+									<label class="audio-upload-label">
+										<input
+											type="file"
+											accept="audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/wav"
+											onchange={handleAudioUpload}
+											disabled={audioUploading}
+											class="audio-file-input"
+										/>
+										<span class="audio-upload-button">
+											{audioUploading ? 'Uploading...' : 'Upload Audio Reading'}
+										</span>
+									</label>
+
+									{#if audioUploading && audioUploadProgress > 0}
+										<div class="audio-upload-progress">
+											<div class="progress-bar">
+												<div class="progress-fill" style="width: {audioUploadProgress}%"></div>
+											</div>
+											<span class="progress-text">{audioUploadProgress}%</span>
+										</div>
+									{/if}
+
+									{#if audioUploadError}
+										<p class="audio-error">{audioUploadError}</p>
+									{/if}
+								{/if}
+							</div>
+						{/if}
+
+						{#if !editing}
+							<DiscussionGoodFaithBadge
+								score={getDiscussionGoodFaithScore(discussion)}
+								label={getDiscussionGoodFaithLabel(discussion)}
+								onClick={() =>
+									(showGoodFaithAnalysisFor =
+										showGoodFaithAnalysisFor === 'discussion' ? null : 'discussion')}
+							/>
+						{/if}
+					{/if}
+				</header>
+
+				{#if hasArgumentGraph === false && user && !graphPanelOpen}
+					<div class="graph-generation-banner desktop-only-banner">
+						<div class="graph-banner-content">
+							<div class="graph-banner-icon">✨</div>
+							<div class="graph-banner-text">
+								<h4>Argument Graph Available</h4>
+								<p>
+									Analyze this discussion's content and map out the claims, evidence, and reasoning.
+								</p>
+							</div>
+							<button
+								class="graph-banner-btn"
+								onclick={() => {
+									graphPanelOpen = true;
+									activeTab = 'argument-graph';
+								}}
+							>
+								Open Graph
+							</button>
+						</div>
+					</div>
+				{/if}
+				<div class="posts-list">
+					{#each discussion.posts as post}
+						<PostItem
+							{post}
+							isOwner={user && post.contributor.id === user.id}
+							canDelete={postDeletionStatus[post.id]?.canDelete !== false}
+							isEditing={editingPostId === post.id}
+							bind:editContent={editingPostContent}
+							editError={editPostError}
+							editSaving={editPostSaving}
+							showGoodFaithModal={showGoodFaithAnalysisFor === post.id}
+							showHistoricalContext={showingContextForPost === post.id}
+							historicalVersion={post.context_version_id
+								? historicalVersions[post.context_version_id]
+								: null}
+							versionLoading={post.context_version_id
+								? versionLoading[post.context_version_id]
+								: false}
+							versionError={post.context_version_id ? versionError[post.context_version_id] : null}
+							onReply={startReply}
+							onEdit={startEditPost}
+							onSaveEdit={savePostEdit}
+							onCancelEdit={cancelEditPost}
+							onDelete={handleDeletePost}
+							onAnonymize={handleAnonymizePost}
+							onUnanonymize={handleUnanonymizePost}
+							onToggleGoodFaith={(postId) =>
+								(showGoodFaithAnalysisFor = showGoodFaithAnalysisFor === postId ? null : postId)}
+							onToggleContext={toggleHistoricalContext}
+							{displayName}
+							{extractReplyRef}
+							{extractCitationData}
+							{processCitationReferences}
+							{ensureIdsForCitationData}
+							{formatChicagoCitation}
+							{getStyleConfig}
+						/>
+
+						<!-- Display events for this post -->
+						<EventList postId={post.id} />
+					{:else}
+						<p>No posts in this discussion yet. Be the first to contribute!</p>
+					{/each}
+				</div>
+
+				<CommentComposer
+					{user}
+					bind:expanded={commentFormExpanded}
+					bind:comment={newComment}
+					bind:postType={commentPostType}
+					bind:postTypeExpanded
+					bind:showAdvancedFeatures
+					wordCount={commentWordCount}
+					selectedStyle={commentSelectedStyle}
+					bind:styleMetadata={commentStyleMetadata}
+					bind:showCitationForm={showCommentCitationForm}
+					bind:showCitationEditForm={showCommentCitationEditForm}
+					bind:editingCitation={editingCommentCitation}
+					showCitationReminder={showCommentCitationReminder}
+					bind:showCitationPicker={showCommentCitationPicker}
+					heuristicScore={commentHeuristicScore}
+					heuristicPassed={commentHeuristicPassed}
+					{draftPostId}
+					{draftGoodFaithAnalysis}
+					bind:draftAnalysisExpanded
+					goodFaithResult={commentGoodFaithResult}
+					goodFaithError={commentGoodFaithError}
+					{submitError}
+					{hasPending}
+					{lastSavedAt}
+					{contributor}
+					{replyingToPost}
+					{analysisBlockedReason}
+					{canUserUseAnalysis}
+					{submitting}
+					discussionId={discussion?.id}
+					discussionTitle={discussion ? getDiscussionTitle(discussion) : 'Discussion'}
+					discussionPosts={discussion?.posts || []}
+					bind:selectedContextCommentIds
+					onInput={onCommentInput}
+					onFocus={loadExistingDraft}
+					onAddCitation={addCommentCitation}
+					onUpdateCitation={updateCommentCitation}
+					onCancelCitationEdit={cancelCommentCitationEdit}
+					onInsertCitationReference={insertCommentCitationReference}
+					onOpenCitationPicker={openCommentCitationPicker}
+					onTestGoodFaith={testCommentGoodFaith}
+					onTestGoodFaithClaude={testCommentGoodFaithClaude}
+					onPublish={publishDraft}
+					onClearReplying={clearReplying}
+					getStyleConfig={(style: string) => getStyleConfig(style as WritingStyle)}
+					{getPostTypeConfig}
+					{getAnalysisLimitText}
+					{formatChicagoCitation}
+					{assessContentQuality}
+				/>
 			</div>
 
-			<CommentComposer
-				{user}
-				bind:expanded={commentFormExpanded}
-				bind:comment={newComment}
-				bind:postType={commentPostType}
-				bind:postTypeExpanded
-				bind:showAdvancedFeatures
-				wordCount={commentWordCount}
-				selectedStyle={commentSelectedStyle}
-				bind:styleMetadata={commentStyleMetadata}
-				bind:showCitationForm={showCommentCitationForm}
-				bind:showCitationEditForm={showCommentCitationEditForm}
-				bind:editingCitation={editingCommentCitation}
-				showCitationReminder={showCommentCitationReminder}
-				bind:showCitationPicker={showCommentCitationPicker}
-				heuristicScore={commentHeuristicScore}
-				heuristicPassed={commentHeuristicPassed}
-				{draftPostId}
-				{draftGoodFaithAnalysis}
-				bind:draftAnalysisExpanded
-				goodFaithResult={commentGoodFaithResult}
-				goodFaithError={commentGoodFaithError}
-				{submitError}
-				{hasPending}
-				{lastSavedAt}
-				{contributor}
-				{replyingToPost}
-				{analysisBlockedReason}
-				{canUserUseAnalysis}
-				{submitting}
-				discussionId={discussion?.id}
-				discussionTitle={discussion ? getDiscussionTitle(discussion) : 'Discussion'}
-				discussionPosts={discussion?.posts || []}
-				bind:selectedContextCommentIds
-				onInput={onCommentInput}
-				onFocus={loadExistingDraft}
-				onAddCitation={addCommentCitation}
-				onUpdateCitation={updateCommentCitation}
-				onCancelCitationEdit={cancelCommentCitationEdit}
-				onInsertCitationReference={insertCommentCitationReference}
-				onOpenCitationPicker={openCommentCitationPicker}
-				onTestGoodFaith={testCommentGoodFaith}
-				onTestGoodFaithClaude={testCommentGoodFaithClaude}
-				onPublish={publishDraft}
-				onClearReplying={clearReplying}
-				getStyleConfig={(style: string) => getStyleConfig(style as WritingStyle)}
-				{getPostTypeConfig}
-				{getAnalysisLimitText}
-				{formatChicagoCitation}
-				{assessContentQuality}
-			/>
+			<!-- Right column: Argument Graph (side panel on wide, tab-controlled on mobile) -->
+			<div class="graph-panel" class:mobile-hidden={activeTab !== 'argument-graph'}>
+				<div class="graph-panel-header desktop-only">
+					<h3 class="graph-panel-title">Argument Graph</h3>
+					<button
+						class="graph-panel-close"
+						onclick={() => (graphPanelOpen = false)}
+						title="Close graph panel">✕</button
+					>
+				</div>
+				<DiscussionArgumentGraph
+					discussionId={discussion.id}
+					discussionTitle={getDiscussionTitle(discussion)}
+					discussionDescription={getDiscussionDescription(discussion) || ''}
+					userId={user?.id ?? null}
+					discussionPosts={discussion.posts || []}
+					discussionCitations={graphCitations}
+				/>
+			</div>
+		</div>
+
+		<!-- Toggle button to re-open graph panel on desktop when closed -->
+		{#if !graphPanelOpen}
+			<button class="graph-panel-reopen desktop-only" onclick={() => (graphPanelOpen = true)}>
+				Argument Graph →
+			</button>
 		{/if}
 	{:else}
 		<p>Discussion not found.</p>
@@ -3681,9 +3713,177 @@
 		min-height: 100vh;
 	}
 
+	/* When the graph panel is open on wide screens, use full width */
+	@media (min-width: 1200px) {
+		.discussion-article {
+			max-width: 1600px;
+			padding: 3rem 2.5rem;
+		}
+
+		.discussion-article.graph-panel-open {
+			max-width: 100%;
+			padding: 3rem 3rem;
+		}
+	}
+
 	@media (max-width: 768px) {
 		.discussion-article {
 			padding: 2rem 1rem;
+		}
+	}
+
+	/* Side-by-side layout */
+	.discussion-layout {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.discussion-panel {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.graph-panel {
+		min-width: 0;
+	}
+
+	.graph-panel-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding-bottom: 0.75rem;
+		margin-bottom: 1rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.graph-panel-title {
+		margin: 0;
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.graph-panel-close {
+		background: none;
+		border: none;
+		color: var(--color-text-tertiary);
+		font-size: 1.1rem;
+		cursor: pointer;
+		padding: 0.25rem 0.5rem;
+		border-radius: var(--border-radius-sm, 4px);
+		transition: all 0.15s;
+	}
+
+	.graph-panel-close:hover {
+		color: var(--color-text-primary);
+		background: var(--color-surface-elevated);
+	}
+
+	.graph-panel-reopen {
+		position: fixed;
+		right: 0;
+		top: 50%;
+		transform: translateY(-50%);
+		writing-mode: vertical-rl;
+		padding: 0.75rem 0.5rem;
+		font-size: 0.8rem;
+		font-weight: 500;
+		color: var(--color-text-secondary);
+		background: var(--color-surface-elevated, #1e1e1e);
+		border: 1px solid var(--color-border);
+		border-right: none;
+		border-radius: var(--border-radius-sm, 4px) 0 0 var(--border-radius-sm, 4px);
+		cursor: pointer;
+		transition: all 0.15s;
+		z-index: 10;
+	}
+
+	.graph-panel-reopen:hover {
+		color: var(--color-text-primary);
+		background: var(--color-surface);
+	}
+
+	/* Desktop-only elements (hidden on mobile) */
+	.desktop-only {
+		display: none;
+	}
+
+	.desktop-only-banner {
+		display: none;
+	}
+
+	.graph-panel-reopen {
+		display: none;
+	}
+
+	/* Mobile: tab-controlled visibility */
+	.mobile-hidden {
+		display: none;
+	}
+
+	/* Mobile: show tabs */
+	.mobile-only-tabs {
+		display: flex;
+	}
+
+	@media (min-width: 1200px) {
+		.discussion-layout {
+			flex-direction: row;
+			gap: 0;
+			align-items: stretch;
+		}
+
+		.discussion-layout.graph-panel-open .discussion-panel {
+			flex: 1 1 50%;
+			max-width: 50%;
+			padding-right: 2rem;
+			overflow-y: auto;
+		}
+
+		.discussion-layout.graph-panel-open .graph-panel {
+			flex: 1 1 50%;
+			max-width: 50%;
+			position: sticky;
+			top: 1rem;
+			max-height: calc(100vh - 2rem);
+			overflow-y: auto;
+			overscroll-behavior: contain;
+			border-left: 1px solid var(--color-border);
+			padding-left: 2rem;
+		}
+
+		.discussion-layout:not(.graph-panel-open) .discussion-panel {
+			flex: 1 1 100%;
+			max-width: 800px;
+			margin: 0 auto;
+		}
+
+		.discussion-layout:not(.graph-panel-open) .graph-panel {
+			display: none;
+		}
+
+		/* On desktop, both panels always visible — no tab hiding */
+		.discussion-panel.mobile-hidden,
+		.graph-panel.mobile-hidden {
+			display: block;
+		}
+
+		/* Hide mobile tabs on desktop */
+		.mobile-only-tabs {
+			display: none;
+		}
+
+		/* Show desktop-only elements */
+		.desktop-only {
+			display: flex;
+		}
+
+		.desktop-only-banner {
+			display: block;
+		}
+
+		.graph-panel-reopen {
+			display: block;
 		}
 	}
 	/* Editorial Article Header */
@@ -3963,6 +4163,26 @@
 		}
 		100% {
 			box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent);
+		}
+	}
+
+	/* Graph panel scrollbar styling */
+	@media (min-width: 1200px) {
+		.graph-panel::-webkit-scrollbar {
+			width: 4px;
+		}
+
+		.graph-panel::-webkit-scrollbar-track {
+			background: transparent;
+		}
+
+		.graph-panel::-webkit-scrollbar-thumb {
+			background: var(--color-border);
+			border-radius: 2px;
+		}
+
+		.graph-panel::-webkit-scrollbar-thumb:hover {
+			background: var(--color-text-tertiary);
 		}
 	}
 

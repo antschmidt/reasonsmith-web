@@ -433,25 +433,12 @@
 
 	async function checkForArgumentGraph() {
 		try {
-			console.log('[checkForArgumentGraph] Checking for discussion:', discussionId);
 			const result = await nhost.graphql.request(GET_DISCUSSION_ARGUMENT, {
 				discussionId
 			});
-			console.log('[checkForArgumentGraph] Raw result:', JSON.stringify(result));
 			const args = (result as any).data?.argument;
-			console.log('[checkForArgumentGraph] args:', args, 'length:', args?.length);
 			hasArgumentGraph = Array.isArray(args) && args.length > 0;
-			console.log('[checkForArgumentGraph] hasArgumentGraph set to:', hasArgumentGraph);
-			console.log(
-				'[checkForArgumentGraph] draftTextLength:',
-				draftTextLength,
-				'user:',
-				!!user,
-				'argumentGraphExpanded:',
-				argumentGraphExpanded
-			);
-		} catch (e) {
-			console.error('[checkForArgumentGraph] Error:', e);
+		} catch {
 			hasArgumentGraph = null;
 		}
 	}

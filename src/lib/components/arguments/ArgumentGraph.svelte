@@ -299,24 +299,8 @@
 
 	function handleMouseMove(e: MouseEvent) {
 		if (dragNodeId) {
-			// Node dragging
-			const svgRect = svgElement?.getBoundingClientRect();
-			if (!svgRect) return;
-
-			const scaleX = viewBox.w / svgRect.width;
-			const scaleY = viewBox.h / svgRect.height;
-
-			const newX = viewBox.x + (e.clientX - svgRect.left) * scaleX - dragOffset.x;
-			const newY = viewBox.y + (e.clientY - svgRect.top) * scaleY - dragOffset.y;
-
-			const newPositions = new Map(positions);
-			newPositions.set(dragNodeId, { x: newX, y: newY });
-			positions = newPositions;
-
-			// Save as manual position
-			manualPositions = new Map(manualPositions).set(dragNodeId, { x: newX, y: newY });
-
-			e.preventDefault();
+			// Node dragging — handled by window listener now
+			return;
 		} else if (isPanning) {
 			const svgRect = svgElement?.getBoundingClientRect();
 			if (!svgRect) return;
@@ -338,10 +322,41 @@
 		}
 	}
 
+	// Window-level drag handlers — attached only while a node is being dragged
+	// so the drag continues even when the cursor leaves the SVG bounds.
+	function handleWindowMouseMove(e: MouseEvent) {
+		if (!dragNodeId) return;
+		const svgRect = svgElement?.getBoundingClientRect();
+		if (!svgRect) return;
+
+		const scaleX = viewBox.w / svgRect.width;
+		const scaleY = viewBox.h / svgRect.height;
+
+		const newX = viewBox.x + (e.clientX - svgRect.left) * scaleX - dragOffset.x;
+		const newY = viewBox.y + (e.clientY - svgRect.top) * scaleY - dragOffset.y;
+
+		const newPositions = new Map(positions);
+		newPositions.set(dragNodeId, { x: newX, y: newY });
+		positions = newPositions;
+
+		manualPositions = new Map(manualPositions).set(dragNodeId, { x: newX, y: newY });
+		e.preventDefault();
+	}
+
+	function handleWindowMouseUp() {
+		if (dragNodeId) {
+			window.removeEventListener('mousemove', handleWindowMouseMove);
+			window.removeEventListener('mouseup', handleWindowMouseUp);
+			dragNodeId = null;
+		}
+	}
+
 	function handleMouseUp() {
 		isPanning = false;
-		dragNodeId = null;
-		isTouchPanning = false;
+		if (!dragNodeId) {
+			// Only clear panning state; node drag is cleaned up by window listener
+			isTouchPanning = false;
+		}
 	}
 
 	function handleWheel(e: WheelEvent) {
@@ -372,6 +387,7 @@
 
 	function handleNodeMouseDown(e: MouseEvent, nodeId: string) {
 		e.stopPropagation();
+		e.preventDefault();
 
 		const svgRect = svgElement?.getBoundingClientRect();
 		if (!svgRect) return;
@@ -390,6 +406,10 @@
 			x: mouseX - pos.x,
 			y: mouseY - pos.y
 		};
+
+		// Attach window-level listeners so drag continues outside the SVG
+		window.addEventListener('mousemove', handleWindowMouseMove);
+		window.addEventListener('mouseup', handleWindowMouseUp);
 	}
 
 	function handleNodeClick(e: MouseEvent, nodeId: string) {
@@ -478,6 +498,11 @@
 
 	onMount(() => {
 		fitToView();
+		// Clean up window listeners if component unmounts mid-drag
+		return () => {
+			window.removeEventListener('mousemove', handleWindowMouseMove);
+			window.removeEventListener('mouseup', handleWindowMouseUp);
+		};
 	});
 </script>
 
@@ -515,7 +540,7 @@
 			ontouchmove={handleTouchMove}
 			ontouchend={handleTouchEnd}
 			ontouchcancel={handleTouchEnd}
-			style="touch-action: none"
+			style="touch-action: none; overscroll-behavior: contain"
 		>
 			<!-- Background -->
 			<rect
@@ -730,7 +755,13 @@
 								{/if}
 
 								<!-- Content text via foreignObject for proper wrapping -->
-								<foreignObject x="8" y="28" width={NODE_WIDTH - 16} height={NODE_HEIGHT - 34}>
+								<foreignObject
+									x="8"
+									y="28"
+									width={NODE_WIDTH - 16}
+									height={NODE_HEIGHT - 34}
+									style="pointer-events:none"
+								>
 									<p style={nodeTextStyle}>
 										{displayText}
 									</p>
@@ -751,6 +782,8 @@
 		height: 100%;
 		overflow: hidden;
 		background: var(--color-surface, #1a1a1a);
+		touch-action: none;
+		overscroll-behavior: contain;
 	}
 
 	.graph-svg {

@@ -1383,6 +1383,8 @@
 		min-height: 400px;
 		display: flex;
 		flex-direction: column;
+		overscroll-behavior: contain;
+		touch-action: none;
 	}
 
 	/* Panel header */

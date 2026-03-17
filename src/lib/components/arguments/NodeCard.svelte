@@ -798,6 +798,7 @@
 	.node-card {
 		background: var(--node-bg, var(--color-surface));
 		border: 1px solid color-mix(in srgb, var(--node-color) 20%, var(--color-border));
+		min-height: fit-content;
 		border-radius: var(--border-radius-md, 8px);
 		padding: 0;
 		cursor: pointer;
@@ -1173,6 +1174,7 @@
 	.node-content {
 		font-family: var(--font-family-serif, serif);
 		font-size: 0.9rem;
+
 		line-height: 1.55;
 		color: var(--color-text-primary, #eceff1);
 		margin: 0;
