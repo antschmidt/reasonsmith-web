@@ -19,7 +19,8 @@
 		GET_MY_PENDING_EDITORS_DESK_APPROVALS,
 		GET_DISCUSSION_CITATIONS,
 		LINK_CITATION_TO_DISCUSSION,
-		UPDATE_DISCUSSION_VERSION_AUDIO
+		UPDATE_DISCUSSION_VERSION_AUDIO,
+		GET_DISCUSSION_ARGUMENT
 	} from '$lib/graphql/queries';
 	import { createDraftAutosaver, type DraftAutosaver } from '$lib';
 	import {
@@ -122,6 +123,9 @@
 	// Track which posts can be deleted vs need ghosting
 	let postDeletionStatus = $state<Record<string, { canDelete: boolean; reason?: string }>>({});
 	let discussionCanDelete = $state(true);
+
+	// Argument graph existence state
+	let hasArgumentGraph = $state<boolean | null>(null);
 
 	const GET_EXISTING_DRAFT = `
     query GetExistingDraft($discussionId: uuid!, $authorId: uuid!) {
@@ -1018,6 +1022,8 @@
 
 			// Load citations from the new citation tables
 			await loadDiscussionCitations();
+
+			await checkForArgumentGraph();
 
 			await loadExistingDraft();
 		} catch (e: any) {
@@ -3299,6 +3305,24 @@
 		}
 	}
 
+	async function checkForArgumentGraph() {
+		try {
+			const result = await nhost.graphql.request(GET_DISCUSSION_ARGUMENT, {
+				discussionId: $page.params.id
+			});
+			const args = (result as any).data?.argument;
+			hasArgumentGraph = args && args.length > 0;
+		} catch {
+			hasArgumentGraph = null;
+		}
+	}
+
+	$effect(() => {
+		if (activeTab === 'discussion') {
+			checkForArgumentGraph();
+		}
+	});
+
 	// Format contributor name to avoid showing raw emails
 	function displayName(name?: string | null): string {
 		if (!name) return '';
@@ -3504,6 +3528,22 @@
 				discussionCitations={allCitations}
 			/>
 		{:else}
+			{#if hasArgumentGraph === false && user}
+				<div class="graph-generation-banner">
+					<div class="graph-banner-content">
+						<div class="graph-banner-icon">✨</div>
+						<div class="graph-banner-text">
+							<h4>Argument Graph Available</h4>
+							<p>
+								Analyze this discussion's content and map out the claims, evidence, and reasoning.
+							</p>
+						</div>
+						<button class="graph-banner-btn" onclick={() => (activeTab = 'argument-graph')}>
+							View Argument Graph
+						</button>
+					</div>
+				</div>
+			{/if}
 			<div class="posts-list">
 				{#each discussion.posts as post}
 					<PostItem
@@ -3917,6 +3957,74 @@
 		}
 		100% {
 			box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent);
+		}
+	}
+
+	/* Argument graph generation banner */
+	.graph-generation-banner {
+		margin-bottom: 1.5rem;
+		padding: 1rem 1.25rem;
+		background: var(--color-surface-elevated, #1a1a2e);
+		border: 1px solid var(--color-accent, #6c63ff);
+		border-radius: var(--border-radius-md, 8px);
+	}
+
+	.graph-banner-content {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.graph-banner-icon {
+		font-size: 1.5rem;
+		flex-shrink: 0;
+	}
+
+	.graph-banner-text {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.graph-banner-text h4 {
+		margin: 0 0 0.25rem 0;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--color-text-primary, #e0e0e0);
+	}
+
+	.graph-banner-text p {
+		margin: 0;
+		font-size: 0.82rem;
+		color: var(--color-text-secondary, #aaa);
+		line-height: 1.4;
+	}
+
+	.graph-banner-btn {
+		flex-shrink: 0;
+		padding: 0.5rem 1rem;
+		background: var(--color-accent, #6c63ff);
+		color: white;
+		border: none;
+		border-radius: var(--border-radius-sm, 6px);
+		font-size: 0.85rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: opacity 0.15s;
+		white-space: nowrap;
+	}
+
+	.graph-banner-btn:hover {
+		opacity: 0.9;
+	}
+
+	@media (max-width: 768px) {
+		.graph-banner-content {
+			flex-direction: column;
+			text-align: center;
+		}
+
+		.graph-banner-btn {
+			width: 100%;
 		}
 	}
 </style>
