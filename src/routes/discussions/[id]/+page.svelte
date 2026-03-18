@@ -103,6 +103,7 @@
 	let selectedContextCommentIds = $state<string[]>([]);
 	let activeTab = $state<'discussion' | 'argument-graph'>('discussion');
 	let graphPanelOpen = $state(true);
+	let discussionPanelOpen = $state(true);
 	let user = $state(nhost.auth.getUser());
 	nhost.auth.onAuthStateChanged(() => {
 		user = nhost.auth.getUser();
@@ -3344,7 +3345,11 @@
 	}
 </script>
 
-<article class="discussion-article" class:graph-panel-open={graphPanelOpen}>
+<article
+	class="discussion-article"
+	class:graph-panel-open={graphPanelOpen}
+	class:discussion-panel-collapsed={!discussionPanelOpen}
+>
 	{#if loading}
 		<p>Loading...</p>
 	{:else if error}
@@ -3371,9 +3376,26 @@
 			</button>
 		</div>
 
-		<div class="discussion-layout" class:graph-panel-open={graphPanelOpen}>
+		<div
+			class="discussion-layout"
+			class:graph-panel-open={graphPanelOpen}
+			class:discussion-collapsed={!discussionPanelOpen}
+		>
 			<!-- Left column: entire discussion (header + article + posts + composer) -->
 			<div class="discussion-panel" class:mobile-hidden={activeTab !== 'discussion'}>
+				<div class="panel-collapse-bar desktop-only">
+					<button
+						class="panel-collapse-btn"
+						onclick={() => (discussionPanelOpen = !discussionPanelOpen)}
+						title={discussionPanelOpen ? 'Collapse discussion' : 'Expand discussion'}
+					>
+						{#if discussionPanelOpen}
+							◀ Collapse
+						{:else}
+							▶ Expand Discussion
+						{/if}
+					</button>
+				</div>
 				<header class="discussion-header">
 					<DiscussionHeader
 						discussion={{
@@ -3655,12 +3677,14 @@
 			<!-- Right column: Argument Graph (side panel on wide, tab-controlled on mobile) -->
 			<div class="graph-panel" class:mobile-hidden={activeTab !== 'argument-graph'}>
 				<div class="graph-panel-header desktop-only">
-					<h3 class="graph-panel-title">Argument Graph</h3>
 					<button
-						class="graph-panel-close"
+						class="panel-collapse-btn"
 						onclick={() => (graphPanelOpen = false)}
-						title="Close graph panel">✕</button
+						title="Collapse graph panel"
 					>
+						Collapse ▶
+					</button>
+					<h3 class="graph-panel-title">Argument Graph</h3>
 				</div>
 				<DiscussionArgumentGraph
 					discussionId={discussion.id}
@@ -3676,7 +3700,15 @@
 		<!-- Toggle button to re-open graph panel on desktop when closed -->
 		{#if !graphPanelOpen}
 			<button class="graph-panel-reopen desktop-only" onclick={() => (graphPanelOpen = true)}>
-				Argument Graph →
+				◀ Argument Graph
+			</button>
+		{/if}
+		{#if !discussionPanelOpen}
+			<button
+				class="discussion-panel-reopen desktop-only"
+				onclick={() => (discussionPanelOpen = true)}
+			>
+				Discussion ▶
 			</button>
 		{/if}
 	{:else}
@@ -3803,6 +3835,59 @@
 		background: var(--color-surface);
 	}
 
+	/* Panel collapse controls */
+	.panel-collapse-bar {
+		padding: 0.5rem 1rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.panel-collapse-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.375rem 0.75rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-text-tertiary);
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: var(--border-radius-sm, 4px);
+		cursor: pointer;
+		transition: all 0.15s;
+		font-family: var(--font-family-sans, sans-serif);
+	}
+
+	.panel-collapse-btn:hover {
+		color: var(--color-text-primary);
+		background: var(--color-surface-elevated, #1e1e1e);
+		border-color: var(--color-text-tertiary);
+	}
+
+	.discussion-panel-reopen {
+		position: fixed;
+		left: 0;
+		top: 50%;
+		transform: translateY(-50%);
+		writing-mode: vertical-rl;
+		text-orientation: mixed;
+		padding: 0.75rem 0.5rem;
+		font-size: 0.8rem;
+		font-weight: 500;
+		color: var(--color-text-secondary);
+		background: var(--color-surface-elevated, #1e1e1e);
+		border: 1px solid var(--color-border);
+		border-left: none;
+		border-radius: 0 var(--border-radius-sm, 4px) var(--border-radius-sm, 4px) 0;
+		cursor: pointer;
+		transition: all 0.15s;
+		z-index: 10;
+	}
+
+	.discussion-panel-reopen:hover {
+		color: var(--color-text-primary);
+		background: var(--color-surface);
+	}
+
 	/* Desktop-only elements (hidden on mobile) */
 	.desktop-only {
 		display: none;
@@ -3813,6 +3898,10 @@
 	}
 
 	.graph-panel-reopen {
+		display: none;
+	}
+
+	.discussion-panel-reopen {
 		display: none;
 	}
 
@@ -3884,6 +3973,29 @@
 
 		.graph-panel-reopen {
 			display: block;
+		}
+
+		.discussion-panel-reopen {
+			display: block;
+		}
+
+		/* Discussion panel collapsed */
+		.discussion-layout.discussion-collapsed .discussion-panel {
+			flex: 0 0 auto;
+			width: 0;
+			min-width: 0;
+			max-width: 0;
+			overflow: hidden;
+			padding: 0;
+			opacity: 0;
+			pointer-events: none;
+		}
+
+		.discussion-layout.discussion-collapsed .graph-panel {
+			flex: 1 1 100%;
+			max-width: 100%;
+			border-left: none;
+			padding-left: 0;
 		}
 	}
 	/* Editorial Article Header */

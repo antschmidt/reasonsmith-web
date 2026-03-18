@@ -53,6 +53,8 @@
 			updates: { content?: string; type?: ArgumentNodeType }
 		) => Promise<void> | void;
 		onEditEdge?: (edgeId: string, updates: { type?: ArgumentEdgeType }) => Promise<void> | void;
+		/** Callback to open the "Add Connection" sheet with this node pre-selected */
+		onAddEdge?: (fromNodeId: string) => void;
 		/** AI analysis state for this node, managed by the parent */
 		aiAnalysis?: AIAnalysisState;
 		/** If true, the node belongs to another user and cannot be edited or deleted */
@@ -71,6 +73,7 @@
 		onDelete,
 		onEdit,
 		onEditEdge,
+		onAddEdge,
 		aiAnalysis,
 		isReadOnly = false,
 		ownerName
@@ -455,12 +458,24 @@
 					</button>
 				{/if}
 
+				{#if onAddEdge}
+					<button
+						class="connect-btn"
+						onclick={(e) => {
+							e.stopPropagation();
+							onAddEdge(node.id);
+						}}
+						title="Add connection from this node"
+						aria-label="Add connection"
+					>
+						<Link size={13} />
+					</button>
+				{/if}
 				{#if onEdit}
 					<button class="edit-btn" onclick={startEdit} title="Edit node" aria-label="Edit node">
 						<Edit3 size={13} />
 					</button>
 				{/if}
-
 				{#if !node.is_root}
 					<button
 						class="delete-btn"
@@ -963,6 +978,30 @@
 
 	.connection-count {
 		font-weight: 600;
+	}
+
+	.connect-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 4px;
+		background: none;
+		border: 1px solid transparent;
+		color: var(--color-text-tertiary, #607d8b);
+		border-radius: var(--border-radius-sm, 4px);
+		cursor: pointer;
+		transition: all 0.15s ease;
+		opacity: 0;
+	}
+
+	.node-card:hover .connect-btn {
+		opacity: 1;
+	}
+
+	.connect-btn:hover {
+		color: var(--color-accent, #6c63ff);
+		background: color-mix(in srgb, var(--color-accent, #6c63ff) 10%, transparent);
+		border-color: color-mix(in srgb, var(--color-accent, #6c63ff) 20%, transparent);
 	}
 
 	.edit-btn {

@@ -578,16 +578,20 @@
 			<!-- Left Panel: Node List -->
 			<div class="panel-left" class:mobile-hidden={mobileTab !== 'list'}>
 				<div class="panel-header">
-					<TypeFilterTabs
-						{typesPresent}
-						{nodeTypeCounts}
-						activeFilter={filterType}
-						onFilterChange={(type) => (filterType = type)}
-					/>
-					<Button variant="primary" size="sm" onclick={() => openAddNode()}>
-						{#snippet icon()}<Plus size={16} />{/snippet}
-						Add Node
-					</Button>
+					<div class="panel-header-tabs">
+						<TypeFilterTabs
+							{typesPresent}
+							{nodeTypeCounts}
+							activeFilter={filterType}
+							onFilterChange={(type) => (filterType = type)}
+						/>
+					</div>
+					<div class="panel-header-actions">
+						<Button variant="primary" size="sm" onclick={() => openAddNode()}>
+							{#snippet icon()}<Plus size={16} />{/snippet}
+							Add Node
+						</Button>
+					</div>
 				</div>
 
 				<div class="node-list">
@@ -888,7 +892,8 @@
 		display: flex;
 		flex-direction: column;
 		border-right: 1px solid var(--color-border);
-		overflow: auto;
+		overflow: hidden;
+		min-height: 0;
 	}
 
 	.graph-hidden .panel-left {
@@ -897,17 +902,28 @@
 
 	.panel-header {
 		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		padding: var(--space-xs) var(--space-sm);
+		flex-direction: column;
+		padding: 0;
 		border-bottom: 1px solid var(--color-border);
 		flex-shrink: 0;
-		flex-wrap: wrap;
+	}
+
+	.panel-header-tabs {
+		padding: var(--space-xs) var(--space-sm);
+		border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.06));
+	}
+
+	.panel-header-actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: var(--space-sm);
+		padding: var(--space-xs) var(--space-sm);
 	}
 
 	.node-list {
 		flex: 1;
-		min-height: fit-content;
+		min-height: 0;
 		overflow-y: auto;
 		padding: var(--space-sm);
 		display: flex;
@@ -970,7 +986,10 @@
 			display: none !important;
 		}
 
-		.panel-header {
+		.panel-header-tabs {
+			padding: var(--space-xs);
+		}
+		.panel-header-actions {
 			padding: var(--space-xs);
 		}
 

@@ -25,6 +25,7 @@
 	// Dragging state
 	let dragNodeId = $state<string | null>(null);
 	let dragOffset = $state({ x: 0, y: 0 });
+	let wasDragging = $state(false);
 
 	// Node dimensions
 	const NODE_WIDTH = 220;
@@ -154,8 +155,8 @@
 	}
 
 	// Inline style for foreignObject text — Svelte scoped styles don't penetrate into
-	// foreignObject HTML, so we must inline. word-break:break-all ensures long strings
-	// like URLs wrap within the node rect.
+	// foreignObject HTML, so we must inline. overflow-wrap:break-word ensures long strings
+	// like URLs wrap within the node rect while normal text wraps at word boundaries.
 	const nodeTextStyle = [
 		'margin:0',
 		'padding:0',
@@ -166,7 +167,7 @@
 		'font-family:var(--font-family-serif,serif)',
 		'line-height:1.35',
 		'overflow:hidden',
-		'word-break:break-all',
+		'word-break:normal',
 		'overflow-wrap:break-word',
 		'display:-webkit-box',
 		'-webkit-line-clamp:4',
@@ -186,7 +187,7 @@
 		return false;
 	}
 
-	function handleMouseDown(e: MouseEvent) {
+	function handleMouseDown(e: PointerEvent) {
 		// Pan on any click that isn't on a node — nodes handle their own mousedown
 		if (!isNodeTarget(e.target)) {
 			isPanning = true;
@@ -297,9 +298,27 @@
 		}
 	}
 
-	function handleMouseMove(e: MouseEvent) {
+	function handleMouseMove(e: PointerEvent) {
 		if (dragNodeId) {
-			// Node dragging — handled by window listener now
+			// Node dragging
+			const svgRect = svgElement?.getBoundingClientRect();
+			if (!svgRect) return;
+
+			const scaleX = viewBox.w / svgRect.width;
+			const scaleY = viewBox.h / svgRect.height;
+
+			const newX = viewBox.x + (e.clientX - svgRect.left) * scaleX - dragOffset.x;
+			const newY = viewBox.y + (e.clientY - svgRect.top) * scaleY - dragOffset.y;
+
+			const newPositions = new Map(positions);
+			newPositions.set(dragNodeId, { x: newX, y: newY });
+			positions = newPositions;
+
+			// Save as manual position
+			manualPositions = new Map(manualPositions).set(dragNodeId, { x: newX, y: newY });
+
+			wasDragging = true;
+			e.preventDefault();
 			return;
 		} else if (isPanning) {
 			const svgRect = svgElement?.getBoundingClientRect();
@@ -322,41 +341,18 @@
 		}
 	}
 
-	// Window-level drag handlers — attached only while a node is being dragged
-	// so the drag continues even when the cursor leaves the SVG bounds.
-	function handleWindowMouseMove(e: MouseEvent) {
-		if (!dragNodeId) return;
-		const svgRect = svgElement?.getBoundingClientRect();
-		if (!svgRect) return;
-
-		const scaleX = viewBox.w / svgRect.width;
-		const scaleY = viewBox.h / svgRect.height;
-
-		const newX = viewBox.x + (e.clientX - svgRect.left) * scaleX - dragOffset.x;
-		const newY = viewBox.y + (e.clientY - svgRect.top) * scaleY - dragOffset.y;
-
-		const newPositions = new Map(positions);
-		newPositions.set(dragNodeId, { x: newX, y: newY });
-		positions = newPositions;
-
-		manualPositions = new Map(manualPositions).set(dragNodeId, { x: newX, y: newY });
-		e.preventDefault();
-	}
-
-	function handleWindowMouseUp() {
-		if (dragNodeId) {
-			window.removeEventListener('mousemove', handleWindowMouseMove);
-			window.removeEventListener('mouseup', handleWindowMouseUp);
-			dragNodeId = null;
-		}
-	}
-
-	function handleMouseUp() {
+	function handleMouseUp(e: PointerEvent) {
 		isPanning = false;
-		if (!dragNodeId) {
-			// Only clear panning state; node drag is cleaned up by window listener
-			isTouchPanning = false;
+		// Release pointer capture if we were dragging a node
+		if (dragNodeId && svgElement) {
+			try {
+				(svgElement as unknown as Element).releasePointerCapture(e.pointerId);
+			} catch {
+				// ignore — capture may already be released
+			}
 		}
+		dragNodeId = null;
+		isTouchPanning = false;
 	}
 
 	function handleWheel(e: WheelEvent) {
@@ -385,7 +381,7 @@
 		zoom = zoom / factor;
 	}
 
-	function handleNodeMouseDown(e: MouseEvent, nodeId: string) {
+	function handleNodeMouseDown(e: PointerEvent, nodeId: string) {
 		e.stopPropagation();
 		e.preventDefault();
 
@@ -402,21 +398,28 @@
 		const mouseY = viewBox.y + (e.clientY - svgRect.top) * scaleY;
 
 		dragNodeId = nodeId;
+		wasDragging = false;
 		dragOffset = {
 			x: mouseX - pos.x,
 			y: mouseY - pos.y
 		};
 
-		// Attach window-level listeners so drag continues outside the SVG
-		window.addEventListener('mousemove', handleWindowMouseMove);
-		window.addEventListener('mouseup', handleWindowMouseUp);
+		// Capture pointer so pointermove/pointerup keep firing on the SVG
+		// even when the cursor leaves its bounds during a drag
+		if (svgElement) {
+			(svgElement as unknown as Element).setPointerCapture(e.pointerId);
+		}
 	}
 
 	function handleNodeClick(e: MouseEvent, nodeId: string) {
 		// Only trigger click if we didn't drag
-		if (!dragNodeId) {
-			onNodeSelect(nodeId);
+		if (wasDragging) {
+			wasDragging = false;
+			e.preventDefault();
+			e.stopPropagation();
+			return;
 		}
+		onNodeSelect(nodeId);
 	}
 
 	// Zoom controls
@@ -498,11 +501,6 @@
 
 	onMount(() => {
 		fitToView();
-		// Clean up window listeners if component unmounts mid-drag
-		return () => {
-			window.removeEventListener('mousemove', handleWindowMouseMove);
-			window.removeEventListener('mouseup', handleWindowMouseUp);
-		};
 	});
 </script>
 
@@ -531,10 +529,12 @@
 			class="graph-svg"
 			viewBox="{viewBox.x} {viewBox.y} {viewBox.w} {viewBox.h}"
 			preserveAspectRatio="xMidYMid meet"
-			onmousedown={handleMouseDown}
-			onmousemove={handleMouseMove}
-			onmouseup={handleMouseUp}
-			onmouseleave={handleMouseUp}
+			onpointerdown={handleMouseDown}
+			onpointermove={handleMouseMove}
+			onpointerup={handleMouseUp}
+			onpointerleave={(e) => {
+				if (!dragNodeId) handleMouseUp(e);
+			}}
 			onwheel={handleWheel}
 			ontouchstart={handleTouchStart}
 			ontouchmove={handleTouchMove}
@@ -662,7 +662,7 @@
 							class:selected={isSelected}
 							class:root={node.is_root}
 							transform="translate({pos.x}, {pos.y})"
-							onmousedown={(e) => handleNodeMouseDown(e, node.id)}
+							onpointerdown={(e: PointerEvent) => handleNodeMouseDown(e, node.id)}
 							onclick={(e) => handleNodeClick(e, node.id)}
 							style="cursor: grab"
 						>

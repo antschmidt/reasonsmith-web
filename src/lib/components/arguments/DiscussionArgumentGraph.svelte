@@ -38,9 +38,19 @@
 	import TypeFilterTabs from '$lib/components/arguments/TypeFilterTabs.svelte';
 	import NodeCard from '$lib/components/arguments/NodeCard.svelte';
 	import AddNodeSheet from '$lib/components/arguments/AddNodeSheet.svelte';
+	import AddEdgeSheet from '$lib/components/arguments/AddEdgeSheet.svelte';
 	import ArgumentGraph from '$lib/components/arguments/ArgumentGraph.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
-	import { Plus, List, Network, Sparkles, RotateCcw } from '@lucide/svelte';
+	import {
+		Plus,
+		Link,
+		List,
+		Network,
+		Sparkles,
+		RotateCcw,
+		PanelLeftClose,
+		PanelLeftOpen
+	} from '@lucide/svelte';
 
 	interface Props {
 		discussionId: string;
@@ -95,9 +105,13 @@
 	// UI state
 	let showAddNode = $state(false);
 	let addNodeDefaultType = $state<ArgumentNodeType | null>(null);
+	let showAddEdge = $state(false);
+	let addEdgeDefaultFromId = $state<string | null>(null);
+	let addEdgeDefaultToId = $state<string | null>(null);
 	let selectedNodeId = $state<string | null>(null);
 	let filterType = $state<ArgumentNodeType | 'all'>('all');
 	let showGraph = $state(true);
+	let nodeListCollapsed = $state(false);
 	let coachDismissed = $state(false);
 	let mobileView = $state<'list' | 'graph'>('list');
 	let creatingGraph = $state(false);
@@ -659,6 +673,25 @@
 		addNodeDefaultType = null;
 	}
 
+	function openAddEdge(fromNodeId?: string, toNodeId?: string) {
+		addEdgeDefaultFromId = fromNodeId || null;
+		addEdgeDefaultToId = toNodeId || null;
+		showAddEdge = true;
+	}
+
+	function closeAddEdge() {
+		showAddEdge = false;
+		addEdgeDefaultFromId = null;
+		addEdgeDefaultToId = null;
+	}
+
+	function handleEdgeAdded(edge: ArgumentEdge) {
+		edges = [...edges, edge];
+		showAddEdge = false;
+		addEdgeDefaultFromId = null;
+		addEdgeDefaultToId = null;
+	}
+
 	function requestRegenerate() {
 		if (hasExistingContent) {
 			showRegenerateConfirm = true;
@@ -868,73 +901,114 @@
 			</button>
 		</div>
 
-		<div class="graph-panels" class:graph-hidden={!showGraph}>
+		<div
+			class="graph-panels"
+			class:graph-hidden={!showGraph}
+			class:node-list-collapsed={nodeListCollapsed}
+		>
 			<!-- Left panel: Node list -->
 			<div
 				class="node-list-panel discussion-graph-node-list"
 				class:mobile-hidden={mobileView !== 'list'}
+				class:collapsed={nodeListCollapsed}
 			>
-				<div class="panel-header">
-					<TypeFilterTabs
-						{typesPresent}
-						{nodeTypeCounts}
-						activeFilter={filterType}
-						onFilterChange={(type) => (filterType = type)}
-					/>
-					<div class="panel-actions">
-						{#if canGenerate}
+				{#if nodeListCollapsed}
+					<div class="collapsed-strip">
+						<button
+							class="collapse-toggle"
+							onclick={() => (nodeListCollapsed = false)}
+							title="Expand node list"
+							aria-label="Expand node list"
+						>
+							<PanelLeftOpen size={16} />
+						</button>
+						<span class="collapsed-label">Nodes ({nodes.length})</span>
+					</div>
+				{:else}
+					<div class="panel-header">
+						<div class="panel-header-tabs">
+							<TypeFilterTabs
+								{typesPresent}
+								{nodeTypeCounts}
+								activeFilter={filterType}
+								onFilterChange={(type) => (filterType = type)}
+							/>
+						</div>
+						<div class="panel-actions">
+							<button
+								class="collapse-toggle"
+								onclick={() => (nodeListCollapsed = true)}
+								title="Collapse node list"
+								aria-label="Collapse node list"
+							>
+								<PanelLeftClose size={16} />
+							</button>
+							{#if canGenerate}
+								<Button
+									variant="ghost"
+									size="sm"
+									onclick={requestRegenerate}
+									disabled={generating}
+									title={hasExistingContent ? 'Regenerate graph with AI' : 'Generate graph with AI'}
+								>
+									{#snippet icon()}
+										{#if hasExistingContent}
+											<RotateCcw size={14} />
+										{:else}
+											<Sparkles size={14} />
+										{/if}
+									{/snippet}
+									{hasExistingContent ? 'Regenerate' : 'Generate'}
+								</Button>
+							{/if}
 							<Button
 								variant="ghost"
 								size="sm"
-								onclick={requestRegenerate}
-								disabled={generating}
-								title={hasExistingContent ? 'Regenerate graph with AI' : 'Generate graph with AI'}
+								onclick={() => openAddEdge()}
+								title="Connect two existing nodes"
 							>
 								{#snippet icon()}
-									{#if hasExistingContent}
-										<RotateCcw size={14} />
-									{:else}
-										<Sparkles size={14} />
-									{/if}
+									<Link size={14} />
 								{/snippet}
-								{hasExistingContent ? 'Regenerate' : 'Generate'}
+								Connect
 							</Button>
-						{/if}
-						<Button variant="primary" size="sm" onclick={() => openAddNode()}>
-							{#snippet icon()}
-								<Plus size={16} />
-							{/snippet}
-							Add Node
-						</Button>
+							<Button variant="primary" size="sm" onclick={() => openAddNode()}>
+								{#snippet icon()}
+									<Plus size={16} />
+								{/snippet}
+								Add Node
+							</Button>
+						</div>
 					</div>
-				</div>
 
-				<div class="node-list">
-					{#if filteredNodes.length === 0}
-						<p class="no-nodes">
-							{filterType === 'all'
-								? 'No nodes yet. Start by adding evidence for your claim.'
-								: `No ${filterType} nodes yet.`}
-						</p>
-					{:else}
-						{#each filteredNodes as node (node.id)}
-							{@const nodeIsReadOnly = isSharedGraph && !isOwnNode(node)}
-							<NodeCard
-								{node}
-								{nodes}
-								{edges}
-								isSelected={selectedNodeId === node.id}
-								connectionCount={getConnectionCount(node.id, edges)}
-								onSelect={() => selectNode(node.id)}
-								onDelete={nodeIsReadOnly ? () => {} : () => handleDeleteNode(node.id)}
-								onEdit={nodeIsReadOnly ? undefined : handleEditNode}
-								onEditEdge={nodeIsReadOnly ? undefined : handleEditEdge}
-								isReadOnly={nodeIsReadOnly}
-								ownerName={getNodeOwnerName(node)}
-							/>
-						{/each}
-					{/if}
-				</div>
+					<div class="node-list">
+						{#if filteredNodes.length === 0}
+							<p class="no-nodes">
+								{filterType === 'all'
+									? 'No nodes yet. Start by adding evidence for your claim.'
+									: `No ${filterType} nodes yet.`}
+							</p>
+						{:else}
+							{#each filteredNodes as node (node.id)}
+								{@const nodeIsReadOnly = isSharedGraph && !isOwnNode(node)}
+								<NodeCard
+									{node}
+									{nodes}
+									{edges}
+									isSelected={selectedNodeId === node.id}
+									connectionCount={getConnectionCount(node.id, edges)}
+									onSelect={() => selectNode(node.id)}
+									onDelete={nodeIsReadOnly ? () => {} : () => handleDeleteNode(node.id)}
+									onEdit={nodeIsReadOnly ? undefined : handleEditNode}
+									onEditEdge={nodeIsReadOnly ? undefined : handleEditEdge}
+									onAddEdge={nodeIsReadOnly ? undefined : (fromId) => openAddEdge(fromId)}
+									isReadOnly={nodeIsReadOnly}
+									ownerName={getNodeOwnerName(node)}
+								/>
+							{/each}
+						{/if}
+					</div>
+				{/if}
 			</div>
 
 			<!-- Right panel: Graph visualization -->
@@ -956,6 +1030,18 @@
 		onClose={closeAddNode}
 		onNodeAdded={handleNodeAdded}
 		{isSharedGraph}
+	/>
+
+	<!-- Add Edge (Connection) Sheet -->
+	<AddEdgeSheet
+		show={showAddEdge}
+		argumentId={argumentData.id}
+		{nodes}
+		{edges}
+		defaultFromNodeId={addEdgeDefaultFromId}
+		defaultToNodeId={addEdgeDefaultToId}
+		onClose={closeAddEdge}
+		onEdgeAdded={handleEdgeAdded}
 	/>
 {/if}
 
@@ -1227,6 +1313,9 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
+		max-height: 7.5rem;
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.flag-item {
@@ -1363,7 +1452,8 @@
 	.graph-panels {
 		display: flex;
 		flex-direction: row;
-		min-height: 400px;
+		height: max(400px, calc(100vh - 24rem));
+		overflow: hidden;
 	}
 
 	.node-list-panel {
@@ -1372,6 +1462,18 @@
 		display: flex;
 		flex-direction: column;
 		border-right: 1px solid var(--color-border, #333);
+		touch-action: pan-y;
+		overflow: hidden;
+		transition:
+			min-width 0.2s ease,
+			flex 0.2s ease;
+	}
+
+	.node-list-panel.collapsed {
+		flex: 0 0 auto;
+		min-width: 0;
+		width: 44px;
+		overflow: hidden;
 	}
 
 	.graph-hidden .node-list-panel {
@@ -1380,22 +1482,74 @@
 
 	.graph-viz-panel {
 		flex: 1.5;
-		min-height: 400px;
+		min-height: 0;
 		display: flex;
 		flex-direction: column;
 		overscroll-behavior: contain;
 		touch-action: none;
+		transition: flex 0.2s ease;
+	}
+
+	.node-list-collapsed .graph-viz-panel {
+		flex: 1;
+	}
+
+	/* Collapsed strip */
+	.collapsed-strip {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.5rem 0;
+		height: 100%;
+	}
+
+	.collapsed-label {
+		writing-mode: vertical-rl;
+		text-orientation: mixed;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-text-tertiary, #607d8b);
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		white-space: nowrap;
+	}
+
+	/* Collapse toggle button */
+	.collapse-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		background: none;
+		border: 1px solid transparent;
+		border-radius: 4px;
+		color: var(--color-text-tertiary, #607d8b);
+		cursor: pointer;
+		transition: all 0.15s ease;
+		flex-shrink: 0;
+	}
+
+	.collapse-toggle:hover {
+		color: var(--color-text-primary, #eceff1);
+		background: var(--color-surface-alt, #1e1e1e);
+		border-color: var(--color-border, #333);
 	}
 
 	/* Panel header */
 	.panel-header {
 		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 0.5rem 0.75rem;
+		flex-direction: column;
+		padding: 0;
 		border-bottom: 1px solid var(--color-border, #333);
-		gap: 0.5rem;
-		flex-wrap: wrap;
+		flex-shrink: 0;
+	}
+
+	.panel-header-tabs {
+		padding: 0.5rem 0.75rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-border, #333) 50%, transparent);
 	}
 
 	.panel-actions {
@@ -1403,17 +1557,22 @@
 		align-items: center;
 		gap: 0.375rem;
 		flex-shrink: 0;
+		padding: 0.375rem 0.75rem;
+		justify-content: flex-end;
 	}
 
 	/* Node list */
 	.node-list {
-		flex: 1;
+		flex: 1 1 0%;
+		min-height: 0;
 		overflow-y: auto;
-		max-height: 600px;
+		-webkit-overflow-scrolling: touch;
 		padding: 0.5rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+		touch-action: pan-y;
+		overscroll-behavior: contain;
 	}
 
 	.no-nodes {
@@ -1432,11 +1591,18 @@
 
 		.graph-panels {
 			flex-direction: column;
+			height: auto;
+			overflow: visible;
 		}
 
 		.node-list-panel {
 			min-width: 0;
 			border-right: none;
+			overflow: visible;
+		}
+
+		.node-list-panel.collapsed {
+			display: none;
 		}
 
 		.mobile-hidden {
@@ -1447,12 +1613,16 @@
 			padding: 0.5rem 0.75rem;
 		}
 
-		.panel-header {
+		.panel-header-tabs {
 			padding: 0.4rem 0.5rem;
+		}
+		.panel-actions {
+			padding: 0.3rem 0.5rem;
 		}
 
 		.node-list {
-			max-height: 500px;
+			max-height: none;
+			overflow-y: visible;
 		}
 
 		.empty-actions {
