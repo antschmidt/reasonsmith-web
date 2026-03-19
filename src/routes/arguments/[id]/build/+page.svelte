@@ -40,6 +40,7 @@
 	import TypeFilterTabs from '$lib/components/arguments/TypeFilterTabs.svelte';
 	import NodeCard from '$lib/components/arguments/NodeCard.svelte';
 	import AddNodeSheet from '$lib/components/arguments/AddNodeSheet.svelte';
+	import AddEdgeSheet from '$lib/components/arguments/AddEdgeSheet.svelte';
 	import ArgumentGraph from '$lib/components/arguments/ArgumentGraph.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import {
@@ -77,9 +78,12 @@
 	// UI state
 	let showAddNode = $state(false);
 	let addNodeDefaultType = $state<ArgumentNodeType | null>(null);
+	let showAddEdge = $state(false);
+	let addEdgeDefaultFromId = $state<string | null>(null);
 	let selectedNodeId = $state<string | null>(null);
 	let filterType = $state<ArgumentNodeType | 'all'>('all');
 	let showGraph = $state(true);
+	let nodeListCollapsed = $state(true);
 	let coachDismissed = $state(false);
 
 	// AI analysis state per node
@@ -296,12 +300,38 @@
 	function openAddNode(defaultType?: ArgumentNodeType) {
 		addNodeDefaultType = defaultType || null;
 		showAddNode = true;
-		coachDismissed = false;
 	}
 
 	function closeAddNode() {
 		showAddNode = false;
 		addNodeDefaultType = null;
+	}
+
+	function openAddEdge(fromNodeId?: string) {
+		addEdgeDefaultFromId = fromNodeId || null;
+		showAddEdge = true;
+	}
+
+	function closeAddEdge() {
+		showAddEdge = false;
+		addEdgeDefaultFromId = null;
+	}
+
+	function handleEdgeAdded(edge: ArgumentEdge) {
+		edges = [...edges, edge];
+		showAddEdge = false;
+		addEdgeDefaultFromId = null;
+	}
+
+	async function handleGraphNodeEdit(
+		nodeId: string,
+		updates: { content?: string; type?: ArgumentNodeType }
+	) {
+		await handleEditNode(nodeId, updates);
+	}
+
+	function handleGraphNodeDelete(nodeId: string) {
+		handleDeleteNode(nodeId);
 	}
 
 	function handleNodeAdded(event: { node: ArgumentNode; edges: ArgumentEdge[] }) {
@@ -523,24 +553,6 @@
 		<div class="builder-status">
 			<CompletenessBar {completeness} />
 
-			{#if visibleFlags.length > 0}
-				<div class="structural-flags">
-					{#each visibleFlags as flag}
-						<div class="flag-item flag-{flag.severity}">
-							<span class="flag-icon">{flag.severity === 'error' ? '⚠' : '💡'}</span>
-							<span class="flag-message">{flag.message}</span>
-							<button
-								class="flag-dismiss"
-								onclick={() => dismissFlag(getFlagKey(flag))}
-								title="Dismiss"
-							>
-								×
-							</button>
-						</div>
-					{/each}
-				</div>
-			{/if}
-
 			{#if coachPrompt && !coachDismissed}
 				<CoachBanner prompt={coachPrompt} onAction={handleCoachAction} onDismiss={dismissCoach} />
 			{/if}
@@ -574,63 +586,94 @@
 		</div>
 
 		<!-- Two-Panel Layout -->
-		<div class="builder-panels" class:graph-hidden={!showGraph}>
+		<div
+			class="builder-panels"
+			class:graph-hidden={!showGraph}
+			class:node-list-collapsed={nodeListCollapsed}
+		>
 			<!-- Left Panel: Node List -->
-			<div class="panel-left" class:mobile-hidden={mobileTab !== 'list'}>
-				<div class="panel-header">
-					<div class="panel-header-tabs">
-						<TypeFilterTabs
-							{typesPresent}
-							{nodeTypeCounts}
-							activeFilter={filterType}
-							onFilterChange={(type) => (filterType = type)}
-						/>
-					</div>
-					<div class="panel-header-actions">
-						<Button variant="primary" size="sm" onclick={() => openAddNode()}>
-							{#snippet icon()}<Plus size={16} />{/snippet}
-							Add Node
-						</Button>
-					</div>
-				</div>
-
-				<div class="node-list">
-					{#if filteredNodes.length === 0}
-						<p class="no-nodes">
-							{filterType === 'all'
-								? 'No nodes yet. Start by adding evidence for your claim.'
-								: `No ${filterType} nodes yet.`}
-						</p>
-					{:else}
-						{#each filteredNodes as node (node.id)}
-							{@const nodeIsReadOnly = isSharedGraph && !isOwnNode(node)}
-							<NodeCard
-								{node}
-								{nodes}
-								{edges}
-								isSelected={selectedNodeId === node.id}
-								connectionCount={getConnectionCount(node.id, edges)}
-								onSelect={() => selectNode(node.id)}
-								onDelete={nodeIsReadOnly ? () => {} : () => handleDeleteNode(node.id)}
-								onEdit={nodeIsReadOnly ? undefined : handleEditNode}
-								onEditEdge={nodeIsReadOnly ? undefined : handleEditEdge}
-								aiAnalysis={aiAnalysisStates.get(node.id)}
-								isReadOnly={nodeIsReadOnly}
-								ownerName={getNodeOwnerName(node)}
+			{#if !nodeListCollapsed}
+				<div class="panel-left" class:mobile-hidden={mobileTab !== 'list'}>
+					<div class="panel-header">
+						<div class="panel-header-tabs">
+							<TypeFilterTabs
+								{typesPresent}
+								{nodeTypeCounts}
+								activeFilter={filterType}
+								onFilterChange={(type) => (filterType = type)}
 							/>
-						{/each}
-					{/if}
+						</div>
+						<div class="panel-header-actions">
+							<Button variant="primary" size="sm" onclick={() => openAddNode()}>
+								{#snippet icon()}<Plus size={16} />{/snippet}
+								Add Node
+							</Button>
+						</div>
+					</div>
+
+					<div class="node-list">
+						{#if filteredNodes.length === 0}
+							<p class="no-nodes">
+								{filterType === 'all'
+									? 'No nodes yet. Start by adding evidence for your claim.'
+									: `No ${filterType} nodes yet.`}
+							</p>
+						{:else}
+							{#each filteredNodes as node (node.id)}
+								{@const nodeIsReadOnly = isSharedGraph && !isOwnNode(node)}
+								<NodeCard
+									{node}
+									{nodes}
+									{edges}
+									isSelected={selectedNodeId === node.id}
+									connectionCount={getConnectionCount(node.id, edges)}
+									onSelect={() => selectNode(node.id)}
+									onDelete={nodeIsReadOnly ? () => {} : () => handleDeleteNode(node.id)}
+									onEdit={nodeIsReadOnly ? undefined : handleEditNode}
+									onEditEdge={nodeIsReadOnly ? undefined : handleEditEdge}
+									aiAnalysis={aiAnalysisStates.get(node.id)}
+									isReadOnly={nodeIsReadOnly}
+									ownerName={getNodeOwnerName(node)}
+								/>
+							{/each}
+						{/if}
+					</div>
 				</div>
-			</div>
+			{/if}
 
 			<!-- Right Panel: Graph Visualization -->
 			{#if showGraph}
 				<div class="panel-right" class:mobile-hidden={mobileTab !== 'graph'}>
-					<ArgumentGraph {nodes} {edges} {selectedNodeId} onNodeSelect={selectNode} />
+					<ArgumentGraph
+						{nodes}
+						{edges}
+						{selectedNodeId}
+						onNodeSelect={selectNode}
+						{structuralFlags}
+						onNodeEdit={handleGraphNodeEdit}
+						onNodeDelete={handleGraphNodeDelete}
+						onAddEdge={openAddEdge}
+						isReadOnly={false}
+						isOwnNode={(n) => isOwnNode(n)}
+						onToggleNodeList={() => (nodeListCollapsed = !nodeListCollapsed)}
+						nodeListVisible={!nodeListCollapsed}
+					/>
 				</div>
 			{/if}
 		</div>
 	</div>
+
+	<!-- Add Edge Sheet -->
+	<AddEdgeSheet
+		show={showAddEdge}
+		{argumentId}
+		{nodes}
+		{edges}
+		defaultFromNodeId={addEdgeDefaultFromId}
+		defaultToNodeId={null}
+		onClose={closeAddEdge}
+		onEdgeAdded={handleEdgeAdded}
+	/>
 
 	<!-- Add Node Sheet -->
 	<AddNodeSheet
@@ -770,60 +813,6 @@
 		background: var(--color-surface);
 	}
 
-	/* Structural Flags */
-	.structural-flags {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		margin-top: var(--space-xs);
-	}
-
-	.flag-item {
-		display: flex;
-		align-items: center;
-		gap: var(--space-xs);
-		padding: 6px var(--space-sm);
-		border-radius: var(--border-radius-sm);
-		font-size: 0.8rem;
-		line-height: 1.3;
-	}
-
-	.flag-warning {
-		background: color-mix(in srgb, var(--color-warning) 8%, transparent);
-		color: var(--color-warning);
-	}
-
-	.flag-error {
-		background: color-mix(in srgb, var(--color-error) 8%, transparent);
-		color: var(--color-error);
-	}
-
-	.flag-icon {
-		flex-shrink: 0;
-		font-size: 0.9rem;
-	}
-
-	.flag-message {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.flag-dismiss {
-		flex-shrink: 0;
-		background: none;
-		border: none;
-		cursor: pointer;
-		color: inherit;
-		opacity: 0.6;
-		font-size: 1rem;
-		padding: 0 4px;
-		line-height: 1;
-	}
-
-	.flag-dismiss:hover {
-		opacity: 1;
-	}
-
 	/* Inline Error */
 	.inline-error {
 		display: flex;
@@ -900,6 +889,10 @@
 		flex: 1;
 	}
 
+	.node-list-collapsed .panel-right {
+		flex: 1;
+	}
+
 	.panel-header {
 		display: flex;
 		flex-direction: column;
@@ -942,6 +935,7 @@
 		flex: 1;
 		min-width: 0;
 		overflow: hidden;
+		position: relative;
 	}
 
 	/* Desktop-only elements */
@@ -995,11 +989,6 @@
 
 		.builder-status {
 			padding: var(--space-xs) var(--space-sm);
-		}
-
-		.structural-flags {
-			max-height: 80px;
-			overflow-y: auto;
 		}
 	}
 

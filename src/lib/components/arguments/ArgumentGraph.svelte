@@ -1,18 +1,103 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { ArgumentNode, ArgumentEdge } from '$lib/types/argument';
+	import type {
+		ArgumentNode,
+		ArgumentEdge,
+		ArgumentNodeType,
+		StructuralFlag
+	} from '$lib/types/argument';
 	import { NODE_TYPE_CONFIGS } from '$lib/types/argument';
-	import { calculateNodePositions } from '$lib/utils/argumentUtils';
-	import { ZoomIn, ZoomOut, Maximize2 } from '@lucide/svelte';
+	import { calculateNodePositions, computeStructuralFlags } from '$lib/utils/argumentUtils';
+	import { analyzeNodeContent } from '$lib/utils/rhetoricalAnalysis';
+	import { ZoomIn, ZoomOut, Maximize2, List } from '@lucide/svelte';
+	import GraphNodePopover from './GraphNodePopover.svelte';
 
 	interface Props {
 		nodes: ArgumentNode[];
 		edges: ArgumentEdge[];
 		selectedNodeId: string | null;
 		onNodeSelect: (nodeId: string) => void;
+		/** Structural flags to show as badges on graph nodes */
+		structuralFlags?: StructuralFlag[];
+		/** Callback to edit a node (opens edit UI in parent) */
+		onNodeEdit?: (
+			nodeId: string,
+			updates: { content?: string; type?: ArgumentNodeType }
+		) => Promise<void> | void;
+		/** Callback to delete a node */
+		onNodeDelete?: (nodeId: string) => void;
+		/** Callback to open the add-edge sheet with a from-node pre-selected */
+		onAddEdge?: (fromNodeId: string) => void;
+		/** Whether the current user can edit (false = read-only for all nodes) */
+		isReadOnly?: boolean;
+		/** Check if a specific node belongs to the current user (for shared graphs) */
+		isOwnNode?: (node: ArgumentNode) => boolean;
+		/** Callback to toggle the node list panel open */
+		onToggleNodeList?: () => void;
+		/** Whether the node list is currently visible */
+		nodeListVisible?: boolean;
 	}
 
-	let { nodes, edges, selectedNodeId, onNodeSelect }: Props = $props();
+	let {
+		nodes,
+		edges,
+		selectedNodeId,
+		onNodeSelect,
+		structuralFlags = [],
+		onNodeEdit,
+		onNodeDelete,
+		onAddEdge,
+		isReadOnly = false,
+		isOwnNode,
+		onToggleNodeList,
+		nodeListVisible = false
+	}: Props = $props();
+
+	// ── Popover state ──────────────────────────────────────────────
+	let popoverNodeId = $state<string | null>(null);
+	let popoverX = $state(0);
+	let popoverY = $state(0);
+
+	const popoverNode = $derived(
+		popoverNodeId ? (nodes.find((n) => n.id === popoverNodeId) ?? null) : null
+	);
+
+	function openPopover(nodeId: string, screenX: number, screenY: number) {
+		popoverNodeId = nodeId;
+		popoverX = screenX;
+		popoverY = screenY;
+	}
+
+	function closePopover() {
+		popoverNodeId = null;
+	}
+
+	// ── Per-node alert badge counts ────────────────────────────────
+	// Pre-compute so we can show a small indicator on each SVG node
+	const nodeAlertCounts = $derived.by(() => {
+		const counts = new Map<string, { errors: number; warnings: number }>();
+		for (const node of nodes) {
+			let errors = 0;
+			let warnings = 0;
+			// Structural flags for this node
+			for (const f of structuralFlags) {
+				if (f.nodeId === node.id) {
+					if (f.severity === 'error') errors++;
+					else warnings++;
+				}
+			}
+			// Rhetorical alerts
+			const rhetorical = analyzeNodeContent(node.content, node.type);
+			for (const a of rhetorical) {
+				if (a.severity === 'error') errors++;
+				else if (a.severity === 'warning') warnings++;
+			}
+			if (errors > 0 || warnings > 0) {
+				counts.set(node.id, { errors, warnings });
+			}
+		}
+		return counts;
+	});
 
 	// Pan and zoom state
 	let svgElement: SVGSVGElement | undefined = $state();
@@ -420,6 +505,9 @@
 			return;
 		}
 		onNodeSelect(nodeId);
+
+		// Open the popover positioned near the click
+		openPopover(nodeId, e.clientX, e.clientY);
 	}
 
 	// Zoom controls
@@ -488,6 +576,40 @@
 		manualPositions = new Map();
 	}
 
+	function panToNode(nodeId: string) {
+		const pos = positions.get(nodeId);
+		if (!pos) return;
+
+		// Close any existing popover first
+		closePopover();
+
+		// Center the viewBox on the target node
+		const centerX = pos.x + NODE_WIDTH / 2;
+		const centerY = pos.y + NODE_HEIGHT / 2;
+
+		viewBox = {
+			x: centerX - viewBox.w / 2,
+			y: centerY - viewBox.h / 2,
+			w: viewBox.w,
+			h: viewBox.h
+		};
+
+		// Select the node
+		onNodeSelect(nodeId);
+
+		// Open the popover on the target node after a brief delay
+		// so the pan completes and we can compute screen coords
+		requestAnimationFrame(() => {
+			if (!svgElement || !containerElement) return;
+			const svgRect = svgElement.getBoundingClientRect();
+			const scaleX = svgRect.width / viewBox.w;
+			const scaleY = svgRect.height / viewBox.h;
+			const screenX = svgRect.left + (centerX - viewBox.x) * scaleX;
+			const screenY = svgRect.top + (centerY - viewBox.y) * scaleY;
+			openPopover(nodeId, screenX, screenY);
+		});
+	}
+
 	// Fit to view on mount and when nodes change significantly
 	let lastNodeCount = $state(0);
 
@@ -507,6 +629,17 @@
 <div class="graph-container" bind:this={containerElement}>
 	<!-- Zoom Controls -->
 	<div class="graph-controls">
+		{#if onToggleNodeList}
+			<button
+				class="control-btn"
+				class:active={nodeListVisible}
+				onclick={onToggleNodeList}
+				title={nodeListVisible ? 'Hide node list' : 'Show node list'}
+				aria-label={nodeListVisible ? 'Hide node list' : 'Show node list'}
+			>
+				<List size={16} />
+			</button>
+		{/if}
 		<button class="control-btn" onclick={zoomIn} title="Zoom in" aria-label="Zoom in">
 			<ZoomIn size={16} />
 		</button>
@@ -657,6 +790,7 @@
 					{@const displayText = getDisplayText(node.content)}
 					{#if pos}
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						{@const alertInfo = nodeAlertCounts.get(node.id)}
 						<g
 							class="node-group"
 							class:selected={isSelected}
@@ -732,7 +866,6 @@
 									font-weight="700"
 									font-family="var(--font-family-ui, sans-serif)"
 									letter-spacing="0.08em"
-									text-transform="uppercase"
 								>
 									{config.label.toUpperCase()}{#if node.is_root}
 										★{/if}
@@ -767,11 +900,96 @@
 									</p>
 								</foreignObject>
 							</g>
+
+							<!-- Alert badge indicator (rendered outside clip so it's always visible) -->
+							{#if alertInfo}
+								{#if alertInfo.errors > 0}
+									<circle
+										cx={NODE_WIDTH - 6}
+										cy="6"
+										r="7"
+										fill="#ef4444"
+										stroke={config.bgColor}
+										stroke-width="2"
+										class="alert-badge"
+									/>
+									<text
+										x={NODE_WIDTH - 6}
+										y="6"
+										text-anchor="middle"
+										dominant-baseline="central"
+										fill="#fff"
+										font-size="8"
+										font-weight="700"
+										font-family="var(--font-family-ui, sans-serif)"
+										style="pointer-events:none"
+									>
+										{alertInfo.errors}
+									</text>
+								{:else if alertInfo.warnings > 0}
+									<circle
+										cx={NODE_WIDTH - 6}
+										cy="6"
+										r="7"
+										fill="#eab308"
+										stroke={config.bgColor}
+										stroke-width="2"
+										class="alert-badge"
+									/>
+									<text
+										x={NODE_WIDTH - 6}
+										y="6"
+										text-anchor="middle"
+										dominant-baseline="central"
+										fill="#000"
+										font-size="8"
+										font-weight="700"
+										font-family="var(--font-family-ui, sans-serif)"
+										style="pointer-events:none"
+									>
+										{alertInfo.warnings}
+									</text>
+								{/if}
+							{/if}
 						</g>
 					{/if}
 				{/each}
 			</g>
 		</svg>
+	{/if}
+
+	<!-- Node popover (rendered in HTML layer above the SVG) -->
+	{#if popoverNode}
+		{@const nodeIsReadOnly = isReadOnly || (isOwnNode ? !isOwnNode(popoverNode) : false)}
+		<GraphNodePopover
+			node={popoverNode}
+			{nodes}
+			{edges}
+			{structuralFlags}
+			x={popoverX}
+			y={popoverY}
+			containerRect={containerElement?.getBoundingClientRect() ?? null}
+			onClose={closePopover}
+			onEdit={nodeIsReadOnly ? undefined : onNodeEdit}
+			onDelete={nodeIsReadOnly
+				? undefined
+				: onNodeDelete
+					? (id) => {
+							closePopover();
+							onNodeDelete!(id);
+						}
+					: undefined}
+			onAddEdge={nodeIsReadOnly
+				? undefined
+				: onAddEdge
+					? (id) => {
+							closePopover();
+							onAddEdge!(id);
+						}
+					: undefined}
+			onFocusNode={panToNode}
+			isReadOnly={nodeIsReadOnly}
+		/>
 	{/if}
 </div>
 
@@ -828,6 +1046,16 @@
 		color: var(--color-primary, #cfe0e8);
 		border-color: var(--color-primary, #cfe0e8);
 		background: color-mix(in srgb, var(--color-primary, #cfe0e8) 5%, var(--color-surface, #1a1a1a));
+	}
+
+	.control-btn.active {
+		color: var(--color-primary, #cfe0e8);
+		border-color: var(--color-primary, #cfe0e8);
+		background: color-mix(
+			in srgb,
+			var(--color-primary, #cfe0e8) 10%,
+			var(--color-surface, #1a1a1a)
+		);
 	}
 
 	/* Empty state */
@@ -890,6 +1118,15 @@
 
 	.root-indicator {
 		transition: opacity 0.15s ease;
+	}
+
+	.alert-badge {
+		filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+		transition: r 0.15s ease;
+	}
+
+	.node-group:hover .alert-badge {
+		r: 8;
 	}
 
 	/* Responsive */

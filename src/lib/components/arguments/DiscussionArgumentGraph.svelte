@@ -111,7 +111,7 @@
 	let selectedNodeId = $state<string | null>(null);
 	let filterType = $state<ArgumentNodeType | 'all'>('all');
 	let showGraph = $state(true);
-	let nodeListCollapsed = $state(false);
+	let nodeListCollapsed = $state(true);
 	let coachDismissed = $state(false);
 	let mobileView = $state<'list' | 'graph'>('list');
 	let creatingGraph = $state(false);
@@ -692,6 +692,17 @@
 		addEdgeDefaultToId = null;
 	}
 
+	async function handleGraphNodeEdit(
+		nodeId: string,
+		updates: { content?: string; type?: ArgumentNodeType }
+	) {
+		await handleEditNode(nodeId, updates);
+	}
+
+	function handleGraphNodeDelete(nodeId: string) {
+		handleDeleteNode(nodeId);
+	}
+
 	function requestRegenerate() {
 		if (hasExistingContent) {
 			showRegenerateConfirm = true;
@@ -830,24 +841,6 @@
 		<!-- Status bar -->
 		<div class="graph-status">
 			<CompletenessBar {completeness} />
-
-			{#if visibleFlags.length > 0}
-				<div class="structural-flags">
-					{#each visibleFlags as flag}
-						<div class="flag-item flag-{flag.severity}">
-							<span class="flag-icon">{flag.severity === 'error' ? '⚠' : '💡'}</span>
-							<span class="flag-message">{flag.message}</span>
-							<button
-								class="flag-dismiss"
-								onclick={() => dismissFlag(getFlagKey(flag))}
-								title="Dismiss"
-							>
-								×
-							</button>
-						</div>
-					{/each}
-				</div>
-			{/if}
 
 			{#if coachPrompt && !coachDismissed}
 				<CoachBanner prompt={coachPrompt} onAction={handleCoachAction} onDismiss={dismissCoach} />
@@ -1014,7 +1007,20 @@
 			<!-- Right panel: Graph visualization -->
 			{#if showGraph}
 				<div class="graph-viz-panel" class:mobile-hidden={mobileView !== 'graph'}>
-					<ArgumentGraph {nodes} {edges} {selectedNodeId} onNodeSelect={selectNode} />
+					<ArgumentGraph
+						{nodes}
+						{edges}
+						{selectedNodeId}
+						onNodeSelect={selectNode}
+						structuralFlags={visibleFlags}
+						onNodeEdit={handleGraphNodeEdit}
+						onNodeDelete={handleGraphNodeDelete}
+						onAddEdge={(fromId) => openAddEdge(fromId)}
+						isReadOnly={false}
+						isOwnNode={(n) => isOwnNode(n)}
+						onToggleNodeList={() => (nodeListCollapsed = !nodeListCollapsed)}
+						nodeListVisible={!nodeListCollapsed}
+					/>
 				</div>
 			{/if}
 		</div>
@@ -1309,59 +1315,6 @@
 		border-bottom: 1px solid var(--color-border, #333);
 	}
 
-	.structural-flags {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		max-height: 7.5rem;
-		overflow-y: auto;
-		-webkit-overflow-scrolling: touch;
-	}
-
-	.flag-item {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.35rem 0.6rem;
-		border-radius: var(--border-radius-md, 8px);
-		font-size: 0.8rem;
-	}
-
-	.flag-warning {
-		background: rgba(234, 179, 8, 0.1);
-		color: #eab308;
-	}
-
-	.flag-error {
-		background: rgba(239, 68, 68, 0.1);
-		color: #ef4444;
-	}
-
-	.flag-icon {
-		flex-shrink: 0;
-		font-size: 0.85rem;
-	}
-
-	.flag-message {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.flag-dismiss {
-		background: none;
-		border: none;
-		color: inherit;
-		cursor: pointer;
-		padding: 0 0.25rem;
-		font-size: 1rem;
-		opacity: 0.6;
-		flex-shrink: 0;
-	}
-
-	.flag-dismiss:hover {
-		opacity: 1;
-	}
-
 	/* Inline error */
 	.inline-error {
 		display: flex;
@@ -1452,7 +1405,7 @@
 	.graph-panels {
 		display: flex;
 		flex-direction: row;
-		height: max(400px, calc(100vh - 24rem));
+		height: max(400px, calc(100vh - 25vh));
 		overflow: hidden;
 	}
 
