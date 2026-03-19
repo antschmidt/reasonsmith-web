@@ -11,7 +11,8 @@
 		LINK_CITATION_TO_DISCUSSION,
 		UPDATE_DISCUSSION_VERSION_CITATION,
 		GET_DISCUSSION_CITATIONS,
-		REMOVE_CITATION_FROM_DISCUSSION
+		REMOVE_CITATION_FROM_DISCUSSION,
+		GET_DISCUSSION_ARGUMENT
 	} from '$lib/graphql/queries';
 	import {
 		formatChicagoCitation,
@@ -37,6 +38,7 @@
 	import SocialMediaImportDisplay from '$lib/components/SocialMediaImportDisplay.svelte';
 	import JobQueueProgress from '$lib/components/ui/JobQueueProgress.svelte';
 	import { jobQueue } from '$lib/stores/jobQueue.svelte';
+	import DiscussionArgumentGraph from '$lib/components/arguments/DiscussionArgumentGraph.svelte';
 
 	// Get parameters
 	const discussionId = $page.params.id;
@@ -99,6 +101,8 @@
 	let showCitationForm = $state(false);
 	let editingCitation = $state<Citation | null>(null);
 	let expandedCitationIds = $state<Set<string>>(new Set());
+	let argumentGraphExpanded = $state(false);
+	let hasArgumentGraph = $state<boolean | null>(null);
 
 	// User
 	let user = $state(nhost.auth.getUser());
@@ -158,6 +162,17 @@
 		return new Date(draft.edited_at) > new Date(draft.good_faith_last_evaluated);
 	});
 
+	let draftTextLength = $derived.by(() => {
+		const plainTitle = (title || '').trim();
+		const effectiveTitle = plainTitle === 'Untitled Discussion' ? '' : plainTitle;
+		// Simple HTML strip for length check
+		const plainDesc = (description || '')
+			.replace(/<[^>]*>/g, '')
+			.replace(/&nbsp;/g, ' ')
+			.trim();
+		return effectiveTitle.length + plainDesc.length;
+	});
+
 	let hasCredits = $derived.by(() => {
 		if (!contributor) return false;
 		return canUseAnalysis(contributor);
@@ -206,6 +221,15 @@
 								good_faith_score
 								good_faith_label
 								good_faith_last_evaluated
+							}
+							posts(where: { status: { _eq: "approved" } }, order_by: { created_at: asc }) {
+								id
+								content
+								contributor {
+									id
+									handle
+									display_name
+								}
 							}
 						}
 					}
@@ -396,11 +420,26 @@
 					}
 				}
 			}
+
+			// Check if an argument graph exists for this discussion
+			await checkForArgumentGraph();
 		} catch (err: any) {
 			console.error('Error loading draft:', err);
 			error = err.message || 'Failed to load draft';
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function checkForArgumentGraph() {
+		try {
+			const result = await nhost.graphql.request(GET_DISCUSSION_ARGUMENT, {
+				discussionId
+			});
+			const args = (result as any).data?.argument;
+			hasArgumentGraph = Array.isArray(args) && args.length > 0;
+		} catch {
+			hasArgumentGraph = null;
 		}
 	}
 
@@ -1599,6 +1638,26 @@
 				/>
 			{/if}
 
+			{#if hasArgumentGraph === false && draftTextLength >= 20 && user && !argumentGraphExpanded}
+				<div class="graph-generation-banner">
+					<div class="graph-banner-content">
+						<div class="graph-banner-icon">✨</div>
+						<div class="graph-banner-text">
+							<h4>Generate Argument Graph</h4>
+							<p>Use AI to extract claims, evidence, and reasoning from your draft content.</p>
+						</div>
+						<button
+							class="graph-banner-btn"
+							onclick={() => {
+								argumentGraphExpanded = true;
+							}}
+						>
+							Open Graph Builder
+						</button>
+					</div>
+				</div>
+			{/if}
+
 			<form
 				class="editor-form"
 				onsubmit={(e) => {
@@ -1815,6 +1874,32 @@
 					</div>
 				</div>
 			{/if}
+
+			<!-- Argument Graph Section -->
+			<div class="argument-graph-section">
+				<button
+					class="argument-graph-toggle"
+					onclick={() => (argumentGraphExpanded = !argumentGraphExpanded)}
+				>
+					<span class="toggle-icon">{argumentGraphExpanded ? '▾' : '▸'}</span>
+					<span class="toggle-label">Argument Graph</span>
+					{#if !argumentGraphExpanded}
+						<span class="toggle-hint">Map out the claims, evidence, and reasoning</span>
+					{/if}
+				</button>
+				{#if argumentGraphExpanded}
+					<div class="argument-graph-content">
+						<DiscussionArgumentGraph
+							{discussionId}
+							discussionTitle={title || ''}
+							discussionDescription={description || ''}
+							userId={user?.id ?? null}
+							discussionPosts={discussion?.posts || []}
+							discussionCitations={styleMetadata.citations || []}
+						/>
+					</div>
+				{/if}
+			</div>
 
 			<footer class="editor-footer">
 				<div class="status-info">
@@ -2459,6 +2544,124 @@
 	.close-btn:hover {
 		background: var(--color-surface-alt);
 		color: var(--color-text-primary);
+	}
+
+	/* Argument Graph Section */
+	.argument-graph-section {
+		margin-top: 2rem;
+		border: 1px solid var(--color-border, #333);
+		border-radius: var(--border-radius-md, 8px);
+		overflow: hidden;
+	}
+
+	.argument-graph-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: 100%;
+		padding: 0.875rem 1rem;
+		background: var(--color-surface-elevated, #1e1e1e);
+		border: none;
+		cursor: pointer;
+		font-family: var(--font-family-sans);
+		font-size: 0.9375rem;
+		font-weight: 600;
+		color: var(--color-text-primary, #e0e0e0);
+		transition: background 0.15s ease;
+		text-align: left;
+	}
+
+	.argument-graph-toggle:hover {
+		background: var(--color-surface-hover, #2a2a2a);
+	}
+
+	.toggle-icon {
+		font-size: 0.8rem;
+		color: var(--color-text-secondary, #888);
+		width: 1rem;
+		flex-shrink: 0;
+	}
+
+	.toggle-label {
+		flex-shrink: 0;
+	}
+
+	.toggle-hint {
+		font-size: 0.8rem;
+		font-weight: 400;
+		color: var(--color-text-tertiary, #666);
+		margin-left: 0.25rem;
+	}
+
+	.argument-graph-content {
+		border-top: 1px solid var(--color-border, #333);
+	}
+
+	.graph-generation-banner {
+		margin-bottom: 1.5rem;
+		padding: 1rem 1.25rem;
+		background: var(--color-surface-elevated, #1a1a2e);
+		border: 1px solid var(--color-accent, #6c63ff);
+		border-radius: var(--border-radius-md, 8px);
+	}
+
+	.graph-banner-content {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.graph-banner-icon {
+		font-size: 1.5rem;
+		flex-shrink: 0;
+	}
+
+	.graph-banner-text {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.graph-banner-text h4 {
+		margin: 0 0 0.25rem 0;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--color-text-primary, #e0e0e0);
+	}
+
+	.graph-banner-text p {
+		margin: 0;
+		font-size: 0.82rem;
+		color: var(--color-text-secondary, #aaa);
+		line-height: 1.4;
+	}
+
+	.graph-banner-btn {
+		flex-shrink: 0;
+		padding: 0.5rem 1rem;
+		background: var(--color-accent, #6c63ff);
+		color: white;
+		border: none;
+		border-radius: var(--border-radius-sm, 6px);
+		font-size: 0.85rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: opacity 0.15s;
+		white-space: nowrap;
+	}
+
+	.graph-banner-btn:hover {
+		opacity: 0.9;
+	}
+
+	@media (max-width: 768px) {
+		.graph-banner-content {
+			flex-direction: column;
+			text-align: center;
+		}
+
+		.graph-banner-btn {
+			width: 100%;
+		}
 	}
 
 	@media (max-width: 768px) {
