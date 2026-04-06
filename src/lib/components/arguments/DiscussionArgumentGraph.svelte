@@ -141,6 +141,42 @@
 	let showGraph = $state(true);
 	let nodeListCollapsed = $state(true);
 	let coachDismissed = $state(false);
+
+	// Node list drill-down: starts at root, click connections to navigate
+	let listFocusNodeId = $state<string | null>(null);
+
+	// Initialize to root when nodes load
+	$effect(() => {
+		if (listFocusNodeId === null && nodes.length > 0) {
+			const root = nodes.find((n) => n.is_root);
+			listFocusNodeId = root?.id ?? nodes[0]?.id ?? null;
+		}
+	});
+
+	const listFocusNode = $derived(
+		listFocusNodeId ? nodes.find((n) => n.id === listFocusNodeId) ?? null : null
+	);
+
+	const listFocusConnections = $derived.by(() => {
+		if (!listFocusNodeId) return [];
+		const result: Array<{ node: ArgumentNode; edgeType: string; direction: 'incoming' | 'outgoing' }> = [];
+		for (const edge of edges) {
+			if (edge.from_node === listFocusNodeId) {
+				const target = nodes.find((n) => n.id === edge.to_node);
+				if (target) result.push({ node: target, edgeType: edge.type, direction: 'outgoing' });
+			}
+			if (edge.to_node === listFocusNodeId) {
+				const source = nodes.find((n) => n.id === edge.from_node);
+				if (source) result.push({ node: source, edgeType: edge.type, direction: 'incoming' });
+			}
+		}
+		return result;
+	});
+
+	function listNavigateTo(nodeId: string) {
+		listFocusNodeId = nodeId;
+		selectedNodeId = nodeId;
+	}
 	let creatingGraph = $state(false);
 	let dismissedFlags = $state<Set<string>>(new Set());
 
@@ -1161,30 +1197,96 @@
 					</div>
 
 					<div class="node-list">
-						{#if filteredNodes.length === 0}
-							<p class="no-nodes">
-								{filterType === 'all'
-									? 'No nodes yet. Start by adding evidence for your claim.'
-									: `No ${filterType} nodes yet.`}
-							</p>
-						{:else}
-							{#each filteredNodes as node (node.id)}
-								{@const nodeIsReadOnly = graphIsReadOnly || (isSharedGraph && !isOwnNode(node))}
-								<NodeCard
-									{node}
-									{nodes}
-									{edges}
-									isSelected={selectedNodeId === node.id}
-									connectionCount={getConnectionCount(node.id, edges)}
-									onSelect={() => selectNode(node.id)}
-									onDelete={nodeIsReadOnly ? () => {} : () => handleDeleteNode(node.id)}
-									onEdit={nodeIsReadOnly ? undefined : handleEditNode}
-									onEditEdge={nodeIsReadOnly ? undefined : handleEditEdge}
-									onAddEdge={nodeIsReadOnly ? undefined : (fromId) => openAddEdge(fromId)}
-									isReadOnly={nodeIsReadOnly}
-									ownerName={getNodeOwnerName(node)}
-								/>
-							{/each}
+						{#if nodes.length === 0}
+							<p class="no-nodes">No nodes yet. Start by adding evidence for your claim.</p>
+						{:else if listFocusNode}
+							{@const focusConfig = NODE_TYPE_CONFIGS[listFocusNode.type]}
+							{@const focusIsReadOnly = graphIsReadOnly || (isSharedGraph && !isOwnNode(listFocusNode))}
+
+							<!-- Breadcrumb back button -->
+							{#if !listFocusNode.is_root}
+								<button class="list-back-btn" onclick={() => {
+									const root = nodes.find((n) => n.is_root);
+									if (root) listNavigateTo(root.id);
+								}}>
+									← Back to root
+								</button>
+							{/if}
+
+							<!-- Focused node card -->
+							<div class="list-focus-card" style="--node-color: {focusConfig.color}; --node-bg: {focusConfig.bgColor}">
+								<div class="list-focus-header">
+									<div class="list-focus-type" style="color: {focusConfig.color}">
+										<span class="list-focus-dot" style="background: {focusConfig.color}"></span>
+										{focusConfig.label.toUpperCase()}
+										{#if listFocusNode.is_root} ★{/if}
+									</div>
+									<div class="list-focus-actions">
+										{#if !focusIsReadOnly && canAddToGraph}
+											<button class="list-action-btn" onclick={() => handleAddConnectedNode(listFocusNode.id)}>+ Add</button>
+										{/if}
+										{#if !focusIsReadOnly}
+											<button class="list-action-btn" onclick={() => {
+												const el = document.querySelector(`[data-node-id="${listFocusNode.id}"]`);
+											}}>Edit</button>
+										{/if}
+									</div>
+								</div>
+								<div class="list-focus-content">{listFocusNode.content}</div>
+							</div>
+
+							<!-- Connected from (incoming) -->
+							{@const incoming = listFocusConnections.filter((c) => c.direction === 'incoming')}
+							{@const outgoing = listFocusConnections.filter((c) => c.direction === 'outgoing')}
+
+							{#if incoming.length > 0}
+								<div class="list-connections-label">Connected from</div>
+								<div class="list-connections">
+									{#each incoming as conn}
+										{@const cConfig = NODE_TYPE_CONFIGS[conn.node.type]}
+										{@const neighborCount = edges.filter((e) => e.from_node === conn.node.id || e.to_node === conn.node.id).length}
+										<button
+											class="list-conn-badge"
+											style="border-color: {cConfig.color}30; --node-color: {cConfig.color}; --node-bg: {cConfig.bgColor}"
+											onclick={() => listNavigateTo(conn.node.id)}
+										>
+											<span class="list-conn-type" style="color: {cConfig.color}">{cConfig.label}</span>
+											<span class="list-conn-edge">{conn.edgeType.replace('_', ' ')}</span>
+											<span class="list-conn-content">{conn.node.content.length > 100 ? conn.node.content.slice(0, 100) + '…' : conn.node.content}</span>
+											{#if neighborCount > 1}
+												<span class="list-conn-count" style="background: {cConfig.color}">{neighborCount - 1}</span>
+											{/if}
+										</button>
+									{/each}
+								</div>
+							{/if}
+
+							<!-- Connects to (outgoing) -->
+							{#if outgoing.length > 0}
+								<div class="list-connections-label">Connects to</div>
+								<div class="list-connections">
+									{#each outgoing as conn}
+										{@const cConfig = NODE_TYPE_CONFIGS[conn.node.type]}
+										{@const neighborCount = edges.filter((e) => e.from_node === conn.node.id || e.to_node === conn.node.id).length}
+										<button
+											class="list-conn-badge"
+											style="border-color: {cConfig.color}30; --node-color: {cConfig.color}; --node-bg: {cConfig.bgColor}"
+											onclick={() => listNavigateTo(conn.node.id)}
+										>
+											<span class="list-conn-type" style="color: {cConfig.color}">{cConfig.label}</span>
+											<span class="list-conn-edge">{conn.edgeType.replace('_', ' ')}</span>
+											<span class="list-conn-content">{conn.node.content.length > 100 ? conn.node.content.slice(0, 100) + '…' : conn.node.content}</span>
+											{#if neighborCount > 1}
+												<span class="list-conn-count" style="background: {cConfig.color}">{neighborCount - 1}</span>
+											{/if}
+										</button>
+									{/each}
+								</div>
+							{/if}
+
+							{#if incoming.length === 0 && outgoing.length === 0}
+								<p class="no-nodes">No connections yet.</p>
+							{/if}
 						{/if}
 					</div>
 				{/if}
@@ -1887,9 +1989,161 @@
 		padding: 0.5rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.4rem;
 		touch-action: pan-y;
 		overscroll-behavior: contain;
+	}
+
+	/* Drill-down list styles */
+	.list-back-btn {
+		background: none;
+		border: none;
+		color: var(--color-text-tertiary, #607d8b);
+		font-size: 11px;
+		font-family: var(--font-family-ui, sans-serif);
+		cursor: pointer;
+		padding: 4px 0;
+		text-align: left;
+		transition: color 0.12s;
+	}
+
+	.list-back-btn:hover {
+		color: var(--color-text-primary, #eceff1);
+	}
+
+	.list-focus-card {
+		background: var(--node-bg);
+		border: 1px solid color-mix(in srgb, var(--node-color) 35%, var(--color-border, #333));
+		border-radius: 8px;
+		padding: 10px 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.list-focus-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 6px;
+	}
+
+	.list-focus-type {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 10px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.07em;
+		font-family: var(--font-family-ui, sans-serif);
+	}
+
+	.list-focus-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.list-focus-actions {
+		display: flex;
+		gap: 4px;
+	}
+
+	.list-action-btn {
+		background: none;
+		border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+		border-radius: 5px;
+		color: var(--color-text-secondary, #90a4ae);
+		padding: 2px 8px;
+		font-size: 11px;
+		font-family: var(--font-family-ui, sans-serif);
+		cursor: pointer;
+		transition: all 0.12s;
+	}
+
+	.list-action-btn:hover {
+		color: var(--color-text-primary, #eceff1);
+		border-color: var(--color-text-secondary, #90a4ae);
+	}
+
+	.list-focus-content {
+		font-size: 13px;
+		line-height: 1.55;
+		color: var(--color-text-primary, #eceff1);
+		font-family: var(--font-family-serif, serif);
+		white-space: pre-wrap;
+		word-break: normal;
+		overflow-wrap: break-word;
+	}
+
+	.list-connections-label {
+		font-size: 9px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-text-tertiary, #607d8b);
+		font-family: var(--font-family-ui, sans-serif);
+		padding: 4px 0 0;
+	}
+
+	.list-connections {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.list-conn-badge {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+		padding: 8px 10px;
+		border: 1px solid;
+		border-radius: 7px;
+		background: color-mix(in srgb, var(--node-bg) 80%, transparent);
+		cursor: pointer;
+		text-align: left;
+		transition: all 0.12s ease;
+		font-family: var(--font-family-ui, sans-serif);
+	}
+
+	.list-conn-badge:hover {
+		filter: brightness(1.3);
+		transform: translateX(2px);
+	}
+
+	.list-conn-type {
+		font-size: 9px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.list-conn-edge {
+		font-size: 9px;
+		color: var(--color-text-tertiary, #607d8b);
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.list-conn-content {
+		font-size: 11px;
+		color: var(--color-text-secondary, #90a4ae);
+		line-height: 1.4;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.list-conn-count {
+		font-size: 9px;
+		font-weight: 700;
+		color: #fff;
+		padding: 1px 5px;
+		border-radius: 10px;
+		flex-shrink: 0;
 	}
 
 	.no-nodes {

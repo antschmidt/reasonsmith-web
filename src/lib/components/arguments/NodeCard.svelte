@@ -691,7 +691,7 @@
 							<span class="connection-type-label">
 								{NODE_TYPE_CONFIGS[conn.node.type].label}:
 							</span>
-							<span class="connection-text">{truncate(conn.node.content, 45)}</span>
+							<span class="connection-text">{truncate(conn.node.content, 80)}</span>
 						</span>
 					</li>
 				{/each}
@@ -812,33 +812,29 @@
 
 	.node-card {
 		background: var(--node-bg, var(--color-surface));
-		border: 1px solid color-mix(in srgb, var(--node-color) 20%, var(--color-border));
+		border: 1px solid color-mix(in srgb, var(--node-color) 25%, var(--color-border));
 		min-height: fit-content;
-		border-radius: var(--border-radius-md, 8px);
+		border-radius: 8px;
 		padding: 0;
 		cursor: pointer;
-		transition: all var(--transition-base, 0.2s) ease;
+		transition: all 0.15s ease;
 		position: relative;
 		overflow: hidden;
 	}
 
 	.node-card:hover {
-		border-color: color-mix(in srgb, var(--node-color) 40%, var(--color-border));
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+		border-color: color-mix(in srgb, var(--node-color) 50%, var(--color-border));
+		transform: translateX(2px);
 	}
 
 	.node-card.selected {
 		border-color: var(--node-color);
-		box-shadow:
-			0 0 0 1px var(--node-color),
-			0 2px 12px color-mix(in srgb, var(--node-color) 15%, transparent);
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-color) 40%, transparent);
 	}
 
 	.node-card.editing {
 		border-color: var(--node-color);
-		box-shadow:
-			0 0 0 1px var(--node-color),
-			0 4px 16px color-mix(in srgb, var(--node-color) 20%, transparent);
+		box-shadow: 0 0 0 1px var(--node-color);
 		cursor: default;
 	}
 
@@ -851,13 +847,13 @@
 		opacity: 0.85;
 	}
 
-	/* Header */
+	/* Header — compact single row */
 	.card-header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: var(--space-sm, 8px);
-		padding: var(--space-xs, 6px) var(--space-sm, 10px);
+		gap: 6px;
+		padding: 8px 10px 0;
 	}
 
 	.type-badge {
@@ -1090,9 +1086,24 @@
 		cursor: not-allowed;
 	}
 
-	/* Content */
+	/* Content — compact preview */
 	.card-content {
-		padding: 0 var(--space-sm, 10px) var(--space-xs, 6px);
+		padding: 4px 10px 8px;
+	}
+
+	.node-content {
+		font-size: 12px;
+		line-height: 1.45;
+		color: var(--color-text-secondary, #90a4ae);
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.node-card.selected .node-content {
+		-webkit-line-clamp: unset;
+		color: var(--color-text-primary, #eceff1);
 	}
 
 	/* Rhetorical Alerts */
@@ -1347,13 +1358,13 @@
 
 	/* Connections panel */
 	.connections-panel {
-		padding: 0 var(--space-sm, 10px) var(--space-xs, 6px);
+		padding: 4px 10px 8px;
 	}
 
 	.connections-divider {
 		height: 1px;
-		background: var(--color-border, rgba(255, 255, 255, 0.08));
-		margin-bottom: var(--space-xs, 6px);
+		background: color-mix(in srgb, var(--node-color) 15%, transparent);
+		margin-bottom: 6px;
 	}
 
 	.connections-edit-label {
@@ -1372,15 +1383,25 @@
 		margin: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 5px;
+		gap: 4px;
 	}
 
 	.connection-item {
 		display: flex;
-		align-items: center;
+		align-items: baseline;
 		gap: 6px;
-		font-size: 0.75rem;
+		padding: 5px 8px;
+		border: 1px solid color-mix(in srgb, var(--node-color) 12%, var(--color-border));
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--node-color) 3%, transparent);
+		font-size: 0.72rem;
 		line-height: 1.4;
+		transition: all 0.12s ease;
+	}
+
+	.connection-item:hover {
+		border-color: color-mix(in srgb, var(--node-color) 30%, var(--color-border));
+		background: color-mix(in srgb, var(--node-color) 6%, transparent);
 	}
 
 	.connection-item.editing-edge {
@@ -1388,14 +1409,13 @@
 	}
 
 	.connection-role {
-		font-size: 0.65rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		font-size: 9px;
+		font-weight: 600;
+		letter-spacing: 0.03em;
 		flex-shrink: 0;
-		min-width: 60px;
 		font-family: var(--font-family-ui, sans-serif);
 		white-space: nowrap;
+		color: var(--color-text-tertiary, #607d8b);
 	}
 
 	.edge-type-select {
@@ -1465,20 +1485,20 @@
 	}
 
 	.connection-type-label {
-		font-size: 0.65rem;
-		font-weight: 600;
-		color: var(--color-text-tertiary, #607d8b);
+		font-size: 10px;
+		font-weight: 700;
 		text-transform: uppercase;
-		letter-spacing: 0.04em;
+		letter-spacing: 0.05em;
 		flex-shrink: 0;
 	}
 
 	.connection-text {
 		color: var(--color-text-secondary, #90a4ae);
+		font-size: 11px;
 		font-family: var(--font-family-serif, serif);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		line-height: 1.4;
+		flex: 1;
+		min-width: 0;
 	}
 
 	/* Score indicator */
