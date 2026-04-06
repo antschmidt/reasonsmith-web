@@ -207,6 +207,18 @@ export const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
 };
 
 /** Configuration for multi-pass analysis */
+/** Configuration for web search verification of fact-checking results */
+export interface WebSearchVerificationConfig {
+	/** Whether web search verification is enabled */
+	enabled: boolean;
+	/** Maximum number of claims to verify per analysis (to control costs) */
+	maxClaimsToVerify: number;
+	/** Domains to allow for searches (optional) */
+	allowedDomains?: string[];
+	/** Domains to block from searches (optional) */
+	blockedDomains?: string[];
+}
+
 export interface MultiPassConfig {
 	/** Analysis strategy type */
 	strategy: AnalysisStrategy;
@@ -224,14 +236,23 @@ export interface MultiPassConfig {
 	rateLimiting: RateLimitConfig;
 	/** Whether to skip fact-checking in synthesis (default: true) */
 	skipFactChecking: boolean;
+	/** Web search verification configuration for fact-checking */
+	webSearchVerification?: WebSearchVerificationConfig;
 }
+
+/** Default web search verification configuration */
+export const DEFAULT_WEB_SEARCH_VERIFICATION_CONFIG: WebSearchVerificationConfig = {
+	enabled: false, // Disabled by default until explicitly enabled
+	maxClaimsToVerify: 5
+};
 
 /** Default configuration for featured analyses */
 export const FEATURED_CONFIG: Partial<MultiPassConfig> = {
 	strategy: 'multi_featured',
 	maxIndividualClaims: Infinity,
 	isFeatured: true,
-	complexityConfidenceThreshold: 0.65
+	complexityConfidenceThreshold: 0.65,
+	webSearchVerification: DEFAULT_WEB_SEARCH_VERIFICATION_CONFIG
 };
 
 /** Default configuration for academic analyses */

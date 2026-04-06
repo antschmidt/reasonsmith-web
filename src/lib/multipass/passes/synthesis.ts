@@ -5,18 +5,32 @@
  * Produces output in the Featured Analysis format (good_faith, logical_fallacies, etc.)
  * which is compatible with the public showcase page.
  * Uses tool calling for guaranteed valid JSON output.
+ *
+ * Optionally runs web search verification on claims flagged as False/Unverified
+ * to reduce false positives.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import { logger } from '$lib/logger';
 import { calculatePreliminaryScore } from '../prompts/synthesis';
-import type { ClaimAnalysisResult, MultiPassConfig, AnalysisContext, TokenUsage } from '../types';
+import type {
+	ClaimAnalysisResult,
+	MultiPassConfig,
+	AnalysisContext,
+	TokenUsage,
+	WebSearchVerificationConfig
+} from '../types';
+import { DEFAULT_WEB_SEARCH_VERIFICATION_CONFIG } from '../types';
 import type {
 	GoodFaithResult,
 	Claim,
 	AnalysisFinding,
 	FactCheckFinding
 } from '$lib/goodFaith/types';
+import {
+	runWebSearchVerification,
+	type WebSearchVerificationResult
+} from './webSearchVerification';
 
 /**
  * Featured analysis response format (matches what the public page expects)
@@ -156,9 +170,17 @@ export async function runSynthesisPass(
 ): Promise<{
 	result: GoodFaithResult;
 	usage: TokenUsage;
+	webSearchVerification?: WebSearchVerificationResult;
 }> {
 	const startTime = Date.now();
 	logger.info('[Pass 3] Starting synthesis (using tool calling, featured format)');
+
+	// Log input sizes for debugging
+	const contentLength = originalContent.length;
+	const contentTokensEstimate = Math.ceil(contentLength / 4); // Rough estimate: 4 chars per token
+	logger.info(
+		`[Pass 3] Input sizes - Content: ${contentLength} chars (~${contentTokensEstimate} tokens), Claims: ${claimAnalyses.length}`
+	);
 
 	// Separate completed and failed analyses
 	const completedAnalyses = claimAnalyses.filter((a) => a.status === 'completed');
@@ -181,6 +203,19 @@ export async function runSynthesisPass(
 			context,
 			config.skipFactChecking
 		);
+
+		// Log the user message size
+		const userMessageTokensEstimate = Math.ceil(userMessage.length / 4);
+		logger.info(
+			`[Pass 3] User message: ${userMessage.length} chars (~${userMessageTokensEstimate} tokens)`
+		);
+
+		// Warn if input is very large
+		if (userMessageTokensEstimate > 100000) {
+			logger.warn(
+				`[Pass 3] Very large input (~${userMessageTokensEstimate} tokens) - synthesis may be incomplete`
+			);
+		}
 
 		const requestOptions: Parameters<typeof anthropic.messages.create>[0] = {
 			model: config.models.synthesis,
@@ -220,6 +255,11 @@ export async function runSynthesisPass(
 			cacheReadTokens: (response.usage as any).cache_read_input_tokens || 0
 		};
 
+		// Log token usage for debugging
+		logger.info(
+			`[Pass 3] Token usage - Input: ${response.usage.input_tokens}, Output: ${response.usage.output_tokens}, Stop reason: ${response.stop_reason}`
+		);
+
 		// Check if response was truncated
 		if (response.stop_reason === 'max_tokens') {
 			logger.warn('[Pass 3] Response was truncated due to max_tokens - results may be incomplete');
@@ -250,7 +290,48 @@ export async function runSynthesisPass(
 		);
 
 		// Tool input is already parsed JSON in featured format
-		const featuredResult = normalizeFeaturedResponse(rawInput);
+		let featuredResult = normalizeFeaturedResponse(rawInput);
+
+		// Run web search verification on flagged claims if enabled
+		let webSearchVerification: WebSearchVerificationResult | undefined;
+		const verificationConfig =
+			config.webSearchVerification || DEFAULT_WEB_SEARCH_VERIFICATION_CONFIG;
+
+		if (
+			verificationConfig.enabled &&
+			!config.skipFactChecking &&
+			featuredResult.fact_checking.length > 0
+		) {
+			logger.info(
+				`[Pass 3] Running web search verification on ${featuredResult.fact_checking.length} fact-check findings`
+			);
+
+			try {
+				webSearchVerification = await runWebSearchVerification(
+					featuredResult.fact_checking,
+					verificationConfig,
+					anthropic
+				);
+
+				// Update fact_checking with verified results
+				featuredResult = {
+					...featuredResult,
+					fact_checking: webSearchVerification.verifiedFindings
+				};
+
+				// Add verification usage to total
+				usage.inputTokens += webSearchVerification.usage.inputTokens;
+				usage.outputTokens += webSearchVerification.usage.outputTokens;
+				usage.totalTokens += webSearchVerification.usage.totalTokens;
+
+				logger.info(
+					`[Pass 3] Web search verification complete: ${webSearchVerification.claimsUpdated} claims updated`
+				);
+			} catch (error) {
+				logger.error(`[Pass 3] Web search verification failed: ${error}`);
+				// Continue with unverified results
+			}
+		}
 
 		// Convert to GoodFaithResult format (which includes the featured fields)
 		const result = convertToGoodFaithResult(
@@ -260,17 +341,20 @@ export async function runSynthesisPass(
 		);
 
 		logger.info(
-			`[Pass 3] Synthesis completed in ${Date.now() - startTime}ms (score: ${result.good_faith_score})`
+			`[Pass 3] Synthesis completed in ${Date.now() - startTime}ms (score: ${result.good_faith_score}, ` +
+				`good_faith: ${featuredResult.good_faith?.length || 0}, fallacies: ${featuredResult.logical_fallacies?.length || 0}, ` +
+				`cultish: ${featuredResult.cultish_language?.length || 0}, summary: ${featuredResult.summary?.length || 0} chars)`
 		);
 
-		return { result, usage };
+		return { result, usage, webSearchVerification };
 	} catch (error) {
 		logger.error('[Pass 3] Synthesis failed:', error);
 
 		// Fall back to aggregated result from claim analyses
 		return {
 			result: createAggregatedResult(completedAnalyses, failedAnalyses),
-			usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+			usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+			webSearchVerification: undefined
 		};
 	}
 }
@@ -279,6 +363,15 @@ export async function runSynthesisPass(
  * System prompt for featured synthesis
  */
 const FEATURED_SYNTHESIS_SYSTEM_PROMPT = `You are an expert educator in rhetoric, logic, and argumentation analysis. Your task is to synthesize the results of detailed claim-by-claim analyses into a comprehensive featured analysis.
+
+## CRITICAL: Be Thorough and Exhaustive
+
+For documents with many claims, you MUST produce a correspondingly comprehensive analysis:
+- If there are 50+ claims analyzed, expect to find MANY good faith indicators, fallacies, and patterns
+- Do NOT summarize or condense - list EACH distinct instance found in the claim analyses
+- For each fallacy identified in ANY claim analysis, create a separate finding with examples
+- For each good faith pattern in ANY high-scoring claim, create a separate finding
+- The length of your output should scale with the number of claims analyzed
 
 ## CRITICAL: Balanced Assessment
 
@@ -335,11 +428,20 @@ GENUINE good faith requires:
 
 4. **Fact Checking**: Only include fact-checking results if explicitly requested in the instructions below. If not requested, omit or leave empty.
 
-5. **Write a Comprehensive Summary** (3-5 paragraphs) covering:
+5. **Write a Comprehensive Summary** (4-6 paragraphs for long documents) covering:
    - Tone & Voice Analysis
    - Tactical Assessment (rhetorical strategies, good/bad faith patterns)
    - Impact Analysis (likely audience response, effect on discourse)
    - Constructive Observations (strengths to emulate, weaknesses to avoid)
+
+## Output Expectations by Document Size
+
+- **Small documents (1-10 claims)**: 2-5 findings per category, 3 paragraph summary
+- **Medium documents (11-30 claims)**: 5-15 findings per category, 4 paragraph summary
+- **Large documents (31-75 claims)**: 10-25 findings per category, 5 paragraph summary
+- **Very large documents (75+ claims)**: 20-50+ findings per category, 6 paragraph summary
+
+Do NOT artificially limit your output. If the claim analyses reveal many issues or positive patterns, report ALL of them.
 
 Be thorough, educational, and BALANCED. Report both what works well and what doesn't. Be skeptical of surface-level good faith signals - verify they represent genuine intellectual honesty.`;
 
@@ -370,7 +472,22 @@ function buildFeaturedSynthesisUserMessage(
 
 	let message = `Synthesize the following claim analyses into a featured analysis format.
 
-## Claim Analysis Summary
+`;
+
+	// Add showcase context if available for better framing
+	if (context.showcaseContext?.title) {
+		message += `## Content Being Analyzed
+Title: ${context.showcaseContext.title}
+`;
+		if (context.showcaseContext.subtitle) {
+			message += `Subtitle: ${context.showcaseContext.subtitle}
+`;
+		}
+		message += `
+`;
+	}
+
+	message += `## Claim Analysis Summary
 - Total claims analyzed: ${completedAnalyses.length}
 - Average validity score: ${avgValidity.toFixed(1)}/10
 - Average evidence score: ${avgEvidence.toFixed(1)}/10
@@ -380,10 +497,27 @@ function buildFeaturedSynthesisUserMessage(
 
 **IMPORTANT**: ${highValidityClaims + highEvidenceClaims > 0 ? `The ${highValidityClaims} high-validity and ${highEvidenceClaims} high-evidence claims should each yield good faith indicators.` : 'The claim scores should guide your good faith assessment.'}
 
-## Original Content
+`;
+
+	// For very long content, truncate the original text since claim analyses contain the relevant quotes
+	// This prevents the synthesis from hitting context limits
+	const MAX_CONTENT_LENGTH = 30000; // ~7500 tokens
+	if (originalContent.length > MAX_CONTENT_LENGTH) {
+		const truncatedContent = originalContent.substring(0, MAX_CONTENT_LENGTH);
+		message += `## Original Content (truncated - full text was ${originalContent.length} characters)
+${truncatedContent}
+
+[... content truncated for synthesis. The claim analyses below contain the relevant excerpts ...]
+
+`;
+	} else {
+		message += `## Original Content
 ${originalContent}
 
-## Claim Analyses
+`;
+	}
+
+	message += `## Claim Analyses
 `;
 
 	for (const analysis of completedAnalyses) {

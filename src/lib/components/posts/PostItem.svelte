@@ -3,6 +3,7 @@
 	import GoodFaithBadge from '../ui/GoodFaithBadge.svelte';
 	import SaveButton from '../SaveButton.svelte';
 	import SteelmanBadge from '../SteelmanBadge.svelte';
+	import { sanitizeHtml, sanitizeMultiline } from '$lib/utils/sanitize';
 
 	type Contributor = {
 		id: string;
@@ -214,7 +215,15 @@
 		{@const allPostCitations = citationData?.style_metadata?.citations || []}
 		{@const processedPostContent = processCitationReferences(cleanContent, allPostCitations)}
 
-		<div class="post-content">
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="post-content" onclick={(e) => {
+			const target = e.target;
+			if (target instanceof HTMLAnchorElement && target.dataset.citation) {
+				e.preventDefault();
+				document.getElementById(`citation-${target.dataset.citation}`)?.scrollIntoView({ behavior: 'smooth' });
+			}
+		}}>
 			{#if replyRef}
 				<div class="reply-context">
 					Replying to <a href={`#post-${replyRef.post_id}`}>this comment</a>
@@ -222,13 +231,13 @@
 						<details class="snapshot-details">
 							<summary>View snapshot at time of reply</summary>
 							<div class="snapshot-content">
-								{@html replyRef.snapshot.content.replace(/\n/g, '<br>')}
+								{@html sanitizeMultiline(replyRef.snapshot.content)}
 							</div>
 						</details>
 					{/if}
 				</div>
 			{/if}
-			{@html processedPostContent}
+			{@html sanitizeHtml(processedPostContent)}
 		</div>
 
 		<!-- Display citations if they exist -->
@@ -245,7 +254,7 @@
 							<div class="reference-item" id="citation-{index + 1}">
 								<div class="chicago-citation">
 									<span class="citation-number">{index + 1}.</span>
-									{@html formatChicagoCitation(item)}
+									{@html sanitizeHtml(formatChicagoCitation(item))}
 								</div>
 								<details class="citation-details">
 									<summary>
@@ -297,7 +306,7 @@
 					<div class="context-content">
 						<h4 class="context-title">{historicalVersion.title}</h4>
 						<div class="context-description">
-							{@html historicalVersion.description.replace(/\n/g, '<br>')}
+							{@html sanitizeMultiline(historicalVersion.description)}
 						</div>
 						{#if historicalVersion.created_at}
 							<div class="context-meta">

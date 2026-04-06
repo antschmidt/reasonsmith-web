@@ -303,10 +303,11 @@ export function getCitationNumberById(citationId: string, citations: Citation[])
 
 export function processCitationReferences(content: string, citations: Citation[]): string {
 	// Replace [1], [2], etc. with proper superscript links
+	// Uses data-citation attribute for scroll behavior instead of inline onclick
 	return content.replace(/\[(\d+)\]/g, (match, num) => {
 		const citationNumber = parseInt(num);
 		if (citationNumber > 0 && citationNumber <= citations.length) {
-			return `<sup><a href="#citation-${citationNumber}" class="citation-ref" onclick="document.getElementById('citation-${citationNumber}').scrollIntoView({behavior: 'smooth'})">${citationNumber}</a></sup>`;
+			return `<sup><a href="#citation-${citationNumber}" class="citation-ref" data-citation="${citationNumber}">${citationNumber}</a></sup>`;
 		}
 		return match;
 	});

@@ -1,0 +1,9 @@
+[@Rhetorical Analysis AI or Pattern Matching](zed:///agent/thread/eaf7859d-28af-4e36-9b84-aaff510f4bab?name=Rhetorical+Analysis+AI+or+Pattern+Matching)
+What's Next (Not Done Yet)
+
+1. **Discussion page integration** — Add an "Argument Graph" tab/panel to the discussion page that shows/creates the shared graph using `GET_DISCUSSION_ARGUMENT` / `CREATE_DISCUSSION_ARGUMENT`
+2. **Auto-create graph on discussion creation** — Hook into `CREATE_DISCUSSION_WITH_VERSION` flow to also create the argument shell
+3. **Publish on comment publish** — Call `PUBLISH_USER_NODES` when a commenter's post is published
+4. **Auto-generate graph from analysis** — When the full analysis runs and the user hasn't built a graph, use the extraction endpoint to generate one
+5. **Generate prose from graph** — Future feature: feed the graph structure into a prompt to generate readable prose
+6. **Owner name resolution** — Currently shows "Other" for non-owned nodes; need to join contributor data to show actual display names
