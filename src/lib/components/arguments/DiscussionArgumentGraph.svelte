@@ -139,7 +139,7 @@
 	let selectedNodeId = $state<string | null>(null);
 	let filterType = $state<ArgumentNodeType | 'all'>('all');
 	let showGraph = $state(true);
-	let nodeListCollapsed = $state(true);
+	let nodeListCollapsed = $state(false);
 	let coachDismissed = $state(false);
 
 	// Node list drill-down: starts at root, click connections to navigate
@@ -2170,14 +2170,22 @@
 			overflow: visible;
 		}
 
+		/* On mobile, always show the node list (drill-down is compact) */
 		.node-list-panel.collapsed {
+			flex: none;
+			max-width: none;
+			overflow: visible;
+		}
+
+		/* Hide the collapse strip on mobile — list is always open */
+		.collapsed-strip {
 			display: none;
 		}
 
 		.graph-viz-panel {
 			/* Give the graph most of the screen on mobile */
-			min-height: 60vh;
-			height: calc(100svh - 140px);
+			min-height: 50vh;
+			height: calc(100svh - 200px);
 			flex: none;
 		}
 
