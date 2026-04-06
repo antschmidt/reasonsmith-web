@@ -196,6 +196,25 @@
 		return results;
 	});
 
+	// Alerts for the spotlighted node (structural flags + rhetorical analysis)
+	const spotlightAlerts = $derived.by(() => {
+		if (!spotlightNodeId) return [];
+		const node = nodes.find((n) => n.id === spotlightNodeId);
+		if (!node) return [];
+		const alerts: Array<{ label: string; description: string; severity: 'error' | 'warning' | 'info' }> = [];
+		// Structural flags
+		for (const f of structuralFlags) {
+			if (f.nodeId === spotlightNodeId) {
+				alerts.push({ label: f.type.replace(/_/g, ' '), description: f.message, severity: f.severity });
+			}
+		}
+		// Rhetorical alerts
+		for (const a of analyzeNodeContent(node.content, node.type)) {
+			alerts.push({ label: a.label, description: a.description, severity: a.severity });
+		}
+		return alerts;
+	});
+
 	// Spotlight editing state
 	let spotlightEditing = $state(false);
 	let spotlightEditContent = $state('');
@@ -961,11 +980,31 @@
 		if (minX === Infinity) return; // no visible nodes have positions yet
 
 		const padding = 120;
+		let contentW = maxX - minX + padding * 2;
+		let contentH = maxY - minY + padding * 2;
+
+		// Match the viewBox aspect ratio to the SVG element so nodes aren't stretched
+		const svgRect = svgElement?.getBoundingClientRect();
+		if (svgRect && svgRect.width > 0 && svgRect.height > 0) {
+			const elementAR = svgRect.width / svgRect.height;
+			const contentAR = contentW / contentH;
+			if (contentAR > elementAR) {
+				// Content is wider — expand height to match
+				contentH = contentW / elementAR;
+			} else {
+				// Content is taller — expand width to match
+				contentW = contentH * elementAR;
+			}
+		}
+
+		// Center the content within the expanded viewBox
+		const cx = (minX + maxX) / 2;
+		const cy = (minY + maxY) / 2;
 		viewBox = {
-			x: minX - padding,
-			y: minY - padding,
-			w: maxX - minX + padding * 2,
-			h: maxY - minY + padding * 2
+			x: cx - contentW / 2,
+			y: cy - contentH / 2,
+			w: contentW,
+			h: contentH
 		};
 
 		zoom = 1;
@@ -1091,7 +1130,7 @@
 			bind:this={svgElement}
 			class="graph-svg"
 			viewBox="{viewBox.x} {viewBox.y} {viewBox.w} {viewBox.h}"
-			preserveAspectRatio="xMidYMid meet"
+			preserveAspectRatio="none"
 			onpointerdown={handleMouseDown}
 			onpointermove={handleMouseMove}
 			onpointerup={handleMouseUp}
@@ -1523,55 +1562,64 @@
 								{/if}
 							{/if}
 
-							<!-- Alert badge indicator (rendered outside clip so it's always visible) -->
+							<!-- Alert badge indicator — click to open spotlight with alerts -->
 							{#if alertInfo}
-								{#if alertInfo.errors > 0}
-									<circle
-										cx={NODE_WIDTH - 6}
-										cy="6"
-										r="7"
-										fill="#ef4444"
-										stroke={config.bgColor}
-										stroke-width="2"
-										class="alert-badge"
-									/>
-									<text
-										x={NODE_WIDTH - 6}
-										y="6"
-										text-anchor="middle"
-										dominant-baseline="central"
-										fill="#fff"
-										font-size="8"
-										font-weight="700"
-										font-family="var(--font-family-ui, sans-serif)"
-										style="pointer-events:none"
-									>
-										{alertInfo.errors}
-									</text>
-								{:else if alertInfo.warnings > 0}
-									<circle
-										cx={NODE_WIDTH - 6}
-										cy="6"
-										r="7"
-										fill="#eab308"
-										stroke={config.bgColor}
-										stroke-width="2"
-										class="alert-badge"
-									/>
-									<text
-										x={NODE_WIDTH - 6}
-										y="6"
-										text-anchor="middle"
-										dominant-baseline="central"
-										fill="#000"
-										font-size="8"
-										font-weight="700"
-										font-family="var(--font-family-ui, sans-serif)"
-										style="pointer-events:none"
-									>
-										{alertInfo.warnings}
-									</text>
-								{/if}
+								<!-- svelte-ignore a11y_click_events_have_key_events -->
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<g
+									class="alert-badge-group"
+									onpointerdown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+									onclick={(e) => { e.stopPropagation(); openSpotlight(node.id); }}
+									style="cursor:pointer; pointer-events:auto"
+								>
+									{#if alertInfo.errors > 0}
+										<circle
+											cx={NODE_WIDTH - 6}
+											cy="6"
+											r="7"
+											fill="#ef4444"
+											stroke={config.bgColor}
+											stroke-width="2"
+											class="alert-badge"
+										/>
+										<text
+											x={NODE_WIDTH - 6}
+											y="6"
+											text-anchor="middle"
+											dominant-baseline="central"
+											fill="#fff"
+											font-size="8"
+											font-weight="700"
+											font-family="var(--font-family-ui, sans-serif)"
+											style="pointer-events:none"
+										>
+											{alertInfo.errors}
+										</text>
+									{:else if alertInfo.warnings > 0}
+										<circle
+											cx={NODE_WIDTH - 6}
+											cy="6"
+											r="7"
+											fill="#eab308"
+											stroke={config.bgColor}
+											stroke-width="2"
+											class="alert-badge"
+										/>
+										<text
+											x={NODE_WIDTH - 6}
+											y="6"
+											text-anchor="middle"
+											dominant-baseline="central"
+											fill="#000"
+											font-size="8"
+											font-weight="700"
+											font-family="var(--font-family-ui, sans-serif)"
+											style="pointer-events:none"
+										>
+											{alertInfo.warnings}
+										</text>
+									{/if}
+								</g>
 							{/if}
 						</g>
 					{/if}
@@ -1628,6 +1676,21 @@
 					</div>
 				{:else}
 					<div class="spotlight-content">{spotlightNode.content}</div>
+				{/if}
+
+				<!-- Alerts -->
+				{#if spotlightAlerts.length > 0}
+					<div class="spotlight-alerts">
+						{#each spotlightAlerts as alert}
+							<div class="spotlight-alert" class:error={alert.severity === 'error'} class:warning={alert.severity === 'warning'}>
+								<span class="spotlight-alert-severity">{alert.severity === 'error' ? '!' : '⚠'}</span>
+								<div class="spotlight-alert-body">
+									<span class="spotlight-alert-label">{alert.label}</span>
+									<span class="spotlight-alert-desc">{alert.description}</span>
+								</div>
+							</div>
+						{/each}
+					</div>
 				{/if}
 
 				<!-- Incoming connections (parents) -->
@@ -2049,6 +2112,58 @@
 		white-space: pre-wrap;
 		word-break: normal;
 		overflow-wrap: break-word;
+	}
+
+	.spotlight-alerts {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.spotlight-alert {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		padding: 8px 12px;
+		border-radius: 6px;
+		font-family: var(--font-family-ui, sans-serif);
+		font-size: 12px;
+		line-height: 1.45;
+	}
+
+	.spotlight-alert.error {
+		background: color-mix(in srgb, #ef4444 10%, transparent);
+		border: 1px solid color-mix(in srgb, #ef4444 25%, transparent);
+	}
+
+	.spotlight-alert.warning {
+		background: color-mix(in srgb, #eab308 8%, transparent);
+		border: 1px solid color-mix(in srgb, #eab308 20%, transparent);
+	}
+
+	.spotlight-alert-severity {
+		flex-shrink: 0;
+		font-weight: 700;
+		font-size: 13px;
+	}
+
+	.spotlight-alert.error .spotlight-alert-severity { color: #ef4444; }
+	.spotlight-alert.warning .spotlight-alert-severity { color: #eab308; }
+
+	.spotlight-alert-body {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.spotlight-alert-label {
+		font-weight: 600;
+		text-transform: capitalize;
+		color: var(--color-text-primary, #eceff1);
+	}
+
+	.spotlight-alert-desc {
+		color: var(--color-text-secondary, #90a4ae);
 	}
 
 	.spotlight-connections {
