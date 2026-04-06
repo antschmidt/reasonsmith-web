@@ -1869,7 +1869,8 @@
 	.graph-panels {
 		display: flex;
 		flex-direction: row;
-		height: clamp(420px, 70vh, 900px);
+		height: calc(100dvh - 200px);
+		min-height: 400px;
 		overflow: hidden;
 	}
 
@@ -2219,7 +2220,7 @@
 		}
 
 		.graph-panels {
-			height: clamp(400px, 65vh, 700px);
+			height: calc(100dvh - 200px);
 		}
 	}
 
@@ -2237,7 +2238,7 @@
 		}
 
 		.graph-panels {
-			height: clamp(500px, 75vh, 1000px);
+			height: calc(100dvh - 180px);
 		}
 	}
 </style>
