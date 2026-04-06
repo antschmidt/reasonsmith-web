@@ -141,7 +141,6 @@
 	let showGraph = $state(true);
 	let nodeListCollapsed = $state(true);
 	let coachDismissed = $state(false);
-	let mobileView = $state<'list' | 'graph'>('list');
 	let creatingGraph = $state(false);
 	let dismissedFlags = $state<Set<string>>(new Set());
 
@@ -1029,7 +1028,7 @@
 	<!-- Graph builder UI -->
 	<div class="graph-builder">
 		<!-- Status bar (hidden on mobile when viewing graph) -->
-		<div class="graph-status" class:mobile-graph-active={mobileView === 'graph'}>
+		<div class="graph-status">
 			<CompletenessBar {completeness} />
 
 			{#if coachPrompt && !coachDismissed}
@@ -1064,26 +1063,6 @@
 			</div>
 		{/if}
 
-		<!-- Mobile view toggle -->
-		<div class="mobile-tabs">
-			<button
-				class="mobile-tab"
-				class:active={mobileView === 'list'}
-				onclick={() => (mobileView = 'list')}
-			>
-				<List size={16} />
-				Nodes
-			</button>
-			<button
-				class="mobile-tab"
-				class:active={mobileView === 'graph'}
-				onclick={() => (mobileView = 'graph')}
-			>
-				<Network size={16} />
-				Graph
-			</button>
-		</div>
-
 		<div
 			class="graph-panels"
 			class:graph-hidden={!showGraph}
@@ -1092,8 +1071,7 @@
 			<!-- Left panel: Node list -->
 			<div
 				class="node-list-panel discussion-graph-node-list"
-				class:mobile-hidden={mobileView !== 'list'}
-				class:collapsed={nodeListCollapsed}
+					class:collapsed={nodeListCollapsed}
 			>
 				{#if nodeListCollapsed}
 					<div class="collapsed-strip">
@@ -1214,7 +1192,7 @@
 
 			<!-- Right panel: Graph visualization -->
 			{#if showGraph}
-				<div class="graph-viz-panel" class:mobile-hidden={mobileView !== 'graph'}>
+				<div class="graph-viz-panel">
 					<ArgumentGraph
 						{nodes}
 						{edges}
@@ -1785,34 +1763,6 @@
 		flex-shrink: 0;
 	}
 
-	/* Mobile tabs */
-	.mobile-tabs {
-		display: none;
-		border-bottom: 1px solid var(--color-border, #333);
-	}
-
-	.mobile-tab {
-		flex: 1;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.35rem;
-		padding: 0.6rem;
-		background: none;
-		border: none;
-		border-bottom: 2px solid transparent;
-		color: var(--color-text-secondary, #888);
-		font-size: 0.85rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.mobile-tab.active {
-		color: var(--color-primary, #6366f1);
-		border-bottom-color: var(--color-primary, #6366f1);
-	}
-
 	/* Panels layout */
 	.graph-panels {
 		display: flex;
@@ -1952,10 +1902,6 @@
 
 	/* Responsive */
 	@media (max-width: 768px) {
-		.mobile-tabs {
-			display: flex;
-		}
-
 		.graph-panels {
 			flex-direction: column;
 			height: auto;
@@ -1978,15 +1924,6 @@
 			min-height: 60vh;
 			height: calc(100svh - 140px);
 			flex: none;
-		}
-
-		.mobile-hidden {
-			display: none !important;
-		}
-
-		/* Hide completeness bar & coach on mobile when graph tab is active */
-		.graph-status.mobile-graph-active {
-			display: none;
 		}
 
 		.graph-status {
