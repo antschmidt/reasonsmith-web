@@ -21,6 +21,8 @@
 		defaultToNodeId: string | null;
 		onClose: () => void;
 		onEdgeAdded: (edge: ArgumentEdge) => void;
+		/** Whether this is a shared discussion graph (affects edge publish state) */
+		isSharedGraph?: boolean;
 	}
 
 	let {
@@ -31,7 +33,8 @@
 		defaultFromNodeId,
 		defaultToNodeId,
 		onClose,
-		onEdgeAdded
+		onEdgeAdded,
+		isSharedGraph = false
 	}: Props = $props();
 
 	// Form state
@@ -194,7 +197,7 @@
 				confidence: 1.0,
 				weight: 1.0,
 				metadata: {},
-				isPublished: true
+				isPublished: !isSharedGraph
 			});
 
 			if ((result as any).error) {
@@ -253,14 +256,17 @@
 	></div>
 
 	<!-- Sheet -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="sheet"
 		role="dialog"
 		aria-modal="true"
 		aria-label="Add connection"
+		tabindex="-1"
 		transition:fade={{ duration: 200 }}
 		onclick={handleSheetClick}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') onClose();
+		}}
 	>
 		<header class="sheet-header">
 			<h2>Add Connection</h2>

@@ -76,6 +76,11 @@ async function getPromptCacheTTL(): Promise<PromptCacheTTL> {
 			})
 		});
 
+		if (!response.ok) {
+			logger.warn(`Hasura request failed with status ${response.status}, defaulting cache TTL to off`);
+			return 'off';
+		}
+
 		const result = await response.json();
 		const value = result.data?.site_settings_by_pk?.value;
 

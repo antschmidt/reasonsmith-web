@@ -308,104 +308,330 @@ export function calculateNodePositions(
 	edges: ArgumentEdge[]
 ): Map<string, { x: number; y: number }> {
 	const positions = new Map<string, { x: number; y: number }>();
+	if (nodes.length === 0) return positions;
 
-	const HORIZONTAL_SPACING = 250;
-	const VERTICAL_SPACING = 150;
+	const NODE_W = 280;
+	const NODE_H = 140;
+	const H_GAP = 60; // horizontal gap between nodes
+	const V_GAP = 180; // vertical gap between tiers
+	const MAX_COLS = 3; // max nodes per row before wrapping
+	const ROW_GAP = 30; // vertical gap between wrapped rows within a tier
+
+	// Build lookup structures
+	const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+	const outgoing = new Map<string, Array<{ target: string; type: string }>>();
+	const incoming = new Map<string, Array<{ source: string; type: string }>>();
+
+	for (const edge of edges) {
+		if (!outgoing.has(edge.from_node)) outgoing.set(edge.from_node, []);
+		outgoing.get(edge.from_node)!.push({ target: edge.to_node, type: edge.type });
+		if (!incoming.has(edge.to_node)) incoming.set(edge.to_node, []);
+		incoming.get(edge.to_node)!.push({ source: edge.from_node, type: edge.type });
+	}
 
 	// Find root node
 	const rootNode = nodes.find((n) => n.is_root);
+
 	if (!rootNode) {
-		// No root, just arrange in a grid
-		nodes.forEach((node, index) => {
-			const col = index % 4;
-			const row = Math.floor(index / 4);
+		// No root — arrange in a responsive grid
+		const cols = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
+		nodes.forEach((node, i) => {
 			positions.set(node.id, {
-				x: col * HORIZONTAL_SPACING,
-				y: row * VERTICAL_SPACING
+				x: (i % cols) * (NODE_W + H_GAP),
+				y: Math.floor(i / cols) * V_GAP
 			});
 		});
 		return positions;
 	}
 
-	// Place root at top center
-	positions.set(rootNode.id, { x: 400, y: 50 });
+	// ── Assign nodes to semantic tiers ──────────────────────────
 
-	// Build adjacency map
-	const childMap = new Map<string, string[]>(); // parent -> children
-	for (const edge of edges) {
-		if (!childMap.has(edge.to_node)) {
-			childMap.set(edge.to_node, []);
-		}
-		childMap.get(edge.to_node)!.push(edge.from_node);
+	// Tier 0: Root claim
+	// Tier 1: Claims that derive from root or are directly connected to root
+	// Tier 2: Evidence / counter / qualifier for tier 0-1 claims
+	// Tier 3: Sources (under evidence), warrants (between evidence/claim), rebuttals (under counters)
+	// Tier 4: Remaining connected nodes + orphans
+
+	const placed = new Set<string>();
+	const tiers: Array<Array<{ id: string; parentId?: string; group?: string }>> = [
+		[],
+		[],
+		[],
+		[],
+		[]
+	];
+
+	// Tier 0: root
+	tiers[0].push({ id: rootNode.id });
+	placed.add(rootNode.id);
+
+	// Helper: find nodes connected to `targetId` with a specific incoming edge type
+	function getConnectedByEdgeType(targetId: string, edgeType: string): string[] {
+		return (incoming.get(targetId) || [])
+			.filter((e) => e.type === edgeType && !placed.has(e.source))
+			.map((e) => e.source);
 	}
 
-	// BFS to position nodes by level
-	const visited = new Set<string>([rootNode.id]);
-	const queue: { nodeId: string; level: number; parentX: number }[] = [];
+	function getOutgoingByType(sourceId: string, edgeType: string): string[] {
+		return (outgoing.get(sourceId) || [])
+			.filter((e) => e.type === edgeType && !placed.has(e.target))
+			.map((e) => e.target);
+	}
 
-	// Add root's children to queue
-	const rootChildren = childMap.get(rootNode.id) || [];
-	rootChildren.forEach((childId, index) => {
-		queue.push({
-			nodeId: childId,
-			level: 1,
-			parentX: 400
-		});
-	});
+	// Tier 1: Claims deriving from root, or connected directly
+	const tier1Claims = getConnectedByEdgeType(rootNode.id, 'supports')
+		.concat(getConnectedByEdgeType(rootNode.id, 'derives_from'))
+		.filter((id) => nodeMap.get(id)?.type === 'claim');
 
-	// Track nodes at each level for horizontal positioning
-	const levelNodes = new Map<number, string[]>();
+	// Also add non-claim nodes directly supporting/contradicting root
+	const rootDirectSupport = getConnectedByEdgeType(rootNode.id, 'supports').filter(
+		(id) => nodeMap.get(id)?.type !== 'claim'
+	);
+	const rootCounters = getConnectedByEdgeType(rootNode.id, 'contradicts');
+	const rootQualifiers = getConnectedByEdgeType(rootNode.id, 'qualifies');
 
-	while (queue.length > 0) {
-		const { nodeId, level, parentX } = queue.shift()!;
+	for (const id of tier1Claims) {
+		tiers[1].push({ id, parentId: rootNode.id, group: 'claim' });
+		placed.add(id);
+	}
 
-		if (visited.has(nodeId)) continue;
-		visited.add(nodeId);
+	// All tier-0 and tier-1 claims that we should attach children to
+	const allClaims = [rootNode.id, ...tier1Claims];
 
-		// Track this node at its level
-		if (!levelNodes.has(level)) {
-			levelNodes.set(level, []);
+	// Tier 2: Evidence, counters, qualifiers for all claims
+	for (const claimId of allClaims) {
+		const evidence = getConnectedByEdgeType(claimId, 'supports').filter(
+			(id) => nodeMap.get(id)?.type === 'evidence' || nodeMap.get(id)?.type !== 'claim'
+		);
+		const counters = getConnectedByEdgeType(claimId, 'contradicts');
+		const qualifiers = getConnectedByEdgeType(claimId, 'qualifies');
+
+		for (const id of evidence) {
+			tiers[2].push({ id, parentId: claimId, group: 'evidence' });
+			placed.add(id);
 		}
-		levelNodes.get(level)!.push(nodeId);
+		for (const id of counters) {
+			tiers[2].push({ id, parentId: claimId, group: 'counter' });
+			placed.add(id);
+		}
+		for (const id of qualifiers) {
+			tiers[2].push({ id, parentId: claimId, group: 'qualifier' });
+			placed.add(id);
+		}
+	}
 
-		// Add children to queue
-		const children = childMap.get(nodeId) || [];
-		for (const childId of children) {
-			if (!visited.has(childId)) {
-				queue.push({
-					nodeId: childId,
-					level: level + 1,
-					parentX: 0 // Will be calculated later
-				});
+	// Also add root-direct non-claim nodes to tier 2
+	for (const id of rootDirectSupport) {
+		if (!placed.has(id)) {
+			tiers[2].push({ id, parentId: rootNode.id, group: 'evidence' });
+			placed.add(id);
+		}
+	}
+	for (const id of rootCounters) {
+		if (!placed.has(id)) {
+			tiers[2].push({ id, parentId: rootNode.id, group: 'counter' });
+			placed.add(id);
+		}
+	}
+	for (const id of rootQualifiers) {
+		if (!placed.has(id)) {
+			tiers[2].push({ id, parentId: rootNode.id, group: 'qualifier' });
+			placed.add(id);
+		}
+	}
+
+	// Tier 3: Sources under evidence, warrants, rebuttals under counters
+	for (const entry of tiers[2]) {
+		const node = nodeMap.get(entry.id);
+		if (!node) continue;
+
+		if (node.type === 'evidence' || entry.group === 'evidence') {
+			// Sources cited by this evidence
+			const sources = getOutgoingByType(entry.id, 'cites');
+			for (const id of sources) {
+				tiers[3].push({ id, parentId: entry.id, group: 'source' });
+				placed.add(id);
+			}
+		}
+		if (node.type === 'counter' || entry.group === 'counter') {
+			// Rebuttals that rebut this counter
+			const rebuttals = getConnectedByEdgeType(entry.id, 'rebuts');
+			for (const id of rebuttals) {
+				tiers[3].push({ id, parentId: entry.id, group: 'rebuttal' });
+				placed.add(id);
 			}
 		}
 	}
 
-	// Position nodes at each level
-	levelNodes.forEach((nodeIds, level) => {
-		const totalWidth = (nodeIds.length - 1) * HORIZONTAL_SPACING;
-		const startX = 400 - totalWidth / 2;
-
-		nodeIds.forEach((nodeId, index) => {
-			positions.set(nodeId, {
-				x: startX + index * HORIZONTAL_SPACING,
-				y: 50 + level * VERTICAL_SPACING
+	// Find warrants — they connect evidence to claims, place them in tier 3
+	for (const node of nodes) {
+		if (node.type === 'warrant' && !placed.has(node.id)) {
+			// Place warrants in tier 3
+			const warrantEdges = outgoing.get(node.id) || [];
+			const parentEvidence = warrantEdges.find(
+				(e) => e.type === 'warrants' && placed.has(e.target)
+			);
+			tiers[3].push({
+				id: node.id,
+				parentId: parentEvidence?.target || undefined,
+				group: 'warrant'
 			});
-		});
-	});
+			placed.add(node.id);
+		}
+	}
 
-	// Position any remaining unvisited nodes
-	const unvisited = nodes.filter((n) => !visited.has(n.id));
-	const maxLevel = Math.max(...Array.from(levelNodes.keys()), 0);
+	// Tier 4: Any remaining connected nodes via BFS
+	const frontier = [...placed];
+	for (const nodeId of frontier) {
+		const outs = outgoing.get(nodeId) || [];
+		const ins = incoming.get(nodeId) || [];
+		for (const e of [...outs.map((o) => o.target), ...ins.map((i) => i.source)]) {
+			if (!placed.has(e) && nodeMap.has(e)) {
+				tiers[4].push({ id: e, parentId: nodeId });
+				placed.add(e);
+				frontier.push(e);
+			}
+		}
+	}
 
-	unvisited.forEach((node, index) => {
-		const col = index % 4;
-		const row = Math.floor(index / 4);
-		positions.set(node.id, {
-			x: col * HORIZONTAL_SPACING,
-			y: (maxLevel + 2 + row) * VERTICAL_SPACING
-		});
-	});
+	// Orphan nodes (completely disconnected)
+	for (const node of nodes) {
+		if (!placed.has(node.id)) {
+			tiers[4].push({ id: node.id });
+			placed.add(node.id);
+		}
+	}
+
+	// ── Position each tier ─────────────────────────────────────
+
+	// For each tier, group nodes by parentId, and position groups under their parent
+	// Tier 0 is special: just the root
+
+	let tierY = 0;
+	const parentCenterX = new Map<string, number>();
+
+	// Root position: centered at 0
+	positions.set(rootNode.id, { x: 0, y: tierY });
+	parentCenterX.set(rootNode.id, NODE_W / 2);
+
+	for (let t = 1; t < tiers.length; t++) {
+		const tier = tiers[t];
+		if (tier.length === 0) continue;
+
+		tierY += V_GAP;
+
+		// Group by parentId
+		const groups = new Map<string, typeof tier>();
+		const noParent: typeof tier = [];
+		for (const entry of tier) {
+			if (entry.parentId && parentCenterX.has(entry.parentId)) {
+				if (!groups.has(entry.parentId)) groups.set(entry.parentId, []);
+				groups.get(entry.parentId)!.push(entry);
+			} else {
+				noParent.push(entry);
+			}
+		}
+
+		// Helper: lay out a list of entries in wrapped rows of MAX_COLS,
+	// centered around parentCenterX, returning positioned items and
+	// the total height consumed (including extra rows).
+		const allPositioned: Array<{ id: string; x: number; y: number }> = [];
+		let tierExtraHeight = 0; // extra height from wrapped rows
+
+		function layoutGroup(
+			entries: typeof tier,
+			centerX: number,
+			baseY: number
+		) {
+			// Sort entries: evidence/support left, counters right
+			entries.sort((a, b) => {
+				const order: Record<string, number> = {
+					evidence: 0,
+					source: 0,
+					warrant: 1,
+					qualifier: 2,
+					claim: 2,
+					counter: 3,
+					rebuttal: 3
+				};
+				return (order[a.group || ''] ?? 2) - (order[b.group || ''] ?? 2);
+			});
+
+			const rows: typeof entries[] = [];
+			for (let i = 0; i < entries.length; i += MAX_COLS) {
+				rows.push(entries.slice(i, i + MAX_COLS));
+			}
+
+			for (let r = 0; r < rows.length; r++) {
+				const row = rows[r];
+				const rowWidth = row.length * NODE_W + (row.length - 1) * H_GAP;
+				const startX = centerX - rowWidth / 2;
+				const rowY = baseY + r * (NODE_H + ROW_GAP);
+
+				for (let i = 0; i < row.length; i++) {
+					const x = startX + i * (NODE_W + H_GAP);
+					allPositioned.push({ id: row[i].id, x, y: rowY });
+				}
+
+				const rowExtra = r * (NODE_H + ROW_GAP);
+				if (rowExtra > tierExtraHeight) tierExtraHeight = rowExtra;
+			}
+		}
+
+		// Merge all groups + orphans into one flat list for the tier,
+		// then lay them out together so they stay compact.
+		const allEntries: typeof tier = [];
+
+		// Collect from groups in order: sort groups by parent X so
+		// left-parent children appear left.
+		const sortedGroupIds = [...groups.keys()].sort(
+			(a, b) => (parentCenterX.get(a) ?? 0) - (parentCenterX.get(b) ?? 0)
+		);
+		for (const pid of sortedGroupIds) {
+			const entries = groups.get(pid)!;
+			// Sort within group
+			entries.sort((a, b) => {
+				const order: Record<string, number> = {
+					evidence: 0, source: 0, warrant: 1,
+					qualifier: 2, claim: 2, counter: 3, rebuttal: 3
+				};
+				return (order[a.group || ''] ?? 2) - (order[b.group || ''] ?? 2);
+			});
+			allEntries.push(...entries);
+		}
+		allEntries.push(...noParent);
+
+		// Find the center point for this tier (average of parent centers, or root center)
+		let tierCenterX = NODE_W / 2;
+		if (sortedGroupIds.length > 0) {
+			const parentXs = sortedGroupIds.map((pid) => parentCenterX.get(pid)!);
+			tierCenterX = (Math.min(...parentXs) + Math.max(...parentXs)) / 2;
+		}
+
+		layoutGroup(allEntries, tierCenterX, tierY);
+
+		// Set positions and track centers for next tier
+		for (const p of allPositioned) {
+			positions.set(p.id, { x: p.x, y: p.y });
+			parentCenterX.set(p.id, p.x + NODE_W / 2);
+		}
+
+		// Advance tierY past any extra wrapped rows
+		tierY += tierExtraHeight;
+	}
+
+	// ── Final centering pass ──
+	// Shift everything so there's no negative x values
+	let globalMinX = Infinity;
+	for (const pos of positions.values()) {
+		globalMinX = Math.min(globalMinX, pos.x);
+	}
+	if (globalMinX < 0) {
+		const shift = -globalMinX + H_GAP;
+		for (const [id, pos] of positions) {
+			positions.set(id, { x: pos.x + shift, y: pos.y });
+		}
+	}
 
 	return positions;
 }
@@ -486,6 +712,61 @@ export function getEvidenceNodes(nodes: ArgumentNode[]): ArgumentNode[] {
  */
 export function getClaimNodes(nodes: ArgumentNode[]): ArgumentNode[] {
 	return nodes.filter((n) => n.type === 'claim');
+}
+
+/**
+ * Given a target node type, return the node types that can be created and
+ * connected TO it (the reverse of getValidTargetNodes).
+ *
+ * For example, a `claim` node can receive edges from evidence, qualifier,
+ * counter, warrant, and other claims. A `counter` node can receive a rebuttal.
+ */
+export function getValidSourceTypesForTarget(targetType: ArgumentNodeType): ArgumentNodeType[] {
+	switch (targetType) {
+		case 'claim':
+			return ['evidence', 'qualifier', 'counter', 'warrant', 'claim'];
+		case 'counter':
+			return ['rebuttal'];
+		case 'evidence':
+			return ['source', 'warrant'];
+		case 'source':
+			return [];
+		case 'warrant':
+			return [];
+		case 'qualifier':
+			return [];
+		case 'rebuttal':
+			return [];
+		default:
+			return [];
+	}
+}
+
+/**
+ * Given a new source node type and the existing target node type, return the
+ * edge type and direction label for the relationship.
+ */
+export function getEdgeTypeForConnection(
+	sourceType: ArgumentNodeType,
+	targetType: ArgumentNodeType
+): { edgeType: string; label: string } | null {
+	if (sourceType === 'evidence' && targetType === 'claim')
+		return { edgeType: 'supports', label: 'supports' };
+	if (sourceType === 'counter' && targetType === 'claim')
+		return { edgeType: 'contradicts', label: 'contradicts' };
+	if (sourceType === 'qualifier' && targetType === 'claim')
+		return { edgeType: 'qualifies', label: 'qualifies' };
+	if (sourceType === 'claim' && targetType === 'claim')
+		return { edgeType: 'derives_from', label: 'derives from' };
+	if (sourceType === 'rebuttal' && targetType === 'counter')
+		return { edgeType: 'rebuts', label: 'rebuts' };
+	if (sourceType === 'source' && targetType === 'evidence')
+		return { edgeType: 'cites', label: 'cited by' };
+	if (sourceType === 'warrant' && targetType === 'evidence')
+		return { edgeType: 'warrants', label: 'warrants' };
+	if (sourceType === 'warrant' && targetType === 'claim')
+		return { edgeType: 'warrants', label: 'warrants' };
+	return null;
 }
 
 // ============================================

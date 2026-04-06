@@ -20,7 +20,8 @@
 		GET_DISCUSSION_CITATIONS,
 		LINK_CITATION_TO_DISCUSSION,
 		UPDATE_DISCUSSION_VERSION_AUDIO,
-		GET_DISCUSSION_ARGUMENT
+		GET_DISCUSSION_ARGUMENT,
+		PUBLISH_USER_NODES
 	} from '$lib/graphql/queries';
 	import { createDraftAutosaver, type DraftAutosaver } from '$lib';
 	import {
@@ -734,6 +735,25 @@
 			);
 
 			if (error) throw error;
+
+			// Publish user's unpublished argument graph nodes/edges
+			try {
+				const discussionArgResult = await nhost.graphql.request(GET_DISCUSSION_ARGUMENT, {
+					discussionId: discussion!.id
+				});
+				const argData = Array.isArray((discussionArgResult as any)?.data?.argument)
+					? (discussionArgResult as any).data.argument[0]
+					: null;
+				if (argData?.id && user?.id) {
+					await nhost.graphql.request(PUBLISH_USER_NODES, {
+						argumentId: argData.id,
+						userId: user.id
+					});
+				}
+			} catch (publishNodesErr) {
+				console.warn('Failed to publish user argument nodes:', publishNodesErr);
+				// Non-blocking: comment is still published even if node publish fails
+			}
 
 			// Score the post for steelman quality and award XP (async, don't block UI)
 			if (draftPostId && user?.id) {
@@ -2733,7 +2753,7 @@
 
 		try {
 			// Use local API route during development, Vercel function in production
-			const endpoint = import.meta.env.DEV ? '/api/goodFaith' : '/functions/goodFaith';
+			const endpoint = '/api/goodFaith';
 
 			const response = await fetch(endpoint, {
 				method: 'POST',
@@ -2942,7 +2962,7 @@
 			}
 
 			// Use local API route during development, Vercel function in production
-			const endpoint = import.meta.env.DEV ? '/api/goodFaith' : '/functions/goodFaith';
+			const endpoint = '/api/goodFaith';
 
 			const response = await fetch(endpoint, {
 				method: 'POST',
@@ -3691,8 +3711,10 @@
 					discussionTitle={getDiscussionTitle(discussion)}
 					discussionDescription={getDiscussionDescription(discussion) || ''}
 					userId={user?.id ?? null}
+					isDiscussionAuthor={user ? discussion.contributor.id === user.id : false}
 					discussionPosts={discussion.posts || []}
 					discussionCitations={graphCitations}
+					onRequestStartEdit={startEdit}
 				/>
 			</div>
 		</div>

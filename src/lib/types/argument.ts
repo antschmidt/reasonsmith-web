@@ -364,6 +364,21 @@ export interface GraphNode {
 	};
 }
 
+// ============================================
+// Add Connected Node Context
+// ============================================
+
+/**
+ * Context mode for the AddConnectedNodeDialog:
+ * - 'draft': Discussion is in draft mode or has a newer draft — add directly
+ * - 'choose-owner': Published discussion, user is owner, no comment draft — show choice
+ * - 'comment': Published discussion, user is NOT owner (or chose "comment") — add as comment draft node
+ */
+export type AddNodeContext =
+	| { mode: 'draft' }
+	| { mode: 'choose-owner' }
+	| { mode: 'comment'; commentDraftExists: boolean };
+
 export interface GraphEdge {
 	id: string;
 	source: string;

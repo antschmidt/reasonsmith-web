@@ -18,6 +18,8 @@
 		nodes: ArgumentNode[];
 		edges: ArgumentEdge[];
 		defaultType: ArgumentNodeType | null;
+		/** Pre-select a connection target node (e.g. the currently selected node) */
+		defaultTargetNodeId?: string | null;
 		onClose: () => void;
 		onNodeAdded: (event: { node: ArgumentNode; edges: ArgumentEdge[] }) => void;
 		/** When true, new nodes are created as unpublished drafts (for shared discussion graphs) */
@@ -30,6 +32,7 @@
 		nodes,
 		edges,
 		defaultType,
+		defaultTargetNodeId = null,
 		onClose,
 		onNodeAdded,
 		isSharedGraph = false
@@ -57,15 +60,47 @@
 		'rebuttal'
 	];
 
+	// Suggest the most useful next node type based on the target node
+	function suggestTypeForTarget(targetId: string): ArgumentNodeType | null {
+		const target = nodes.find((n) => n.id === targetId);
+		if (!target) return null;
+		// If target is a claim, the most common next step is adding evidence
+		if (target.type === 'claim') return 'evidence';
+		// If target is a counter, suggest rebuttal
+		if (target.type === 'counter') return 'rebuttal';
+		// If target is evidence, suggest source
+		if (target.type === 'evidence') return 'source';
+		return null;
+	}
+
 	// Reset form when sheet opens/closes or defaultType changes
 	$effect(() => {
 		if (show) {
-			selectedType = defaultType || null;
 			content = '';
-			connectToNodeId = null;
 			drawsFromNodeId = null;
 			justifiesNodeId = null;
 			error = null;
+
+			// Smart defaults: use explicit type if given, otherwise suggest based on target
+			if (defaultType) {
+				selectedType = defaultType;
+			} else if (defaultTargetNodeId) {
+				selectedType = suggestTypeForTarget(defaultTargetNodeId);
+			} else {
+				selectedType = null;
+			}
+
+			// Pre-select connection target if provided and valid for the selected type
+			if (defaultTargetNodeId && selectedType) {
+				const validTargets = selectedType !== 'warrant' ? getValidTargetNodes(selectedType, nodes) : [];
+				if (validTargets.some((n) => n.id === defaultTargetNodeId)) {
+					connectToNodeId = defaultTargetNodeId;
+				} else {
+					connectToNodeId = null;
+				}
+			} else {
+				connectToNodeId = null;
+			}
 		}
 	});
 

@@ -1894,6 +1894,10 @@
 							discussionTitle={title || ''}
 							discussionDescription={description || ''}
 							userId={user?.id ?? null}
+							isDiscussionAuthor={user && discussion
+								? discussion.contributor?.id === user.id
+								: false}
+							isEditMode={true}
 							discussionPosts={discussion?.posts || []}
 							discussionCitations={styleMetadata.citations || []}
 						/>

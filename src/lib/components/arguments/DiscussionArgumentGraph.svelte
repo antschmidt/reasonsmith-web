@@ -24,6 +24,7 @@
 		ExtractionResult
 	} from '$lib/types/argument';
 	import { NODE_TYPE_CONFIGS } from '$lib/types/argument';
+	import { sanitizeMultiline } from '$lib/utils/sanitize';
 	import {
 		computeCompletenessScore,
 		computeStructuralFlags,
@@ -39,6 +40,8 @@
 	import NodeCard from '$lib/components/arguments/NodeCard.svelte';
 	import AddNodeSheet from '$lib/components/arguments/AddNodeSheet.svelte';
 	import AddEdgeSheet from '$lib/components/arguments/AddEdgeSheet.svelte';
+	import AddConnectedNodeDialog from '$lib/components/arguments/AddConnectedNodeDialog.svelte';
+	import type { AddNodeContext } from '$lib/types/argument';
 	import ArgumentGraph from '$lib/components/arguments/ArgumentGraph.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import {
@@ -49,7 +52,8 @@
 		Sparkles,
 		RotateCcw,
 		PanelLeftClose,
-		PanelLeftOpen
+		PanelLeftOpen,
+		FileText
 	} from '@lucide/svelte';
 
 	interface Props {
@@ -57,10 +61,14 @@
 		discussionTitle: string;
 		discussionDescription: string;
 		userId: string | null;
+		/** Whether the current user is the discussion author */
+		isDiscussionAuthor?: boolean;
+		/** Whether the author is currently in edit mode */
+		isEditMode?: boolean;
 		discussionPosts?: Array<{
 			id: string;
 			content: string;
-			contributor?: { display_name?: string; handle?: string };
+			contributor?: { id?: string; display_name?: string; handle?: string };
 		}>;
 		discussionCitations?: Array<{
 			id: string;
@@ -72,6 +80,8 @@
 			point_supported?: string;
 			relevant_quote?: string;
 		}>;
+		/** Callback to request the parent page start the "edit discussion" flow (creates/navigates to draft) */
+		onRequestStartEdit?: () => void;
 	}
 
 	let {
@@ -79,8 +89,11 @@
 		discussionTitle,
 		discussionDescription,
 		userId,
+		isDiscussionAuthor = false,
+		isEditMode = false,
 		discussionPosts = [],
-		discussionCitations = []
+		discussionCitations = [],
+		onRequestStartEdit
 	}: Props = $props();
 
 	// Core data state
@@ -102,6 +115,21 @@
 	// Multi-user shared graph state
 	const isSharedGraph = $derived(argumentData?.discussion_id != null);
 
+	// Graph permission modes
+	type GraphMode = 'author-edit' | 'author-view' | 'commenter' | 'viewer';
+	const graphMode = $derived<GraphMode>(
+		!userId
+			? 'viewer'
+			: isDiscussionAuthor && isEditMode
+				? 'author-edit'
+				: isDiscussionAuthor
+					? 'author-view'
+					: 'commenter'
+	);
+	const canEditGraph = $derived(graphMode === 'author-edit');
+	const canAddToGraph = $derived(graphMode === 'author-edit' || graphMode === 'commenter');
+	const graphIsReadOnly = $derived(!canAddToGraph);
+
 	// UI state
 	let showAddNode = $state(false);
 	let addNodeDefaultType = $state<ArgumentNodeType | null>(null);
@@ -117,10 +145,28 @@
 	let creatingGraph = $state(false);
 	let dismissedFlags = $state<Set<string>>(new Set());
 
+	// Add Connected Node dialog state
+	let showAddConnectedNode = $state(false);
+	let addConnectedTargetNodeId = $state<string | null>(null);
+	let addConnectedContext = $state<AddNodeContext>({ mode: 'draft' });
+
+	/** The target node object for the add-connected-node dialog */
+	const addConnectedTargetNode = $derived(
+		addConnectedTargetNodeId ? (nodes.find((n) => n.id === addConnectedTargetNodeId) ?? null) : null
+	);
+
 	// AI generation state
 	let generating = $state(false);
 	let generateStatus = $state<string | null>(null);
 	let showRegenerateConfirm = $state(false);
+
+	// Synthesize draft state
+	let synthesizing = $state(false);
+	let synthesizeError = $state<string | null>(null);
+	let synthesizedDraft = $state<string | null>(null);
+	let synthesizedOutline = $state<string[]>([]);
+	let synthesizedSuggestions = $state<string[]>([]);
+	let showDraftModal = $state(false);
 
 	// Derived values
 	const completeness = $derived(computeCompletenessScore(nodes));
@@ -241,7 +287,7 @@
 	}
 
 	async function createGraph() {
-		if (!userId) return;
+		if (!userId || !canEditGraph) return;
 		creatingGraph = true;
 		error = null;
 		try {
@@ -284,7 +330,7 @@
 	 * If one already exists, replaces its nodes/edges with the extraction result.
 	 */
 	async function generateGraph() {
-		if (!userId || !canGenerate) return;
+		if (!userId || !canGenerate || !canEditGraph) return;
 
 		generating = true;
 		generateStatus = 'Analyzing discussion content...';
@@ -540,13 +586,32 @@
 		}
 	}
 
+	// Build a map of user ID → display name from available post contributors
+	const contributorNameMap = $derived.by(() => {
+		const map = new Map<string, string>();
+		for (const post of discussionPosts) {
+			const cId = post.contributor?.id;
+			if (cId && !map.has(cId)) {
+				map.set(cId, post.contributor?.display_name || post.contributor?.handle || 'Contributor');
+			}
+		}
+		return map;
+	});
+
 	function isOwnNode(node: ArgumentNode): boolean {
-		return node.owner_id === userId || node.owner_id === null;
+		if (node.owner_id === userId) return true;
+		// Nodes with null owner_id (e.g. auto-generated root claims)
+		// should only be editable by the discussion author
+		if (node.owner_id === null) return isDiscussionAuthor;
+		return false;
 	}
 
 	function getNodeOwnerName(node: ArgumentNode): string | undefined {
 		if (!isSharedGraph || isOwnNode(node)) return undefined;
-		return 'Other';
+		if (node.owner_id) {
+			return contributorNameMap.get(node.owner_id) || 'Other contributor';
+		}
+		return 'Discussion author';
 	}
 
 	async function handleDeleteNode(nodeId: string) {
@@ -692,6 +757,72 @@
 		addEdgeDefaultToId = null;
 	}
 
+	// ── Add Connected Node handlers ─────────────────────────────────
+
+	/**
+	 * Determine the appropriate context and open the add-connected-node dialog.
+	 *
+	 * Flow:
+	 * - If the discussion is in edit mode (draft) → mode: 'draft', add directly
+	 * - If published & user is the owner → mode: 'choose-owner', let them pick
+	 * - If published & user is NOT the owner → mode: 'comment'
+	 */
+	function handleAddConnectedNode(targetNodeId: string) {
+		if (!userId || !argumentData) return;
+
+		addConnectedTargetNodeId = targetNodeId;
+
+		if (isEditMode) {
+			// Already editing a draft — add directly
+			addConnectedContext = { mode: 'draft' };
+		} else if (isDiscussionAuthor) {
+			// Owner viewing a published discussion — offer a choice
+			addConnectedContext = { mode: 'choose-owner' };
+		} else {
+			// Non-owner (commenter) on a published discussion
+			// Check if they already have a comment draft on this discussion
+			// For now we optimistically say false; the parent page is responsible
+			// for creating the draft when needed.
+			addConnectedContext = { mode: 'comment', commentDraftExists: false };
+		}
+
+		showAddConnectedNode = true;
+	}
+
+	function closeAddConnectedNode() {
+		showAddConnectedNode = false;
+		addConnectedTargetNodeId = null;
+	}
+
+	function handleConnectedNodeAdded(event: { node: ArgumentNode; edges: ArgumentEdge[] }) {
+		nodes = [...nodes, event.node];
+		edges = [...edges, ...event.edges];
+		showAddConnectedNode = false;
+		addConnectedTargetNodeId = null;
+		coachDismissed = false;
+	}
+
+	/**
+	 * Owner chose "Edit Discussion" — navigate to the draft editor.
+	 * We close the dialog; the draft page already has isEditMode=true,
+	 * so re-opening the add-connected-node flow there will use mode: 'draft'.
+	 */
+	function handleRequestEditDraft() {
+		closeAddConnectedNode();
+		// Delegate to the parent page which knows how to create/navigate to a draft
+		if (onRequestStartEdit) {
+			onRequestStartEdit();
+		}
+	}
+
+	/**
+	 * Owner chose "New Comment" — switch context to comment mode and re-show the form.
+	 */
+	function handleRequestCommentDraft() {
+		addConnectedContext = { mode: 'comment', commentDraftExists: false };
+		// Dialog stays open, but now in comment/form mode instead of choice mode
+	}
+
 	async function handleGraphNodeEdit(
 		nodeId: string,
 		updates: { content?: string; type?: ArgumentNodeType }
@@ -701,6 +832,65 @@
 
 	function handleGraphNodeDelete(nodeId: string) {
 		handleDeleteNode(nodeId);
+	}
+
+	async function synthesizeDraft() {
+		if (synthesizing || nodes.length === 0 || !canAddToGraph) return;
+
+		synthesizing = true;
+		synthesizeError = null;
+
+		try {
+			const payload = {
+				nodes: nodes.map((n) => ({
+					id: n.id,
+					type: n.type,
+					content: n.content,
+					is_root: n.is_root,
+					implied: n.implied
+				})),
+				edges: edges.map((e) => ({
+					id: e.id,
+					from_node: e.from_node,
+					to_node: e.to_node,
+					type: e.type
+				})),
+				title: argumentData?.title || discussionTitle
+			};
+
+			const response = await fetch('/api/arguments/synthesize', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+
+			if (!response.ok) {
+				const errorData = await response
+					.json()
+					.catch(() => ({ error: 'Failed to synthesize draft' }));
+				throw new Error(errorData.error || `Synthesis failed (${response.status})`);
+			}
+
+			const result = await response.json();
+			synthesizedDraft = result.draft || null;
+			synthesizedOutline = result.outline || [];
+			synthesizedSuggestions = result.suggestions || [];
+			showDraftModal = true;
+		} catch (err: any) {
+			synthesizeError = err.message || 'Failed to synthesize draft';
+		} finally {
+			synthesizing = false;
+		}
+	}
+
+	function closeDraftModal() {
+		showDraftModal = false;
+	}
+
+	function copyDraftToClipboard() {
+		if (synthesizedDraft) {
+			navigator.clipboard.writeText(synthesizedDraft).catch(() => {});
+		}
 	}
 
 	function requestRegenerate() {
@@ -801,13 +991,13 @@
 			</div>
 			{#if userId}
 				<div class="empty-actions-stacked">
-					<Button variant="accent" onclick={generateGraph} disabled={generating}>
+					<Button variant="accent" onclick={generateGraph} disabled={generating || !canEditGraph}>
 						{#snippet icon()}
 							<Sparkles size={18} />
 						{/snippet}
 						Generate from Existing Content
 					</Button>
-					<button class="text-link" onclick={createGraph} disabled={creatingGraph}>
+					<button class="text-link" onclick={createGraph} disabled={creatingGraph || !canEditGraph}>
 						{creatingGraph ? 'Creating...' : 'or start from scratch'}
 					</button>
 				</div>
@@ -838,8 +1028,8 @@
 {:else}
 	<!-- Graph builder UI -->
 	<div class="graph-builder">
-		<!-- Status bar -->
-		<div class="graph-status">
+		<!-- Status bar (hidden on mobile when viewing graph) -->
+		<div class="graph-status" class:mobile-graph-active={mobileView === 'graph'}>
 			<CompletenessBar {completeness} />
 
 			{#if coachPrompt && !coachDismissed}
@@ -936,7 +1126,7 @@
 							>
 								<PanelLeftClose size={16} />
 							</button>
-							{#if canGenerate}
+							{#if canGenerate && canEditGraph}
 								<Button
 									variant="ghost"
 									size="sm"
@@ -954,23 +1144,41 @@
 									{hasExistingContent ? 'Regenerate' : 'Generate'}
 								</Button>
 							{/if}
-							<Button
-								variant="ghost"
-								size="sm"
-								onclick={() => openAddEdge()}
-								title="Connect two existing nodes"
-							>
-								{#snippet icon()}
-									<Link size={14} />
-								{/snippet}
-								Connect
-							</Button>
-							<Button variant="primary" size="sm" onclick={() => openAddNode()}>
-								{#snippet icon()}
-									<Plus size={16} />
-								{/snippet}
-								Add Node
-							</Button>
+							{#if canAddToGraph}
+								<Button
+									variant="ghost"
+									size="sm"
+									onclick={() => openAddEdge()}
+									title="Connect two existing nodes"
+								>
+									{#snippet icon()}
+										<Link size={14} />
+									{/snippet}
+									Connect
+								</Button>
+							{/if}
+							{#if canAddToGraph && nodes.length >= 2}
+								<Button
+									variant="ghost"
+									size="sm"
+									onclick={synthesizeDraft}
+									disabled={synthesizing}
+									title="Synthesize a written draft from your argument graph"
+								>
+									{#snippet icon()}
+										<FileText size={14} />
+									{/snippet}
+									{synthesizing ? 'Writing…' : 'Draft'}
+								</Button>
+							{/if}
+							{#if canAddToGraph}
+								<Button variant="primary" size="sm" onclick={() => openAddNode()}>
+									{#snippet icon()}
+										<Plus size={16} />
+									{/snippet}
+									Add Node
+								</Button>
+							{/if}
 						</div>
 					</div>
 
@@ -983,7 +1191,7 @@
 							</p>
 						{:else}
 							{#each filteredNodes as node (node.id)}
-								{@const nodeIsReadOnly = isSharedGraph && !isOwnNode(node)}
+								{@const nodeIsReadOnly = graphIsReadOnly || (isSharedGraph && !isOwnNode(node))}
 								<NodeCard
 									{node}
 									{nodes}
@@ -1013,13 +1221,21 @@
 						{selectedNodeId}
 						onNodeSelect={selectNode}
 						structuralFlags={visibleFlags}
-						onNodeEdit={handleGraphNodeEdit}
-						onNodeDelete={handleGraphNodeDelete}
-						onAddEdge={(fromId) => openAddEdge(fromId)}
-						isReadOnly={false}
+						onNodeEdit={canEditGraph ? handleGraphNodeEdit : undefined}
+						onNodeDelete={canAddToGraph ? handleGraphNodeDelete : undefined}
+						onAddEdge={canAddToGraph ? (fromId) => openAddEdge(fromId) : undefined}
+						onAddConnectedNode={canAddToGraph
+							? handleAddConnectedNode
+							: userId
+								? handleAddConnectedNode
+								: undefined}
+						isReadOnly={!canAddToGraph}
 						isOwnNode={(n) => isOwnNode(n)}
 						onToggleNodeList={() => (nodeListCollapsed = !nodeListCollapsed)}
 						nodeListVisible={!nodeListCollapsed}
+						argumentId={argumentData.id}
+						{isSharedGraph}
+						onNodeAdded={canAddToGraph ? handleNodeAdded : undefined}
 					/>
 				</div>
 			{/if}
@@ -1049,9 +1265,205 @@
 		onClose={closeAddEdge}
 		onEdgeAdded={handleEdgeAdded}
 	/>
+
+	<!-- Add Connected Node Dialog -->
+	{#if addConnectedTargetNode}
+		<AddConnectedNodeDialog
+			show={showAddConnectedNode}
+			argumentId={argumentData.id}
+			targetNode={addConnectedTargetNode}
+			{nodes}
+			{edges}
+			context={addConnectedContext}
+			{isSharedGraph}
+			onClose={closeAddConnectedNode}
+			onNodeAdded={handleConnectedNodeAdded}
+			onRequestEditDraft={isDiscussionAuthor ? handleRequestEditDraft : undefined}
+			onRequestCommentDraft={isDiscussionAuthor ? handleRequestCommentDraft : undefined}
+		/>
+	{/if}
+
+	{#if showDraftModal && synthesizedDraft}
+		<div
+			class="draft-modal-backdrop"
+			onclick={closeDraftModal}
+			onkeydown={(e) => e.key === 'Escape' && closeDraftModal()}
+			role="dialog"
+			aria-modal="true"
+			aria-label="Synthesized draft"
+		>
+			<div
+				class="draft-modal"
+				onclick={(e) => e.stopPropagation()}
+				onkeydown={(e) => e.stopPropagation()}
+			>
+				<header class="draft-modal-header">
+					<h3>Synthesized Draft</h3>
+					<div class="draft-modal-actions">
+						<button class="draft-copy-btn" onclick={copyDraftToClipboard} title="Copy to clipboard">
+							📋
+						</button>
+						<button class="draft-close-btn" onclick={closeDraftModal} aria-label="Close draft">
+							✕
+						</button>
+					</div>
+				</header>
+
+				{#if synthesizedOutline.length > 0}
+					<div class="draft-outline">
+						<h4>Outline</h4>
+						<ol>
+							{#each synthesizedOutline as heading}
+								<li>{heading}</li>
+							{/each}
+						</ol>
+					</div>
+				{/if}
+
+				<div class="draft-content">
+					{@html sanitizeMultiline(synthesizedDraft)}
+				</div>
+
+				{#if synthesizedSuggestions.length > 0}
+					<div class="draft-suggestions">
+						<h4>Suggestions for Improvement</h4>
+						<ul>
+							{#each synthesizedSuggestions as suggestion}
+								<li>{suggestion}</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
+	{#if synthesizeError}
+		<div class="inline-error">
+			<p>{synthesizeError}</p>
+			<button onclick={() => (synthesizeError = null)}>Dismiss</button>
+		</div>
+	{/if}
 {/if}
 
 <style>
+	.draft-modal-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+		padding: 1rem;
+	}
+
+	.draft-modal {
+		background: var(--color-surface, #fff);
+		border-radius: 12px;
+		max-width: 720px;
+		width: 100%;
+		max-height: 80vh;
+		overflow-y: auto;
+		padding: 1.5rem;
+	}
+
+	.draft-modal-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 1rem;
+	}
+
+	.draft-modal-header h3 {
+		margin: 0;
+		font-size: 1.125rem;
+	}
+
+	.draft-modal-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.draft-copy-btn {
+		background: none;
+		border: none;
+		cursor: pointer;
+		font-size: 1.125rem;
+		padding: 0.25rem;
+	}
+
+	.draft-copy-btn:hover {
+		opacity: 0.7;
+	}
+
+	.draft-close-btn {
+		background: none;
+		border: none;
+		cursor: pointer;
+		font-size: 1.25rem;
+		padding: 0.25rem 0.5rem;
+		border-radius: 4px;
+		color: var(--color-text-secondary, #666);
+	}
+
+	.draft-close-btn:hover {
+		background: var(--color-surface-hover, #f0f0f0);
+	}
+
+	.draft-outline {
+		margin-bottom: 1rem;
+	}
+
+	.draft-outline h4 {
+		font-size: 0.875rem;
+		font-weight: 600;
+		margin: 0 0 0.5rem;
+		color: var(--color-text-secondary, #666);
+	}
+
+	.draft-outline ol {
+		margin: 0;
+		padding-left: 1.25rem;
+		font-size: 0.875rem;
+	}
+
+	.draft-content {
+		font-size: 0.9375rem;
+		line-height: 1.6;
+		margin-bottom: 1rem;
+	}
+
+	.draft-suggestions {
+		margin-top: 1rem;
+	}
+
+	.draft-suggestions h4 {
+		font-size: 0.875rem;
+		font-weight: 600;
+		margin: 0 0 0.5rem;
+		color: var(--color-text-secondary, #666);
+	}
+
+	.draft-suggestions ul {
+		margin: 0;
+		padding-left: 1.25rem;
+		font-size: 0.875rem;
+	}
+
+	.draft-suggestions li {
+		margin-bottom: 0.25rem;
+	}
+
+	@media (max-width: 768px) {
+		.draft-modal-backdrop {
+			padding: 0.5rem;
+		}
+		.draft-modal {
+			max-height: 90vh;
+		}
+	}
+
 	/* Loading state */
 	.graph-loading {
 		display: flex;
@@ -1405,42 +1817,44 @@
 	.graph-panels {
 		display: flex;
 		flex-direction: row;
-		height: max(400px, calc(100vh - 25vh));
+		height: clamp(420px, 70vh, 900px);
 		overflow: hidden;
 	}
 
 	.node-list-panel {
-		flex: 1;
-		min-width: 300px;
+		flex: 0 0 320px;
+		max-width: 380px;
 		display: flex;
 		flex-direction: column;
 		border-right: 1px solid var(--color-border, #333);
 		touch-action: pan-y;
 		overflow: hidden;
 		transition:
-			min-width 0.2s ease,
-			flex 0.2s ease;
+			flex-basis 0.2s ease,
+			max-width 0.2s ease;
 	}
 
 	.node-list-panel.collapsed {
-		flex: 0 0 auto;
+		flex: 0 0 44px;
+		max-width: 44px;
 		min-width: 0;
-		width: 44px;
 		overflow: hidden;
 	}
 
 	.graph-hidden .node-list-panel {
+		flex: 1;
+		max-width: none;
 		border-right: none;
 	}
 
 	.graph-viz-panel {
-		flex: 1.5;
-		min-height: 0;
+		flex: 1 1 0%;
+		min-width: 0;
+		min-height: 60vh;
 		display: flex;
 		flex-direction: column;
 		overscroll-behavior: contain;
 		touch-action: none;
-		transition: flex 0.2s ease;
 	}
 
 	.node-list-collapsed .graph-viz-panel {
@@ -1549,7 +1963,8 @@
 		}
 
 		.node-list-panel {
-			min-width: 0;
+			flex: none;
+			max-width: none;
 			border-right: none;
 			overflow: visible;
 		}
@@ -1558,8 +1973,20 @@
 			display: none;
 		}
 
+		.graph-viz-panel {
+			/* Give the graph most of the screen on mobile */
+			min-height: 60vh;
+			height: calc(100svh - 140px);
+			flex: none;
+		}
+
 		.mobile-hidden {
 			display: none !important;
+		}
+
+		/* Hide completeness bar & coach on mobile when graph tab is active */
+		.graph-status.mobile-graph-active {
+			display: none;
 		}
 
 		.graph-status {
@@ -1571,11 +1998,13 @@
 		}
 		.panel-actions {
 			padding: 0.3rem 0.5rem;
+			flex-wrap: wrap;
+			gap: 0.25rem;
 		}
 
 		.node-list {
-			max-height: none;
-			overflow-y: visible;
+			max-height: 50vh;
+			overflow-y: auto;
 		}
 
 		.empty-actions {
@@ -1590,22 +2019,34 @@
 			flex-direction: column;
 			align-items: flex-start;
 		}
-
-		.panel-actions {
-			flex-wrap: wrap;
-		}
 	}
 
 	@media (min-width: 769px) and (max-width: 1024px) {
 		.node-list-panel {
-			min-width: 280px;
+			flex: 0 0 280px;
+			max-width: 340px;
+		}
+
+		.graph-panels {
+			height: clamp(400px, 65vh, 700px);
+		}
+	}
+
+	@media (min-width: 1025px) and (max-width: 1399px) {
+		.node-list-panel {
+			flex: 0 0 320px;
 			max-width: 400px;
 		}
 	}
 
 	@media (min-width: 1400px) {
 		.node-list-panel {
+			flex: 0 0 380px;
 			max-width: 500px;
+		}
+
+		.graph-panels {
+			height: clamp(500px, 75vh, 1000px);
 		}
 	}
 </style>

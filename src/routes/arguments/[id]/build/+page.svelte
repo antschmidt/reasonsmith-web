@@ -20,6 +20,7 @@
 		StructuralFlag
 	} from '$lib/types/argument';
 	import { NODE_TYPE_CONFIGS } from '$lib/types/argument';
+	import { sanitizeMultiline } from '$lib/utils/sanitize';
 	import {
 		computeCompletenessScore,
 		computeStructuralFlags,
@@ -85,6 +86,14 @@
 	let showGraph = $state(true);
 	let nodeListCollapsed = $state(true);
 	let coachDismissed = $state(false);
+
+	// Synthesize draft state
+	let synthesizing = $state(false);
+	let synthesizeError = $state<string | null>(null);
+	let synthesizedDraft = $state<string | null>(null);
+	let synthesizedOutline = $state<string[]>([]);
+	let synthesizedSuggestions = $state<string[]>([]);
+	let showDraftModal = $state(false);
 
 	// AI analysis state per node
 	let aiAnalysisStates = $state<Map<string, AIAnalysisState>>(new Map());
@@ -404,6 +413,26 @@
 		}
 	}
 
+	async function handleNodePositionChange(nodeId: string, x: number, y: number) {
+		const node = nodes.find((n) => n.id === nodeId);
+		if (!node) return;
+		const metadata = { ...(node.metadata || {}), position: { x, y } };
+		try {
+			await nhost.graphql.request(UPDATE_NODE, {
+				id: nodeId,
+				content: node.content,
+				type: node.type,
+				implied: node.implied,
+				score: node.score,
+				metadata
+			});
+			// Update local state so subsequent edits include the position
+			nodes = nodes.map((n) => (n.id === nodeId ? { ...n, metadata } : n));
+		} catch {
+			// Position save is best-effort — don't show error to user
+		}
+	}
+
 	async function handleEditNode(
 		nodeId: string,
 		updates: { content?: string; type?: ArgumentNodeType }
@@ -496,6 +525,65 @@
 	}
 
 	let visibleFlags = $derived(structuralFlags.filter((f) => !dismissedFlags.has(getFlagKey(f))));
+
+	async function synthesizeDraft() {
+		if (synthesizing || nodes.length === 0) return;
+
+		synthesizing = true;
+		synthesizeError = null;
+
+		try {
+			const payload = {
+				nodes: nodes.map((n) => ({
+					id: n.id,
+					type: n.type,
+					content: n.content,
+					is_root: n.is_root,
+					implied: n.implied
+				})),
+				edges: edges.map((e) => ({
+					id: e.id,
+					from_node: e.from_node,
+					to_node: e.to_node,
+					type: e.type
+				})),
+				title: argumentData?.title || 'Untitled Argument'
+			};
+
+			const response = await fetch('/api/arguments/synthesize', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+
+			if (!response.ok) {
+				const errorData = await response
+					.json()
+					.catch(() => ({ error: 'Failed to synthesize draft' }));
+				throw new Error(errorData.error || `Synthesis failed (${response.status})`);
+			}
+
+			const result = await response.json();
+			synthesizedDraft = result.draft || null;
+			synthesizedOutline = result.outline || [];
+			synthesizedSuggestions = result.suggestions || [];
+			showDraftModal = true;
+		} catch (err: any) {
+			synthesizeError = err.message || 'Failed to synthesize draft';
+		} finally {
+			synthesizing = false;
+		}
+	}
+
+	function closeDraftModal() {
+		showDraftModal = false;
+	}
+
+	function copyDraftToClipboard() {
+		if (synthesizedDraft) {
+			navigator.clipboard.writeText(synthesizedDraft).catch(() => {});
+		}
+	}
 </script>
 
 <svelte:head>
@@ -604,6 +692,18 @@
 							/>
 						</div>
 						<div class="panel-header-actions">
+							{#if nodes.length >= 2}
+								<Button
+									variant="ghost"
+									size="sm"
+									onclick={synthesizeDraft}
+									disabled={synthesizing}
+									title="Synthesize a written draft from your argument graph"
+								>
+									{#snippet icon()}<FileText size={14} />{/snippet}
+									{synthesizing ? 'Writing…' : 'Draft'}
+								</Button>
+							{/if}
 							<Button variant="primary" size="sm" onclick={() => openAddNode()}>
 								{#snippet icon()}<Plus size={16} />{/snippet}
 								Add Node
@@ -657,6 +757,10 @@
 						isOwnNode={(n) => isOwnNode(n)}
 						onToggleNodeList={() => (nodeListCollapsed = !nodeListCollapsed)}
 						nodeListVisible={!nodeListCollapsed}
+						{argumentId}
+						{isSharedGraph}
+						onNodeAdded={handleNodeAdded}
+						onNodePositionChange={handleNodePositionChange}
 					/>
 				</div>
 			{/if}
@@ -682,13 +786,225 @@
 		{nodes}
 		{edges}
 		defaultType={addNodeDefaultType}
+		defaultTargetNodeId={selectedNodeId}
 		onClose={closeAddNode}
 		onNodeAdded={handleNodeAdded}
 		{isSharedGraph}
 	/>
+
+	<!-- Synthesize Draft Modal -->
+	{#if showDraftModal && synthesizedDraft}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div
+			class="draft-modal-backdrop"
+			onclick={closeDraftModal}
+			role="dialog"
+			aria-modal="true"
+			aria-label="Synthesized draft"
+		>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<div class="draft-modal" onclick={(e) => e.stopPropagation()}>
+				<header class="draft-modal-header">
+					<h3>Synthesized Draft</h3>
+					<div class="draft-modal-actions">
+						<button class="draft-copy-btn" onclick={copyDraftToClipboard} title="Copy to clipboard">
+							Copy
+						</button>
+						<button
+							class="draft-close-btn"
+							onclick={closeDraftModal}
+							title="Close"
+							aria-label="Close">✕</button
+						>
+					</div>
+				</header>
+
+				{#if synthesizedOutline.length > 0}
+					<div class="draft-outline">
+						<h4>Outline</h4>
+						<ol>
+							{#each synthesizedOutline as heading}
+								<li>{heading}</li>
+							{/each}
+						</ol>
+					</div>
+				{/if}
+
+				<div class="draft-content">
+					{@html sanitizeMultiline(synthesizedDraft)}
+				</div>
+
+				{#if synthesizedSuggestions.length > 0}
+					<div class="draft-suggestions">
+						<h4>Suggestions for Improvement</h4>
+						<ul>
+							{#each synthesizedSuggestions as suggestion}
+								<li>{suggestion}</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
+	{#if synthesizeError}
+		<div class="inline-error">
+			<p>{synthesizeError}</p>
+			<button onclick={() => (synthesizeError = null)}>✕</button>
+		</div>
+	{/if}
 {/if}
 
 <style>
+	/* Draft modal styles */
+	.draft-modal-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.6);
+		z-index: 100;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 2rem;
+	}
+
+	.draft-modal {
+		background: var(--color-surface, #1a1a1a);
+		border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+		border-radius: 12px;
+		max-width: 720px;
+		width: 100%;
+		max-height: 80vh;
+		overflow-y: auto;
+		box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+	}
+
+	.draft-modal-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 1rem 1.25rem;
+		border-bottom: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+		position: sticky;
+		top: 0;
+		background: var(--color-surface, #1a1a1a);
+		z-index: 1;
+	}
+
+	.draft-modal-header h3 {
+		margin: 0;
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-primary, #eceff1);
+		font-family: var(--font-family-ui, sans-serif);
+	}
+
+	.draft-modal-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.draft-copy-btn {
+		padding: 0.25rem 0.75rem;
+		font-size: 0.75rem;
+		font-family: var(--font-family-ui, sans-serif);
+		background: color-mix(in srgb, var(--color-primary, #cfe0e8) 10%, transparent);
+		color: var(--color-primary, #cfe0e8);
+		border: 1px solid color-mix(in srgb, var(--color-primary, #cfe0e8) 20%, transparent);
+		border-radius: 4px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.draft-copy-btn:hover {
+		background: color-mix(in srgb, var(--color-primary, #cfe0e8) 20%, transparent);
+	}
+
+	.draft-close-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		background: transparent;
+		border: none;
+		color: var(--color-text-tertiary, #607d8b);
+		font-size: 1rem;
+		cursor: pointer;
+		border-radius: 4px;
+		transition: all 0.15s ease;
+	}
+
+	.draft-close-btn:hover {
+		color: var(--color-text-primary, #eceff1);
+		background: var(--color-surface-elevated, rgba(255, 255, 255, 0.05));
+	}
+
+	.draft-outline {
+		padding: 0.75rem 1.25rem;
+		border-bottom: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+	}
+
+	.draft-outline h4 {
+		margin: 0 0 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--color-text-tertiary, #607d8b);
+		font-family: var(--font-family-ui, sans-serif);
+	}
+
+	.draft-outline ol {
+		margin: 0;
+		padding-left: 1.25rem;
+		font-size: 0.8rem;
+		line-height: 1.5;
+		color: var(--color-text-secondary, #90a4ae);
+		font-family: var(--font-family-ui, sans-serif);
+	}
+
+	.draft-content {
+		padding: 1.25rem;
+		font-size: 0.9rem;
+		line-height: 1.7;
+		color: var(--color-text-primary, #eceff1);
+		font-family: var(--font-family-serif, serif);
+	}
+
+	.draft-suggestions {
+		padding: 0.75rem 1.25rem 1rem;
+		border-top: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+	}
+
+	.draft-suggestions h4 {
+		margin: 0 0 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--color-text-tertiary, #607d8b);
+		font-family: var(--font-family-ui, sans-serif);
+	}
+
+	.draft-suggestions ul {
+		margin: 0;
+		padding-left: 1.25rem;
+		font-size: 0.8rem;
+		line-height: 1.5;
+		color: var(--color-text-secondary, #90a4ae);
+		font-family: var(--font-family-ui, sans-serif);
+	}
+
+	.draft-suggestions li {
+		margin-bottom: 0.25rem;
+	}
+
 	/* Loading & Error States */
 	.loading-state,
 	.error-state {

@@ -35,6 +35,7 @@
 		Trash2,
 		Edit3,
 		Link,
+		Plus,
 		Star,
 		AlertTriangle,
 		ShieldAlert,
@@ -56,6 +57,7 @@
 		getSeverityColor,
 		type RhetoricalAlert
 	} from '$lib/utils/rhetoricalAnalysis';
+	import { getValidSourceTypesForTarget } from '$lib/utils/argumentUtils';
 
 	interface Props {
 		node: ArgumentNode;
@@ -74,6 +76,8 @@
 		) => Promise<void> | void;
 		onDelete?: (nodeId: string) => void;
 		onAddEdge?: (fromNodeId: string) => void;
+		/** Callback to add a new node connected to this node */
+		onAddConnectedNode?: (targetNodeId: string) => void;
 		/** Navigate the graph to focus on a specific node */
 		onFocusNode?: (nodeId: string) => void;
 		isReadOnly?: boolean;
@@ -91,6 +95,7 @@
 		onEdit,
 		onDelete,
 		onAddEdge,
+		onAddConnectedNode,
 		onFocusNode,
 		isReadOnly = false
 	}: Props = $props();
@@ -311,6 +316,18 @@
 
 	let showConnections = $state(true);
 
+	let expandedConnections = $state<Set<string>>(new Set());
+
+	function toggleConnectionExpanded(nodeId: string) {
+		const next = new Set(expandedConnections);
+		if (next.has(nodeId)) {
+			next.delete(nodeId);
+		} else {
+			next.add(nodeId);
+		}
+		expandedConnections = next;
+	}
+
 	// ── Positioning ────────────────────────────────────────────────
 
 	const POPOVER_WIDTH = 320;
@@ -363,6 +380,16 @@
 			onAddEdge(node.id);
 		}
 	}
+
+	function handleAddConnectedNode(e: Event) {
+		e.stopPropagation();
+		if (onAddConnectedNode) {
+			onAddConnectedNode(node.id);
+		}
+	}
+
+	/** Node types that can be created and connected to this node */
+	const canReceiveNewNodes = $derived(getValidSourceTypesForTarget(node.type).length > 0);
 
 	function handleBackdropClick(e: Event) {
 		e.stopPropagation();
@@ -533,27 +560,61 @@
 		{#if showConnections}
 			<ul class="popover-connections" transition:slide={{ duration: 150 }}>
 				{#each connections as conn}
-					<li class="popover-connection-item">
-						<button
-							class="conn-btn"
-							onclick={(e) => {
-								e.stopPropagation();
-								handleFocusNode(conn.node.id);
-							}}
-							title="Go to node"
-						>
+					{@const isExpanded = expandedConnections.has(conn.node.id)}
+					<li class="popover-connection-item" class:expanded={isExpanded}>
+						<div class="conn-header">
+							<button
+								class="conn-expand-toggle"
+								onclick={(e) => {
+									e.stopPropagation();
+									toggleConnectionExpanded(conn.node.id);
+								}}
+								title={isExpanded ? 'Collapse' : 'Expand'}
+							>
+								{#if isExpanded}
+									<ChevronUp size={10} />
+								{:else}
+									<ChevronDown size={10} />
+								{/if}
+							</button>
 							<span class="conn-role" style="color: {conn.edgeColor}">
 								{conn.direction === 'outgoing' ? '→' : '←'}
 								{conn.role}
 							</span>
-							<span class="conn-node">
+							<span class="conn-node-preview">
 								<span
 									class="conn-dot"
 									style="background: {NODE_TYPE_CONFIGS[conn.node.type]?.color ?? '#666'}"
 								></span>
-								<span class="conn-text">{conn.node.content}</span>
+								<span
+									class="conn-type-label"
+									style="color: {NODE_TYPE_CONFIGS[conn.node.type]?.color ?? '#666'}"
+									>{NODE_TYPE_CONFIGS[conn.node.type]?.label ?? conn.node.type}</span
+								>
+								{#if !isExpanded}
+									<span class="conn-text-truncated"
+										>{conn.node.content.length > 60
+											? conn.node.content.slice(0, 60) + '…'
+											: conn.node.content}</span
+									>
+								{/if}
 							</span>
-						</button>
+							<button
+								class="conn-view-btn"
+								onclick={(e) => {
+									e.stopPropagation();
+									handleFocusNode(conn.node.id);
+								}}
+								title="Open this node"
+							>
+								<Eye size={11} />
+							</button>
+						</div>
+						{#if isExpanded}
+							<div class="conn-expanded-content" transition:slide={{ duration: 120 }}>
+								<p class="conn-full-text">{conn.node.content}</p>
+							</div>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -561,7 +622,7 @@
 	{/if}
 
 	<!-- Actions -->
-	{#if !isReadOnly}
+	{#if !isReadOnly || (onAddConnectedNode && canReceiveNewNodes)}
 		<footer class="popover-actions">
 			{#if editing}
 				<button
@@ -583,19 +644,29 @@
 					Cancel
 				</button>
 			{:else}
-				{#if onEdit}
+				{#if onEdit && !isReadOnly}
 					<button class="popover-action-btn edit" onclick={startEdit} title="Edit node">
 						<Edit3 size={13} />
 						Edit
 					</button>
 				{/if}
-				{#if onAddEdge}
+				{#if onAddConnectedNode && canReceiveNewNodes}
+					<button
+						class="popover-action-btn add-node"
+						onclick={handleAddConnectedNode}
+						title="Add connected node"
+					>
+						<Plus size={13} />
+						Add Node
+					</button>
+				{/if}
+				{#if onAddEdge && !isReadOnly}
 					<button class="popover-action-btn connect" onclick={handleConnect} title="Connect">
 						<Link size={13} />
 						Connect
 					</button>
 				{/if}
-				{#if onDelete && !node.is_root}
+				{#if onDelete && !node.is_root && !isReadOnly}
 					<button class="popover-action-btn delete" onclick={handleDelete} title="Delete node">
 						<Trash2 size={13} />
 						Delete
@@ -928,46 +999,12 @@
 		font-size: 0.68rem;
 	}
 
-	.conn-btn {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		width: 100%;
-		padding: 5px 7px;
-		background: none;
-		border: 1px solid transparent;
-		border-radius: var(--border-radius-sm, 4px);
-		cursor: pointer;
-		text-align: left;
-		font-family: inherit;
-		font-size: inherit;
-		color: inherit;
-		transition: all 0.12s ease;
-	}
-
-	.conn-btn:hover {
-		background: var(--color-surface-alt, #2a2a3a);
-		border-color: var(--color-border, #333);
-	}
-
 	.conn-role {
 		font-weight: 600;
 		font-size: 0.62rem;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-	}
-
-	.conn-node {
-		display: flex;
-		align-items: flex-start;
-		gap: 4px;
-		color: var(--color-text-secondary, #b0bec5);
-		line-height: 1.4;
-	}
-
-	.conn-text {
-		word-break: normal;
-		overflow-wrap: break-word;
+		flex-shrink: 0;
 	}
 
 	.conn-dot {
@@ -977,6 +1014,111 @@
 		border-radius: 50%;
 		flex-shrink: 0;
 		margin-top: 3px;
+	}
+
+	/* ── Expandable Connections ────────────────── */
+
+	.conn-header {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 6px;
+		border-radius: var(--border-radius-sm, 4px);
+		cursor: default;
+		min-width: 0;
+	}
+
+	.conn-expand-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		padding: 0;
+		background: none;
+		border: 1px solid var(--color-border, #444);
+		border-radius: 3px;
+		color: var(--color-text-tertiary, #888);
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: all 0.12s ease;
+	}
+
+	.conn-expand-toggle:hover {
+		background: var(--color-surface-alt, #2a2a3a);
+		color: var(--color-text-secondary, #b0bec5);
+		border-color: var(--color-text-tertiary, #607d8b);
+	}
+
+	.conn-node-preview {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		min-width: 0;
+		flex: 1;
+		overflow: hidden;
+	}
+
+	.conn-type-label {
+		font-size: 0.58rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		flex-shrink: 0;
+	}
+
+	.conn-text-truncated {
+		font-size: 0.66rem;
+		color: var(--color-text-secondary, #b0bec5);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-width: 0;
+	}
+
+	.conn-view-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		padding: 0;
+		background: none;
+		border: 1px solid transparent;
+		border-radius: 3px;
+		color: var(--color-text-tertiary, #888);
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: all 0.12s ease;
+	}
+
+	.conn-view-btn:hover {
+		background: var(--color-surface-alt, #2a2a3a);
+		color: var(--color-primary, #6366f1);
+		border-color: color-mix(in srgb, var(--color-primary, #6366f1) 40%, transparent);
+	}
+
+	.conn-expanded-content {
+		padding: 4px 6px 6px 28px;
+	}
+
+	.conn-full-text {
+		margin: 0;
+		font-size: 0.75rem;
+		line-height: 1.5;
+		color: var(--color-text-primary, #eceff1);
+		font-family: var(--font-family-serif, serif);
+		word-break: normal;
+		overflow-wrap: break-word;
+	}
+
+	.popover-connection-item.expanded {
+		background: var(--color-surface-alt, rgba(42, 42, 58, 0.5));
+		border-radius: var(--border-radius-sm, 4px);
+	}
+
+	.popover-connection-item.expanded .conn-header {
+		background: none;
 	}
 
 	/* ── Actions ───────────────────────────────── */
@@ -1025,6 +1167,17 @@
 	.popover-action-btn.connect:hover {
 		color: #4bc4e8;
 		border-color: color-mix(in srgb, #4bc4e8 40%, transparent);
+	}
+
+	.popover-action-btn.add-node {
+		color: #4ade80;
+		border-color: color-mix(in srgb, #4ade80 30%, transparent);
+	}
+
+	.popover-action-btn.add-node:hover {
+		color: #4ade80;
+		border-color: color-mix(in srgb, #4ade80 50%, transparent);
+		background: color-mix(in srgb, #4ade80 8%, transparent);
 	}
 
 	.popover-action-btn.save {

@@ -7,6 +7,7 @@
 	} from '$lib/utils/collaborationPermissions';
 	import { Check, X, Loader2, FileText } from '@lucide/svelte';
 	import { onMount } from 'svelte';
+	import { sanitizeHtml } from '$lib/utils/sanitize';
 
 	interface Props {
 		onInviteResponded?: () => void;
@@ -124,7 +125,7 @@
 						<div class="invite-post">
 							{#if invite.post.draft_content}
 								<div class="post-content">
-									{@html invite.post.draft_content}
+									{@html sanitizeHtml(invite.post.draft_content)}
 								</div>
 							{:else}
 								<span class="post-title">Untitled post</span>
