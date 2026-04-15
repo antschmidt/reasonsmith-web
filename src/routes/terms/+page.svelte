@@ -148,8 +148,7 @@
 				<h2>9. Good-Faith Scoring System</h2>
 				<p>
 					Our AI-assisted good-faith scoring system analyzes posts for constructive discourse,
-					proper sourcing, and civil tone using artificial intelligence providers including
-					Anthropic Claude and OpenAI. The system:
+					proper sourcing, and civil tone using Anthropic Claude. The system:
 				</p>
 				<ul>
 					<li>Performs heuristic pre-checks for content quality</li>
@@ -258,7 +257,7 @@
 				</p>
 				<ul>
 					<li>GitHub and Google for OAuth authentication</li>
-					<li>Anthropic Claude and OpenAI for AI-powered content analysis</li>
+					<li>Anthropic Claude for AI-powered content analysis</li>
 					<li>Nhost for backend infrastructure and database hosting</li>
 					<li>Vercel for frontend hosting and analytics</li>
 					<li>Neo4j for citation network visualization</li>

@@ -21,23 +21,6 @@
 		citations?: Citation[];
 	};
 
-	type GoodFaithResult = {
-		good_faith_score: number;
-		good_faith_label: string;
-		claims?: Array<{
-			claim: string;
-			arguments?: Array<{
-				text: string;
-				score: number;
-				suggestions?: string[];
-				fallacies?: string[];
-				manipulativeLanguage?: string[];
-			}>;
-		}>;
-		rationale?: string;
-		fromCache?: boolean;
-	};
-
 	type ClaudeGoodFaithResult = {
 		good_faith_score: number;
 		good_faith_label: string;
@@ -65,12 +48,9 @@
 		showCitationPicker = $bindable(false),
 		heuristicScore = 0,
 		heuristicPassed = true,
-		goodFaithTesting = false,
 		claudeGoodFaithTesting = false,
-		goodFaithResult = null as GoodFaithResult | null,
-		goodFaithError = null as string | null,
-		claudeGoodFaithResult = null as ClaudeGoodFaithResult | null,
-		claudeGoodFaithError = null as string | null,
+		claudeGoodFaithResult = $bindable<ClaudeGoodFaithResult | null>(null),
+		claudeGoodFaithError = $bindable<string | null>(null),
 		lastSavedAt = null as number | null,
 		submitError = null as string | null,
 		publishLoading = false,
@@ -85,7 +65,6 @@
 		onCancelCitationEdit,
 		onInsertCitationReference,
 		onOpenCitationPicker,
-		onTestGoodFaith,
 		onTestGoodFaithClaude,
 		onPublish,
 		onCancel,
@@ -102,10 +81,7 @@
 		showCitationPicker?: boolean;
 		heuristicScore?: number;
 		heuristicPassed?: boolean;
-		goodFaithTesting?: boolean;
 		claudeGoodFaithTesting?: boolean;
-		goodFaithResult?: GoodFaithResult | null;
-		goodFaithError?: string | null;
 		claudeGoodFaithResult?: ClaudeGoodFaithResult | null;
 		claudeGoodFaithError?: string | null;
 		lastSavedAt?: number | null;
@@ -122,7 +98,6 @@
 		onCancelCitationEdit?: () => void;
 		onInsertCitationReference?: (id: string) => void;
 		onOpenCitationPicker?: () => void;
-		onTestGoodFaith?: () => void;
 		onTestGoodFaithClaude?: () => void;
 		onPublish?: () => void;
 		onCancel?: () => void;
@@ -161,19 +136,6 @@
 	<div style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.5rem 0;">
 		<button
 			type="button"
-			class="good-faith-test-btn openai"
-			onclick={onTestGoodFaith}
-			disabled={goodFaithTesting || !description.trim() || !heuristicPassed}
-		>
-			{#if goodFaithTesting}
-				<AnimatedLogo size="16px" isAnimating={true} />
-				OpenAI...
-			{:else}
-				🤔 OpenAI Test
-			{/if}
-		</button>
-		<button
-			type="button"
 			class="good-faith-test-btn claude"
 			onclick={onTestGoodFaithClaude}
 			disabled={claudeGoodFaithTesting || !description.trim() || !heuristicPassed}
@@ -189,106 +151,6 @@
 			📎 Insert Citation Reference
 		</button>
 	</div>
-
-	<!-- Good Faith Test Results (OpenAI) -->
-	{#if goodFaithResult}
-		<div class="analysis-panel">
-			<div class="analysis-summary">
-				<div class="analysis-badge {goodFaithResult.good_faith_label}">
-					<span class="analysis-score">{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span>
-					<span class="analysis-label">{goodFaithResult.good_faith_label}</span>
-				</div>
-				<div class="analysis-meta">
-					<span class="analysis-provider">OpenAI Analysis</span>
-					{#if goodFaithResult.fromCache}
-						<span class="cache-indicator" title="Loaded from cache">💾</span>
-					{/if}
-				</div>
-			</div>
-
-			{#if goodFaithResult.claims && goodFaithResult.claims.length > 0}
-				<div class="analysis-content">
-					{#each goodFaithResult.claims as claim}
-						<div class="claim-analysis">
-							<div class="claim-statement">{claim.claim}</div>
-							{#if claim.arguments}
-								{#each claim.arguments as arg}
-									<div class="argument-card">
-										<div class="argument-content">
-											<div class="argument-text">{arg.text}</div>
-											<div class="argument-metrics">
-												<span
-													class="argument-score"
-													class:strong={arg.score >= 7}
-													class:moderate={arg.score >= 4 && arg.score < 7}
-													class:weak={arg.score < 4}
-												>
-													{arg.score}/10
-												</span>
-											</div>
-										</div>
-
-										{#if arg.suggestions && arg.suggestions.length > 0}
-											<div class="improvements-section">
-												<div class="improvements-label">💡 Suggested improvements</div>
-												<ul class="improvements-list">
-													{#each arg.suggestions as suggestion}
-														<li>{suggestion}</li>
-													{/each}
-												</ul>
-											</div>
-										{/if}
-
-										{#if (arg.fallacies && arg.fallacies.length > 0) || (arg.manipulativeLanguage && arg.manipulativeLanguage.length > 0)}
-											<div class="issues-section">
-												{#if arg.fallacies && arg.fallacies.length > 0}
-													<div class="issue-item">
-														<span class="issue-label">⚠️ Logical issues:</span>
-														<span class="issue-text">{arg.fallacies.join(', ')}</span>
-													</div>
-												{/if}
-												{#if arg.manipulativeLanguage && arg.manipulativeLanguage.length > 0}
-													<div class="issue-item">
-														<span class="issue-label">🚩 Language concerns:</span>
-														<span class="issue-text">{arg.manipulativeLanguage.join(', ')}</span>
-													</div>
-												{/if}
-											</div>
-										{/if}
-									</div>
-								{/each}
-							{/if}
-						</div>
-					{/each}
-				</div>
-			{/if}
-
-			{#if goodFaithResult.rationale}
-				<div class="analysis-summary-text">
-					{goodFaithResult.rationale}
-				</div>
-			{/if}
-
-			<button
-				type="button"
-				class="analysis-close-btn"
-				onclick={() => (goodFaithResult = null)}
-				aria-label="Close analysis"
-			>
-				✕
-			</button>
-		</div>
-	{/if}
-
-	{#if goodFaithError}
-		<div class="good-faith-error">
-			<strong>OpenAI Error:</strong>
-			{goodFaithError}
-			<button type="button" class="close-result-btn" onclick={() => (goodFaithError = null)}
-				>✕</button
-			>
-		</div>
-	{/if}
 
 	<!-- Claude Good Faith Test Results -->
 	{#if claudeGoodFaithResult}
@@ -563,14 +425,6 @@
 		align-items: center;
 		gap: 0.5rem;
 		color: white;
-	}
-
-	.good-faith-test-btn.openai {
-		background: #3b82f6;
-	}
-
-	.good-faith-test-btn.openai:hover:not(:disabled) {
-		background: #2563eb;
 	}
 
 	.good-faith-test-btn.claude {

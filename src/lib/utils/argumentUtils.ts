@@ -305,7 +305,8 @@ export function getCoachPrompt(
  */
 export function calculateNodePositions(
 	nodes: ArgumentNode[],
-	edges: ArgumentEdge[]
+	edges: ArgumentEdge[],
+	options?: { maxCols?: number }
 ): Map<string, { x: number; y: number }> {
 	const positions = new Map<string, { x: number; y: number }>();
 	if (nodes.length === 0) return positions;
@@ -314,7 +315,7 @@ export function calculateNodePositions(
 	const NODE_H = 140;
 	const H_GAP = 60; // horizontal gap between nodes
 	const V_GAP = 180; // vertical gap between tiers
-	const MAX_COLS = 3; // max nodes per row before wrapping
+	const MAX_COLS = Math.max(1, options?.maxCols ?? 3); // max nodes per row before wrapping
 	const ROW_GAP = 30; // vertical gap between wrapped rows within a tier
 
 	// Build lookup structures

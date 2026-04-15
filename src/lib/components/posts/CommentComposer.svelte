@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { scale, slide } from 'svelte/transition';
 	import PostTypeSelector from './PostTypeSelector.svelte';
+	import SteelmanPrompt from './SteelmanPrompt.svelte';
 	import CitationForm from '../citations/CitationForm.svelte';
 	import Button from '../ui/Button.svelte';
 	import RichTextEditor from '../RichTextEditor.svelte';
@@ -114,6 +115,9 @@
 		submitting = false,
 		discussionTitle = 'Discussion',
 		discussionId = null,
+		steelmanRequired = false,
+		steelmanSentence = $bindable(''),
+		onSteelmanPromptShown,
 		onInput,
 		onFocus,
 		onAddCitation,
@@ -121,7 +125,6 @@
 		onCancelCitationEdit,
 		onInsertCitationReference,
 		onOpenCitationPicker,
-		onTestGoodFaith,
 		onTestGoodFaithClaude,
 		onPublish,
 		onClearReplying,
@@ -164,6 +167,9 @@
 		submitting?: boolean;
 		discussionTitle?: string;
 		discussionId?: string | null;
+		steelmanRequired?: boolean;
+		steelmanSentence?: string;
+		onSteelmanPromptShown?: () => void;
 		onInput?: (e: Event) => void;
 		onFocus?: () => void;
 		onAddCitation?: (citation: Citation) => void;
@@ -171,7 +177,6 @@
 		onCancelCitationEdit?: () => void;
 		onInsertCitationReference?: (id: string) => void;
 		onOpenCitationPicker?: () => void;
-		onTestGoodFaith?: () => void;
 		onTestGoodFaithClaude?: () => void;
 		onPublish?: () => void;
 		onClearReplying?: () => void;
@@ -183,6 +188,11 @@
 		formatChicagoCitation: (citation: Citation) => string;
 		assessContentQuality: (content: string, title?: string) => { score: number; issues: string[] };
 	}>();
+
+	// Plan 4 — steelman prompt reference so publish can call validate().
+	// A typed `any` is fine here: the child exports a single `validate(): boolean`.
+	let steelmanPromptRef = $state<{ validate: () => boolean } | null>(null);
+	let steelmanBlockError = $state<string | null>(null);
 
 	// Edit Lock Collaboration State
 	let editLockStatus = $state<any>(null);
@@ -625,10 +635,35 @@
 		<form
 			onsubmit={(e) => {
 				e.preventDefault();
+				// Plan 4: if this discussion requires a steelman, validate before
+				// firing the parent's publish handler. The SteelmanPrompt handles
+				// its own error display; we just set a local blocker so the
+				// existing submitError slot can optionally show an extra message.
+				if (steelmanRequired) {
+					const ok = steelmanPromptRef?.validate() ?? false;
+					if (!ok) {
+						steelmanBlockError =
+							'Please complete the steelman before publishing.';
+						return;
+					}
+				}
+				steelmanBlockError = null;
 				onPublish?.();
 			}}
 			class="comment-form"
 		>
+			{#if steelmanRequired}
+				<SteelmanPrompt
+					bind:this={steelmanPromptRef}
+					bind:value={steelmanSentence}
+					required={true}
+					onPromptShown={onSteelmanPromptShown}
+				/>
+				{#if steelmanBlockError}
+					<p class="steelman-block-error" role="alert">{steelmanBlockError}</p>
+				{/if}
+			{/if}
+
 			<!-- Post Type Selection and Advanced Features Toggle -->
 			<div class="post-type-row">
 				<PostTypeSelector bind:selected={postType} bind:expanded={postTypeExpanded} />
@@ -845,14 +880,6 @@
 					class="good-faith-test-buttons"
 					style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.5rem 0;"
 				>
-					<button
-						type="button"
-						class="good-faith-test-btn openai"
-						onclick={onTestGoodFaith}
-						disabled={!comment.trim() || !heuristicPassed}
-					>
-						🤔 OpenAI Test
-					</button>
 					<button
 						type="button"
 						class="good-faith-test-btn claude"
@@ -1171,6 +1198,12 @@
 		margin-top: 2rem;
 	}
 
+	.steelman-block-error {
+		margin: 0.5rem 0 0;
+		font-size: 0.85rem;
+		color: var(--color-danger, #b91c1c);
+	}
+
 	.signin-hint {
 		text-align: center;
 		padding: 2rem;
@@ -1351,14 +1384,6 @@
 		gap: 0.5rem;
 		color: white;
 		font-family: inherit;
-	}
-
-	.good-faith-test-btn.openai {
-		background: #3b82f6;
-	}
-
-	.good-faith-test-btn.openai:hover:not(:disabled) {
-		background: #2563eb;
 	}
 
 	.good-faith-test-btn.claude {

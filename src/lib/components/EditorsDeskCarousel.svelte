@@ -46,6 +46,15 @@
 	};
 
 	const getContentLink = (pick: EditorsDeskPick): string => {
+		// Plan 5: if this pick has been curated with a note or inline annotations,
+		// route the reader to the dedicated showcase view so the curator's
+		// framing is surfaced. Plain picks keep the direct discussion link.
+		const hasCuration =
+			Boolean(pick.curator_note) ||
+			(Array.isArray(pick.annotations) && pick.annotations.length > 0);
+		if (hasCuration) {
+			return `/editors-desk/${pick.id}`;
+		}
 		if (pick.discussion_id) {
 			return `/discussions/${pick.discussion_id}`;
 		} else if (pick.post_id) {
@@ -144,6 +153,19 @@
 							<div class="editor-note">
 								<div class="note-label">Editor's Note:</div>
 								<p>{@html sanitizeMultiline(item.editor_note)}</p>
+							</div>
+						{/if}
+						{#if item.curator_note}
+							<!--
+								Curator's note (Plan 5) sits below the editor's note. The
+								editor flags why the piece is featured; the curator
+								annotates what's worth watching for as you read. See
+								AnnotatedShowcaseView for inline annotation rendering on
+								the full-piece view.
+							-->
+							<div class="curator-note">
+								<div class="note-label">Curator's Note:</div>
+								<p>{@html sanitizeMultiline(item.curator_note)}</p>
 							</div>
 						{/if}
 						<footer class="card-footer">
@@ -341,6 +363,30 @@
 		padding: 1rem;
 		border-radius: var(--border-radius-md);
 		border-left: 3px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
+	}
+
+	/*
+	 * Curator's note picks up the primary color to distinguish it from the
+	 * editor's note. Editor = "why featured"; curator = "what to watch for".
+	 */
+	.curator-note {
+		margin: 0.5rem 0 0;
+		text-align: left;
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+		padding: 1rem;
+		border-radius: var(--border-radius-md);
+		border-left: 3px solid color-mix(in srgb, var(--color-primary) 55%, transparent);
+	}
+
+	.curator-note .note-label {
+		color: var(--color-primary);
+	}
+
+	.curator-note p {
+		margin: 0;
+		line-height: 1.5;
 	}
 
 	.note-label {

@@ -4,7 +4,6 @@
 export interface CachedAnalysis {
 	contentHash: string;
 	timestamp: number;
-	openaiResult?: any;
 	claudeResult?: any;
 }
 
@@ -37,16 +36,16 @@ export async function hashContent(content: string): Promise<string> {
 }
 
 /**
- * Get cached analysis for current content
+ * Get cached Claude analysis for current content
  * @param discussionId - The discussion ID to use as cache key
  * @param content - The content to check cache for
- * @param type - The analysis provider type
+ * @param _type - Legacy parameter retained for call-site compatibility; ignored
  * @returns Cached analysis result or null
  */
 export async function getCachedAnalysis(
 	discussionId: string | null,
 	content: string,
-	type: 'openai' | 'claude'
+	_type: 'claude' = 'claude'
 ): Promise<any | null> {
 	if (!discussionId) return null;
 
@@ -61,7 +60,7 @@ export async function getCachedAnalysis(
 		// Check if content matches and cache is not too old (24 hours)
 		const isExpired = Date.now() - cache.timestamp > 24 * 60 * 60 * 1000;
 		if (cache.contentHash === currentHash && !isExpired) {
-			return type === 'openai' ? cache.openaiResult : cache.claudeResult;
+			return cache.claudeResult;
 		}
 	} catch (e) {
 		console.error('Failed to read analysis cache:', e);
@@ -70,16 +69,16 @@ export async function getCachedAnalysis(
 }
 
 /**
- * Store analysis in cache
+ * Store Claude analysis in cache
  * @param discussionId - The discussion ID to use as cache key
  * @param content - The content being analyzed
- * @param type - The analysis provider type
+ * @param _type - Legacy parameter retained for call-site compatibility; ignored
  * @param result - The analysis result to cache
  */
 export async function cacheAnalysis(
 	discussionId: string | null,
 	content: string,
-	type: 'openai' | 'claude',
+	_type: 'claude' = 'claude',
 	result: any
 ): Promise<void> {
 	if (!discussionId) return;
@@ -93,12 +92,10 @@ export async function cacheAnalysis(
 		const existing = localStorage.getItem(cacheKey);
 		if (existing) {
 			cache = JSON.parse(existing);
-			// If content hash changed, reset the cache
 			if (cache.contentHash !== contentHash) {
 				cache = {
 					contentHash,
 					timestamp: Date.now(),
-					openaiResult: undefined,
 					claudeResult: undefined
 				};
 			}
@@ -106,17 +103,11 @@ export async function cacheAnalysis(
 			cache = {
 				contentHash,
 				timestamp: Date.now(),
-				openaiResult: undefined,
 				claudeResult: undefined
 			};
 		}
 
-		// Update the specific analysis result
-		if (type === 'openai') {
-			cache.openaiResult = result;
-		} else {
-			cache.claudeResult = result;
-		}
+		cache.claudeResult = result;
 		cache.timestamp = Date.now();
 
 		localStorage.setItem(cacheKey, JSON.stringify(cache));

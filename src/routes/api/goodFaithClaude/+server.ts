@@ -12,7 +12,8 @@ import type {
 	GoodFaithInput,
 	ClaudeRawResponse,
 	GoodFaithResult,
-	WritingStyle
+	WritingStyle,
+	ReviewerRegister
 } from '$lib/goodFaith';
 import type { PromptCacheTTL } from '$lib/graphql/queries/site-settings';
 import {
@@ -20,14 +21,50 @@ import {
 	buildBaseSystemPrompt,
 	CLAUDE_SPECIFIC_INSTRUCTIONS,
 	OUTPUT_SCHEMA_DESCRIPTION,
+	COACHING_OUTPUT_INSTRUCTIONS,
 	normalizeClaudeResponse,
 	parseClaudeJsonResponse,
 	heuristicScore,
 	PROVIDER_CONFIGS,
 	STYLE_MODEL_MAP,
 	DEFAULT_CLAUDE_MODEL,
-	DEFAULT_MAX_TOKENS
+	DEFAULT_MAX_TOKENS,
+	DEFAULT_REVIEWER_REGISTER
 } from '$lib/goodFaith';
+
+/**
+ * Resolve the reviewer register to use for this request.
+ *
+ * Resolution order:
+ * 1. Explicit `register` on the request body (except 'adaptive'). Trust the
+ *    client here for the per-request preview case (the settings page writes
+ *    to the DB directly, so this branch only matters for ad-hoc previews).
+ * 2. The contributor's saved preference on the `reviewer_register` column.
+ * 3. If 'adaptive' (whether requested or stored): pick from the parent
+ *    discussion's writing style (quick_point → coach, journalistic → editor,
+ *    academic → scholar).
+ * 4. Fall back to DEFAULT_REVIEWER_REGISTER ('editor').
+ */
+function resolveReviewerRegister(
+	requested: ReviewerRegister | undefined,
+	stored: ReviewerRegister | undefined | null,
+	writingStyle: WritingStyle | undefined
+): Exclude<ReviewerRegister, 'adaptive'> {
+	const pickFromStyle = (): Exclude<ReviewerRegister, 'adaptive'> => {
+		if (writingStyle === 'quick_point') return 'coach';
+		if (writingStyle === 'academic') return 'scholar';
+		if (writingStyle === 'journalistic') return 'editor';
+		return DEFAULT_REVIEWER_REGISTER === 'adaptive' ? 'editor' : DEFAULT_REVIEWER_REGISTER;
+	};
+
+	if (requested && requested !== 'adaptive') return requested;
+	if (requested === 'adaptive') return pickFromStyle();
+
+	if (stored && stored !== 'adaptive') return stored;
+	if (stored === 'adaptive') return pickFromStyle();
+
+	return pickFromStyle();
+}
 
 // Import multi-pass analysis
 import {
@@ -101,18 +138,20 @@ async function getPromptCacheTTL(): Promise<PromptCacheTTL> {
  * @param modelOverride Optional model to use instead of default (based on writing style)
  * @param maxTokensOverride Optional max tokens override for the model
  * @param cacheTTL Optional cache TTL for system prompt
+ * @param register Reviewer voice to use for prose fields; scoring is invariant
  */
 async function analyzeWithClaude(
 	fullContent: string,
 	modelOverride?: string,
 	maxTokensOverride?: number,
-	cacheTTL: PromptCacheTTL = 'off'
+	cacheTTL: PromptCacheTTL = 'off',
+	register: Exclude<ReviewerRegister, 'adaptive'> = 'editor'
 ): Promise<GoodFaithResult> {
 	try {
 		const model = modelOverride || DEFAULT_CLAUDE_MODEL;
 		const maxTokens = maxTokensOverride || DEFAULT_MAX_TOKENS;
 		logger.info(
-			`Starting Claude API call with model: ${model}, maxTokens: ${maxTokens}, cache TTL: ${cacheTTL}`
+			`Starting Claude API call with model: ${model}, maxTokens: ${maxTokens}, cache TTL: ${cacheTTL}, register: ${register}`
 		);
 
 		if (!process.env.ANTHROPIC_API_KEY) {
@@ -121,7 +160,12 @@ async function analyzeWithClaude(
 
 		const config = PROVIDER_CONFIGS.claude;
 		const systemPrompt =
-			buildBaseSystemPrompt() + CLAUDE_SPECIFIC_INSTRUCTIONS + '\n\n' + OUTPUT_SCHEMA_DESCRIPTION;
+			buildBaseSystemPrompt(register) +
+			CLAUDE_SPECIFIC_INSTRUCTIONS +
+			'\n\n' +
+			COACHING_OUTPUT_INSTRUCTIONS +
+			'\n\n' +
+			OUTPUT_SCHEMA_DESCRIPTION;
 
 		// Build request options based on cache TTL setting
 		const requestOptions: Parameters<typeof anthropic.messages.create>[0] = {
@@ -190,8 +234,8 @@ async function analyzeWithClaude(
 		const rawResult: ClaudeRawResponse = parseClaudeJsonResponse(responseText);
 		logger.info('Claude parsed result successfully');
 
-		// Normalize response using shared utility
-		const result = normalizeClaudeResponse(rawResult);
+		// Normalize response using shared utility (includes register for UI display)
+		const result = normalizeClaudeResponse(rawResult, register);
 
 		// Add token usage to the result
 		return {
@@ -219,7 +263,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			postId: body.postId,
 			importData: body.importData,
 			discussionContext: body.discussionContext,
-			showcaseContext: body.showcaseContext
+			showcaseContext: body.showcaseContext,
+			register: body.register as ReviewerRegister | undefined
 		};
 
 		// Extract writing style and determine model
@@ -227,8 +272,17 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		const modelConfig = writingStyle ? STYLE_MODEL_MAP[writingStyle] : null;
 		const selectedModel = modelConfig?.model || DEFAULT_CLAUDE_MODEL;
 		const selectedMaxTokens = modelConfig?.maxTokens || DEFAULT_MAX_TOKENS;
+
+		// Resolve reviewer register (scoring is invariant across registers;
+		// only the prose voice of coachingHeadline / overallAnalysis / etc.
+		// differs — see src/lib/goodFaith/prompts.ts). The contributor's saved
+		// preference (if any) is folded in after the auth/contributor lookup
+		// below — see `resolvedRegister = resolveReviewerRegister(...)` later
+		// in this handler.
+		let resolvedRegister = resolveReviewerRegister(input.register, undefined, writingStyle);
+
 		logger.info(
-			`Writing style: ${writingStyle || 'not specified'}, using model: ${selectedModel}, maxTokens: ${selectedMaxTokens}`
+			`Writing style: ${writingStyle || 'not specified'}, using model: ${selectedModel}, maxTokens: ${selectedMaxTokens}, preliminary register: ${resolvedRegister}`
 		);
 
 		if (!input.content.trim()) {
@@ -430,6 +484,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			analysis_enabled: boolean;
 			analysis_limit: number | null;
 			analysis_count_used: number;
+			reviewer_register: ReviewerRegister | null;
 		} | null = null;
 
 		if (accessToken) {
@@ -507,6 +562,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 											analysis_enabled
 											analysis_limit
 											analysis_count_used
+											reviewer_register
 										}
 									}
 								`,
@@ -555,6 +611,17 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			}
 		}
 
+		// Now that we know the contributor's saved preference, fold it into the
+		// register resolution. The client's `input.register` still takes
+		// precedence — it covers the "preview a different voice on this one
+		// post" case without requiring a DB round-trip.
+		resolvedRegister = resolveReviewerRegister(
+			input.register,
+			contributor?.reviewer_register,
+			writingStyle
+		);
+		logger.info(`Resolved reviewer register for this request: ${resolvedRegister}`);
+
 		try {
 			logger.info('Claude API key present:', !!process.env.ANTHROPIC_API_KEY);
 			logger.info('Processing request for content length:', input.content.length);
@@ -562,12 +629,13 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			// Fetch cache TTL setting from database
 			const cacheTTL = await getPromptCacheTTL();
 
-			// Use Claude analysis with the selected model, max tokens, and cache TTL
+			// Use Claude analysis with the selected model, max tokens, cache TTL, and register
 			const scored = await analyzeWithClaude(
 				fullContent,
 				selectedModel,
 				selectedMaxTokens,
-				cacheTTL
+				cacheTTL,
+				resolvedRegister
 			);
 
 			// Increment appropriate credit type only if Claude was actually used (not heuristic fallback)

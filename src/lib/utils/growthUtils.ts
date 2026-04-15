@@ -30,7 +30,31 @@ export const XP_VALUES = {
 	QUALITY_MULTIPLIER: 1.5 // Multiplier for exceptional posts
 } as const;
 
-export const LEVEL_TITLES = {
+/**
+ * Level titles (Plan 7).
+ *
+ * Two named sets:
+ * - `craft`: approachable, smith-themed labels (default). Welcoming to users
+ *   who feel "bad at arguing" — the people we most want in the room.
+ * - `academic`: the previous, rank-sounding titles, retained for users who
+ *   preferred them. Opt-in via user setting `level_display_mode`.
+ *
+ * A third display mode `hidden` removes level titles from the UI entirely;
+ * it is not represented here because the component layer just skips the
+ * title when the mode is `hidden`.
+ */
+export const LEVEL_TITLES_CRAFT = {
+	1: 'Apprentice',
+	5: 'Journeyman',
+	10: 'Craftsman',
+	15: 'Smith',
+	20: 'Master Smith',
+	25: 'Loremaster',
+	35: 'Elder Smith',
+	50: 'Living Legend'
+} as const;
+
+export const LEVEL_TITLES_ACADEMIC = {
 	1: 'Novice',
 	5: 'Apprentice Reasoner',
 	10: 'Reasoning Adept',
@@ -40,6 +64,16 @@ export const LEVEL_TITLES = {
 	35: 'Grandmaster',
 	50: 'Legendary Sage'
 } as const;
+
+/**
+ * Backwards-compatible alias. Existing imports of LEVEL_TITLES continue to
+ * resolve to the craft set, which is the new default. Consumers that want
+ * the old titles should pass `mode: 'academic'` to `getLevelTitle`.
+ */
+export const LEVEL_TITLES = LEVEL_TITLES_CRAFT;
+
+export type LevelDisplayMode = 'craft' | 'academic' | 'hidden';
+export const DEFAULT_LEVEL_DISPLAY_MODE: LevelDisplayMode = 'craft';
 
 // ============================================================================
 // Level Calculations
@@ -79,8 +113,14 @@ export function getXPForNextLevel(currentLevel: number): number {
 /**
  * Get XP progress toward next level
  * Returns { current, needed, percentage }
+ *
+ * @param totalXP total XP the user has accumulated
+ * @param mode which title set to return (defaults to 'craft')
  */
-export function getLevelProgress(totalXP: number): {
+export function getLevelProgress(
+	totalXP: number,
+	mode: LevelDisplayMode = DEFAULT_LEVEL_DISPLAY_MODE
+): {
 	currentLevel: number;
 	currentXP: number;
 	xpForNextLevel: number;
@@ -101,8 +141,9 @@ export function getLevelProgress(totalXP: number): {
 	const xpToNextLevel = xpForNextLevel - currentXP;
 	const percentage = (currentXP / xpForNextLevel) * 100;
 
-	// Get level title
-	const title = getLevelTitle(currentLevel);
+	// Get level title for requested mode. `hidden` returns an empty string;
+	// the component layer is responsible for suppressing the label entirely.
+	const title = mode === 'hidden' ? '' : getLevelTitle(currentLevel, mode);
 
 	return {
 		currentLevel,
@@ -115,11 +156,24 @@ export function getLevelProgress(totalXP: number): {
 }
 
 /**
- * Get title for a given level
+ * Get title for a given level.
+ *
+ * @param level numeric level (1-based)
+ * @param mode  which title set to use:
+ *   - 'craft' (default): approachable smith-themed labels
+ *   - 'academic': the legacy titles
+ *   - 'hidden': returns empty string; caller should skip rendering
  */
-export function getLevelTitle(level: number): string {
+export function getLevelTitle(
+	level: number,
+	mode: LevelDisplayMode = DEFAULT_LEVEL_DISPLAY_MODE
+): string {
+	if (mode === 'hidden') return '';
+
+	const source = mode === 'academic' ? LEVEL_TITLES_ACADEMIC : LEVEL_TITLES_CRAFT;
+
 	// Find the highest level title <= current level
-	const titles = Object.entries(LEVEL_TITLES)
+	const titles = Object.entries(source)
 		.map(([lvl, title]) => ({ level: parseInt(lvl), title }))
 		.sort((a, b) => b.level - a.level);
 
@@ -129,7 +183,7 @@ export function getLevelTitle(level: number): string {
 		}
 	}
 
-	return 'Novice';
+	return mode === 'academic' ? 'Novice' : 'Apprentice';
 }
 
 // ============================================================================

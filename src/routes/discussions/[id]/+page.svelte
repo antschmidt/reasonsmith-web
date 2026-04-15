@@ -9,6 +9,8 @@
 		CREATE_POST_DRAFT_WITH_STYLE,
 		UPDATE_DISCUSSION_VERSION_GOOD_FAITH,
 		UPDATE_POST_GOOD_FAITH,
+		UPDATE_POST_STEELMAN,
+		SET_POST_STEELMAN_PROMPT_SHOWN,
 		GET_DISCUSSION_DETAILS as IMPORTED_GET_DISCUSSION_DETAILS,
 		GET_CONTRIBUTOR,
 		INCREMENT_PURCHASED_CREDITS_USED,
@@ -119,6 +121,36 @@
 	let draftPostId = $state<string | null>(null);
 	let draftAutosaver = $state<DraftAutosaver | null>(null);
 	let draftLoaded = $state(false); // prevents duplicate fetch
+
+	// Plan 4 — steelman prompt state. `steelmanSentence` is bound into the
+	// composer; `steelmanPromptShownRecorded` prevents us from writing the
+	// first-shown timestamp more than once per draft post.
+	let steelmanSentence = $state('');
+	let steelmanPromptShownRecorded = $state(false);
+
+	// Reactive: does the active discussion version require a steelman?
+	const steelmanRequired = $derived(
+		Boolean(discussion?.current_version?.[0]?.steelman_required)
+	);
+
+	// Handler: called once by SteelmanPrompt when it first mounts. We persist
+	// the timestamp the first time the user sees the prompt, but only if we
+	// already have a draft to attach it to. If the draft isn't created yet,
+	// this is a no-op; publishDraft() records the timestamp on draft creation.
+	async function recordSteelmanPromptShown() {
+		if (steelmanPromptShownRecorded) return;
+		if (!draftPostId) return; // defer — publishDraft will record after ensureDraftCreated
+		steelmanPromptShownRecorded = true;
+		try {
+			await nhost.graphql.request(SET_POST_STEELMAN_PROMPT_SHOWN, {
+				postId: draftPostId,
+				shownAt: new Date().toISOString()
+			});
+		} catch (err) {
+			console.warn('Failed to record steelman_prompt_shown_at:', err);
+			steelmanPromptShownRecorded = false; // allow retry on next publish attempt
+		}
+	}
 	let lastSavedAt = $state<number | null>(null);
 	let hasPending = $state(false);
 	let focusReplyOnMount = $state(false);
@@ -297,18 +329,8 @@
 
 	let commentSelectedStyle = $derived(getInferredCommentStyle());
 
-	// Good faith testing state
+	// Good faith testing state (Claude-only; var name retained for legacy)
 	let goodFaithTesting = $state(false);
-	let goodFaithResult = $state<{
-		good_faith_score: number;
-		good_faith_label: string;
-		rationale: string;
-		claims?: any[];
-		cultishPhrases?: string[];
-		fallacyOverload?: boolean;
-		fromCache?: boolean;
-	} | null>(null);
-	let goodFaithError = $state<string | null>(null);
 
 	// Claude good faith testing state
 	let claudeGoodFaithTesting = $state(false);
@@ -719,6 +741,36 @@
 			// Get the current published version ID to set as context
 			const currentVersionId = discussion.current_version?.[0]?.id || null;
 
+			// Plan 4 — persist the contributor's steelman sentence (if any) BEFORE
+			// we flip the post status to approved. Best effort: a failure here is
+			// logged but not blocking, because the composer already enforced the
+			// presence/length requirement when `steelmanRequired` is true.
+			if (steelmanSentence && steelmanSentence.trim()) {
+				try {
+					await nhost.graphql.request(UPDATE_POST_STEELMAN, {
+						postId: draftPostId,
+						steelmanSentence: steelmanSentence.trim()
+					});
+				} catch (err) {
+					console.warn('Failed to persist steelman_sentence:', err);
+				}
+			}
+
+			// Backfill steelman_prompt_shown_at if the prompt was mounted before
+			// the draft existed. `steelmanPromptShownRecorded` guards against
+			// overwriting an earlier timestamp.
+			if (steelmanRequired && !steelmanPromptShownRecorded) {
+				steelmanPromptShownRecorded = true;
+				try {
+					await nhost.graphql.request(SET_POST_STEELMAN_PROMPT_SHOWN, {
+						postId: draftPostId,
+						shownAt: new Date().toISOString()
+					});
+				} catch (err) {
+					console.warn('Failed to record steelman_prompt_shown_at (backfill):', err);
+				}
+			}
+
 			// Publish the draft directly (without good faith scoring)
 			const { error } = await nhost.graphql.request(
 				`
@@ -781,6 +833,8 @@
 
 			draftPostId = null;
 			draftLoaded = false;
+			steelmanSentence = '';
+			steelmanPromptShownRecorded = false;
 			commentStyleMetadata = {
 				citations: []
 			};
@@ -2726,80 +2780,6 @@
 		}
 	}
 
-	// Ensure all citations and sources have IDs
-	// Good faith testing function (OpenAI)
-	async function testGoodFaith() {
-		if (!editDescription.trim()) {
-			goodFaithError = 'Please enter some content to test';
-			return;
-		}
-
-		// Check analysis limits
-		if (!contributor || !canUseAnalysis(contributor)) {
-			goodFaithError = getAnalysisLimitText() || 'Analysis not available';
-			return;
-		}
-
-		// Check cache first
-		const cachedResult = await getCachedAnalysis(discussion?.id || null, editDescription, 'openai');
-		if (cachedResult) {
-			goodFaithResult = { ...cachedResult, fromCache: true };
-			return;
-		}
-
-		goodFaithTesting = true;
-		goodFaithError = null;
-		goodFaithResult = null;
-
-		try {
-			// Use local API route during development, Vercel function in production
-			const endpoint = '/api/goodFaith';
-
-			const response = await fetch(endpoint, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					postId: 'test',
-					content: editDescription
-				})
-			});
-
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
-
-			const data = await response.json();
-
-			if (data.error) {
-				throw new Error(data.error);
-			}
-
-			goodFaithResult = {
-				good_faith_score: data.good_faith_score,
-				good_faith_label: data.good_faith_label,
-				rationale: data.rationale,
-				claims: data.claims,
-				cultishPhrases: data.cultishPhrases,
-				fallacyOverload: data.fallacyOverload
-			};
-
-			// Cache the result
-			await cacheAnalysis(discussion?.id || null, editDescription, 'openai', goodFaithResult);
-
-			// Consume the appropriate credit (monthly or purchased)
-			await consumeAnalysisCredit();
-
-			// Save to database
-			await saveGoodFaithAnalysisToDatabase(goodFaithResult, 'openai');
-		} catch (error: any) {
-			goodFaithError = error.message || 'Failed to analyze content';
-		} finally {
-			goodFaithTesting = false;
-		}
-	}
-
 	// Claude good faith testing function
 	async function testGoodFaithClaude() {
 		if (!editDescription.trim()) {
@@ -2886,124 +2866,6 @@
 		}
 	}
 
-	// Comment good faith testing function (OpenAI)
-	async function testCommentGoodFaith() {
-		if (!newComment.trim()) {
-			commentGoodFaithError = 'Please enter some content to test';
-			return;
-		}
-
-		// Check analysis limits
-		if (!contributor || !canUseAnalysis(contributor)) {
-			commentGoodFaithError = getAnalysisLimitText() || 'Analysis not available';
-			return;
-		}
-
-		// Check cache first
-		const cachedResult = await getCachedAnalysis(discussion?.id || null, newComment, 'openai');
-		if (cachedResult) {
-			commentGoodFaithResult = { ...cachedResult, fromCache: true };
-			return;
-		}
-
-		const goodFaithTesting = true; // Local flag for UI
-		commentGoodFaithError = null;
-		commentGoodFaithResult = null;
-
-		try {
-			// Build context payload
-			const discussionContext: any = {
-				discussion: {
-					title: getDiscussionTitle(discussion),
-					description: getDiscussionDescription(discussion)
-				}
-			};
-
-			// Add citations if they exist
-			if (discussion?.current_version?.[0]) {
-				const currentVersion = discussion.current_version[0];
-				const extraction = extractCitationData(getDiscussionDescription(discussion));
-				const jsonCitations = extraction.citationData?.style_metadata?.citations || [];
-				const tableCitations = currentVersion.citationsFromTable || [];
-				const versionCitations = currentVersion.citations || [];
-				const allCitations = [...tableCitations, ...versionCitations, ...jsonCitations];
-
-				if (allCitations.length > 0) {
-					discussionContext.discussion.citations = allCitations;
-				}
-
-				// Add social media import data if present
-				if (
-					currentVersion.import_content &&
-					currentVersion.import_source &&
-					currentVersion.import_author
-				) {
-					discussionContext.importData = {
-						source: currentVersion.import_source,
-						url: currentVersion.import_url,
-						content: currentVersion.import_content,
-						author: currentVersion.import_author,
-						date: currentVersion.import_date
-					};
-				}
-			}
-
-			// Add selected comments as context
-			if (selectedContextCommentIds.length > 0 && discussion?.posts) {
-				discussionContext.selectedComments = discussion.posts
-					.filter((p: any) => selectedContextCommentIds.includes(p.id))
-					.map((p: any) => ({
-						id: p.id,
-						content: p.content,
-						author: p.is_anonymous ? 'Anonymous' : p.contributor?.display_name || 'User',
-						created_at: p.created_at,
-						is_anonymous: p.is_anonymous
-					}));
-			}
-
-			// Use local API route during development, Vercel function in production
-			const endpoint = '/api/goodFaith';
-
-			const response = await fetch(endpoint, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					postId: 'test-comment',
-					content: newComment,
-					discussionContext
-				})
-			});
-
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
-
-			const data = await response.json();
-
-			if (data.error) {
-				throw new Error(data.error);
-			}
-
-			commentGoodFaithResult = {
-				good_faith_score: data.good_faith_score,
-				good_faith_label: data.good_faith_label,
-				rationale: data.rationale,
-				claims: data.claims,
-				cultishPhrases: data.cultishPhrases
-			};
-
-			// Cache the result
-			await cacheAnalysis(discussion?.id || null, newComment, 'openai', commentGoodFaithResult);
-
-			// Consume the appropriate credit (monthly or purchased)
-			await consumeAnalysisCredit();
-		} catch (error: any) {
-			commentGoodFaithError = error.message || 'Failed to analyze comment';
-		}
-	}
-
 	// Comment good faith testing function (Claude)
 	async function testCommentGoodFaithClaude() {
 		if (!newComment.trim()) {
@@ -3029,7 +2891,7 @@
 		commentGoodFaithResult = null;
 
 		try {
-			// Build context payload (same as OpenAI version)
+			// Build context payload
 			const discussionContext: any = {
 				discussion: {
 					id: discussion?.id,
@@ -3132,7 +2994,7 @@
 	}
 
 	// Save good faith analysis to database
-	async function saveGoodFaithAnalysisToDatabase(result: any, provider: 'openai' | 'claude') {
+	async function saveGoodFaithAnalysisToDatabase(result: any, provider: 'claude') {
 		if (!discussion || !result) return;
 
 		try {
@@ -3457,10 +3319,7 @@
 							bind:showCitationPicker={showEditCitationPicker}
 							heuristicScore={editHeuristicScore}
 							heuristicPassed={editHeuristicPassed}
-							{goodFaithTesting}
 							{claudeGoodFaithTesting}
-							bind:goodFaithResult
-							bind:goodFaithError
 							bind:claudeGoodFaithResult
 							bind:claudeGoodFaithError
 							lastSavedAt={editLastSavedAt}
@@ -3477,7 +3336,6 @@
 							onCancelCitationEdit={cancelEditCitation}
 							onInsertCitationReference={insertEditCitationReference}
 							onOpenCitationPicker={openEditCitationPicker}
-							onTestGoodFaith={testGoodFaith}
 							onTestGoodFaithClaude={testGoodFaithClaude}
 							onPublish={publishDraftChanges}
 							onCancel={cancelEdit}
@@ -3674,6 +3532,9 @@
 					discussionId={discussion?.id}
 					discussionTitle={discussion ? getDiscussionTitle(discussion) : 'Discussion'}
 					discussionPosts={discussion?.posts || []}
+					{steelmanRequired}
+					bind:steelmanSentence
+					onSteelmanPromptShown={recordSteelmanPromptShown}
 					bind:selectedContextCommentIds
 					onInput={onCommentInput}
 					onFocus={loadExistingDraft}
@@ -3682,7 +3543,6 @@
 					onCancelCitationEdit={cancelCommentCitationEdit}
 					onInsertCitationReference={insertCommentCitationReference}
 					onOpenCitationPicker={openCommentCitationPicker}
-					onTestGoodFaith={testCommentGoodFaith}
 					onTestGoodFaithClaude={testCommentGoodFaithClaude}
 					onPublish={publishDraft}
 					onClearReplying={clearReplying}

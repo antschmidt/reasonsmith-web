@@ -8,12 +8,11 @@ import {
 	getLabel,
 	extractFallacies,
 	normalizeClaudeResponse,
-	normalizeOpenAIResponse,
 	parseClaudeJsonResponse,
 	isValidResponse,
 	addLegacyFields
 } from './response';
-import type { Claim, ClaudeRawResponse, OpenAIRawResponse, GoodFaithResult } from './types';
+import type { Claim, ClaudeRawResponse, GoodFaithResult } from './types';
 
 describe('normalizeScore', () => {
 	describe('with 0-100 scale', () => {
@@ -295,39 +294,6 @@ describe('normalizeClaudeResponse', () => {
 	});
 });
 
-describe('normalizeOpenAIResponse', () => {
-	const baseResponse: OpenAIRawResponse = {
-		claims: [],
-		fallacyOverload: false,
-		goodFaithScore: 80,
-		goodFaithDescriptor: 'Exemplary',
-		cultishPhrases: [],
-		summary: 'This is a well-reasoned argument.',
-		tags: ['logic']
-	};
-
-	it('normalizes score from 0-100 to 0-1', () => {
-		const result = normalizeOpenAIResponse(baseResponse);
-		expect(result.good_faith_score).toBe(0.8);
-	});
-
-	it('derives label from score', () => {
-		const result = normalizeOpenAIResponse(baseResponse);
-		expect(result.good_faith_label).toBe('exemplary');
-	});
-
-	it('sets provider to openai', () => {
-		const result = normalizeOpenAIResponse(baseResponse);
-		expect(result.provider).toBe('openai');
-	});
-
-	it('uses summary field for summary and rationale', () => {
-		const result = normalizeOpenAIResponse(baseResponse);
-		expect(result.summary).toBe('This is a well-reasoned argument.');
-		expect(result.rationale).toBe('This is a well-reasoned argument.');
-	});
-});
-
 describe('parseClaudeJsonResponse', () => {
 	it('parses valid JSON', () => {
 		const json = '{"goodFaithScore": 75}';
@@ -448,8 +414,8 @@ describe('addLegacyFields', () => {
 	});
 
 	it('sets usedClaude to false for non-claude provider', () => {
-		const openaiResult = { ...baseResult, provider: 'openai' as const };
-		const result = addLegacyFields(openaiResult) as GoodFaithResult & { usedClaude?: boolean };
+		const heuristicResult = { ...baseResult, provider: 'heuristic' as const };
+		const result = addLegacyFields(heuristicResult) as GoodFaithResult & { usedClaude?: boolean };
 		expect(result.usedClaude).toBe(false);
 	});
 

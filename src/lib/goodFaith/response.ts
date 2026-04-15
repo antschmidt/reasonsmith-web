@@ -3,7 +3,26 @@
  * Converts provider-specific responses to a unified format
  */
 
-import type { GoodFaithResult, ClaudeRawResponse, OpenAIRawResponse, Claim } from './types';
+import type {
+	GoodFaithResult,
+	ClaudeRawResponse,
+	Claim,
+	ReviewerRegister
+} from './types';
+
+/**
+ * Derive a short coaching headline from a longer analysis string.
+ * Used as a fallback when the model omits coachingHeadline (older
+ * cached analyses, heuristic results, or early adopters of the new
+ * schema who haven't re-analyzed).
+ */
+export function deriveCoachingHeadline(source: string | undefined, maxLen = 120): string {
+	if (!source) return '';
+	// First sentence, up to maxLen chars.
+	const firstSentence = source.split(/(?<=[.!?])\s+/)[0] ?? source;
+	if (firstSentence.length <= maxLen) return firstSentence.trim();
+	return firstSentence.slice(0, maxLen - 1).trim() + '…';
+}
 
 /**
  * Normalize a score to 0-1 scale
@@ -47,8 +66,15 @@ export function extractFallacies(claims: Claim[]): string[] {
 
 /**
  * Normalize a Claude API response to the unified format
+ *
+ * @param raw The parsed Claude JSON response
+ * @param register Optional register used to produce the response; included
+ *   in the normalized result so the UI can display which voice was used.
  */
-export function normalizeClaudeResponse(raw: ClaudeRawResponse): GoodFaithResult {
+export function normalizeClaudeResponse(
+	raw: ClaudeRawResponse,
+	register?: ReviewerRegister
+): GoodFaithResult {
 	const normalizedScore = normalizeScore(raw.goodFaithScore ?? 50, '0-100');
 
 	return {
@@ -56,6 +82,16 @@ export function normalizeClaudeResponse(raw: ClaudeRawResponse): GoodFaithResult
 		good_faith_score: normalizedScore,
 		// Always derive label from score to ensure consistency with publishing requirements
 		good_faith_label: getLabel(normalizedScore),
+
+		// Coaching surface (Plan 2) — fall back to the first sentence of
+		// overallAnalysis if the model omitted the headline.
+		coachingHeadline:
+			raw.coachingHeadline?.trim() || deriveCoachingHeadline(raw.overallAnalysis),
+		suggestedRevision:
+			typeof raw.suggestedRevision === 'string' && raw.suggestedRevision.trim()
+				? raw.suggestedRevision.trim()
+				: null,
+		register,
 
 		// Detailed analysis
 		claims: raw.claims ?? [],
@@ -81,44 +117,6 @@ export function normalizeClaudeResponse(raw: ClaudeRawResponse): GoodFaithResult
 		goodFaithScore: raw.goodFaithScore,
 		goodFaithDescriptor: raw.goodFaithDescriptor,
 		overallAnalysis: raw.overallAnalysis
-	};
-}
-
-/**
- * Normalize an OpenAI API response to the unified format
- */
-export function normalizeOpenAIResponse(raw: OpenAIRawResponse): GoodFaithResult {
-	const normalizedScore = normalizeScore(raw.goodFaithScore ?? 50, '0-100');
-
-	return {
-		// Core scoring
-		good_faith_score: normalizedScore,
-		// Always derive label from score to ensure consistency with publishing requirements
-		good_faith_label: getLabel(normalizedScore),
-
-		// Detailed analysis
-		claims: raw.claims ?? [],
-		fallacyOverload: raw.fallacyOverload ?? false,
-		cultishPhrases: raw.cultishPhrases ?? [],
-		summary: raw.summary ?? '',
-		rationale: raw.summary,
-		tags: raw.tags,
-
-		// Growth metrics
-		steelmanScore: raw.steelmanScore,
-		steelmanNotes: raw.steelmanNotes,
-		understandingScore: raw.understandingScore,
-		intellectualHumilityScore: raw.intellectualHumilityScore,
-		relevanceScore: raw.relevanceScore,
-		relevanceNotes: raw.relevanceNotes,
-
-		// Metadata
-		provider: 'openai',
-		usedAI: true,
-
-		// Legacy compatibility
-		goodFaithScore: raw.goodFaithScore,
-		goodFaithDescriptor: raw.goodFaithDescriptor
 	};
 }
 
@@ -149,7 +147,7 @@ export function parseClaudeJsonResponse(responseText: string): ClaudeRawResponse
  */
 export function isValidResponse(
 	response: unknown
-): response is ClaudeRawResponse | OpenAIRawResponse {
+): response is ClaudeRawResponse {
 	if (!response || typeof response !== 'object') return false;
 
 	const resp = response as Record<string, unknown>;

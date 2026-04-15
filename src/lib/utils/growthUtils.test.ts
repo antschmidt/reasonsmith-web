@@ -121,56 +121,91 @@ describe('getLevelProgress', () => {
 		expect(progress.percentage).toBeLessThanOrEqual(100);
 	});
 
-	it('includes title', () => {
+	it('includes craft title by default', () => {
 		const progress = getLevelProgress(0);
+		expect(progress.title).toBe('Apprentice');
+	});
+
+	it('returns empty title when display mode is hidden', () => {
+		const progress = getLevelProgress(0, 'hidden');
+		expect(progress.title).toBe('');
+	});
+
+	it('returns academic title when requested', () => {
+		const progress = getLevelProgress(0, 'academic');
 		expect(progress.title).toBe('Novice');
 	});
 });
 
-describe('getLevelTitle', () => {
-	it('returns Novice for level 1', () => {
-		expect(getLevelTitle(1)).toBe('Novice');
+describe('getLevelTitle (craft mode — default)', () => {
+	it('returns Apprentice for level 1', () => {
+		expect(getLevelTitle(1)).toBe('Apprentice');
 	});
 
-	it('returns Novice for levels 1-4', () => {
-		expect(getLevelTitle(2)).toBe('Novice');
-		expect(getLevelTitle(3)).toBe('Novice');
-		expect(getLevelTitle(4)).toBe('Novice');
+	it('returns Apprentice for levels 1-4', () => {
+		expect(getLevelTitle(2)).toBe('Apprentice');
+		expect(getLevelTitle(3)).toBe('Apprentice');
+		expect(getLevelTitle(4)).toBe('Apprentice');
 	});
 
-	it('returns Apprentice Reasoner for level 5', () => {
-		expect(getLevelTitle(5)).toBe('Apprentice Reasoner');
+	it('returns Journeyman for level 5', () => {
+		expect(getLevelTitle(5)).toBe('Journeyman');
 	});
 
-	it('returns Reasoning Adept for level 10', () => {
-		expect(getLevelTitle(10)).toBe('Reasoning Adept');
+	it('returns Craftsman for level 10', () => {
+		expect(getLevelTitle(10)).toBe('Craftsman');
 	});
 
-	it('returns Journeyman Dialectician for level 15', () => {
-		expect(getLevelTitle(15)).toBe('Journeyman Dialectician');
+	it('returns Smith for level 15', () => {
+		expect(getLevelTitle(15)).toBe('Smith');
 	});
 
-	it('returns Skilled Debater for level 20', () => {
-		expect(getLevelTitle(20)).toBe('Skilled Debater');
+	it('returns Master Smith for level 20', () => {
+		expect(getLevelTitle(20)).toBe('Master Smith');
 	});
 
-	it('returns Master Reasonsmith for level 25', () => {
-		expect(getLevelTitle(25)).toBe('Master Reasonsmith');
+	it('returns Loremaster for level 25', () => {
+		expect(getLevelTitle(25)).toBe('Loremaster');
 	});
 
-	it('returns Grandmaster for level 35', () => {
-		expect(getLevelTitle(35)).toBe('Grandmaster');
+	it('returns Elder Smith for level 35', () => {
+		expect(getLevelTitle(35)).toBe('Elder Smith');
 	});
 
-	it('returns Legendary Sage for level 50+', () => {
-		expect(getLevelTitle(50)).toBe('Legendary Sage');
-		expect(getLevelTitle(100)).toBe('Legendary Sage');
+	it('returns Living Legend for level 50+', () => {
+		expect(getLevelTitle(50)).toBe('Living Legend');
+		expect(getLevelTitle(100)).toBe('Living Legend');
 	});
 
 	it('uses highest applicable title for intermediate levels', () => {
-		expect(getLevelTitle(7)).toBe('Apprentice Reasoner');
-		expect(getLevelTitle(12)).toBe('Reasoning Adept');
-		expect(getLevelTitle(30)).toBe('Master Reasonsmith');
+		expect(getLevelTitle(7)).toBe('Journeyman');
+		expect(getLevelTitle(12)).toBe('Craftsman');
+		expect(getLevelTitle(30)).toBe('Loremaster');
+	});
+});
+
+describe('getLevelTitle (academic mode)', () => {
+	it('returns Novice for level 1', () => {
+		expect(getLevelTitle(1, 'academic')).toBe('Novice');
+	});
+
+	it('returns Apprentice Reasoner for level 5', () => {
+		expect(getLevelTitle(5, 'academic')).toBe('Apprentice Reasoner');
+	});
+
+	it('returns Master Reasonsmith for level 25', () => {
+		expect(getLevelTitle(25, 'academic')).toBe('Master Reasonsmith');
+	});
+
+	it('returns Legendary Sage for level 50+', () => {
+		expect(getLevelTitle(50, 'academic')).toBe('Legendary Sage');
+	});
+});
+
+describe('getLevelTitle (hidden mode)', () => {
+	it('returns empty string for any level', () => {
+		expect(getLevelTitle(1, 'hidden')).toBe('');
+		expect(getLevelTitle(50, 'hidden')).toBe('');
 	});
 });
 
@@ -636,15 +671,15 @@ describe('XP_VALUES constants', () => {
 	});
 });
 
-describe('LEVEL_TITLES constants', () => {
-	it('has all expected titles', () => {
-		expect(LEVEL_TITLES[1]).toBe('Novice');
-		expect(LEVEL_TITLES[5]).toBe('Apprentice Reasoner');
-		expect(LEVEL_TITLES[10]).toBe('Reasoning Adept');
-		expect(LEVEL_TITLES[15]).toBe('Journeyman Dialectician');
-		expect(LEVEL_TITLES[20]).toBe('Skilled Debater');
-		expect(LEVEL_TITLES[25]).toBe('Master Reasonsmith');
-		expect(LEVEL_TITLES[35]).toBe('Grandmaster');
-		expect(LEVEL_TITLES[50]).toBe('Legendary Sage');
+describe('LEVEL_TITLES constants (legacy alias — now points to craft set)', () => {
+	it('has all expected craft-mode titles', () => {
+		expect(LEVEL_TITLES[1]).toBe('Apprentice');
+		expect(LEVEL_TITLES[5]).toBe('Journeyman');
+		expect(LEVEL_TITLES[10]).toBe('Craftsman');
+		expect(LEVEL_TITLES[15]).toBe('Smith');
+		expect(LEVEL_TITLES[20]).toBe('Master Smith');
+		expect(LEVEL_TITLES[25]).toBe('Loremaster');
+		expect(LEVEL_TITLES[35]).toBe('Elder Smith');
+		expect(LEVEL_TITLES[50]).toBe('Living Legend');
 	});
 });

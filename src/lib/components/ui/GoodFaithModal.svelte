@@ -191,9 +191,7 @@
 						{#if analysis.provider}
 							<div class="provider-attribution">
 								<small>
-									Analysis by: {analysis.provider === 'openai'
-										? 'OpenAI'
-										: analysis.provider.charAt(0).toUpperCase() + analysis.provider.slice(1)}
+									Analysis by: {analysis.provider.charAt(0).toUpperCase() + analysis.provider.slice(1)}
 								</small>
 							</div>
 						{/if}

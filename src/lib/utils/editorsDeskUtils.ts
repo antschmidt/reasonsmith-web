@@ -21,11 +21,35 @@ export interface CuratorInfo {
 /**
  * Type definition for Editors' Desk picks used in UI components
  */
+/**
+ * A single inline annotation on a featured piece (Plan 5).
+ *
+ * `target.range_start`/`range_end` are character offsets into the post's
+ * published content (after sanitization). `kind` hints at intent so the UI
+ * can style each annotation differently.
+ */
+export interface ShowcaseAnnotation {
+	id: string;
+	target: {
+		post_id: string;
+		range_start: number;
+		range_end: number;
+	};
+	kind: 'observation' | 'question' | 'steelman';
+	body: string;
+	author_id?: string | null;
+	created_at?: string | null;
+}
+
 export interface EditorsDeskPick {
 	id: string;
 	title: string;
 	excerpt?: string | null;
 	editor_note?: string | null;
+	/** Plan 5: curator's guidance for the reader. */
+	curator_note?: string | null;
+	/** Plan 5: inline annotations keyed to ranges within the featured post. */
+	annotations?: ShowcaseAnnotation[] | null;
 	created_at: string;
 	post_id?: string | null;
 	discussion_id?: string | null;

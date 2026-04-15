@@ -70,7 +70,7 @@
 					<li>Provide, maintain, and improve the Service</li>
 					<li>Create and manage your account with role-based permissions</li>
 					<li>Process authentication via GitHub, Google, magic links, or email/password</li>
-					<li>Generate good-faith scores using AI analysis from Anthropic Claude and OpenAI</li>
+					<li>Generate good-faith scores using AI analysis from Anthropic Claude</li>
 					<li>Track and manage analysis credits (monthly and purchased)</li>
 					<li>Auto-save drafts locally and on servers to prevent data loss</li>
 					<li>Moderate content and enforce Community Guidelines</li>
@@ -87,14 +87,12 @@
 			<section>
 				<h2>4. AI-Assisted Content Analysis</h2>
 				<p>
-					ReasonSmith uses AI technology from multiple providers to analyze content for good-faith
-					scoring:
+					ReasonSmith uses Anthropic Claude to analyze content for good-faith scoring:
 				</p>
 
-				<h3>AI Providers</h3>
+				<h3>AI Provider</h3>
 				<ul>
-					<li><strong>Anthropic Claude:</strong> Primary AI provider for post and discussion analysis</li>
-					<li><strong>OpenAI:</strong> Additional AI provider for content scoring and moderation</li>
+					<li><strong>Anthropic Claude:</strong> AI provider for post and discussion analysis, scoring, and moderation</li>
 				</ul>
 
 				<h3>What We Analyze</h3>
@@ -110,7 +108,7 @@
 				<h3>Data Processing</h3>
 				<p>
 					Content submitted for AI analysis is processed in accordance with our service providers'
-					privacy policies (Anthropic's Privacy Policy and OpenAI's Privacy Policy). We do not use
+					privacy policies (Anthropic's Privacy Policy). We do not use
 					your content to train third-party AI models. Analysis is performed only when you
 					explicitly request good-faith scoring and have available credits.
 				</p>
@@ -160,7 +158,6 @@
 					</li>
 					<li><strong>Vercel</strong> - Frontend hosting and analytics</li>
 					<li><strong>Anthropic</strong> - AI-assisted content moderation and good-faith scoring via Claude API</li>
-					<li><strong>OpenAI</strong> - Additional AI-assisted content moderation and scoring</li>
 					<li><strong>Neo4j</strong> - Citation network graph database for relationship visualization</li>
 					<li><strong>GitHub/Google</strong> - OAuth authentication services</li>
 				</ul>
@@ -396,7 +393,7 @@
 					jurisdiction, including:
 				</p>
 				<ul>
-					<li>United States (Vercel, OpenAI, Neo4j)</li>
+					<li>United States (Vercel, Neo4j)</li>
 					<li>European Union (Nhost, depending on configuration)</li>
 					<li>Cloud infrastructure locations used by our service providers</li>
 				</ul>

@@ -19,13 +19,13 @@ export type {
 	DiscussionContext,
 	Citation,
 	SelectedComment,
+	ReviewerRegister,
 	// Output types
 	GoodFaithResult,
 	Claim,
 	Argument,
 	// Provider types
 	ClaudeRawResponse,
-	OpenAIRawResponse,
 	ProviderName,
 	ProviderConfig,
 	WritingStyle,
@@ -36,7 +36,8 @@ export {
 	PROVIDER_CONFIGS,
 	STYLE_MODEL_MAP,
 	DEFAULT_CLAUDE_MODEL,
-	DEFAULT_MAX_TOKENS
+	DEFAULT_MAX_TOKENS,
+	DEFAULT_REVIEWER_REGISTER
 } from './types';
 
 // Context building
@@ -53,9 +54,12 @@ export {
 	QUOTE_HANDLING,
 	COMPOUND_ARGUMENT_HANDLING,
 	OUTPUT_SCHEMA_DESCRIPTION,
+	COACHING_OUTPUT_INSTRUCTIONS,
 	CLAUDE_SPECIFIC_INSTRUCTIONS,
-	OPENAI_SPECIFIC_INSTRUCTIONS,
-	buildBaseSystemPrompt
+	REVIEWER_REGISTER_INSTRUCTIONS,
+	REVIEWER_GUARDRAIL,
+	buildBaseSystemPrompt,
+	buildRegisterBlock
 } from './prompts';
 
 // Response normalization
@@ -64,10 +68,10 @@ export {
 	getLabel,
 	extractFallacies,
 	normalizeClaudeResponse,
-	normalizeOpenAIResponse,
 	parseClaudeJsonResponse,
 	isValidResponse,
-	addLegacyFields
+	addLegacyFields,
+	deriveCoachingHeadline
 } from './response';
 
 // Heuristic fallback

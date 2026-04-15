@@ -302,3 +302,36 @@ export const UNANONYMIZE_POST = gql`
 		}
 	}
 `;
+
+// ============================================
+// Post Mutations - Steelman (Plan 4)
+// ============================================
+
+// Save the contributor's steelman sentence. Called when the composer publishes
+// a draft OR when the contributor edits their steelman on a prior draft.
+export const UPDATE_POST_STEELMAN = gql`
+	mutation UpdatePostSteelman($postId: uuid!, $steelmanSentence: String) {
+		update_post_by_pk(
+			pk_columns: { id: $postId }
+			_set: { steelman_sentence: $steelmanSentence }
+		) {
+			id
+			steelman_sentence
+		}
+	}
+`;
+
+// Record the first time we showed the steelman prompt for a given post. Use a
+// conditional mutation wrapper at the call site to avoid overwriting an
+// earlier timestamp — we want "first seen", not "last seen".
+export const SET_POST_STEELMAN_PROMPT_SHOWN = gql`
+	mutation SetPostSteelmanPromptShown($postId: uuid!, $shownAt: timestamptz!) {
+		update_post_by_pk(
+			pk_columns: { id: $postId }
+			_set: { steelman_prompt_shown_at: $shownAt }
+		) {
+			id
+			steelman_prompt_shown_at
+		}
+	}
+`;

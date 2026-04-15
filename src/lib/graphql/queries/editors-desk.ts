@@ -26,6 +26,50 @@ export const GET_EDITORS_DESK_PICK_BY_ID = gql`
 	${EDITORS_DESK_PICK_FIELDS}
 `;
 
+// Plan 5 — detail view query. Pulls pick + its target post's content +
+// minimal author/discussion metadata. Returns null when the pick isn't
+// published or approved (anonymous role gate handles that at Hasura level).
+export const GET_EDITORS_DESK_SHOWCASE = gql`
+	query GetEditorsDeskShowcase($id: uuid!) {
+		editors_desk_pick_by_pk(id: $id) {
+			id
+			title
+			excerpt
+			editor_note
+			curator_note
+			annotations
+			published
+			status
+			created_at
+			post_id
+			discussion_id
+			post {
+				id
+				content
+				created_at
+				contributor {
+					id
+					display_name
+					handle
+				}
+			}
+			userByCuratorId {
+				display_name
+			}
+			discussion {
+				id
+				discussion_versions(
+					order_by: { version_number: desc }
+					limit: 1
+				) {
+					title
+					description
+				}
+			}
+		}
+	}
+`;
+
 export const GET_MY_PENDING_EDITORS_DESK_APPROVALS = gql`
 	query GetMyPendingEditorsDeskApprovals($authorId: uuid!) {
 		editors_desk_pick(

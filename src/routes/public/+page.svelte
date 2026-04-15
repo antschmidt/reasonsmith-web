@@ -100,7 +100,7 @@
 	let analysisStatus = $state<string | null>(null);
 	let analysisError = $state<string | null>(null);
 	let extractedExamples = $state('');
-	let analysisProvider = $state<'claude' | 'openai'>('claude');
+	let analysisProvider = $state<'claude'>('claude');
 	let enableFactChecking = $state(false);
 	let showForm = $state(false);
 	let draggedIndex = $state<number | null>(null);
@@ -156,7 +156,7 @@
 	type DraftData = {
 		form: ShowcaseForm;
 		rawContent: string;
-		analysisProvider: 'claude' | 'openai';
+		analysisProvider: 'claude';
 		enableFactChecking: boolean;
 		savedAt: string;
 	};
@@ -804,7 +804,7 @@
 				tags: tagString
 			};
 
-			const providerLabel = analysisProvider === 'openai' ? 'OpenAI' : 'Claude';
+			const providerLabel = 'Claude';
 			const statusPrefix = force ? `Forced ${providerLabel}` : `${providerLabel}`;
 
 			if (form.id) {
@@ -2057,31 +2057,6 @@
 										</div>
 									</div>
 
-									{#if !useStreamingAnalysis}
-										<div class="control-group">
-											<span class="control-label">Model</span>
-											<div class="button-toggle-group">
-												<button
-													type="button"
-													class="toggle-btn"
-													class:is-active={analysisProvider === 'claude'}
-													disabled={analyzing}
-													onclick={() => (analysisProvider = 'claude')}
-												>
-													Claude
-												</button>
-												<button
-													type="button"
-													class="toggle-btn"
-													class:is-active={analysisProvider === 'openai'}
-													disabled={analyzing}
-													onclick={() => (analysisProvider = 'openai')}
-												>
-													OpenAI
-												</button>
-											</div>
-										</div>
-									{/if}
 
 									<div class="control-group">
 										<span class="control-label">Fact Check</span>
