@@ -11,6 +11,7 @@ export const GET_DISCUSSION_DETAILS = gql`
 			id
 			created_at
 			is_anonymous
+			is_onboarding_starter
 			status
 			showcase_item_id
 			showcase_item {

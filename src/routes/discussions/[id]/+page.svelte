@@ -26,6 +26,7 @@
 		PUBLISH_USER_NODES
 	} from '$lib/graphql/queries';
 	import { createDraftAutosaver, type DraftAutosaver } from '$lib';
+	import { advanceOnboarding } from '$lib/onboarding/state';
 	import {
 		getStyleConfig,
 		formatChicagoCitation,
@@ -535,6 +536,15 @@
 		});
 		if (error) return; // silent fail; user can still post normally
 		draftPostId = (data as any)?.insert_post_one?.id || null;
+		// Plan 1 onboarding: first time a draft is created, advance the state.
+		// advanceOnboarding is monotonic so later draft creations no-op.
+		if (draftPostId && user?.id) {
+			advanceOnboarding({
+				contributorId: user.id,
+				nextState: 'drafted_reply',
+				discussionId
+			}).catch(() => {});
+		}
 		initAutosaver();
 		// push initial content through autosaver
 		if (draftPostId && newComment) draftAutosaver?.handleChange(newComment);
@@ -682,6 +692,15 @@
 				});
 				if (gfErr) console.warn('Failed to save post good-faith analysis (GraphQL):', gfErr);
 
+				// Plan 1 onboarding: analysis came back, mark received_feedback.
+				if (user?.id) {
+					advanceOnboarding({
+						contributorId: user.id,
+						nextState: 'received_feedback',
+						discussionId: $page.params.id as string
+					}).catch(() => {});
+				}
+
 				if (score01 < COMMENT_GOOD_FAITH_THRESHOLD) {
 					// Keep as draft and show analysis
 					commentGoodFaithResult = {
@@ -787,6 +806,18 @@
 			);
 
 			if (error) throw error;
+
+			// Plan 1 onboarding: first successful publish in the seeded starter
+			// discussion completes the tour. Gated on is_onboarding_starter so
+			// publishing in any other discussion doesn't accidentally mark the
+			// user "completed".
+			if (user?.id && (discussion as any)?.is_onboarding_starter) {
+				advanceOnboarding({
+					contributorId: user.id,
+					nextState: 'completed',
+					discussionId: $page.params.id as string
+				}).catch(() => {});
+			}
 
 			// Publish user's unpublished argument graph nodes/edges
 			try {

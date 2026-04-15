@@ -127,12 +127,13 @@ export const UPDATE_CONTRIBUTOR_PREFERENCES = gql`
 `;
 
 // Onboarding state transitions (Plan 1). Stored on the contributor row so the
-// tour survives sessions without cookies. Values come from the
-// onboarding_state enum defined in Migration 3.
+// tour survives sessions without cookies. Allowed values are enforced by the
+// CHECK constraint in the 1798000000000_add_onboarding_state migration
+// (column is `text`, so Hasura exposes it as a String scalar).
 export const UPDATE_CONTRIBUTOR_ONBOARDING_STATE = gql`
 	mutation UpdateContributorOnboardingState(
 		$contributorId: uuid!
-		$state: onboarding_state!
+		$state: String!
 		$discussionId: uuid
 		$completedAt: timestamptz
 	) {

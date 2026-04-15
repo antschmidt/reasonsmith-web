@@ -3,14 +3,15 @@ import type { ReviewerRegister } from '$lib/goodFaith';
 import type { LevelDisplayMode } from '$lib/utils/growthUtils';
 
 export type GrowthVisibility = 'hidden' | 'quiet' | 'normal';
+// Keep in sync with the CHECK constraint in
+// nhost/migrations/default/1798000000000_add_onboarding_state/up.sql
 export type OnboardingState =
 	| 'not_started'
-	| 'steelman_prompt'
-	| 'analysis_shown'
-	| 'revision_offered'
-	| 'published'
-	| 'completed'
-	| 'skipped';
+	| 'read_prompt'
+	| 'drafted_reply'
+	| 'received_feedback'
+	| 'revised'
+	| 'completed';
 
 interface ContributorData {
 	id?: string | null;
