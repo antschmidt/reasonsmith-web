@@ -772,9 +772,8 @@
 											<MessageSquare size={12} /> {replyCount(d)}
 										</span>
 									{/if}
-									{@const activity = recentActivity(d)}
-									{#if activity}
-										<span class="activity-badge">{activity}</span>
+									{#if recentActivity(d)}
+										<span class="activity-badge">{recentActivity(d)}</span>
 									{/if}
 									<time
 										>{new Date(d.created_at).toLocaleDateString('en-US', {
