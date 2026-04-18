@@ -33,6 +33,13 @@ export const CONTRIBUTOR_FIELDS = gql`
 		clarifying_questions_count
 		minds_opened_count
 		interests
+		reviewer_register
+		prefers_plain_language
+		growth_visibility
+		level_display_mode
+		onboarding_state
+		onboarding_discussion_id
+		onboarding_completed_at
 	}
 `;
 
@@ -55,6 +62,8 @@ export const POST_FIELDS = gql`
 		style_requirements_met
 		steelman_score
 		steelman_quality_notes
+		steelman_sentence
+		steelman_prompt_shown_at
 		understanding_score
 		intellectual_humility_score
 		contributor {
@@ -86,6 +95,7 @@ export const DISCUSSION_VERSION_FIELDS = gql`
 		import_content
 		import_author
 		import_date
+		steelman_required
 		created_at
 		created_by
 	}
@@ -158,6 +168,8 @@ export const EDITORS_DESK_PICK_FIELDS = gql`
 		title
 		excerpt
 		editor_note
+		curator_note
+		annotations
 		display_order
 		published
 		created_at
@@ -172,6 +184,8 @@ export const EDITORS_DESK_PICK_FIELDS_EXTENDED = gql`
 		title
 		excerpt
 		editor_note
+		curator_note
+		annotations
 		display_order
 		status
 		published

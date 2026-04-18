@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { nhost } from '$lib/nhostClient';
 	import { GET_CONTRIBUTOR_GROWTH_METRICS, GET_ALL_ACHIEVEMENTS } from '$lib/graphql/queries';
 	import {
@@ -9,8 +9,10 @@
 		getLevelTitle,
 		formatXP,
 		getCategoryColor,
-		getTierColor
+		getTierColor,
+		type LevelDisplayMode
 	} from '$lib/utils/growthUtils';
+	import { contributorStore, type GrowthVisibility } from '$lib/stores/contributorStore';
 	import {
 		Shield,
 		GitMerge,
@@ -51,10 +53,30 @@
 	let allAchievements = $state<any[]>([]);
 	let recentXPActivity = $state<any[]>([]);
 
+	// Pull display-mode + visibility preferences off the shared contributor
+	// store. Defaults are conservative: craft titles + normal visibility, i.e.
+	// the same behavior we had before these preferences existed.
+	let levelDisplayMode = $state<LevelDisplayMode>('craft');
+	let growthVisibility = $state<GrowthVisibility>('normal');
+	const unsubscribeStore = contributorStore.subscribe((data) => {
+		if (data?.level_display_mode) levelDisplayMode = data.level_display_mode as LevelDisplayMode;
+		if (data?.growth_visibility) growthVisibility = data.growth_visibility as GrowthVisibility;
+	});
+	onDestroy(unsubscribeStore);
+
+	// Hidden mode: contributor has asked us not to show XP/levels at all. Keep
+	// the data loaded (in case they re-enable) but render a minimal shell.
+	const hideGrowth = $derived(growthVisibility === 'hidden' || levelDisplayMode === 'hidden');
+
+	// Quiet mode: render numbers but suppress celebratory UI (confetti,
+	// achievement toasts, large level-up banners). The quiet flag is consumed
+	// by conditional classes further down.
+	const quietGrowth = $derived(growthVisibility === 'quiet');
+
 	// Computed values
-	const levelTitle = $derived(getLevelTitle(currentLevel));
+	const levelTitle = $derived(getLevelTitle(currentLevel, levelDisplayMode));
 	const xpForNextLevel = $derived(getXPForNextLevel(currentLevel));
-	const levelProgress = $derived(getLevelProgress(totalXP));
+	const levelProgress = $derived(getLevelProgress(totalXP, levelDisplayMode));
 	const progressPercentage = $derived(
 		(levelProgress.currentXP / levelProgress.xpForNextLevel) * 100
 	);
@@ -174,8 +196,15 @@
 		<p>⚠️ {error}</p>
 		<button on:click={loadGrowthData}>Retry</button>
 	</div>
+{:else if hideGrowth}
+	<!--
+		Growth UI is hidden by user preference. Rendering an empty sibling
+		element keeps layout math in parents stable and gives a11y tools a
+		predictable anchor. Users can re-enable growth display from settings.
+	-->
+	<div class="growth-dashboard growth-hidden" aria-hidden="true"></div>
 {:else}
-	<div class="growth-dashboard" class:compact>
+	<div class="growth-dashboard" class:compact class:quiet={quietGrowth}>
 		<!-- Level & XP Section -->
 		<section class="level-section">
 			<div class="level-header">
@@ -370,6 +399,30 @@
 
 	.growth-dashboard.compact {
 		gap: var(--space-md);
+	}
+
+	/*
+	 * Quiet mode: user has opted into reduced celebration volume. Remove
+	 * large type emphasis on the level number and dial back primary-color
+	 * surfaces so metrics still render but don't trumpet.
+	 */
+	.growth-dashboard.quiet .level-number {
+		font-size: 1.5rem;
+		color: var(--color-text-primary);
+	}
+
+	.growth-dashboard.quiet .level-section {
+		background: transparent;
+		border: none;
+		padding: 0;
+	}
+
+	/*
+	 * Hidden mode: growth UI is suppressed entirely. The empty shell keeps
+	 * layout math stable for parents that grid against the dashboard.
+	 */
+	.growth-hidden {
+		min-height: 0;
 	}
 
 	.loading,

@@ -325,10 +325,22 @@
 	// Pan and zoom state
 	let svgElement: SVGSVGElement | undefined = $state();
 	let containerElement: HTMLDivElement | undefined = $state();
+	let containerWidth = $state(0);
 	let viewBox = $state({ x: -50, y: -20, w: 1000, h: 600 });
 	let isPanning = $state(false);
 	let panStart = $state({ x: 0, y: 0 });
 	let zoom = $state(1);
+
+	// Compute how many nodes can fit per row based on container width.
+	// Each node is 280px wide with 60px gap. Aim to fill ~75% of container width.
+	const maxCols = $derived.by(() => {
+		if (containerWidth <= 0) return 3;
+		const NODE_W = 280;
+		const H_GAP = 60;
+		const usable = containerWidth * 0.85;
+		const cols = Math.floor((usable + H_GAP) / (NODE_W + H_GAP));
+		return Math.max(2, Math.min(cols, 8));
+	});
 
 	// Dragging state
 	let dragNodeId = $state<string | null>(null);
@@ -365,7 +377,7 @@
 	});
 
 	$effect(() => {
-		const autoPositions = calculateNodePositions(nodes, edges);
+		const autoPositions = calculateNodePositions(nodes, edges, { maxCols });
 		const merged = new Map<string, { x: number; y: number }>();
 
 		for (const [id, pos] of autoPositions) {
@@ -1057,6 +1069,18 @@
 
 	onMount(() => {
 		fitToView();
+
+		// Track container width so layout adapts to available real estate
+		if (containerElement && typeof ResizeObserver !== 'undefined') {
+			const observer = new ResizeObserver((entries) => {
+				for (const entry of entries) {
+					containerWidth = entry.contentRect.width;
+				}
+			});
+			observer.observe(containerElement);
+			containerWidth = containerElement.clientWidth;
+			return () => observer.disconnect();
+		}
 	});
 </script>
 

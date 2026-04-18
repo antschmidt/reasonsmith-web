@@ -24,25 +24,24 @@
 	</a>
 	<div class="hero-primary">
 		<p class="editorial-masthead">ReasonSmith Journal</p>
-		<h1>Learn through thoughtful disagreement.</h1>
+		<h1>Forge your argument through disagreement.</h1>
 		<p class="editorial-lede hero-lede">
-			ReasonSmith is a platform for developing critical thinking skills through constructive
-			dialogue. Explore ideas through evidence-based discussion, learn to understand perspectives
-			you disagree with, and build stronger reasoning through collaborative refinement.
+			ReasonSmith is a place to write carefully about the things that matter — and to have a
+			thoughtful coach read what you wrote, help you understand the other side, and strengthen
+			your reasoning before you publish.
 		</p>
 		<p class="alpha-notice">
 			We're currently in <strong>Alpha</strong>. Many features and designs are subject to drastic
 			changes as we iterate toward our Beta release in early-to-mid 2026.
 		</p>
 		<div class="hero-actions">
-			<a class="cta-button" href="/login"> Start Learning </a>
-			<a class="secondary-cta" href="/discussions">Explore Discussions</a>
+			<a class="cta-button" href="/login"> Start writing </a>
+			<a class="secondary-cta" href="/discussions">Read discussions</a>
 		</div>
 		<ul class="hero-pillars">
-			<li>AI analysis helps you strengthen reasoning and avoid logical pitfalls</li>
-			<li>Steelmanning teaches you to understand views you disagree with</li>
-			<li>Citation practice builds research literacy and critical thinking</li>
-			<li>Collaborative editing refines ideas through diverse perspectives</li>
+			<li><strong>Heat</strong> — an AI coach reads your draft and finds the weak points.</li>
+			<li><strong>Hammer</strong> — steelman the opposing view and reshape your argument.</li>
+			<li><strong>Quench</strong> — publish a piece sharpened by disagreement, not hardened by it.</li>
 		</ul>
 	</div>
 	{#if editorsDeskPicks.length > 0}
@@ -235,6 +234,14 @@
 		border-radius: var(--border-radius-full);
 		background: var(--color-primary);
 		flex-shrink: 0;
+	}
+
+	.hero-pillars li strong {
+		font-family: var(--font-family-display);
+		color: var(--color-primary);
+		font-weight: 700;
+		letter-spacing: 0.02em;
+		margin-right: 0.25rem;
 	}
 
 	.hero-spotlight {

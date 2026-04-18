@@ -56,12 +56,33 @@ export interface DiscussionContext {
 	selectedComments?: SelectedComment[];
 }
 
+/**
+ * Reviewer register — controls the voice/tone of the AI coach's feedback.
+ * Scoring logic is identical across registers; only the prose style of
+ * overallAnalysis, coachingHeadline, suggestedRevision, steelmanNotes,
+ * relevanceNotes, and improvements differs.
+ *
+ * - coach: casual, warm, second-person, fallacies glossed in plain English
+ * - editor: newsroom tone, precise, collegial
+ * - scholar: formal academic register, terms of art used without gloss
+ * - adaptive: chosen at request time from the parent discussion's writing style
+ */
+export type ReviewerRegister = 'coach' | 'editor' | 'scholar' | 'adaptive';
+
+export const DEFAULT_REVIEWER_REGISTER: ReviewerRegister = 'editor';
+
 export interface GoodFaithInput {
 	content: string;
 	postId?: string;
 	importData?: ImportData;
 	discussionContext?: DiscussionContext;
 	showcaseContext?: ShowcaseContext;
+	/**
+	 * Voice/tone for the AI reviewer. When omitted or set to 'adaptive',
+	 * the server resolves it from the contributor's stored preference or
+	 * the discussion's dominant writing style.
+	 */
+	register?: ReviewerRegister;
 }
 
 // Output types
@@ -100,6 +121,17 @@ export interface GoodFaithResult {
 	good_faith_score: number; // 0-1 scale (normalized)
 	good_faith_label: string; // "hostile" | "questionable" | "neutral" | "constructive" | "exemplary"
 
+	// Coaching surface (Plan 2 — these lead the UI; the score now lives
+	// behind a disclosure). All providers should populate these; if absent
+	// the client falls back to deriving a headline from `summary`.
+	coachingHeadline?: string; // ≤120 chars — the one thing to fix or reinforce
+	suggestedRevision?: string | null; // ≤500 chars — rewrite of the weakest sentence, or null
+	guidingQuestions?: string[]; // 2-3 specific questions to strengthen reasoning
+
+	// Which register was used to generate the prose. Purely informational;
+	// scoring fields are invariant across registers.
+	register?: ReviewerRegister;
+
 	// Detailed analysis
 	claims: Claim[];
 	fallacyOverload: boolean;
@@ -117,7 +149,7 @@ export interface GoodFaithResult {
 	relevanceNotes?: string;
 
 	// Metadata
-	provider: 'claude' | 'openai' | 'gemini' | 'heuristic';
+	provider: 'claude' | 'gemini' | 'heuristic';
 	usedAI: boolean;
 
 	// Token usage (for API cost tracking)
@@ -156,27 +188,15 @@ export interface ClaudeRawResponse {
 	intellectualHumilityScore?: number;
 	relevanceScore?: number;
 	relevanceNotes?: string;
-}
-
-export interface OpenAIRawResponse {
-	claims: Claim[];
-	fallacyOverload: boolean;
-	goodFaithScore: number; // 0-100
-	goodFaithDescriptor?: string;
-	cultishPhrases: string[];
-	summary: string;
-	tags?: string[];
-	steelmanScore?: number;
-	steelmanNotes?: string;
-	understandingScore?: number;
-	intellectualHumilityScore?: number;
-	relevanceScore?: number;
-	relevanceNotes?: string;
+	// Coaching fields (Plan 2)
+	coachingHeadline?: string;
+	suggestedRevision?: string | null;
+	guidingQuestions?: string[];
 }
 
 // Provider configuration
 
-export type ProviderName = 'claude' | 'openai' | 'gemini';
+export type ProviderName = 'claude' | 'gemini';
 
 export interface ProviderConfig {
 	name: ProviderName;
@@ -191,12 +211,6 @@ export const PROVIDER_CONFIGS: Record<ProviderName, ProviderConfig> = {
 		model: 'claude-sonnet-4-5',
 		maxTokens: 20000,
 		temperature: 0.2
-	},
-	openai: {
-		name: 'openai',
-		model: 'gpt-5',
-		maxTokens: 16000,
-		temperature: 1
 	},
 	gemini: {
 		name: 'gemini',

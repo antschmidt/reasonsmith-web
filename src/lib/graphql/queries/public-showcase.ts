@@ -98,6 +98,36 @@ export const DELETE_PUBLIC_SHOWCASE_ITEM = gql`
 // Showcase Item Discussions
 // ============================================
 
+/**
+ * Get a showcase item with source_content (admin-level) for graph generation,
+ * plus any linked discussion that already has an argument graph.
+ */
+export const GET_SHOWCASE_ITEM_WITH_GRAPH = gql`
+	query GetShowcaseItemWithGraph($id: uuid!) {
+		public_showcase_item_by_pk(id: $id) {
+			...PublicShowcaseItemAdminFields
+		}
+		discussion(
+			where: { showcase_item_id: { _eq: $id } }
+			limit: 1
+			order_by: { created_at: asc }
+		) {
+			id
+			status
+		}
+		argument(
+			where: {
+				discussion: { showcase_item_id: { _eq: $id } }
+			}
+			limit: 1
+		) {
+			id
+			discussion_id
+		}
+	}
+	${PUBLIC_SHOWCASE_ITEM_ADMIN_FIELDS}
+`;
+
 export const GET_SHOWCASE_ITEM_DISCUSSIONS = gql`
 	query GetShowcaseItemDiscussions($showcaseItemId: uuid!) {
 		discussion(

@@ -1,10 +1,31 @@
 import { writable } from 'svelte/store';
+import type { ReviewerRegister } from '$lib/goodFaith';
+import type { LevelDisplayMode } from '$lib/utils/growthUtils';
+
+export type GrowthVisibility = 'hidden' | 'quiet' | 'normal';
+// Keep in sync with the CHECK constraint in
+// nhost/migrations/default/1798000000000_add_onboarding_state/up.sql
+export type OnboardingState =
+	| 'not_started'
+	| 'read_prompt'
+	| 'drafted_reply'
+	| 'received_feedback'
+	| 'revised'
+	| 'completed';
 
 interface ContributorData {
+	id?: string | null;
 	avatar_url?: string | null;
 	display_name?: string | null;
 	handle?: string | null;
 	role?: string | null;
+	reviewer_register?: ReviewerRegister | null;
+	prefers_plain_language?: boolean | null;
+	growth_visibility?: GrowthVisibility | null;
+	level_display_mode?: LevelDisplayMode | null;
+	onboarding_state?: OnboardingState | null;
+	onboarding_discussion_id?: string | null;
+	onboarding_completed_at?: string | null;
 }
 
 function createContributorStore() {
@@ -17,6 +38,14 @@ function createContributorStore() {
 			update((data) => {
 				if (data) {
 					return { ...data, avatar_url: avatarUrl };
+				}
+				return data;
+			});
+		},
+		updatePreferences: (prefs: Partial<ContributorData>) => {
+			update((data) => {
+				if (data) {
+					return { ...data, ...prefs };
 				}
 				return data;
 			});

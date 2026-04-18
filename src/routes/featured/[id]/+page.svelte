@@ -1,10 +1,327 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import ShowcaseDiscussions from '$lib/components/showcase/ShowcaseDiscussions.svelte';
+	import DiscussionArgumentGraph from '$lib/components/arguments/DiscussionArgumentGraph.svelte';
+	import { nhost } from '$lib/nhostClient';
+	import {
+		CREATE_DISCUSSION_WITH_VERSION,
+		CREATE_DISCUSSION_ARGUMENT,
+		BULK_INSERT_NODES,
+		BULK_INSERT_EDGES
+	} from '$lib/graphql/queries';
 
 	let { data } = $props<{ data: PageData }>();
 
 	const { item, structuredAnalysis } = data;
+
+	// Graph state
+	let graphDiscussionId = $state<string | null>(data.existingDiscussionId);
+	let graphArgumentId = $state<string | null>(data.existingArgumentId);
+	let generating = $state(false);
+	let generateError = $state<string | null>(null);
+	let showGraph = $state(!!data.existingArgumentId);
+
+	// Auth state
+	let user = $state(nhost.auth.getUser());
+	let userRole = $state<string | null>(null);
+
+	async function fetchRole(userId: string) {
+		const res = await nhost.graphql.request(
+			`query GetRole($userId: uuid!) { contributor_by_pk(id: $userId) { role } }` as any,
+			{ userId }
+		);
+		userRole = (res as any).data?.contributor_by_pk?.role ?? 'user';
+	}
+
+	$effect(() => {
+		if (user) fetchRole(user.id);
+
+		const unsubscribe = nhost.auth.onAuthStateChanged(() => {
+			const newUser = nhost.auth.getUser();
+			user = newUser;
+			if (newUser) fetchRole(newUser.id);
+			else userRole = null;
+		});
+
+		return unsubscribe;
+	});
+
+	const canGenerate = $derived(
+		!!user && ['admin', 'slartibartfast'].includes(userRole ?? '') && data.hasSourceContent
+	);
+
+	async function generateGraph() {
+		if (!user || !item.source_content) return;
+		generating = true;
+		generateError = null;
+
+		try {
+			// Step 1: Create a discussion for this showcase item if one doesn't exist
+			let discussionId = graphDiscussionId;
+			if (!discussionId) {
+				const discResult = await nhost.graphql.request(CREATE_DISCUSSION_WITH_VERSION, {
+					title: item.title,
+					description: item.subtitle || item.summary || '',
+					tags: item.tags || [],
+					sections: [],
+					claims: [],
+					citations: [],
+					createdBy: user.id,
+					showcaseItemId: item.id
+				});
+
+				if ((discResult as any).error) {
+					throw new Error('Failed to create discussion');
+				}
+				discussionId = (discResult as any).data?.insert_discussion_one?.id;
+				if (!discussionId) throw new Error('No discussion ID returned');
+				graphDiscussionId = discussionId;
+			}
+
+			// Step 2: Call AI extraction endpoint with the source content.
+			// The endpoint caps input at 100k chars, so chunk longer content on
+			// paragraph boundaries and merge the resulting nodes/edges.
+			const MAX_CHUNK = 95_000;
+			const fullText = item.source_content as string;
+			const chunks: string[] = [];
+
+			if (fullText.length <= MAX_CHUNK) {
+				chunks.push(fullText);
+			} else {
+				const paragraphs = fullText.split(/\n\s*\n/);
+				let current = '';
+				for (const p of paragraphs) {
+					if (current.length + p.length + 2 > MAX_CHUNK) {
+						if (current) chunks.push(current);
+						// If a single paragraph exceeds the limit, hard-split it
+						if (p.length > MAX_CHUNK) {
+							for (let i = 0; i < p.length; i += MAX_CHUNK) {
+								chunks.push(p.slice(i, i + MAX_CHUNK));
+							}
+							current = '';
+						} else {
+							current = p;
+						}
+					} else {
+						current = current ? current + '\n\n' + p : p;
+					}
+				}
+				if (current) chunks.push(current);
+			}
+
+			console.log('[Generate] Split source into', chunks.length, 'chunk(s)');
+
+			// Extract each chunk and merge results, prefixing temp IDs to avoid collisions
+			const mergedNodes: any[] = [];
+			const mergedEdges: any[] = [];
+
+			for (let ci = 0; ci < chunks.length; ci++) {
+				const chunk = chunks[ci];
+				console.log(`[Generate] Extracting chunk ${ci + 1}/${chunks.length} (${chunk.length} chars)`);
+
+				const extractResponse = await fetch('/api/arguments/extract', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ text: chunk })
+				});
+
+				if (!extractResponse.ok) {
+					const errText = await extractResponse.text();
+					throw new Error(`Extraction failed on chunk ${ci + 1}: ${errText}`);
+				}
+
+				const chunkResult = await extractResponse.json();
+				if (!chunkResult.nodes || chunkResult.nodes.length === 0) continue;
+
+				const prefix = `c${ci}_`;
+				for (const n of chunkResult.nodes) {
+					mergedNodes.push({
+						...n,
+						id: prefix + n.id,
+						// Only the first chunk's root claim is the real root
+						is_root: ci === 0 && n.is_root
+					});
+				}
+				for (const e of chunkResult.edges || []) {
+					mergedEdges.push({
+						...e,
+						from: prefix + e.from,
+						to: prefix + e.to
+					});
+				}
+			}
+
+			if (mergedNodes.length === 0) {
+				throw new Error('No argument nodes were extracted from the content');
+			}
+
+			const extraction = { nodes: mergedNodes, edges: mergedEdges };
+			console.log('[Generate] Merged extraction:', mergedNodes.length, 'nodes,', mergedEdges.length, 'edges');
+
+			// Step 3: Create the argument shell
+			const rootNode = extraction.nodes.find((n: any) => n.is_root) || extraction.nodes[0];
+			const argResult = await nhost.graphql.request(CREATE_DISCUSSION_ARGUMENT, {
+				userId: user.id,
+				discussionId,
+				title: item.title,
+				rootClaimContent: rootNode.content
+			});
+
+			if ((argResult as any).error) {
+				throw new Error('Failed to create argument');
+			}
+
+			const argument = (argResult as any).data?.insert_argument_one;
+			if (!argument) throw new Error('No argument returned');
+
+			const argumentId = argument.id;
+			const rootNodeId = argument.argument_nodes?.[0]?.id;
+			graphArgumentId = argumentId;
+
+			// Step 4: Map temp IDs to real IDs and bulk-insert remaining nodes
+			const idMap = new Map<string, string>();
+			idMap.set(rootNode.id, rootNodeId);
+
+			const otherNodes = extraction.nodes.filter((n: any) => n.id !== rootNode.id);
+			console.log('[Generate] Inserting', otherNodes.length, 'nodes');
+
+			if (otherNodes.length > 0) {
+				const nodeInputs = otherNodes.map((n: any) => ({
+					argument_id: argumentId,
+					type: n.type,
+					content: n.content,
+					is_root: false,
+					implied: n.implied || false,
+					verbatim_span: n.verbatim_span || null,
+					score: n.confidence ?? null,
+					is_published: true
+				}));
+
+				const nodesResult: any = await nhost.graphql.request(BULK_INSERT_NODES, { nodes: nodeInputs });
+				console.log('[Generate] Bulk insert nodes result:', nodesResult);
+				if (nodesResult.error) {
+					const msg = Array.isArray(nodesResult.error)
+						? nodesResult.error.map((e: any) => e.message).join('; ')
+						: nodesResult.error.message || JSON.stringify(nodesResult.error);
+					throw new Error(`Failed to insert nodes: ${msg}`);
+				}
+
+				const insertedNodes = nodesResult.data?.insert_argument_node?.returning ?? [];
+				console.log('[Generate] Inserted', insertedNodes.length, 'nodes');
+				otherNodes.forEach((n: any, i: number) => {
+					if (insertedNodes[i]) {
+						idMap.set(n.id, insertedNodes[i].id);
+					}
+				});
+			}
+
+			// Step 5: Bulk-insert edges
+			const validEdges = (extraction.edges || []).filter(
+				(e: any) => idMap.has(e.from) && idMap.has(e.to)
+			);
+			console.log('[Generate] Inserting', validEdges.length, 'of', (extraction.edges || []).length, 'edges');
+
+			if (validEdges.length > 0) {
+				const edgeInputs = validEdges.map((e: any) => ({
+					argument_id: argumentId,
+					from_node: idMap.get(e.from),
+					to_node: idMap.get(e.to),
+					type: e.type,
+					confidence: e.confidence ?? 1.0,
+					is_published: true
+				}));
+
+				const edgesResult: any = await nhost.graphql.request(BULK_INSERT_EDGES, { edges: edgeInputs });
+				console.log('[Generate] Bulk insert edges result:', edgesResult);
+				if (edgesResult.error) {
+					const msg = Array.isArray(edgesResult.error)
+						? edgesResult.error.map((e: any) => e.message).join('; ')
+						: edgesResult.error.message || JSON.stringify(edgesResult.error);
+					throw new Error(`Failed to insert edges: ${msg}`);
+				}
+			}
+
+			// Step 6: Add structured analysis findings (logical fallacies + cultish language)
+			// as counter nodes connected to the root claim
+			if (structuredAnalysis) {
+				const analysisNodes: Array<{ content: string; type: 'counter' }> = [];
+
+				const fallacies = Array.isArray(structuredAnalysis.logical_fallacies)
+					? structuredAnalysis.logical_fallacies
+					: [];
+				for (const f of fallacies) {
+					if (f && typeof f === 'object' && f.name) {
+						const desc = f.description ? `: ${f.description}` : '';
+						analysisNodes.push({
+							content: `Logical fallacy — ${f.name}${desc}`,
+							type: 'counter'
+						});
+					}
+				}
+
+				const cultish = Array.isArray(structuredAnalysis.cultish_language)
+					? structuredAnalysis.cultish_language
+					: [];
+				for (const c of cultish) {
+					if (c && typeof c === 'object' && c.name) {
+						const desc = c.description ? `: ${c.description}` : '';
+						analysisNodes.push({
+							content: `Manipulative language — ${c.name}${desc}`,
+							type: 'counter'
+						});
+					}
+				}
+
+				console.log('[Generate] Adding', analysisNodes.length, 'analysis nodes');
+
+				if (analysisNodes.length > 0) {
+					const analysisNodeInputs = analysisNodes.map((n) => ({
+						argument_id: argumentId,
+						type: n.type,
+						content: n.content,
+						is_root: false,
+						implied: false,
+						is_published: true
+					}));
+
+					const aResult: any = await nhost.graphql.request(BULK_INSERT_NODES, {
+						nodes: analysisNodeInputs
+					});
+					if (aResult.error) {
+						const msg = Array.isArray(aResult.error)
+							? aResult.error.map((e: any) => e.message).join('; ')
+							: aResult.error.message || JSON.stringify(aResult.error);
+						console.warn('[Generate] Failed to insert analysis nodes:', msg);
+					} else {
+						const insertedAnalysis = aResult.data?.insert_argument_node?.returning ?? [];
+						// Connect each to the root claim with a "contradicts" edge
+						const analysisEdges = insertedAnalysis.map((n: any) => ({
+							argument_id: argumentId,
+							from_node: n.id,
+							to_node: rootNodeId,
+							type: 'contradicts',
+							confidence: 1.0,
+							is_published: true
+						}));
+						if (analysisEdges.length > 0) {
+							const aeResult: any = await nhost.graphql.request(BULK_INSERT_EDGES, {
+								edges: analysisEdges
+							});
+							if (aeResult.error) {
+								console.warn('[Generate] Failed to insert analysis edges:', aeResult.error);
+							}
+						}
+					}
+				}
+			}
+
+			showGraph = true;
+		} catch (err: any) {
+			generateError = err.message || 'Failed to generate graph';
+		} finally {
+			generating = false;
+		}
+	}
 	const metaDescription = item.summary
 		? item.summary.replace(/\s+/g, ' ').trim().slice(0, 160)
 		: null;
@@ -284,12 +601,112 @@
 		{/if}
 	</article>
 
+	<!-- Argument Graph Section -->
+	<section class="graph-section">
+		<h2>Argument Graph</h2>
+		{#if showGraph && graphDiscussionId}
+			<div class="graph-wrapper">
+				<DiscussionArgumentGraph
+					discussionId={graphDiscussionId}
+					discussionTitle={item.title}
+					discussionDescription={item.subtitle || item.summary || ''}
+					userId={user?.id ?? null}
+					isDiscussionAuthor={!!user && ['admin', 'slartibartfast'].includes(userRole ?? '')}
+					isEditMode={false}
+				/>
+			</div>
+		{:else if canGenerate}
+			<div class="generate-prompt">
+				<p>Generate an argument graph from the source content to visualize the structure of claims, evidence, and reasoning.</p>
+				{#if generateError}
+					<p class="generate-error">{generateError}</p>
+				{/if}
+				<button class="generate-btn" onclick={generateGraph} disabled={generating}>
+					{generating ? 'Generating…' : 'Generate Argument Graph'}
+				</button>
+			</div>
+		{:else if !user}
+			<p class="graph-login-prompt">Sign in to view or create the argument graph for this analysis.</p>
+		{:else if !data.hasSourceContent}
+			<p class="graph-no-source">No source content available for graph generation.</p>
+		{/if}
+	</section>
+
 	<ShowcaseDiscussions showcaseItemId={item.id} showcaseTitle={item.title} />
 </main>
 
 <style>
+	/* Argument Graph Section */
+	.graph-section {
+		margin-top: 2rem;
+	}
+
+	.graph-section h2 {
+		font-size: 1.3rem;
+		font-weight: 700;
+		margin-bottom: 1rem;
+		color: var(--color-text-primary);
+		font-family: var(--font-family-ui, sans-serif);
+	}
+
+	.graph-wrapper {
+		border: 1px solid var(--color-border, #333);
+		border-radius: 12px;
+		overflow: hidden;
+	}
+
+	.generate-prompt {
+		text-align: center;
+		padding: 2rem;
+		border: 1px dashed var(--color-border, #333);
+		border-radius: 12px;
+		background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+	}
+
+	.generate-prompt p {
+		color: var(--color-text-secondary, #90a4ae);
+		font-size: 0.9rem;
+		margin-bottom: 1rem;
+	}
+
+	.generate-error {
+		color: var(--color-error, #ef4444) !important;
+		font-size: 0.85rem !important;
+	}
+
+	.generate-btn {
+		background: var(--color-primary, #6366f1);
+		color: #fff;
+		border: none;
+		padding: 0.6rem 1.5rem;
+		border-radius: 8px;
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s;
+		font-family: var(--font-family-ui, sans-serif);
+	}
+
+	.generate-btn:hover:not(:disabled) {
+		filter: brightness(1.15);
+	}
+
+	.generate-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.graph-login-prompt,
+	.graph-no-source {
+		text-align: center;
+		padding: 1.5rem;
+		color: var(--color-text-tertiary, #607d8b);
+		font-size: 0.85rem;
+		border: 1px dashed var(--color-border, #333);
+		border-radius: 12px;
+	}
+
 	.featured-analysis {
-		max-width: 1200px;
 		margin: 0 auto;
 		padding: 2rem 1rem 4rem;
 		color: var(--color-text-primary);

@@ -80,6 +80,80 @@ export const UPDATE_CONTRIBUTOR_INTERESTS = gql`
 `;
 
 // ============================================
+// Contributor Mutations - Reviewer & A11y Preferences (Plans 7 + 8)
+// ============================================
+
+// Narrowly-typed single-field mutation for the register picker. Written as its
+// own mutation (rather than a merged preferences mutation) so optimistic UI
+// and Apollo cache updates stay simple on the settings card that owns it.
+export const UPDATE_CONTRIBUTOR_REVIEWER_REGISTER = gql`
+	mutation UpdateContributorReviewerRegister(
+		$contributorId: uuid!
+		$register: reviewer_register!
+	) {
+		update_contributor_by_pk(
+			pk_columns: { id: $contributorId }
+			_set: { reviewer_register: $register }
+		) {
+			id
+			reviewer_register
+		}
+	}
+`;
+
+// Merged mutation for the cognitive-accessibility trio (Plan 7). All three
+// preferences are exposed on a single settings card, so we save them together.
+export const UPDATE_CONTRIBUTOR_PREFERENCES = gql`
+	mutation UpdateContributorPreferences(
+		$contributorId: uuid!
+		$prefersPlainLanguage: Boolean
+		$growthVisibility: String
+		$levelDisplayMode: String
+	) {
+		update_contributor_by_pk(
+			pk_columns: { id: $contributorId }
+			_set: {
+				prefers_plain_language: $prefersPlainLanguage
+				growth_visibility: $growthVisibility
+				level_display_mode: $levelDisplayMode
+			}
+		) {
+			id
+			prefers_plain_language
+			growth_visibility
+			level_display_mode
+		}
+	}
+`;
+
+// Onboarding state transitions (Plan 1). Stored on the contributor row so the
+// tour survives sessions without cookies. Allowed values are enforced by the
+// CHECK constraint in the 1798000000000_add_onboarding_state migration
+// (column is `text`, so Hasura exposes it as a String scalar).
+export const UPDATE_CONTRIBUTOR_ONBOARDING_STATE = gql`
+	mutation UpdateContributorOnboardingState(
+		$contributorId: uuid!
+		$state: String!
+		$discussionId: uuid
+		$completedAt: timestamptz
+	) {
+		update_contributor_by_pk(
+			pk_columns: { id: $contributorId }
+			_set: {
+				onboarding_state: $state
+				onboarding_discussion_id: $discussionId
+				onboarding_completed_at: $completedAt
+			}
+		) {
+			id
+			onboarding_state
+			onboarding_discussion_id
+			onboarding_completed_at
+		}
+	}
+`;
+
+// ============================================
 // Contributor Mutations - Credits
 // ============================================
 

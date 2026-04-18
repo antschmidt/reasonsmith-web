@@ -1,7 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import Anthropic from '@anthropic-ai/sdk';
-import OpenAI from 'openai';
 import { print } from 'graphql';
 import { INCREMENT_ANALYSIS_USAGE } from '$lib/graphql/queries';
 import { logger } from '$lib/logger';
@@ -261,12 +260,7 @@ async function storeClaimAnalyses(result: MultiPassResult, showcaseItemId?: stri
 	}
 }
 
-const openai = new OpenAI({
-	apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-build'
-});
-
 const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-5';
-const OPENAI_MODEL = process.env.OPENAI_FEATURED_MODEL ?? 'gpt-5';
 
 type Verdict = 'True' | 'False' | 'Misleading' | 'Unverified';
 
@@ -323,7 +317,7 @@ interface TokenUsage {
 interface AnalysisResultWithUsage {
 	analysis: FeaturedClaudeResponse;
 	usage?: TokenUsage;
-	provider: 'claude' | 'openai';
+	provider: 'claude';
 }
 
 // Tool definition for Claude to ensure valid JSON output
@@ -404,89 +398,6 @@ const FEATURED_ANALYSIS_TOOL: Anthropic.Tool = {
 		required: ['good_faith', 'logical_fallacies', 'cultish_language', 'fact_checking', 'summary']
 	}
 };
-
-// Schema for OpenAI structured output (kept for compatibility)
-const featuredAnalysisSchema = {
-	type: 'object',
-	properties: {
-		good_faith: {
-			type: 'array',
-			items: {
-				type: 'object',
-				properties: {
-					name: { type: 'string' },
-					description: { type: 'string' },
-					examples: {
-						type: 'array',
-						items: { type: 'string' }
-					},
-					why: { type: 'string' }
-				},
-				required: ['name', 'description', 'examples', 'why'],
-				additionalProperties: false
-			}
-		},
-		logical_fallacies: {
-			type: 'array',
-			items: {
-				type: 'object',
-				properties: {
-					name: { type: 'string' },
-					description: { type: 'string' },
-					examples: {
-						type: 'array',
-						items: { type: 'string' }
-					},
-					why: { type: 'string' }
-				},
-				required: ['name', 'description', 'examples', 'why'],
-				additionalProperties: false
-			}
-		},
-		cultish_language: {
-			type: 'array',
-			items: {
-				type: 'object',
-				properties: {
-					name: { type: 'string' },
-					description: { type: 'string' },
-					examples: {
-						type: 'array',
-						items: { type: 'string' }
-					},
-					why: { type: 'string' }
-				},
-				required: ['name', 'description', 'examples', 'why'],
-				additionalProperties: false
-			}
-		},
-		fact_checking: {
-			type: 'array',
-			items: {
-				type: 'object',
-				properties: {
-					claim: { type: 'string' },
-					verdict: { type: 'string', enum: ['True', 'False', 'Misleading', 'Unverified'] },
-					relevance: { type: 'string' },
-					source: {
-						type: ['object', 'null'],
-						properties: {
-							name: { type: 'string' },
-							url: { type: 'string' }
-						},
-						required: ['name', 'url'],
-						additionalProperties: false
-					}
-				},
-				required: ['claim', 'verdict', 'relevance', 'source'],
-				additionalProperties: false
-			}
-		},
-		summary: { type: 'string' }
-	},
-	required: ['good_faith', 'logical_fallacies', 'cultish_language', 'fact_checking', 'summary'],
-	additionalProperties: false
-} as const;
 
 const SYSTEM_PROMPT = `You are an expert educator in rhetoric, logic, and argumentation analysis. Your goal is to help readers understand both the strengths and weaknesses of the text's argumentation through detailed, educational analysis.
 
@@ -682,56 +593,11 @@ ${content}`
 	return { analysis, usage, provider: 'claude' };
 }
 
-async function analyzeWithOpenAI(content: string): Promise<AnalysisResultWithUsage> {
-	if (!process.env.OPENAI_API_KEY) {
-		throw new Error('OPENAI_API_KEY not set');
-	}
-
-	const completion = await openai.chat.completions.create({
-		model: OPENAI_MODEL,
-		temperature: 1,
-		response_format: {
-			type: 'json_schema',
-			json_schema: {
-				name: 'featured_analysis',
-				schema: featuredAnalysisSchema,
-				strict: true
-			}
-		},
-		messages: [
-			{ role: 'system', content: SYSTEM_PROMPT },
-			{
-				role: 'user',
-				content: `Analyze the following text and return only JSON.\n\n${content}`
-			}
-		]
-	});
-
-	// Capture token usage from OpenAI response
-	const usage: TokenUsage | undefined = completion.usage
-		? {
-				input_tokens: completion.usage.prompt_tokens,
-				output_tokens: completion.usage.completion_tokens,
-				total_tokens: completion.usage.total_tokens
-			}
-		: undefined;
-
-	const responseText = completion.choices[0]?.message?.content?.trim();
-
-	if (!responseText) {
-		throw new Error('No response from OpenAI');
-	}
-
-	const analysis = JSON.parse(responseText) as FeaturedClaudeResponse;
-	return { analysis, usage, provider: 'openai' };
-}
-
 export const POST: RequestHandler = async ({ request, cookies }) => {
 	try {
 		const body = await request.json();
 		const {
 			content,
-			provider,
 			skipFactChecking = true,
 			includeMultiPass = false,
 			discussionContext,
@@ -740,7 +606,6 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			showcaseContext
 		} = body as {
 			content?: string;
-			provider?: string;
 			skipFactChecking?: boolean;
 			includeMultiPass?: boolean;
 			discussionContext?: {
@@ -870,11 +735,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		}
 
 		try {
-			const selectedProvider = provider === 'openai' ? 'openai' : 'claude';
-			const result =
-				selectedProvider === 'openai'
-					? await analyzeWithOpenAI(content)
-					: await analyzeWithClaude(content);
+			const result = await analyzeWithClaude(content);
 
 			const { analysis, usage, provider: usedProvider } = result;
 
@@ -1050,7 +911,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 						contributorId,
 						endpoint: 'goodFaithClaudeFeatured',
 						provider: usedProvider,
-						model: usedProvider === 'claude' ? CLAUDE_MODEL : OPENAI_MODEL,
+						model: CLAUDE_MODEL,
 						inputTokens: usage.input_tokens,
 						outputTokens: usage.output_tokens
 					});

@@ -9,6 +9,8 @@
 		CREATE_POST_DRAFT_WITH_STYLE,
 		UPDATE_DISCUSSION_VERSION_GOOD_FAITH,
 		UPDATE_POST_GOOD_FAITH,
+		UPDATE_POST_STEELMAN,
+		SET_POST_STEELMAN_PROMPT_SHOWN,
 		GET_DISCUSSION_DETAILS as IMPORTED_GET_DISCUSSION_DETAILS,
 		GET_CONTRIBUTOR,
 		INCREMENT_PURCHASED_CREDITS_USED,
@@ -24,6 +26,9 @@
 		PUBLISH_USER_NODES
 	} from '$lib/graphql/queries';
 	import { createDraftAutosaver, type DraftAutosaver } from '$lib';
+	import { advanceOnboarding } from '$lib/onboarding/state';
+	import { contributorStore, type OnboardingState } from '$lib/stores/contributorStore';
+	import OnboardingRail from '$lib/components/onboarding/OnboardingRail.svelte';
 	import {
 		getStyleConfig,
 		formatChicagoCitation,
@@ -39,6 +44,7 @@
 		ensureIdsForCitationData
 	} from '$lib/utils/contentExtraction';
 	import { getCachedAnalysis, cacheAnalysis, hashContent } from '$lib/utils/analysisCache';
+	import { simpleMarkdown } from '$lib/utils/simpleMarkdown';
 	import { assessContentQuality } from '$lib/utils/contentQuality';
 	import {
 		getDiscussionTitle,
@@ -96,7 +102,7 @@
 		'response' | 'counter_argument' | 'supporting_evidence' | 'question'
 	>('response');
 	let commentFormExpanded = $state(false);
-	let postTypeExpanded = $state(true);
+	let postTypeExpanded = $state(false);
 	let showAdvancedFeatures = $state(false);
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
@@ -111,6 +117,17 @@
 		authReady = true;
 	});
 
+	// Plan 1 reader mode: while a contributor is mid-onboarding AND viewing the
+	// starter discussion, we suppress the argument graph, post-type selector,
+	// advanced features, and other secondary chrome so the page feels calmer.
+	// The contributor can still exit via the rail's "Exit the guided loop" link.
+	const onboardingState = $derived(
+		($contributorStore?.onboarding_state as OnboardingState) ?? 'not_started'
+	);
+	const isReaderMode = $derived(
+		!!(discussion as any)?.is_onboarding_starter && onboardingState !== 'completed'
+	);
+
 	// Audio upload state
 	let audioUploading = $state(false);
 	let audioUploadProgress = $state(0);
@@ -119,6 +136,36 @@
 	let draftPostId = $state<string | null>(null);
 	let draftAutosaver = $state<DraftAutosaver | null>(null);
 	let draftLoaded = $state(false); // prevents duplicate fetch
+
+	// Plan 4 — steelman prompt state. `steelmanSentence` is bound into the
+	// composer; `steelmanPromptShownRecorded` prevents us from writing the
+	// first-shown timestamp more than once per draft post.
+	let steelmanSentence = $state('');
+	let steelmanPromptShownRecorded = $state(false);
+
+	// Reactive: does the active discussion version require a steelman?
+	const steelmanRequired = $derived(
+		Boolean(discussion?.current_version?.[0]?.steelman_required)
+	);
+
+	// Handler: called once by SteelmanPrompt when it first mounts. We persist
+	// the timestamp the first time the user sees the prompt, but only if we
+	// already have a draft to attach it to. If the draft isn't created yet,
+	// this is a no-op; publishDraft() records the timestamp on draft creation.
+	async function recordSteelmanPromptShown() {
+		if (steelmanPromptShownRecorded) return;
+		if (!draftPostId) return; // defer — publishDraft will record after ensureDraftCreated
+		steelmanPromptShownRecorded = true;
+		try {
+			await nhost.graphql.request(SET_POST_STEELMAN_PROMPT_SHOWN, {
+				postId: draftPostId,
+				shownAt: new Date().toISOString()
+			});
+		} catch (err) {
+			console.warn('Failed to record steelman_prompt_shown_at:', err);
+			steelmanPromptShownRecorded = false; // allow retry on next publish attempt
+		}
+	}
 	let lastSavedAt = $state<number | null>(null);
 	let hasPending = $state(false);
 	let focusReplyOnMount = $state(false);
@@ -297,18 +344,8 @@
 
 	let commentSelectedStyle = $derived(getInferredCommentStyle());
 
-	// Good faith testing state
+	// Good faith testing state (Claude-only; var name retained for legacy)
 	let goodFaithTesting = $state(false);
-	let goodFaithResult = $state<{
-		good_faith_score: number;
-		good_faith_label: string;
-		rationale: string;
-		claims?: any[];
-		cultishPhrases?: string[];
-		fallacyOverload?: boolean;
-		fromCache?: boolean;
-	} | null>(null);
-	let goodFaithError = $state<string | null>(null);
 
 	// Claude good faith testing state
 	let claudeGoodFaithTesting = $state(false);
@@ -513,6 +550,15 @@
 		});
 		if (error) return; // silent fail; user can still post normally
 		draftPostId = (data as any)?.insert_post_one?.id || null;
+		// Plan 1 onboarding: first time a draft is created, advance the state.
+		// advanceOnboarding is monotonic so later draft creations no-op.
+		if (draftPostId && user?.id) {
+			advanceOnboarding({
+				contributorId: user.id,
+				nextState: 'drafted_reply',
+				discussionId
+			}).catch(() => {});
+		}
 		initAutosaver();
 		// push initial content through autosaver
 		if (draftPostId && newComment) draftAutosaver?.handleChange(newComment);
@@ -538,6 +584,16 @@
 		} else {
 			draftAutosaver?.handleChange(newComment);
 			updateAutosaveStatus();
+			// Plan 1 onboarding: typing after feedback counts as "revising".
+			// advanceOnboarding is monotonic so this is a no-op unless the
+			// contributor is currently at received_feedback.
+			if (user?.id) {
+				advanceOnboarding({
+					contributorId: user.id,
+					nextState: 'revised',
+					discussionId: $page.params.id as string
+				}).catch(() => {});
+			}
 		}
 	}
 
@@ -660,6 +716,15 @@
 				});
 				if (gfErr) console.warn('Failed to save post good-faith analysis (GraphQL):', gfErr);
 
+				// Plan 1 onboarding: analysis came back, mark received_feedback.
+				if (user?.id) {
+					advanceOnboarding({
+						contributorId: user.id,
+						nextState: 'received_feedback',
+						discussionId: $page.params.id as string
+					}).catch(() => {});
+				}
+
 				if (score01 < COMMENT_GOOD_FAITH_THRESHOLD) {
 					// Keep as draft and show analysis
 					commentGoodFaithResult = {
@@ -719,6 +784,36 @@
 			// Get the current published version ID to set as context
 			const currentVersionId = discussion.current_version?.[0]?.id || null;
 
+			// Plan 4 — persist the contributor's steelman sentence (if any) BEFORE
+			// we flip the post status to approved. Best effort: a failure here is
+			// logged but not blocking, because the composer already enforced the
+			// presence/length requirement when `steelmanRequired` is true.
+			if (steelmanSentence && steelmanSentence.trim()) {
+				try {
+					await nhost.graphql.request(UPDATE_POST_STEELMAN, {
+						postId: draftPostId,
+						steelmanSentence: steelmanSentence.trim()
+					});
+				} catch (err) {
+					console.warn('Failed to persist steelman_sentence:', err);
+				}
+			}
+
+			// Backfill steelman_prompt_shown_at if the prompt was mounted before
+			// the draft existed. `steelmanPromptShownRecorded` guards against
+			// overwriting an earlier timestamp.
+			if (steelmanRequired && !steelmanPromptShownRecorded) {
+				steelmanPromptShownRecorded = true;
+				try {
+					await nhost.graphql.request(SET_POST_STEELMAN_PROMPT_SHOWN, {
+						postId: draftPostId,
+						shownAt: new Date().toISOString()
+					});
+				} catch (err) {
+					console.warn('Failed to record steelman_prompt_shown_at (backfill):', err);
+				}
+			}
+
 			// Publish the draft directly (without good faith scoring)
 			const { error } = await nhost.graphql.request(
 				`
@@ -735,6 +830,18 @@
 			);
 
 			if (error) throw error;
+
+			// Plan 1 onboarding: first successful publish in the seeded starter
+			// discussion completes the tour. Gated on is_onboarding_starter so
+			// publishing in any other discussion doesn't accidentally mark the
+			// user "completed".
+			if (user?.id && (discussion as any)?.is_onboarding_starter) {
+				advanceOnboarding({
+					contributorId: user.id,
+					nextState: 'completed',
+					discussionId: $page.params.id as string
+				}).catch(() => {});
+			}
 
 			// Publish user's unpublished argument graph nodes/edges
 			try {
@@ -781,6 +888,8 @@
 
 			draftPostId = null;
 			draftLoaded = false;
+			steelmanSentence = '';
+			steelmanPromptShownRecorded = false;
 			commentStyleMetadata = {
 				citations: []
 			};
@@ -945,6 +1054,7 @@
 						created_at
 						created_by
 						is_anonymous
+						is_onboarding_starter
 						status
 						showcase_item_id
 						showcase_item {
@@ -2726,80 +2836,6 @@
 		}
 	}
 
-	// Ensure all citations and sources have IDs
-	// Good faith testing function (OpenAI)
-	async function testGoodFaith() {
-		if (!editDescription.trim()) {
-			goodFaithError = 'Please enter some content to test';
-			return;
-		}
-
-		// Check analysis limits
-		if (!contributor || !canUseAnalysis(contributor)) {
-			goodFaithError = getAnalysisLimitText() || 'Analysis not available';
-			return;
-		}
-
-		// Check cache first
-		const cachedResult = await getCachedAnalysis(discussion?.id || null, editDescription, 'openai');
-		if (cachedResult) {
-			goodFaithResult = { ...cachedResult, fromCache: true };
-			return;
-		}
-
-		goodFaithTesting = true;
-		goodFaithError = null;
-		goodFaithResult = null;
-
-		try {
-			// Use local API route during development, Vercel function in production
-			const endpoint = '/api/goodFaith';
-
-			const response = await fetch(endpoint, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					postId: 'test',
-					content: editDescription
-				})
-			});
-
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
-
-			const data = await response.json();
-
-			if (data.error) {
-				throw new Error(data.error);
-			}
-
-			goodFaithResult = {
-				good_faith_score: data.good_faith_score,
-				good_faith_label: data.good_faith_label,
-				rationale: data.rationale,
-				claims: data.claims,
-				cultishPhrases: data.cultishPhrases,
-				fallacyOverload: data.fallacyOverload
-			};
-
-			// Cache the result
-			await cacheAnalysis(discussion?.id || null, editDescription, 'openai', goodFaithResult);
-
-			// Consume the appropriate credit (monthly or purchased)
-			await consumeAnalysisCredit();
-
-			// Save to database
-			await saveGoodFaithAnalysisToDatabase(goodFaithResult, 'openai');
-		} catch (error: any) {
-			goodFaithError = error.message || 'Failed to analyze content';
-		} finally {
-			goodFaithTesting = false;
-		}
-	}
-
 	// Claude good faith testing function
 	async function testGoodFaithClaude() {
 		if (!editDescription.trim()) {
@@ -2886,124 +2922,6 @@
 		}
 	}
 
-	// Comment good faith testing function (OpenAI)
-	async function testCommentGoodFaith() {
-		if (!newComment.trim()) {
-			commentGoodFaithError = 'Please enter some content to test';
-			return;
-		}
-
-		// Check analysis limits
-		if (!contributor || !canUseAnalysis(contributor)) {
-			commentGoodFaithError = getAnalysisLimitText() || 'Analysis not available';
-			return;
-		}
-
-		// Check cache first
-		const cachedResult = await getCachedAnalysis(discussion?.id || null, newComment, 'openai');
-		if (cachedResult) {
-			commentGoodFaithResult = { ...cachedResult, fromCache: true };
-			return;
-		}
-
-		const goodFaithTesting = true; // Local flag for UI
-		commentGoodFaithError = null;
-		commentGoodFaithResult = null;
-
-		try {
-			// Build context payload
-			const discussionContext: any = {
-				discussion: {
-					title: getDiscussionTitle(discussion),
-					description: getDiscussionDescription(discussion)
-				}
-			};
-
-			// Add citations if they exist
-			if (discussion?.current_version?.[0]) {
-				const currentVersion = discussion.current_version[0];
-				const extraction = extractCitationData(getDiscussionDescription(discussion));
-				const jsonCitations = extraction.citationData?.style_metadata?.citations || [];
-				const tableCitations = currentVersion.citationsFromTable || [];
-				const versionCitations = currentVersion.citations || [];
-				const allCitations = [...tableCitations, ...versionCitations, ...jsonCitations];
-
-				if (allCitations.length > 0) {
-					discussionContext.discussion.citations = allCitations;
-				}
-
-				// Add social media import data if present
-				if (
-					currentVersion.import_content &&
-					currentVersion.import_source &&
-					currentVersion.import_author
-				) {
-					discussionContext.importData = {
-						source: currentVersion.import_source,
-						url: currentVersion.import_url,
-						content: currentVersion.import_content,
-						author: currentVersion.import_author,
-						date: currentVersion.import_date
-					};
-				}
-			}
-
-			// Add selected comments as context
-			if (selectedContextCommentIds.length > 0 && discussion?.posts) {
-				discussionContext.selectedComments = discussion.posts
-					.filter((p: any) => selectedContextCommentIds.includes(p.id))
-					.map((p: any) => ({
-						id: p.id,
-						content: p.content,
-						author: p.is_anonymous ? 'Anonymous' : p.contributor?.display_name || 'User',
-						created_at: p.created_at,
-						is_anonymous: p.is_anonymous
-					}));
-			}
-
-			// Use local API route during development, Vercel function in production
-			const endpoint = '/api/goodFaith';
-
-			const response = await fetch(endpoint, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					postId: 'test-comment',
-					content: newComment,
-					discussionContext
-				})
-			});
-
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
-
-			const data = await response.json();
-
-			if (data.error) {
-				throw new Error(data.error);
-			}
-
-			commentGoodFaithResult = {
-				good_faith_score: data.good_faith_score,
-				good_faith_label: data.good_faith_label,
-				rationale: data.rationale,
-				claims: data.claims,
-				cultishPhrases: data.cultishPhrases
-			};
-
-			// Cache the result
-			await cacheAnalysis(discussion?.id || null, newComment, 'openai', commentGoodFaithResult);
-
-			// Consume the appropriate credit (monthly or purchased)
-			await consumeAnalysisCredit();
-		} catch (error: any) {
-			commentGoodFaithError = error.message || 'Failed to analyze comment';
-		}
-	}
-
 	// Comment good faith testing function (Claude)
 	async function testCommentGoodFaithClaude() {
 		if (!newComment.trim()) {
@@ -3029,7 +2947,7 @@
 		commentGoodFaithResult = null;
 
 		try {
-			// Build context payload (same as OpenAI version)
+			// Build context payload
 			const discussionContext: any = {
 				discussion: {
 					id: discussion?.id,
@@ -3132,7 +3050,7 @@
 	}
 
 	// Save good faith analysis to database
-	async function saveGoodFaithAnalysisToDatabase(result: any, provider: 'openai' | 'claude') {
+	async function saveGoodFaithAnalysisToDatabase(result: any, provider: 'claude') {
 		if (!discussion || !result) return;
 
 		try {
@@ -3375,47 +3293,56 @@
 	{:else if error}
 		<p class="error-message">Error: {error.message}</p>
 	{:else if discussion}
-		<!-- Mobile Tab Navigation (hidden on wide screens) -->
-		<div class="discussion-tabs mobile-only-tabs">
-			<button
-				class="tab-btn"
-				class:active={activeTab === 'discussion'}
-				onclick={() => (activeTab = 'discussion')}
-			>
-				Discussion
-				{#if discussion.posts?.length}
-					<span class="tab-badge">{discussion.posts.length}</span>
-				{/if}
-			</button>
-			<button
-				class="tab-btn"
-				class:active={activeTab === 'argument-graph'}
-				onclick={() => (activeTab = 'argument-graph')}
-			>
-				Argument Graph
-			</button>
-		</div>
+		<!-- Mobile Tab Navigation (hidden on wide screens; suppressed in reader mode) -->
+		{#if !isReaderMode}
+			<div class="discussion-tabs mobile-only-tabs">
+				<button
+					class="tab-btn"
+					class:active={activeTab === 'discussion'}
+					onclick={() => (activeTab = 'discussion')}
+				>
+					Discussion
+					{#if discussion.posts?.length}
+						<span class="tab-badge">{discussion.posts.length}</span>
+					{/if}
+				</button>
+				<button
+					class="tab-btn"
+					class:active={activeTab === 'argument-graph'}
+					onclick={() => (activeTab = 'argument-graph')}
+				>
+					Argument Graph
+				</button>
+			</div>
+		{/if}
 
 		<div
 			class="discussion-layout"
-			class:graph-panel-open={graphPanelOpen}
+			class:graph-panel-open={graphPanelOpen && !isReaderMode}
 			class:discussion-collapsed={!discussionPanelOpen}
 		>
 			<!-- Left column: entire discussion (header + article + posts + composer) -->
 			<div class="discussion-panel" class:mobile-hidden={activeTab !== 'discussion'}>
-				<div class="panel-collapse-bar desktop-only">
-					<button
-						class="panel-collapse-btn"
-						onclick={() => (discussionPanelOpen = !discussionPanelOpen)}
-						title={discussionPanelOpen ? 'Collapse discussion' : 'Expand discussion'}
-					>
-						{#if discussionPanelOpen}
-							◀ Collapse
-						{:else}
-							▶ Expand Discussion
-						{/if}
-					</button>
-				</div>
+				{#if !isReaderMode}
+					<div class="panel-collapse-bar desktop-only">
+						<button
+							class="panel-collapse-btn"
+							onclick={() => (discussionPanelOpen = !discussionPanelOpen)}
+							title={discussionPanelOpen ? 'Collapse discussion' : 'Expand discussion'}
+						>
+							{#if discussionPanelOpen}
+								◀ Collapse
+							{:else}
+								▶ Expand Discussion
+							{/if}
+						</button>
+					</div>
+				{/if}
+				<!-- Plan 1: onboarding rail. Only renders inside the seeded starter
+				     discussion and hides itself once state === 'completed'. -->
+				{#if user?.id && (discussion as any)?.is_onboarding_starter}
+					<OnboardingRail userId={user.id} />
+				{/if}
 				<header class="discussion-header">
 					<DiscussionHeader
 						discussion={{
@@ -3435,11 +3362,11 @@
 						onRevealIdentity={handleUnanonymizeDiscussion}
 					/>
 
-					{#if discussion.showcase_item}
+					{#if discussion.showcase_item && !isReaderMode}
 						<FeaturedAnalysisContext item={discussion.showcase_item} />
 					{/if}
 
-					{#if pendingApprovalForThisDiscussion}
+					{#if pendingApprovalForThisDiscussion && !isReaderMode}
 						<EditorsDeskApprovalCard
 							pick={pendingApprovalForThisDiscussion}
 							onResponse={handleApprovalStatusChange}
@@ -3457,10 +3384,7 @@
 							bind:showCitationPicker={showEditCitationPicker}
 							heuristicScore={editHeuristicScore}
 							heuristicPassed={editHeuristicPassed}
-							{goodFaithTesting}
 							{claudeGoodFaithTesting}
-							bind:goodFaithResult
-							bind:goodFaithError
 							bind:claudeGoodFaithResult
 							bind:claudeGoodFaithError
 							lastSavedAt={editLastSavedAt}
@@ -3477,7 +3401,6 @@
 							onCancelCitationEdit={cancelEditCitation}
 							onInsertCitationReference={insertEditCitationReference}
 							onOpenCitationPicker={openEditCitationPicker}
-							onTestGoodFaith={testGoodFaith}
 							onTestGoodFaithClaude={testGoodFaithClaude}
 							onPublish={publishDraftChanges}
 							onCancel={cancelEdit}
@@ -3488,7 +3411,7 @@
 					{/if}
 
 					<!-- Social Media Import Display -->
-					{#if discussion?.current_version?.[0]?.import_content && discussion?.current_version?.[0]?.import_source && discussion?.current_version?.[0]?.import_author}
+					{#if !isReaderMode && discussion?.current_version?.[0]?.import_content && discussion?.current_version?.[0]?.import_source && discussion?.current_version?.[0]?.import_author}
 						{@const currentVersion = discussion.current_version[0]}
 						<SocialMediaImportDisplay
 							source={currentVersion.import_source}
@@ -3510,7 +3433,7 @@
 							allCitations
 						)}
 						<div class="discussion-description">
-							{@html processedContent.replace(/\n/g, '<br>')}
+							{@html simpleMarkdown(processedContent)}
 						</div>
 
 						<DiscussionReferencesDisplay citations={allCitations} {formatChicagoCitation} />
@@ -3519,7 +3442,7 @@
 						{@const audioUrl = discussion?.current_version?.[0]?.audio_url}
 						{@const hasAudioManagementAccess = hasAdminAccess(contributor)}
 
-						{#if hasAudioManagementAccess && !editing}
+						{#if hasAudioManagementAccess && !editing && !isReaderMode}
 							<div class="audio-admin-section">
 								<h3>Audio Management</h3>
 
@@ -3562,7 +3485,7 @@
 							</div>
 						{/if}
 
-						{#if !editing}
+						{#if !editing && !isReaderMode}
 							<DiscussionGoodFaithBadge
 								score={getDiscussionGoodFaithScore(discussion)}
 								label={getDiscussionGoodFaithLabel(discussion)}
@@ -3574,7 +3497,7 @@
 					{/if}
 				</header>
 
-				{#if hasArgumentGraph === false && user && !graphPanelOpen}
+				{#if hasArgumentGraph === false && user && !graphPanelOpen && !isReaderMode}
 					<div class="graph-generation-banner desktop-only-banner">
 						<div class="graph-banner-content">
 							<div class="graph-banner-icon">✨</div>
@@ -3637,7 +3560,11 @@
 						<!-- Display events for this post -->
 						<EventList postId={post.id} />
 					{:else}
-						<p>No posts in this discussion yet. Be the first to contribute!</p>
+						{#if isReaderMode}
+							<p>Read the prompt above, then draft your reply below.</p>
+						{:else}
+							<p>No posts in this discussion yet. Be the first to contribute!</p>
+						{/if}
 					{/each}
 				</div>
 
@@ -3648,6 +3575,7 @@
 					bind:postType={commentPostType}
 					bind:postTypeExpanded
 					bind:showAdvancedFeatures
+					readerMode={isReaderMode}
 					wordCount={commentWordCount}
 					selectedStyle={commentSelectedStyle}
 					bind:styleMetadata={commentStyleMetadata}
@@ -3674,6 +3602,9 @@
 					discussionId={discussion?.id}
 					discussionTitle={discussion ? getDiscussionTitle(discussion) : 'Discussion'}
 					discussionPosts={discussion?.posts || []}
+					{steelmanRequired}
+					bind:steelmanSentence
+					onSteelmanPromptShown={recordSteelmanPromptShown}
 					bind:selectedContextCommentIds
 					onInput={onCommentInput}
 					onFocus={loadExistingDraft}
@@ -3682,7 +3613,6 @@
 					onCancelCitationEdit={cancelCommentCitationEdit}
 					onInsertCitationReference={insertCommentCitationReference}
 					onOpenCitationPicker={openCommentCitationPicker}
-					onTestGoodFaith={testCommentGoodFaith}
 					onTestGoodFaithClaude={testCommentGoodFaithClaude}
 					onPublish={publishDraft}
 					onClearReplying={clearReplying}
@@ -3694,33 +3624,35 @@
 				/>
 			</div>
 
-			<!-- Right column: Argument Graph (side panel on wide, tab-controlled on mobile) -->
-			<div class="graph-panel" class:mobile-hidden={activeTab !== 'argument-graph'}>
-				<div class="graph-panel-header desktop-only">
-					<button
-						class="panel-collapse-btn"
-						onclick={() => (graphPanelOpen = false)}
-						title="Collapse graph panel"
-					>
-						Collapse ▶
-					</button>
-					<h3 class="graph-panel-title">Argument Graph</h3>
+			<!-- Right column: Argument Graph (hidden in reader mode) -->
+			{#if !isReaderMode}
+				<div class="graph-panel" class:mobile-hidden={activeTab !== 'argument-graph'}>
+					<div class="graph-panel-header desktop-only">
+						<button
+							class="panel-collapse-btn"
+							onclick={() => (graphPanelOpen = false)}
+							title="Collapse graph panel"
+						>
+							Collapse ▶
+						</button>
+						<h3 class="graph-panel-title">Argument Graph</h3>
+					</div>
+					<DiscussionArgumentGraph
+						discussionId={discussion.id}
+						discussionTitle={getDiscussionTitle(discussion)}
+						discussionDescription={getDiscussionDescription(discussion) || ''}
+						userId={user?.id ?? null}
+						isDiscussionAuthor={user ? discussion.contributor.id === user.id : false}
+						discussionPosts={discussion.posts || []}
+						discussionCitations={graphCitations}
+						onRequestStartEdit={startEdit}
+					/>
 				</div>
-				<DiscussionArgumentGraph
-					discussionId={discussion.id}
-					discussionTitle={getDiscussionTitle(discussion)}
-					discussionDescription={getDiscussionDescription(discussion) || ''}
-					userId={user?.id ?? null}
-					isDiscussionAuthor={user ? discussion.contributor.id === user.id : false}
-					discussionPosts={discussion.posts || []}
-					discussionCitations={graphCitations}
-					onRequestStartEdit={startEdit}
-				/>
-			</div>
+			{/if}
 		</div>
 
 		<!-- Toggle button to re-open graph panel on desktop when closed -->
-		{#if !graphPanelOpen}
+		{#if !graphPanelOpen && !isReaderMode}
 			<button class="graph-panel-reopen desktop-only" onclick={() => (graphPanelOpen = true)}>
 				◀ Argument Graph
 			</button>
@@ -4099,6 +4031,24 @@
 		word-wrap: break-word;
 		margin-bottom: 2rem;
 		font-family: var(--font-family-sans);
+	}
+
+	.discussion-description :global(.hint-callout) {
+		margin: 1.25rem 0 0.5rem;
+		padding: 0.875rem 1rem;
+		border-left: 3px solid var(--color-primary, #6366f1);
+		background: var(--color-surface-elevated, #f8f7ff);
+		border-radius: 0 6px 6px 0;
+		font-size: 1rem;
+		color: var(--color-text-secondary);
+	}
+
+	.discussion-description :global(.hint-callout p) {
+		margin: 0;
+	}
+
+	.discussion-description :global(.hint-callout strong) {
+		color: var(--color-primary, #6366f1);
 	}
 
 	/* Superscript citation reference styling */

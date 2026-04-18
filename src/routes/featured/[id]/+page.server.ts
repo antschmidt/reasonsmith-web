@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { GET_PUBLIC_SHOWCASE_ITEM } from '$lib/graphql/queries';
+import { GET_SHOWCASE_ITEM_WITH_GRAPH } from '$lib/graphql/queries';
 import { fetchHasura } from '$lib/utils/hasuraFetch';
 
 export const load: PageServerLoad = async ({ fetch, params }) => {
@@ -11,7 +11,7 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 	}
 
 	const result = await fetchHasura(fetch, {
-		query: GET_PUBLIC_SHOWCASE_ITEM,
+		query: GET_SHOWCASE_ITEM_WITH_GRAPH,
 		variables: { id }
 	});
 
@@ -32,12 +32,22 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 			if (parsed && typeof parsed === 'object') {
 				structuredAnalysis = parsed;
 			}
-		} catch (parseError) {
-			// Parsing failed: the 'analysis' field may be missing or contain invalid JSON.
-			// This is expected for some items, and it's safe to proceed without structured analysis.
-			// Silent failure is acceptable because the absence of valid analysis does not prevent page rendering.
+		} catch {
+			// analysis may be missing or invalid JSON — safe to proceed without it
 		}
 	}
 
-	return { item, structuredAnalysis };
+	// Check if a discussion and argument graph already exist for this showcase item
+	const linkedDiscussions = result.data?.discussion ?? [];
+	const linkedArguments = result.data?.argument ?? [];
+	const existingDiscussionId = linkedArguments[0]?.discussion_id ?? linkedDiscussions[0]?.id ?? null;
+	const existingArgumentId = linkedArguments[0]?.id ?? null;
+
+	return {
+		item,
+		structuredAnalysis,
+		existingDiscussionId,
+		existingArgumentId,
+		hasSourceContent: !!item.source_content
+	};
 };

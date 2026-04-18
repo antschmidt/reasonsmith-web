@@ -57,10 +57,18 @@
 				`
 				query GetCurrentUserRole($userId: uuid!) {
 					contributor_by_pk(id: $userId) {
+						id
 						role
 						avatar_url
 						display_name
 						handle
+						reviewer_register
+						prefers_plain_language
+						growth_visibility
+						level_display_mode
+						onboarding_state
+						onboarding_discussion_id
+						onboarding_completed_at
 					}
 				}
 			`,

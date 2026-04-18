@@ -127,7 +127,6 @@ A platform for good-faith political discussion, where ideas are crafted and hone
    PUBLIC_SITE_URL=http://localhost:5173
 
    # AI Services
-   OPENAI_API_KEY=<your-openai-api-key>
    ANTHROPIC_API_KEY=<your-anthropic-api-key>
 
    # Neo4j (optional - for citation networks)

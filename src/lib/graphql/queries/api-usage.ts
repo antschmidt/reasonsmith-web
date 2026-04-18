@@ -2,7 +2,7 @@ import { gql } from '@apollo/client/core';
 
 // ============================================
 // API Usage Queries
-// For tracking Claude/OpenAI token usage per user
+// For tracking Claude token usage per user
 // ============================================
 
 // Get a user's API usage summary (aggregated stats)
@@ -149,16 +149,6 @@ export const GET_USAGE_BY_ENDPOINT = gql`
 export const GET_USAGE_BY_PROVIDER = gql`
 	query GetUsageByProvider {
 		claude: api_usage_summary_aggregate(where: { provider: { _eq: "claude" } }) {
-			aggregate {
-				sum {
-					total_input_tokens
-					total_output_tokens
-					total_tokens
-					request_count
-				}
-			}
-		}
-		openai: api_usage_summary_aggregate(where: { provider: { _eq: "openai" } }) {
 			aggregate {
 				sum {
 					total_input_tokens
