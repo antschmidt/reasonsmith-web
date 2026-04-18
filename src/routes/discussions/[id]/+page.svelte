@@ -27,6 +27,8 @@
 	} from '$lib/graphql/queries';
 	import { createDraftAutosaver, type DraftAutosaver } from '$lib';
 	import { advanceOnboarding } from '$lib/onboarding/state';
+	import { contributorStore, type OnboardingState } from '$lib/stores/contributorStore';
+	import OnboardingRail from '$lib/components/onboarding/OnboardingRail.svelte';
 	import {
 		getStyleConfig,
 		formatChicagoCitation,
@@ -42,6 +44,7 @@
 		ensureIdsForCitationData
 	} from '$lib/utils/contentExtraction';
 	import { getCachedAnalysis, cacheAnalysis, hashContent } from '$lib/utils/analysisCache';
+	import { simpleMarkdown } from '$lib/utils/simpleMarkdown';
 	import { assessContentQuality } from '$lib/utils/contentQuality';
 	import {
 		getDiscussionTitle,
@@ -99,7 +102,7 @@
 		'response' | 'counter_argument' | 'supporting_evidence' | 'question'
 	>('response');
 	let commentFormExpanded = $state(false);
-	let postTypeExpanded = $state(true);
+	let postTypeExpanded = $state(false);
 	let showAdvancedFeatures = $state(false);
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
@@ -113,6 +116,17 @@
 		user = nhost.auth.getUser();
 		authReady = true;
 	});
+
+	// Plan 1 reader mode: while a contributor is mid-onboarding AND viewing the
+	// starter discussion, we suppress the argument graph, post-type selector,
+	// advanced features, and other secondary chrome so the page feels calmer.
+	// The contributor can still exit via the rail's "Exit the guided loop" link.
+	const onboardingState = $derived(
+		($contributorStore?.onboarding_state as OnboardingState) ?? 'not_started'
+	);
+	const isReaderMode = $derived(
+		!!(discussion as any)?.is_onboarding_starter && onboardingState !== 'completed'
+	);
 
 	// Audio upload state
 	let audioUploading = $state(false);
@@ -570,6 +584,16 @@
 		} else {
 			draftAutosaver?.handleChange(newComment);
 			updateAutosaveStatus();
+			// Plan 1 onboarding: typing after feedback counts as "revising".
+			// advanceOnboarding is monotonic so this is a no-op unless the
+			// contributor is currently at received_feedback.
+			if (user?.id) {
+				advanceOnboarding({
+					contributorId: user.id,
+					nextState: 'revised',
+					discussionId: $page.params.id as string
+				}).catch(() => {});
+			}
 		}
 	}
 
@@ -1030,6 +1054,7 @@
 						created_at
 						created_by
 						is_anonymous
+						is_onboarding_starter
 						status
 						showcase_item_id
 						showcase_item {
@@ -3268,47 +3293,56 @@
 	{:else if error}
 		<p class="error-message">Error: {error.message}</p>
 	{:else if discussion}
-		<!-- Mobile Tab Navigation (hidden on wide screens) -->
-		<div class="discussion-tabs mobile-only-tabs">
-			<button
-				class="tab-btn"
-				class:active={activeTab === 'discussion'}
-				onclick={() => (activeTab = 'discussion')}
-			>
-				Discussion
-				{#if discussion.posts?.length}
-					<span class="tab-badge">{discussion.posts.length}</span>
-				{/if}
-			</button>
-			<button
-				class="tab-btn"
-				class:active={activeTab === 'argument-graph'}
-				onclick={() => (activeTab = 'argument-graph')}
-			>
-				Argument Graph
-			</button>
-		</div>
+		<!-- Mobile Tab Navigation (hidden on wide screens; suppressed in reader mode) -->
+		{#if !isReaderMode}
+			<div class="discussion-tabs mobile-only-tabs">
+				<button
+					class="tab-btn"
+					class:active={activeTab === 'discussion'}
+					onclick={() => (activeTab = 'discussion')}
+				>
+					Discussion
+					{#if discussion.posts?.length}
+						<span class="tab-badge">{discussion.posts.length}</span>
+					{/if}
+				</button>
+				<button
+					class="tab-btn"
+					class:active={activeTab === 'argument-graph'}
+					onclick={() => (activeTab = 'argument-graph')}
+				>
+					Argument Graph
+				</button>
+			</div>
+		{/if}
 
 		<div
 			class="discussion-layout"
-			class:graph-panel-open={graphPanelOpen}
+			class:graph-panel-open={graphPanelOpen && !isReaderMode}
 			class:discussion-collapsed={!discussionPanelOpen}
 		>
 			<!-- Left column: entire discussion (header + article + posts + composer) -->
 			<div class="discussion-panel" class:mobile-hidden={activeTab !== 'discussion'}>
-				<div class="panel-collapse-bar desktop-only">
-					<button
-						class="panel-collapse-btn"
-						onclick={() => (discussionPanelOpen = !discussionPanelOpen)}
-						title={discussionPanelOpen ? 'Collapse discussion' : 'Expand discussion'}
-					>
-						{#if discussionPanelOpen}
-							◀ Collapse
-						{:else}
-							▶ Expand Discussion
-						{/if}
-					</button>
-				</div>
+				{#if !isReaderMode}
+					<div class="panel-collapse-bar desktop-only">
+						<button
+							class="panel-collapse-btn"
+							onclick={() => (discussionPanelOpen = !discussionPanelOpen)}
+							title={discussionPanelOpen ? 'Collapse discussion' : 'Expand discussion'}
+						>
+							{#if discussionPanelOpen}
+								◀ Collapse
+							{:else}
+								▶ Expand Discussion
+							{/if}
+						</button>
+					</div>
+				{/if}
+				<!-- Plan 1: onboarding rail. Only renders inside the seeded starter
+				     discussion and hides itself once state === 'completed'. -->
+				{#if user?.id && (discussion as any)?.is_onboarding_starter}
+					<OnboardingRail userId={user.id} />
+				{/if}
 				<header class="discussion-header">
 					<DiscussionHeader
 						discussion={{
@@ -3328,11 +3362,11 @@
 						onRevealIdentity={handleUnanonymizeDiscussion}
 					/>
 
-					{#if discussion.showcase_item}
+					{#if discussion.showcase_item && !isReaderMode}
 						<FeaturedAnalysisContext item={discussion.showcase_item} />
 					{/if}
 
-					{#if pendingApprovalForThisDiscussion}
+					{#if pendingApprovalForThisDiscussion && !isReaderMode}
 						<EditorsDeskApprovalCard
 							pick={pendingApprovalForThisDiscussion}
 							onResponse={handleApprovalStatusChange}
@@ -3377,7 +3411,7 @@
 					{/if}
 
 					<!-- Social Media Import Display -->
-					{#if discussion?.current_version?.[0]?.import_content && discussion?.current_version?.[0]?.import_source && discussion?.current_version?.[0]?.import_author}
+					{#if !isReaderMode && discussion?.current_version?.[0]?.import_content && discussion?.current_version?.[0]?.import_source && discussion?.current_version?.[0]?.import_author}
 						{@const currentVersion = discussion.current_version[0]}
 						<SocialMediaImportDisplay
 							source={currentVersion.import_source}
@@ -3399,7 +3433,7 @@
 							allCitations
 						)}
 						<div class="discussion-description">
-							{@html processedContent.replace(/\n/g, '<br>')}
+							{@html simpleMarkdown(processedContent)}
 						</div>
 
 						<DiscussionReferencesDisplay citations={allCitations} {formatChicagoCitation} />
@@ -3408,7 +3442,7 @@
 						{@const audioUrl = discussion?.current_version?.[0]?.audio_url}
 						{@const hasAudioManagementAccess = hasAdminAccess(contributor)}
 
-						{#if hasAudioManagementAccess && !editing}
+						{#if hasAudioManagementAccess && !editing && !isReaderMode}
 							<div class="audio-admin-section">
 								<h3>Audio Management</h3>
 
@@ -3451,7 +3485,7 @@
 							</div>
 						{/if}
 
-						{#if !editing}
+						{#if !editing && !isReaderMode}
 							<DiscussionGoodFaithBadge
 								score={getDiscussionGoodFaithScore(discussion)}
 								label={getDiscussionGoodFaithLabel(discussion)}
@@ -3463,7 +3497,7 @@
 					{/if}
 				</header>
 
-				{#if hasArgumentGraph === false && user && !graphPanelOpen}
+				{#if hasArgumentGraph === false && user && !graphPanelOpen && !isReaderMode}
 					<div class="graph-generation-banner desktop-only-banner">
 						<div class="graph-banner-content">
 							<div class="graph-banner-icon">✨</div>
@@ -3526,7 +3560,11 @@
 						<!-- Display events for this post -->
 						<EventList postId={post.id} />
 					{:else}
-						<p>No posts in this discussion yet. Be the first to contribute!</p>
+						{#if isReaderMode}
+							<p>Read the prompt above, then draft your reply below.</p>
+						{:else}
+							<p>No posts in this discussion yet. Be the first to contribute!</p>
+						{/if}
 					{/each}
 				</div>
 
@@ -3537,6 +3575,7 @@
 					bind:postType={commentPostType}
 					bind:postTypeExpanded
 					bind:showAdvancedFeatures
+					readerMode={isReaderMode}
 					wordCount={commentWordCount}
 					selectedStyle={commentSelectedStyle}
 					bind:styleMetadata={commentStyleMetadata}
@@ -3585,33 +3624,35 @@
 				/>
 			</div>
 
-			<!-- Right column: Argument Graph (side panel on wide, tab-controlled on mobile) -->
-			<div class="graph-panel" class:mobile-hidden={activeTab !== 'argument-graph'}>
-				<div class="graph-panel-header desktop-only">
-					<button
-						class="panel-collapse-btn"
-						onclick={() => (graphPanelOpen = false)}
-						title="Collapse graph panel"
-					>
-						Collapse ▶
-					</button>
-					<h3 class="graph-panel-title">Argument Graph</h3>
+			<!-- Right column: Argument Graph (hidden in reader mode) -->
+			{#if !isReaderMode}
+				<div class="graph-panel" class:mobile-hidden={activeTab !== 'argument-graph'}>
+					<div class="graph-panel-header desktop-only">
+						<button
+							class="panel-collapse-btn"
+							onclick={() => (graphPanelOpen = false)}
+							title="Collapse graph panel"
+						>
+							Collapse ▶
+						</button>
+						<h3 class="graph-panel-title">Argument Graph</h3>
+					</div>
+					<DiscussionArgumentGraph
+						discussionId={discussion.id}
+						discussionTitle={getDiscussionTitle(discussion)}
+						discussionDescription={getDiscussionDescription(discussion) || ''}
+						userId={user?.id ?? null}
+						isDiscussionAuthor={user ? discussion.contributor.id === user.id : false}
+						discussionPosts={discussion.posts || []}
+						discussionCitations={graphCitations}
+						onRequestStartEdit={startEdit}
+					/>
 				</div>
-				<DiscussionArgumentGraph
-					discussionId={discussion.id}
-					discussionTitle={getDiscussionTitle(discussion)}
-					discussionDescription={getDiscussionDescription(discussion) || ''}
-					userId={user?.id ?? null}
-					isDiscussionAuthor={user ? discussion.contributor.id === user.id : false}
-					discussionPosts={discussion.posts || []}
-					discussionCitations={graphCitations}
-					onRequestStartEdit={startEdit}
-				/>
-			</div>
+			{/if}
 		</div>
 
 		<!-- Toggle button to re-open graph panel on desktop when closed -->
-		{#if !graphPanelOpen}
+		{#if !graphPanelOpen && !isReaderMode}
 			<button class="graph-panel-reopen desktop-only" onclick={() => (graphPanelOpen = true)}>
 				◀ Argument Graph
 			</button>
@@ -3990,6 +4031,24 @@
 		word-wrap: break-word;
 		margin-bottom: 2rem;
 		font-family: var(--font-family-sans);
+	}
+
+	.discussion-description :global(.hint-callout) {
+		margin: 1.25rem 0 0.5rem;
+		padding: 0.875rem 1rem;
+		border-left: 3px solid var(--color-primary, #6366f1);
+		background: var(--color-surface-elevated, #f8f7ff);
+		border-radius: 0 6px 6px 0;
+		font-size: 1rem;
+		color: var(--color-text-secondary);
+	}
+
+	.discussion-description :global(.hint-callout p) {
+		margin: 0;
+	}
+
+	.discussion-description :global(.hint-callout strong) {
+		color: var(--color-primary, #6366f1);
 	}
 
 	/* Superscript citation reference styling */

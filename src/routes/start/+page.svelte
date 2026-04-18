@@ -27,13 +27,12 @@
 			return;
 		}
 
-		// Fire-and-log: don't block redirect on this succeeding. If it fails
-		// we'll retry on the next state transition anyway.
-		advanceOnboarding({
+		// Await so the DB has the right state before the layout re-queries.
+		await advanceOnboarding({
 			contributorId: user.id,
 			nextState: 'read_prompt',
 			discussionId
-		}).catch(() => {});
+		});
 
 		await goto(`/discussions/${discussionId}`);
 	});

@@ -284,7 +284,16 @@ In addition to the scoring fields, produce:
    write generic advice here — write actual replacement text the author
    could paste in.
 
-Voice: both fields MUST follow the register voice specified above.
+3. \`guidingQuestions\` (array of 2-3 strings): Short, specific questions
+   that help the author strengthen their reasoning. Each question should
+   target a concrete weakness or blind spot found in THIS analysis — never
+   generic prompts like "Have you considered the other side?" Tie each
+   question to something specific in the text. Examples:
+   - "Your claim about engagement metrics — what evidence would change your mind?"
+   - "You mention 'most experts agree' — which experts, and do any dissent?"
+   - "If platforms did implement this, what's the strongest argument that it would backfire?"
+
+Voice: all three fields MUST follow the register voice specified above.
 `;
 
 /**
@@ -314,6 +323,7 @@ Return a valid JSON object with this structure:
   "overallAnalysis": "Comprehensive paragraph summarizing rhetorical strategy and trustworthiness.",
   "coachingHeadline": "One sentence (≤120 chars) naming the most important thing to fix or reinforce.",
   "suggestedRevision": "Concrete rewrite of the weakest sentence (≤500 chars), or null if none applies.",
+  "guidingQuestions": ["Specific question targeting a weakness found in this analysis", "Another specific question"],
   "steelmanScore": 5,
   "steelmanNotes": "Brief feedback on steelmanning quality, or null if not applicable",
   "understandingScore": 5,
@@ -327,6 +337,7 @@ Field Notes:
 - goodFaithDescriptor: 1-2 word descriptor (e.g., "Constructive", "Hostile", "Off-Topic", "Thoughtful")
 - coachingHeadline: REQUIRED for every analysis
 - suggestedRevision: nullable
+- guidingQuestions: REQUIRED, array of 2-3 strings
 - Growth scores (steelman, understanding, humility): 0-10 scale, null if not applicable
 - relevanceScore: 0-10, REQUIRED when discussion context is provided
 `;
@@ -339,7 +350,7 @@ export const CLAUDE_SPECIFIC_INSTRUCTIONS = `
 **Output Requirements for Claude:**
 CRITICAL: Return EXACTLY the JSON structure specified. Do not add extra fields like 'label', 'score', 'rationale', 'provider', 'analyzedAt'. Field names and types must match exactly.
 
-The coachingHeadline and suggestedRevision fields (see Coaching output section) are REQUIRED. Do not omit coachingHeadline. suggestedRevision may be null but the key must be present.
+The coachingHeadline, suggestedRevision, and guidingQuestions fields (see Coaching output section) are REQUIRED. Do not omit coachingHeadline or guidingQuestions. suggestedRevision may be null but the key must be present.
 
 Your output must ONLY be the JSON object. No markdown code blocks, no explanatory text before or after.
 `;

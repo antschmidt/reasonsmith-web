@@ -5,6 +5,7 @@
 	import { GET_DASHBOARD_DATA, GET_SAVED_ITEMS, REMOVE_SAVED_ITEM } from '$lib/graphql/queries';
 	import CollaborationInvites from './collaboration/CollaborationInvites.svelte';
 	import NetworkingSection from './NetworkingSection.svelte';
+	import OnboardingPrompt from './onboarding/OnboardingPrompt.svelte';
 	import { BookOpen, Link2, Users } from '@lucide/svelte';
 
 	let { user } = $props<{ user: User }>();
@@ -329,6 +330,11 @@
 		</aside>
 		<!-- Main Content (Left Column) -->
 		<main class="main-content">
+			<!-- Plan 1: onboarding prompt. Self-hides when onboarding_state === 'completed'. -->
+			{#if user?.id}
+				<OnboardingPrompt userId={user.id} />
+			{/if}
+
 			{#if savedItemsLoading}
 				<section class="saved-items-section">
 					<h3 class="subsection-title">Saved for Later</h3>

@@ -126,6 +126,7 @@ export interface GoodFaithResult {
 	// the client falls back to deriving a headline from `summary`.
 	coachingHeadline?: string; // ≤120 chars — the one thing to fix or reinforce
 	suggestedRevision?: string | null; // ≤500 chars — rewrite of the weakest sentence, or null
+	guidingQuestions?: string[]; // 2-3 specific questions to strengthen reasoning
 
 	// Which register was used to generate the prose. Purely informational;
 	// scoring fields are invariant across registers.
@@ -190,6 +191,7 @@ export interface ClaudeRawResponse {
 	// Coaching fields (Plan 2)
 	coachingHeadline?: string;
 	suggestedRevision?: string | null;
+	guidingQuestions?: string[];
 }
 
 // Provider configuration

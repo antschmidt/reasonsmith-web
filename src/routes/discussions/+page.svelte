@@ -20,8 +20,10 @@
 		UPDATE_CONTRIBUTOR_INTERESTS
 	} from '$lib/graphql/queries';
 	import { canCurateEditorsDesk } from '$lib/utils/editorsDeskUtils';
+	import OnboardingPrompt from '$lib/components/onboarding/OnboardingPrompt.svelte';
+	import { contributorStore, type OnboardingState } from '$lib/stores/contributorStore';
 	import type { PageData } from './$types';
-	import { LampDesk } from '@lucide/svelte';
+	import { LampDesk, MessageSquare } from '@lucide/svelte';
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -57,7 +59,24 @@
 			good_faith_score?: number | null;
 			good_faith_label?: string | null;
 		}[];
+		posts_aggregate?: { aggregate?: { count?: number } };
+		posts?: { created_at: string }[];
 	};
+
+	function replyCount(d: DiscussionSummary): number {
+		return d.posts_aggregate?.aggregate?.count ?? 0;
+	}
+
+	function recentActivity(d: DiscussionSummary): string | null {
+		const latest = d.posts?.[0]?.created_at;
+		if (!latest) return null;
+		const diff = Date.now() - new Date(latest).getTime();
+		const hours = Math.floor(diff / 3_600_000);
+		if (hours < 1) return 'Active now';
+		if (hours < 24) return `Active ${hours}h ago`;
+		if (hours < 48) return 'Active yesterday';
+		return null;
+	}
 
 	let results = $state<DiscussionSummary[] | null>(null);
 	let discussions = $state<DiscussionSummary[] | null>(null);
@@ -99,6 +118,13 @@
 	let user = $state(nhost.auth.getUser());
 	let contributor = $state<any>(null);
 	let canCurate = $derived(canCurateEditorsDesk(contributor));
+	const onboardingState = $derived(
+		($contributorStore?.onboarding_state as OnboardingState) ?? 'not_started'
+	);
+	const showOnboarding = $derived(
+		!!user && onboardingState !== 'completed'
+	);
+	let alphaDismissed = $state(false);
 
 	nhost.auth.onAuthStateChanged(() => {
 		user = nhost.auth.getUser();
@@ -543,114 +569,115 @@
 	}
 </script>
 
+<!-- Alpha strip — site-level, dismissable -->
+{#if !alphaDismissed}
+	<div class="alpha-strip">
+		<p>
+			We're currently in <strong>Alpha</strong>. Features and designs may change as we work toward
+			Beta in early-to-mid 2026.
+		</p>
+		<button class="alpha-dismiss" onclick={() => (alphaDismissed = true)} aria-label="Dismiss">✕</button>
+	</div>
+{/if}
+
 <div class="page-container">
-	<header class="page-hero">
-		<div class="hero-body">
-			<span class="editorial-masthead">Learning Through Dialogue</span>
-			<h1>Explore Discussions</h1>
-			<p class="editorial-lede">
-				Discover thoughtful conversations where people engage constructively with different
-				viewpoints. Learn from examples of good-faith reasoning, steelmanning, and evidence-based
-				dialogue.
-			</p>
-			<p class="alpha-notice">
-				We're currently in <strong>Alpha</strong>. Many features and designs are subject to drastic
-				changes as we iterate toward our Beta release in early-to-mid 2026.
-			</p>
-		</div>
-		<section class="search-card" aria-labelledby="discussion-search">
-			<h2 id="discussion-search">Find discussions by topic</h2>
-			<p>Search by title, author, or keywords to discover conversations that interest you.</p>
-			<div class="search-controls">
-				<input
-					id="search"
-					type="search"
-					placeholder="Search discussions..."
-					bind:value={q}
-					oninput={onSearchInput}
-					onkeydown={(e) => e.key === 'Enter' && search()}
-				/>
-				<!-- <button class="search-button" onclick={search}>Search</button> -->
+	<!-- Slim header -->
+	<header class="page-header">
+		<div class="header-top">
+			<div class="header-title">
+				<span class="editorial-masthead">Learning Through Dialogue</span>
+				<h1>Discussions</h1>
 			</div>
+		</div>
+
+		<!-- Search + filter bar -->
+		<div class="search-bar">
+			<input
+				id="search"
+				type="search"
+				placeholder="Search by title, author, or keyword…"
+				bind:value={q}
+				oninput={onSearchInput}
+				onkeydown={(e) => e.key === 'Enter' && search()}
+			/>
 			{#if user}
-				<div class="filter-controls">
-					<span class="filter-label">Show:</span>
-					<div class="filter-toggle">
-						<button
-							class="filter-button"
-							class:active={filterMode === 'all'}
-							onclick={() => setFilterMode('all')}
-						>
-							All
-						</button>
-						<button
-							class="filter-button"
-							class:active={filterMode === 'following'}
-							onclick={() => setFilterMode('following')}
-						>
-							Following
-							{#if followingIds.length > 0}
-								<span class="filter-count">({followingIds.length})</span>
-							{/if}
-						</button>
-						<button
-							class="filter-button"
-							class:active={filterMode === 'interests'}
-							onclick={() => setFilterMode('interests')}
-						>
-							Interests
-							{#if userInterests.length > 0}
-								<span class="filter-count">({userInterests.length})</span>
-							{/if}
-						</button>
-					</div>
-				</div>
-				{#if filterMode === 'interests'}
-					<div class="interests-picker">
-						{#if allTags.length > 0}
-							<div class="interests-tags">
-								{#each allTags as tag}
-									<button
-										class="interest-tag"
-										class:selected={selectedInterests.includes(tag)}
-										onclick={() => toggleInterest(tag)}
-									>
-										{tag}
-									</button>
-								{/each}
-							</div>
-							{#if selectedInterests.length > 0 && selectedInterests.join(',') !== userInterests.join(',')}
-								<button
-									class="save-interests-button"
-									onclick={saveInterests}
-									disabled={savingInterests}
-								>
-									{savingInterests ? 'Saving...' : 'Save as my interests'}
-								</button>
-							{/if}
-						{:else if interestsLoaded}
-							<p class="interests-empty">No topics available yet.</p>
-						{:else}
-							<p class="interests-loading">Loading topics...</p>
+				<div class="filter-toggle">
+					<button
+						class="filter-button"
+						class:active={filterMode === 'all'}
+						onclick={() => setFilterMode('all')}
+					>
+						All
+					</button>
+					<button
+						class="filter-button"
+						class:active={filterMode === 'following'}
+						onclick={() => setFilterMode('following')}
+					>
+						Following
+						{#if followingIds.length > 0}
+							<span class="filter-count">({followingIds.length})</span>
 						{/if}
-					</div>
-				{/if}
+					</button>
+					<button
+						class="filter-button"
+						class:active={filterMode === 'interests'}
+						onclick={() => setFilterMode('interests')}
+					>
+						Interests
+						{#if userInterests.length > 0}
+							<span class="filter-count">({userInterests.length})</span>
+						{/if}
+					</button>
+				</div>
 			{/if}
-		</section>
+		</div>
+
+		{#if filterMode === 'interests' && user}
+			<div class="interests-picker">
+				{#if allTags.length > 0}
+					<div class="interests-tags">
+						{#each allTags as tag}
+							<button
+								class="interest-tag"
+								class:selected={selectedInterests.includes(tag)}
+								onclick={() => toggleInterest(tag)}
+							>
+								{tag}
+							</button>
+						{/each}
+					</div>
+					{#if selectedInterests.length > 0 && selectedInterests.join(',') !== userInterests.join(',')}
+						<button
+							class="save-interests-button"
+							onclick={saveInterests}
+							disabled={savingInterests}
+						>
+							{savingInterests ? 'Saving...' : 'Save as my interests'}
+						</button>
+					{/if}
+				{:else if interestsLoaded}
+					<p class="interests-empty">No topics available yet.</p>
+				{:else}
+					<p class="interests-loading">Loading topics...</p>
+				{/if}
+			</div>
+		{/if}
 	</header>
 
+	<!-- Onboarding prompt for new / mid-loop users -->
+	{#if showOnboarding}
+		<div class="onboarding-area">
+			<OnboardingPrompt userId={user?.id ?? ''} />
+		</div>
+	{/if}
+
+	<!-- Editors' Desk: featured cards inline -->
 	{#if !q.trim() && !editorsDeskLoading && editorsDeskPicks.length > 0}
-		<!-- Editors' Desk Section -->
-		<section class="analysis-section editors-desk-section">
-			<header class="analysis-header">
-				<span class="editorial-kicker">Editors' Desk</span>
-				<h2>Learn from exemplary discussions</h2>
-				<p>
-					Our editorial team highlights conversations that demonstrate strong reasoning,
-					intellectual humility, and constructive engagement. Study these examples to improve your
-					own dialogue skills.
-				</p>
-			</header>
+		<section class="featured-section">
+			<div class="section-label">
+				<span class="editorial-kicker">Editors' Picks</span>
+			</div>
 			<EditorsDeskCarousel
 				items={editorsDeskPicks}
 				{canCurate}
@@ -659,6 +686,18 @@
 		</section>
 	{/if}
 
+	<!-- Curated Analyses — moved up, compact -->
+	{#if !q.trim() && showcaseItems.length > 0}
+		<section class="featured-section curated-section">
+			<div class="section-label">
+				<span class="editorial-kicker">Case Studies</span>
+				<p class="section-sub">Learn to spot fallacies and evaluate evidence through real examples.</p>
+			</div>
+			<FeaturedAnalysesCarousel items={showcaseItems} />
+		</section>
+	{/if}
+
+	<!-- Main discussion grid -->
 	{#if user}
 		<main class="discussions-main">
 			{#if error}
@@ -668,75 +707,84 @@
 			{#if loading && (!discussions || discussions.length === 0)}
 				<p class="loading-message">Loading discussions...</p>
 			{:else if filtered && filtered.length > 0}
-				<div class="article-list">
+				<div class="discussion-grid">
 					{#each filtered as d}
-						<div class="discussion-card-wrapper">
-							<div
-								class="discussion-card"
-								role="button"
-								tabindex="0"
-								onclick={() => goto(`/discussions/${d.id}`)}
-								onkeydown={(e) => e.key === 'Enter' && goto(`/discussions/${d.id}`)}
-							>
-								<header class="discussion-header">
-									<span class="discussion-header-head">
-										{#if d.current_version?.[0]}
-											<h2>{@html highlight(d.current_version[0].title, q)}</h2>
-										{:else}
-											<h2>Discussion</h2>
+						<div
+							class="discussion-card"
+							role="button"
+							tabindex="0"
+							onclick={() => goto(`/discussions/${d.id}`)}
+							onkeydown={(e) => e.key === 'Enter' && goto(`/discussions/${d.id}`)}
+						>
+							<header class="discussion-header">
+								<span class="discussion-header-head">
+									{#if d.current_version?.[0]}
+										<h2>{@html highlight(d.current_version[0].title, q)}</h2>
+									{:else}
+										<h2>Discussion</h2>
+									{/if}
+									<div class="card-actions">
+										{#if canCurate}
+											<button
+												class="editors-desk-button"
+												onclick={(e) => {
+													e.stopPropagation();
+													openPicker(d);
+												}}
+												title="Add to Editors' Desk"
+												aria-label="Add to Editors' Desk"
+											>
+												<LampDesk size={16} strokeWidth={2} />
+											</button>
 										{/if}
-										<div class="card-actions">
-											{#if canCurate}
-												<button
-													class="editors-desk-button"
-													onclick={(e) => {
-														e.stopPropagation();
-														openPicker(d);
-													}}
-													title="Add to Editors' Desk"
-													aria-label="Add to Editors' Desk"
-												>
-													<LampDesk size={16} strokeWidth={2} />
-												</button>
-											{/if}
-											<SaveButton discussionId={d.id} size="small" />
-										</div>
-									</span>
-									{#if d.current_version?.[0]?.description}
-										<p class="deck">
-											{@html highlight(createSummary(d.current_version[0].description, 180), q)}
-										</p>
-									{/if}
-									{#if d.current_version?.[0]?.tags && d.current_version[0].tags.length > 0}
-										<div class="discussion-tags">
-											{#each d.current_version[0].tags as tag}
-												<span class="tag">{tag}</span>
-											{/each}
-										</div>
-									{/if}
-								</header>
-								<footer class="card-byline">
+										<SaveButton discussionId={d.id} size="small" />
+									</div>
+								</span>
+								{#if d.current_version?.[0]?.description}
+									<p class="deck">
+										{@html highlight(createSummary(d.current_version[0].description, 180), q)}
+									</p>
+								{/if}
+								{#if d.current_version?.[0]?.tags && d.current_version[0].tags.length > 0}
+									<div class="discussion-tags">
+										{#each d.current_version[0].tags as tag}
+											<span class="tag">{tag}</span>
+										{/each}
+									</div>
+								{/if}
+							</header>
+							<footer class="card-byline">
+								<span class="byline-left">
 									{#if d.is_anonymous}
-										<span>Anonymous contributor</span>
+										Anonymous contributor
 									{:else if d.contributor?.display_name}
-										<span
-											>By
-											<a href={`/u/${d.contributor.handle || d.contributor.id}`}
-												>{@html highlight(displayName(d.contributor.display_name), q)}</a
-											></span
+										By
+										<a href={`/u/${d.contributor.handle || d.contributor.id}`}
+											>{@html highlight(displayName(d.contributor.display_name), q)}</a
 										>
 									{:else}
-										<span>Unknown author</span>
+										Unknown author
+									{/if}
+								</span>
+								<span class="byline-right">
+									{#if replyCount(d) > 0}
+										<span class="reply-count">
+											<MessageSquare size={12} /> {replyCount(d)}
+										</span>
+									{/if}
+									{@const activity = recentActivity(d)}
+									{#if activity}
+										<span class="activity-badge">{activity}</span>
 									{/if}
 									<time
 										>{new Date(d.created_at).toLocaleDateString('en-US', {
-											year: 'numeric',
-											month: 'long',
-											day: 'numeric'
+											month: 'short',
+											day: 'numeric',
+											year: 'numeric'
 										})}</time
 									>
-								</footer>
-							</div>
+								</span>
+							</footer>
 						</div>
 					{/each}
 				</div>
@@ -764,30 +812,6 @@
 			{/if}
 		</main>
 	{/if}
-
-	{#if !q.trim()}
-		<!-- Curated Analyses Section -->
-		<section class="analysis-section">
-			<header class="analysis-header">
-				<span class="editorial-kicker">Curated Analyses</span>
-				<h2>Educational case studies</h2>
-				<p>
-					Detailed analyses of public discourse that demonstrate how to identify logical fallacies,
-					evaluate evidence quality, and recognize good-faith versus bad-faith argumentation. Learn
-					critical thinking skills through real examples.
-				</p>
-			</header>
-			{#if showcaseLoading}
-				<p class="status-message">Loading curated analyses…</p>
-			{:else if showcaseError}
-				<p class="status-message error">{showcaseError}</p>
-			{:else if showcaseItems.length === 0}
-				<p class="status-message">Curated analyses will appear here as they are published.</p>
-			{:else}
-				<FeaturedAnalysesCarousel items={showcaseItems} />
-			{/if}
-		</section>
-	{/if}
 </div>
 
 <LandingFooter />
@@ -803,103 +827,94 @@
 />
 
 <style>
+	/* ── Alpha strip ── */
+	.alpha-strip {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 1rem;
+		padding: 0.5rem 1.5rem;
+		background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface));
+		border-bottom: 1px solid color-mix(in srgb, var(--color-warning) 25%, transparent);
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+	}
+
+	.alpha-strip p {
+		margin: 0;
+	}
+
+	.alpha-strip strong {
+		color: var(--color-warning);
+	}
+
+	.alpha-dismiss {
+		background: none;
+		border: none;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		font-size: 0.9rem;
+		padding: 0.25rem;
+		line-height: 1;
+	}
+
+	.alpha-dismiss:hover {
+		color: var(--color-text-primary);
+	}
+
+	/* ── Page container ── */
 	.page-container {
 		background: var(--color-surface-alt);
 		min-height: 100vh;
 		padding-bottom: 4rem;
 	}
 
-	.page-hero {
-		display: grid;
-		gap: clamp(2rem, 4vw, 3rem);
-		padding: clamp(3rem, 6vw, 4.5rem) clamp(1.5rem, 5vw, 4.5rem) clamp(2rem, 4vw, 3rem);
-		border-bottom: 1px solid var(--color-border);
+	/* ── Slim header ── */
+	.page-header {
+		padding: clamp(1.5rem, 3vw, 2rem) clamp(1.5rem, 5vw, 4.5rem);
 		background: var(--color-surface);
+		border-bottom: 1px solid var(--color-border);
 	}
 
-	@media (min-width: 1024px) {
-		.page-hero {
-			grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr);
-			align-items: center;
-		}
+	.header-top {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 1rem;
 	}
 
-	.hero-body h1 {
-		margin: 0 0 1rem;
+	.header-title h1 {
+		margin: 0.25rem 0 0;
 		font-family: var(--font-family-display);
-		font-size: clamp(2.25rem, 5vw, 3rem);
+		font-size: clamp(1.5rem, 3vw, 2rem);
 		letter-spacing: -0.015em;
 	}
 
-	.hero-body .alpha-notice {
-		font-size: 0.9rem;
-		color: var(--color-text-secondary);
-		background: color-mix(in srgb, var(--color-warning) 10%, transparent);
-		border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
-		border-radius: var(--border-radius-sm);
-		padding: 0.75rem 1rem;
-		margin-top: 1rem;
-	}
-
-	.hero-body .alpha-notice strong {
-		color: var(--color-warning);
-	}
-
-	.search-card {
-		background: color-mix(in srgb, var(--color-surface-alt) 75%, transparent);
-		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
-		border-radius: var(--border-radius-xl);
-		padding: var(--space-fluid-md);
-		box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
-	}
-
-	.search-card h2 {
-		margin: 0 0 0.5rem;
-		font-family: var(--font-family-display);
-		font-size: 1.35rem;
-	}
-
-	.search-card p {
-		margin: 0 0 1.5rem;
-		color: var(--color-text-secondary);
-		line-height: var(--line-height-normal);
-	}
-
-	.search-controls {
+	/* ── Search bar ── */
+	.search-bar {
 		display: flex;
+		align-items: center;
 		gap: 0.75rem;
 		flex-wrap: wrap;
 	}
 
-	.search-controls input {
-		flex: 1 1 220px;
-		padding: 0.9rem 1.2rem;
+	.search-bar input {
+		flex: 1 1 280px;
+		padding: 0.7rem 1.2rem;
 		border-radius: 999px;
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
-		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		background: var(--color-surface-alt);
 		color: var(--color-text-primary);
-		font-size: 1rem;
+		font-size: 0.95rem;
 		transition: all 0.25s ease;
 		margin: 0;
 	}
 
-	.search-controls input:focus {
+	.search-bar input:focus {
 		outline: none;
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
-	}
-
-	.filter-controls {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		margin-top: 1rem;
-	}
-
-	.filter-label {
-		color: var(--color-text-secondary);
-		font-size: 0.9rem;
-		font-weight: 500;
 	}
 
 	.filter-toggle {
@@ -907,15 +922,16 @@
 		gap: 0.25rem;
 		background: color-mix(in srgb, var(--color-border) 30%, transparent);
 		border-radius: 999px;
-		padding: 0.25rem;
+		padding: 0.2rem;
+		flex-shrink: 0;
 	}
 
 	.filter-button {
 		background: transparent;
 		border: none;
-		padding: 0.5rem 1rem;
+		padding: 0.45rem 0.9rem;
 		border-radius: 999px;
-		font-size: 0.875rem;
+		font-size: 0.8rem;
 		font-weight: 500;
 		color: var(--color-text-secondary);
 		cursor: pointer;
@@ -938,29 +954,30 @@
 	}
 
 	.filter-count {
-		font-size: 0.75rem;
+		font-size: 0.7rem;
 		opacity: 0.8;
 	}
 
+	/* ── Interests picker ── */
 	.interests-picker {
-		margin-top: 1rem;
-		padding-top: 1rem;
-		border-top: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
+		margin-top: 0.75rem;
+		padding: 0.75rem clamp(1.5rem, 5vw, 4.5rem) 0;
+		background: var(--color-surface);
 	}
 
 	.interests-tags {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.5rem;
+		gap: 0.4rem;
 	}
 
 	.interest-tag {
 		background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
 		color: var(--color-text-secondary);
-		padding: 0.4rem 0.75rem;
+		padding: 0.35rem 0.7rem;
 		border-radius: var(--border-radius-lg);
-		font-size: 0.85rem;
+		font-size: 0.8rem;
 		cursor: pointer;
 		transition: all 0.2s ease;
 	}
@@ -977,13 +994,13 @@
 	}
 
 	.save-interests-button {
-		margin-top: 1rem;
+		margin-top: 0.75rem;
 		background: var(--color-primary);
 		color: white;
 		border: none;
-		padding: 0.5rem 1rem;
+		padding: 0.45rem 0.9rem;
 		border-radius: var(--border-radius-lg);
-		font-size: 0.85rem;
+		font-size: 0.8rem;
 		font-weight: 500;
 		cursor: pointer;
 		transition: all 0.2s ease;
@@ -991,7 +1008,6 @@
 
 	.save-interests-button:hover:not(:disabled) {
 		opacity: 0.9;
-		transform: translateY(-1px);
 	}
 
 	.save-interests-button:disabled {
@@ -1002,64 +1018,74 @@
 	.interests-empty,
 	.interests-loading {
 		color: var(--color-text-secondary);
-		font-size: 0.9rem;
+		font-size: 0.85rem;
 		margin: 0;
 	}
 
-	.analysis-section {
-		padding: clamp(3rem, 6vw, 4.5rem) clamp(1.5rem, 5vw, 4.5rem);
+	/* ── Onboarding area ── */
+	.onboarding-area {
+		padding: 1.5rem clamp(1.5rem, 5vw, 4.5rem) 0;
+	}
+
+	/* ── Editorial kicker (shared) ── */
+	.editorial-masthead {
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-primary);
+	}
+
+	.editorial-kicker {
+		display: inline-block;
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-primary);
+	}
+
+	/* ── Featured sections (Editors' Picks + Case Studies) ── */
+	.featured-section {
+		padding: clamp(1.5rem, 3vw, 2rem) clamp(1.5rem, 5vw, 4.5rem);
 		border-bottom: 1px solid var(--color-border);
-		background: var(--color-surface-alt);
 	}
 
-	.analysis-header {
-		max-width: 720px;
-		margin: 0 auto clamp(2rem, 5vw, 3rem);
-		text-align: center;
+	.section-label {
+		margin-bottom: 1rem;
 	}
 
-	.analysis-header h2 {
-		margin: 0 0 0.75rem;
-		font-family: var(--font-family-display);
-		font-size: clamp(1.75rem, 4vw, 2.25rem);
-	}
-
-	.analysis-header p {
+	.section-sub {
+		margin: 0.25rem 0 0;
 		color: var(--color-text-secondary);
-		line-height: var(--line-height-normal);
-		margin: 0;
+		font-size: 0.9rem;
 	}
 
-	.status-message {
-		color: var(--color-text-secondary);
-		text-align: center;
-		font-size: 0.95rem;
-	}
-
-	.status-message.error {
-		color: #ef4444;
-	}
-
+	/* ── Main discussions area ── */
 	.discussions-main {
-		padding: clamp(3rem, 6vw, 4.5rem) clamp(1.5rem, 5vw, 4.5rem);
+		padding: clamp(1.5rem, 3vw, 2rem) clamp(1.5rem, 5vw, 4.5rem);
 	}
 
-	.article-list {
-		display: flex;
-		flex-wrap: wrap;
-		gap: clamp(1rem, 3vw, 1.5rem);
-		justify-content: center;
+	/* ── CSS Grid layout ── */
+	.discussion-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 1.25rem;
 	}
 
-	.discussion-card-wrapper {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		flex: 1 1 320px;
-		max-width: 720px;
-		min-width: 280px;
+	@media (max-width: 1024px) {
+		.discussion-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
 	}
 
+	@media (max-width: 640px) {
+		.discussion-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	/* ── Discussion card ── */
 	.discussion-card {
 		display: flex;
 		flex-direction: column;
@@ -1067,105 +1093,116 @@
 		background: var(--color-surface);
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
 		border-radius: var(--border-radius-xl);
-		padding: var(--space-fluid-sm);
-		box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+		padding: var(--space-fluid-sm, 1.25rem);
+		box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
 		cursor: pointer;
 		transition:
-			transform 0.25s ease,
-			box-shadow 0.25s ease;
-		position: relative;
+			transform 0.2s ease,
+			box-shadow 0.2s ease;
 		overflow: hidden;
-		height: 100%;
-	}
-
-	.discussion-card::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: 0;
-		width: 6px;
-		height: 100%;
-		/*background: linear-gradient(
-			180deg,
-			var(--color-primary),
-			color-mix(in srgb, var(--color-accent) 75%, var(--color-primary))
-		);*/
-		opacity: 0.8;
 	}
 
 	.discussion-card:hover {
-		transform: translateY(-3px);
-		box-shadow: 0 16px 38px rgba(15, 23, 42, 0.12);
-	}
-
-	.discussion-card:hover::before {
-		opacity: 1;
+		transform: translateY(-2px);
+		box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
 	}
 
 	.discussion-header h2 {
-		margin: 0 0 0.75rem;
+		margin: 0 0 0.5rem;
 		font-family: var(--font-family-display);
-		font-size: clamp(1.35rem, 3vw, 1.5rem);
+		font-size: 1.15rem;
 		letter-spacing: -0.01em;
+		line-height: 1.3;
 	}
 
 	.deck {
 		margin: 0;
 		color: var(--color-text-secondary);
-		line-height: var(--line-height-normal);
-		max-width: 62ch;
-		font-size: 1rem;
-		font-weight: 400;
+		line-height: 1.5;
+		font-size: 0.9rem;
 	}
 
 	.discussion-tags {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.5rem;
-		margin-top: 1rem;
+		gap: 0.375rem;
+		margin-top: 0.75rem;
 	}
 
 	.discussion-tags .tag {
 		display: inline-block;
 		background: linear-gradient(
 			135deg,
-			color-mix(in srgb, var(--color-primary) 15%, var(--color-surface)),
-			color-mix(in srgb, var(--color-accent) 10%, var(--color-surface))
+			color-mix(in srgb, var(--color-primary) 12%, var(--color-surface)),
+			color-mix(in srgb, var(--color-accent) 8%, var(--color-surface))
 		);
 		color: var(--color-primary);
-		padding: 0.375rem 0.75rem;
+		padding: 0.25rem 0.6rem;
 		border-radius: var(--border-radius-lg);
-		font-size: 0.8rem;
+		font-size: 0.7rem;
 		font-weight: 500;
-		border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
-		transition: all 0.2s ease;
-	}
-
-	.discussion-tags .tag:hover {
-		background: var(--color-primary);
-		color: white;
-		transform: translateY(-1px);
-		box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 25%, transparent);
-	}
-
-	.card-byline {
-		/*margin-bottom: clamp(1.25rem, 3vw, 1.25rem);*/
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		flex-wrap: wrap;
-		gap: 0.75rem;
-		padding-bottom: 1rem;
-		border-top: 1px solid var(--color-border);
-		color: var(--color-text-secondary);
-		font-size: 0.9rem;
+		border: 1px solid color-mix(in srgb, var(--color-primary) 18%, transparent);
 	}
 
 	.discussion-header-head {
 		display: flex;
 		justify-content: space-between;
 		align-items: baseline;
-		gap: 1rem;
+		gap: 0.75rem;
+	}
+
+	.card-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		flex-shrink: 0;
+	}
+
+	/* ── Card byline ── */
+	.card-byline {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding-top: 0.75rem;
+		margin-top: auto;
+		border-top: 1px solid var(--color-border);
+		color: var(--color-text-secondary);
+		font-size: 0.8rem;
+	}
+
+	.byline-left {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.byline-right {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-shrink: 0;
+	}
+
+	.reply-count {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.2rem;
+		color: var(--color-text-secondary);
+		font-size: 0.75rem;
+	}
+
+	.activity-badge {
+		font-size: 0.65rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+		padding: 0.15rem 0.4rem;
+		border-radius: 999px;
+		white-space: nowrap;
 	}
 
 	.card-byline a {
@@ -1181,12 +1218,7 @@
 
 	.card-byline time {
 		font-variant-numeric: tabular-nums;
-	}
-
-	.card-actions {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
+		flex-shrink: 0;
 	}
 
 	@media (max-width: 640px) {
@@ -1194,11 +1226,9 @@
 			flex-direction: column;
 			align-items: flex-start;
 		}
-		.card-byline time {
-			margin-left: 0;
-		}
 	}
 
+	/* ── Utility ── */
 	:global(mark) {
 		background: color-mix(in srgb, var(--color-primary) 18%, transparent);
 		padding: 0 0.25em;
@@ -1221,12 +1251,12 @@
 		background: color-mix(in srgb, #ef4444 12%, transparent);
 		border: 1px solid color-mix(in srgb, #ef4444 25%, transparent);
 		border-radius: var(--border-radius-sm);
-		margin-bottom: 2rem;
+		margin-bottom: 1.5rem;
 	}
 
 	.load-more {
 		text-align: center;
-		margin-top: clamp(2.5rem, 5vw, 3.5rem);
+		margin-top: 2rem;
 	}
 
 	.load-more-button {
@@ -1234,77 +1264,51 @@
 		color: var(--color-text-primary);
 		border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
 		border-radius: 999px;
-		padding: 0.9rem 2.25rem;
-		font-size: 0.95rem;
+		padding: 0.75rem 2rem;
+		font-size: 0.9rem;
 		font-weight: 600;
 		cursor: pointer;
-		transition: all 0.25s ease;
+		transition: all 0.2s ease;
 	}
 
 	.load-more-button:hover,
 	.load-more-button:focus {
 		border-color: var(--color-primary);
 		color: var(--color-primary);
-		box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1);
 	}
 
 	.load-more-button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
-		box-shadow: none;
 	}
 
-	@media (max-width: 960px) {
-		.page-hero {
-			grid-template-columns: 1fr;
-		}
-	}
-
-	/* Editors' Desk specific styles */
-	.editors-desk-section {
-		background: linear-gradient(
-			135deg,
-			color-mix(in srgb, var(--color-accent) 3%, var(--color-surface-alt)),
-			color-mix(in srgb, var(--color-primary) 3%, var(--color-surface-alt))
-		);
-	}
-
+	/* ── Editors' desk button on cards ── */
 	.editors-desk-button {
 		background: transparent;
 		color: white;
-		max-width: 12rem;
 		border: none;
-		/*padding: 0.65rem 1.25rem;*/
-		/*border-radius: var(--border-radius-lg);*/
 		font-size: 0.85rem;
 		font-weight: 600;
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
 		cursor: pointer;
-		/*transition: all 0.25s ease;*/
 	}
 
 	.editors-desk-button:hover {
-		transform: translateY(-2px);
+		transform: translateY(-1px);
 	}
 
-	.editors-desk-button img {
-		flex-shrink: 0;
-	}
-
-	/* Invert the icon in dark mode */
 	:global([data-theme='dark']) .editors-desk-button img {
 		filter: invert(1);
 	}
 
 	@media (max-width: 640px) {
-		.editors-desk-button {
-			width: 2.5rem;
-			height: 2.5rem;
-			padding: 0;
-			justify-content: center;
-			border-radius: 50%;
+		.search-bar {
+			flex-direction: column;
+		}
+
+		.filter-toggle {
+			align-self: flex-start;
 		}
 	}
 </style>

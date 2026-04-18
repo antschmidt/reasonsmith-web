@@ -70,6 +70,9 @@
 	type CommentGoodFaithResult = {
 		good_faith_score: number;
 		good_faith_label: string;
+		coachingHeadline?: string;
+		suggestedRevision?: string | null;
+		guidingQuestions?: string[];
 		claims?: Array<{
 			claim: string;
 			supportingArguments?: Array<{
@@ -134,6 +137,7 @@
 		getPostTypeConfig,
 		getAnalysisLimitText,
 		formatChicagoCitation,
+		readerMode = false,
 		assessContentQuality
 	} = $props<{
 		user: any;
@@ -142,6 +146,9 @@
 		postType?: PostType;
 		postTypeExpanded?: boolean;
 		showAdvancedFeatures?: boolean;
+		/** When true, hides post-type selector, advanced features, and citation UI
+		 *  so onboarding users see a calmer composer. */
+		readerMode?: boolean;
 		wordCount?: number;
 		selectedStyle?: string;
 		styleMetadata?: StyleMetadata;
@@ -177,7 +184,7 @@
 		onCancelCitationEdit?: () => void;
 		onInsertCitationReference?: (id: string) => void;
 		onOpenCitationPicker?: () => void;
-		onTestGoodFaithClaude?: () => void;
+		onTestGoodFaithClaude?: () => void | Promise<void>;
 		onPublish?: () => void;
 		onClearReplying?: () => void;
 		discussionPosts?: any[];
@@ -193,6 +200,19 @@
 	// A typed `any` is fine here: the child exports a single `validate(): boolean`.
 	let steelmanPromptRef = $state<{ validate: () => boolean } | null>(null);
 	let steelmanBlockError = $state<string | null>(null);
+
+	// Analysis button loading state
+	let analysisRunning = $state(false);
+
+	async function handleAnalysisClick() {
+		if (analysisRunning || !onTestGoodFaithClaude) return;
+		analysisRunning = true;
+		try {
+			await onTestGoodFaithClaude();
+		} finally {
+			analysisRunning = false;
+		}
+	}
 
 	// Edit Lock Collaboration State
 	let editLockStatus = $state<any>(null);
@@ -630,7 +650,9 @@
 	{#if !user}
 		<p class="signin-hint">Please sign in to participate.</p>
 	{:else if !expanded}
-		<button class="leave-comment-btn" onclick={() => (expanded = true)}>💬 Leave a Comment</button>
+		<button class="leave-comment-btn" onclick={() => (expanded = true)}>
+		{readerMode ? '✍️ Draft your reply' : '💬 Leave a Comment'}
+	</button>
 	{:else}
 		<form
 			onsubmit={(e) => {
@@ -652,7 +674,7 @@
 			}}
 			class="comment-form"
 		>
-			{#if steelmanRequired}
+			{#if steelmanRequired && !readerMode}
 				<SteelmanPrompt
 					bind:this={steelmanPromptRef}
 					bind:value={steelmanSentence}
@@ -664,27 +686,29 @@
 				{/if}
 			{/if}
 
-			<!-- Post Type Selection and Advanced Features Toggle -->
-			<div class="post-type-row">
-				<PostTypeSelector bind:selected={postType} bind:expanded={postTypeExpanded} />
+			<!-- Post Type Selection and Advanced Features Toggle (hidden in reader mode) -->
+			{#if !readerMode}
+				<div class="post-type-row">
+					<PostTypeSelector bind:selected={postType} bind:expanded={postTypeExpanded} />
 
-				{#if !postTypeExpanded}
-					<button
-						type="button"
-						class="toggle-advanced-btn"
-						onclick={() => (showAdvancedFeatures = !showAdvancedFeatures)}
-					>
-						{#if showAdvancedFeatures}
-							▲ Hide Citations & Analysis
-						{:else}
-							▼ Show Citations & Analysis
-						{/if}
-					</button>
-				{/if}
-			</div>
+					{#if !postTypeExpanded}
+						<button
+							type="button"
+							class="toggle-advanced-btn"
+							onclick={() => (showAdvancedFeatures = !showAdvancedFeatures)}
+						>
+							{#if showAdvancedFeatures}
+								▲ Hide Citations & Analysis
+							{:else}
+								▼ Show Citations & Analysis
+							{/if}
+						</button>
+					{/if}
+				</div>
+			{/if}
 
-			<!-- Citations & Analysis Section -->
-			{#if showAdvancedFeatures && !postTypeExpanded}
+			<!-- Citations & Analysis Section (hidden in reader mode) -->
+			{#if showAdvancedFeatures && !postTypeExpanded && !readerMode}
 				<div class="comment-writing-info" transition:scale={{ duration: 200 }}>
 					<div class="word-count">
 						<span class="word-count-label">Words: {wordCount}</span>
@@ -737,8 +761,8 @@
 				</div>
 			{/if}
 
-			<!-- Collaboration Controls -->
-			{#if draftPostId && user?.id}
+			<!-- Collaboration Controls (hidden in reader mode) -->
+			{#if !readerMode && draftPostId && user?.id}
 				{#if editLockStatus}
 					<CollaborationControls
 						lockStatus={editLockStatus}
@@ -759,7 +783,7 @@
 				{/if}
 			{/if}
 
-			{#if lockError}
+			{#if !readerMode && lockError}
 				<div class="lock-error">
 					<p>{lockError}</p>
 				</div>
@@ -799,7 +823,7 @@
 					placeholder="Add your comment... (Style will be automatically determined by length)"
 					minHeight="300px"
 					readonly={false}
-					showTokenCount={true}
+					showTokenCount={!readerMode}
 				/>
 			{:else if isReadOnly}
 				<!-- Read-only preview for viewers -->
@@ -874,24 +898,9 @@
 				</div>
 			{/if}
 
-			<!-- Good Faith Test Buttons -->
-			{#if contributor}
-				<div
-					class="good-faith-test-buttons"
-					style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.5rem 0;"
-				>
-					<button
-						type="button"
-						class="good-faith-test-btn claude"
-						onclick={onTestGoodFaithClaude}
-						disabled={!comment.trim() || !heuristicPassed}
-					>
-						🧠 Claude Test
-					</button>
-				</div>
-			{/if}
+			<!-- Analysis button is now inside .comment-actions below -->
 
-			{#if showAdvancedFeatures}
+			{#if showAdvancedFeatures && !readerMode}
 				<!-- Insert Citation Reference Button -->
 				<button type="button" class="insert-citation-btn" onclick={onOpenCitationPicker}>
 					📎 Insert Citation Reference
@@ -933,8 +942,8 @@
 				{/if}
 			{/if}
 
-			<!-- Heuristic Quality Assessment -->
-			{#if comment.trim().length > 0 || draftPostId}
+			<!-- Heuristic Quality Assessment (hidden in reader mode) -->
+			{#if !readerMode && (comment.trim().length > 0 || draftPostId)}
 				{#if heuristicScore < 50}
 					{@const assessment = assessContentQuality(comment)}
 					<div class="heuristic-quality-indicator">
@@ -1066,57 +1075,111 @@
 
 			<!-- Comment Good-Faith Result -->
 			{#if goodFaithResult}
-				<div class="good-faith-result claude-result">
-					<div class="good-faith-header">
-						<h4>Comment Analysis</h4>
-						<div class="good-faith-score">
-							<span class="score-value">{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span
-							>
-							<span class="score-label {goodFaithResult.good_faith_label}"
-								>{goodFaithResult.good_faith_label}</span
-							>
-						</div>
-					</div>
+				{#if readerMode}
+					<!-- Concise reader-mode display -->
+					<div class="reasoning-review">
+						{#if goodFaithResult.coachingHeadline}
+							<p class="review-headline">{goodFaithResult.coachingHeadline}</p>
+						{/if}
 
-					{#if goodFaithResult.claims && goodFaithResult.claims.length > 0}
-						<div class="claude-claims">
-							<strong>Claims Analysis:</strong>
-							{#each goodFaithResult.claims as claim}
-								<div class="claim-item">
-									<div class="claim-text"><strong>Claim:</strong> {claim.claim}</div>
-									{#if claim.supportingArguments}
-										{#each claim.supportingArguments as arg}
-											<div class="argument-item">
-												<div class="argument-text">{arg.argument}</div>
-												<div class="argument-details">
-													<span class="argument-score">Score: {arg.score}/10</span>
-													{#if arg.fallacies && arg.fallacies.length > 0}
-														<span class="fallacies">Fallacies: {arg.fallacies.join(', ')}</span>
+						<p class="review-summary">{goodFaithResult.rationale}</p>
+
+						{#if goodFaithResult.suggestedRevision}
+							<div class="review-revision">
+								<strong>Try this:</strong> {goodFaithResult.suggestedRevision}
+							</div>
+						{/if}
+
+						{#if goodFaithResult.cultishPhrases && goodFaithResult.cultishPhrases.length > 0}
+							<p class="review-flag">
+								<strong>Watch for loaded language:</strong> {goodFaithResult.cultishPhrases.join(', ')}
+							</p>
+						{/if}
+
+						{#if goodFaithResult.guidingQuestions && goodFaithResult.guidingQuestions.length > 0}
+							<div class="review-questions">
+								<strong>Questions to sit with:</strong>
+								<ul>
+									{#each goodFaithResult.guidingQuestions as q}
+										<li>{q}</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+					</div>
+				{:else}
+					<!-- Full detailed display (normal mode) -->
+					<div class="good-faith-result claude-result">
+						<div class="good-faith-header">
+							<h4>Comment Analysis</h4>
+							<div class="good-faith-score">
+								<span class="score-value">{(goodFaithResult.good_faith_score * 100).toFixed(0)}%</span>
+								<span class="score-label {goodFaithResult.good_faith_label}"
+									>{goodFaithResult.good_faith_label}</span>
+							</div>
+						</div>
+
+						{#if goodFaithResult.coachingHeadline}
+							<p class="coaching-headline">{goodFaithResult.coachingHeadline}</p>
+						{/if}
+
+						{#if goodFaithResult.claims && goodFaithResult.claims.length > 0}
+							<div class="claude-claims">
+								<strong>Claims Analysis:</strong>
+								{#each goodFaithResult.claims as claim}
+									<div class="claim-item">
+										<div class="claim-text"><strong>Claim:</strong> {claim.claim}</div>
+										{#if claim.supportingArguments}
+											{#each claim.supportingArguments as arg}
+												<div class="argument-item">
+													<div class="argument-text">{arg.argument}</div>
+													<div class="argument-details">
+														<span class="argument-score">Score: {arg.score}/10</span>
+														{#if arg.fallacies && arg.fallacies.length > 0}
+															<span class="fallacies">Fallacies: {arg.fallacies.join(', ')}</span>
+														{/if}
+													</div>
+													{#if arg.improvements}
+														<div class="improvements">Improvement: {arg.improvements}</div>
 													{/if}
 												</div>
-												{#if arg.improvements}
-													<div class="improvements">Improvement: {arg.improvements}</div>
-												{/if}
-											</div>
-										{/each}
-									{/if}
-								</div>
-							{/each}
-						</div>
-					{/if}
+											{/each}
+										{/if}
+									</div>
+								{/each}
+							</div>
+						{/if}
 
-					{#if goodFaithResult.cultishPhrases && goodFaithResult.cultishPhrases.length > 0}
-						<div class="cultish-phrases">
-							<strong>Manipulative Language:</strong>
-							{goodFaithResult.cultishPhrases.join(', ')}
-						</div>
-					{/if}
+						{#if goodFaithResult.cultishPhrases && goodFaithResult.cultishPhrases.length > 0}
+							<div class="cultish-phrases">
+								<strong>Manipulative Language:</strong>
+								{goodFaithResult.cultishPhrases.join(', ')}
+							</div>
+						{/if}
 
-					<div class="good-faith-rationale">
-						<strong>Analysis:</strong>
-						{goodFaithResult.rationale}
+						<div class="good-faith-rationale">
+							<strong>Analysis:</strong>
+							{goodFaithResult.rationale}
+						</div>
+
+						{#if goodFaithResult.guidingQuestions && goodFaithResult.guidingQuestions.length > 0}
+							<div class="review-questions">
+								<strong>Questions to consider:</strong>
+								<ul>
+									{#each goodFaithResult.guidingQuestions as q}
+										<li>{q}</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+
+						{#if goodFaithResult.suggestedRevision}
+							<div class="review-revision">
+								<strong>Suggested revision:</strong> {goodFaithResult.suggestedRevision}
+							</div>
+						{/if}
 					</div>
-				</div>
+				{/if}
 			{/if}
 
 			{#if goodFaithError}
@@ -1130,64 +1193,86 @@
 				<p class="error-message">{submitError}</p>
 			{/if}
 
-			<!-- Comment Actions -->
+			<!-- Contextual info row (replying indicator, analysis blocked) -->
+			{#if replyingToPost}
+				<div class="replying-indicator">
+					Replying to <a href={`#post-${replyingToPost.id}`}
+						>@{replyingToPost.contributor?.display_name || 'comment'}</a
+					>
+					<button type="button" class="btn-link" onclick={onClearReplying}>Cancel</button>
+				</div>
+			{/if}
+
+			{#if !canUserUseAnalysis && analysisBlockedReason}
+				<div class="analysis-blocked-message">
+					<p class="error-message">{analysisBlockedReason}</p>
+					{#if analysisBlockedReason.includes('disabled')}
+						<p class="help-text">Contact support for assistance.</p>
+					{:else if analysisBlockedReason.includes('credits')}
+						<p class="help-text">
+							Check your <a href="/profile">profile page</a> for credit information.
+						</p>
+					{/if}
+				</div>
+			{/if}
+
+			<!-- Action Bar: [Analysis] --- [Save / Credits] --- [Publish] -->
 			<div class="comment-actions">
-				<div class="autosave-indicator" aria-live="polite">
-					{#if draftPostId}
-						<div class="autosave-status">
-							{#if hasPending}
-								<span class="pending-dot" aria-hidden="true"></span> Saving…
-							{:else if lastSavedAt}
-								Saved {new Date(lastSavedAt).toLocaleTimeString()}
+				<div class="action-bar-left">
+					{#if contributor}
+						<button
+							type="button"
+							class="good-faith-test-btn claude"
+							class:analyzing={analysisRunning}
+							onclick={handleAnalysisClick}
+							disabled={analysisRunning || !comment.trim() || !heuristicPassed}
+						>
+							{#if analysisRunning}
+								<span class="spinner" aria-hidden="true"></span> Analyzing…
 							{:else}
-								Draft created
+								{readerMode ? '🧠 Reasoning Review' : '🧠 Run Analysis'}
 							{/if}
-						</div>
-						{#if contributor}
-							<div class="credit-status">
-								{getAnalysisLimitText()}
-							</div>
-						{/if}
+						</button>
 					{/if}
 				</div>
 
-				{#if draftPostId && user?.id}
-					<CollaboratorInviteButton postId={draftPostId} ownerId={user.id} {isAuthor} />
-				{/if}
-
-				{#if replyingToPost}
-					<div class="replying-indicator">
-						Replying to <a href={`#post-${replyingToPost.id}`}
-							>@{replyingToPost.contributor?.display_name || 'comment'}</a
-						>
-						<button type="button" class="btn-link" onclick={onClearReplying}>Cancel</button>
-					</div>
-				{/if}
-
-				{#if !canUserUseAnalysis && analysisBlockedReason}
-					<div class="analysis-blocked-message">
-						<p class="error-message">{analysisBlockedReason}</p>
-						{#if analysisBlockedReason.includes('disabled')}
-							<p class="help-text">Contact support for assistance.</p>
-						{:else if analysisBlockedReason.includes('credits')}
-							<p class="help-text">
-								Check your <a href="/profile">profile page</a> for credit information.
-							</p>
+				<div class="action-bar-center">
+					<div class="autosave-indicator" aria-live="polite">
+						{#if draftPostId}
+							<div class="autosave-status">
+								{#if hasPending}
+									<span class="pending-dot" aria-hidden="true"></span> Saving…
+								{:else if lastSavedAt}
+									Saved {new Date(lastSavedAt).toLocaleTimeString()}
+								{:else}
+									Draft created
+								{/if}
+							</div>
+							{#if contributor}
+								<div class="credit-status">
+									{getAnalysisLimitText()}
+								</div>
+							{/if}
 						{/if}
 					</div>
-				{/if}
+				</div>
 
-				<button
-					type="submit"
-					class="btn-secondary"
-					disabled={submitting || !comment.trim() || !heuristicPassed}
-				>
-					{#if submitting}
-						Publishing…
-					{:else}
-						Publish Comment
+				<div class="action-bar-right">
+					{#if !readerMode && draftPostId && user?.id}
+						<CollaboratorInviteButton postId={draftPostId} ownerId={user.id} {isAuthor} />
 					{/if}
-				</button>
+					<button
+						type="submit"
+						class="btn-secondary"
+						disabled={submitting || !comment.trim() || !heuristicPassed}
+					>
+						{#if submitting}
+							Publishing…
+						{:else}
+							Publish Comment
+						{/if}
+					</button>
+				</div>
 			</div>
 		</form>
 	{/if}
@@ -1397,6 +1482,24 @@
 	.good-faith-test-btn:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
+	}
+
+	.good-faith-test-btn.analyzing {
+		background: #92400e;
+	}
+
+	.good-faith-test-btn .spinner {
+		display: inline-block;
+		width: 14px;
+		height: 14px;
+		border: 2px solid rgba(255, 255, 255, 0.3);
+		border-top-color: #fff;
+		border-radius: 50%;
+		animation: spin 0.7s linear infinite;
+	}
+
+	@keyframes spin {
+		to { transform: rotate(360deg); }
 	}
 
 	/* Context Selection Styles */
@@ -1709,6 +1812,71 @@
 		border-left-color: #d97706;
 	}
 
+	/* Reader-mode concise display */
+	.reasoning-review {
+		padding: 1rem 1.25rem;
+		background: var(--color-surface-alt, #fafaf9);
+		border: 1px solid var(--color-border);
+		border-left: 4px solid var(--color-primary, #6366f1);
+		border-radius: var(--border-radius-md);
+		font-size: 0.95rem;
+		line-height: 1.6;
+	}
+
+	.review-headline {
+		font-weight: 600;
+		font-size: 1.05rem;
+		margin: 0 0 0.75rem;
+		color: var(--color-text-primary);
+	}
+
+	.review-summary {
+		margin: 0 0 0.75rem;
+		color: var(--color-text-secondary);
+	}
+
+	.review-revision {
+		margin: 0.75rem 0;
+		padding: 0.625rem 0.875rem;
+		background: var(--color-surface-elevated, #f0f0ee);
+		border-radius: var(--border-radius-sm);
+		font-size: 0.9rem;
+	}
+
+	.review-flag {
+		margin: 0.5rem 0;
+		font-size: 0.9rem;
+		color: var(--color-danger, #b91c1c);
+	}
+
+	.review-questions {
+		margin: 0.75rem 0 0;
+	}
+
+	.review-questions strong {
+		display: block;
+		margin-bottom: 0.375rem;
+		font-size: 0.9rem;
+	}
+
+	.review-questions ul {
+		margin: 0;
+		padding-left: 1.25rem;
+	}
+
+	.review-questions li {
+		margin-bottom: 0.375rem;
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+	}
+
+	/* Coaching headline in full mode */
+	.coaching-headline {
+		font-weight: 600;
+		margin: 0 0 0.75rem;
+		color: var(--color-text-primary);
+	}
+
 	.collapsible-header {
 		width: 100%;
 		background: none;
@@ -1912,9 +2080,27 @@
 	/* Comment Actions */
 	.comment-actions {
 		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 0.4rem;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		margin-top: 0.5rem;
+	}
+
+	.action-bar-left {
+		flex: 0 0 auto;
+	}
+
+	.action-bar-center {
+		flex: 1 1 auto;
+		text-align: center;
+	}
+
+	.action-bar-right {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
 	.autosave-indicator {

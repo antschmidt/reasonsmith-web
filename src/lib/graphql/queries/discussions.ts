@@ -149,6 +149,14 @@ export const LIST_PUBLISHED_DISCUSSIONS = gql`
 			) {
 				...DiscussionVersionFields
 			}
+			posts_aggregate {
+				aggregate {
+					count
+				}
+			}
+			posts(order_by: { created_at: desc }, limit: 1) {
+				created_at
+			}
 		}
 	}
 	${CONTRIBUTOR_FIELDS}
@@ -176,6 +184,14 @@ export const LIST_DISCUSSIONS_FROM_FOLLOWING = gql`
 				limit: 1
 			) {
 				...DiscussionVersionFields
+			}
+			posts_aggregate {
+				aggregate {
+					count
+				}
+			}
+			posts(order_by: { created_at: desc }, limit: 1) {
+				created_at
 			}
 		}
 	}

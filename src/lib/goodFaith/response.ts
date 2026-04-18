@@ -91,6 +91,9 @@ export function normalizeClaudeResponse(
 			typeof raw.suggestedRevision === 'string' && raw.suggestedRevision.trim()
 				? raw.suggestedRevision.trim()
 				: null,
+		guidingQuestions: Array.isArray(raw.guidingQuestions)
+			? raw.guidingQuestions.filter((q: unknown) => typeof q === 'string' && (q as string).trim()).map((q: unknown) => (q as string).trim())
+			: [],
 		register,
 
 		// Detailed analysis
