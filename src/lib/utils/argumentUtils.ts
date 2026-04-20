@@ -8,7 +8,9 @@
 import type {
 	ArgumentNode,
 	ArgumentEdge,
+	ArgumentEdgeType,
 	ArgumentNodeType,
+	ArgumentTreeNode,
 	CompletenessScore,
 	StructuralFlag,
 	StructuralFlagType,
@@ -306,15 +308,15 @@ export function getCoachPrompt(
 export function calculateNodePositions(
 	nodes: ArgumentNode[],
 	edges: ArgumentEdge[],
-	options?: { maxCols?: number }
+	options?: { maxCols?: number; nodeWidth?: number; nodeHeight?: number }
 ): Map<string, { x: number; y: number }> {
 	const positions = new Map<string, { x: number; y: number }>();
 	if (nodes.length === 0) return positions;
 
-	const NODE_W = 280;
-	const NODE_H = 140;
+	const NODE_W = options?.nodeWidth ?? 280;
+	const NODE_H = options?.nodeHeight ?? 140;
 	const H_GAP = 60; // horizontal gap between nodes
-	const V_GAP = 180; // vertical gap between tiers
+	const V_GAP = NODE_H + 60; // vertical gap between tiers (scales with node height)
 	const MAX_COLS = Math.max(1, options?.maxCols ?? 3); // max nodes per row before wrapping
 	const ROW_GAP = 30; // vertical gap between wrapped rows within a tier
 
@@ -839,4 +841,180 @@ export function mapTempIdsToReal(
 		from_node: tempIdMap.get(e.from) || e.from,
 		to_node: tempIdMap.get(e.to) || e.to
 	}));
+}
+
+// ============================================
+// Tree Derivation (Builder / Card views)
+// ============================================
+
+/**
+ * Ordering of edge types when grouping children under a parent in the tree.
+ * Matches the plan's intended reading order in the Builder view.
+ */
+const EDGE_TYPE_ORDER: ArgumentEdgeType[] = [
+	'supports',
+	'warrants',
+	'cites',
+	'contradicts',
+	'rebuts',
+	'qualifies',
+	'derives_from'
+];
+
+function edgeOrderIndex(t: ArgumentEdgeType): number {
+	const i = EDGE_TYPE_ORDER.indexOf(t);
+	return i === -1 ? EDGE_TYPE_ORDER.length : i;
+}
+
+/**
+ * Derive a tree structure from a flat nodes[] + edges[] graph.
+ *
+ * The tree is rooted at the `is_root` node. Children of a parent are the
+ * nodes that have an INCOMING edge from the parent (i.e. edge.to_node ===
+ * parent.id), which matches how the graph is modelled in AI extraction:
+ * evidence → supports → claim (evidence is "under" the claim).
+ *
+ * When no root node exists, or when disconnected components are present,
+ * a synthetic root may be returned containing the isolated subgraphs as
+ * top-level children with edgeType=null.
+ */
+export function buildArgumentTree(
+	nodes: ArgumentNode[],
+	edges: ArgumentEdge[]
+): ArgumentTreeNode | null {
+	if (nodes.length === 0) return null;
+
+	const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+
+	// Index edges by to_node so we can quickly find children of a parent
+	// (a child's outgoing edge points at its parent: e.g. evidence->claim).
+	const incomingByTarget = new Map<string, ArgumentEdge[]>();
+	for (const edge of edges) {
+		if (!incomingByTarget.has(edge.to_node)) incomingByTarget.set(edge.to_node, []);
+		incomingByTarget.get(edge.to_node)!.push(edge);
+	}
+
+	const root = nodes.find((n) => n.is_root) ?? nodes[0];
+	const visited = new Set<string>();
+
+	function build(nodeId: string, edge: ArgumentEdge | null, depth: number): ArgumentTreeNode | null {
+		if (visited.has(nodeId)) return null;
+		const node = nodeMap.get(nodeId);
+		if (!node) return null;
+		visited.add(nodeId);
+
+		const childEdges = incomingByTarget.get(nodeId) || [];
+		// Sort children deterministically: by edge-type order, then created_at.
+		const sortedChildEdges = [...childEdges].sort((a, b) => {
+			const byType = edgeOrderIndex(a.type) - edgeOrderIndex(b.type);
+			if (byType !== 0) return byType;
+			return (a.created_at || '').localeCompare(b.created_at || '');
+		});
+
+		const children: ArgumentTreeNode[] = [];
+		for (const e of sortedChildEdges) {
+			const child = build(e.from_node, e, depth + 1);
+			if (child) children.push(child);
+		}
+
+		return {
+			node,
+			edgeType: edge?.type ?? null,
+			edge,
+			depth,
+			children
+		};
+	}
+
+	const tree = build(root.id, null, 0);
+	if (!tree) return null;
+
+	// Attach any unvisited (disconnected) nodes as extra top-level branches
+	// under the root so the user can still see and edit them.
+	for (const n of nodes) {
+		if (!visited.has(n.id)) {
+			const orphan = build(n.id, null, 1);
+			if (orphan) tree.children.push(orphan);
+		}
+	}
+
+	return tree;
+}
+
+// ============================================
+// Progressive Disclosure (which actions to show)
+// ============================================
+
+export interface AvailableAddActions {
+	canAddEvidence: boolean;
+	canAddSource: boolean;
+	canAddWarrant: boolean;
+	canAddCounter: boolean;
+	canAddRebuttal: boolean;
+	canAddQualifier: boolean;
+	canAddClaim: boolean;
+}
+
+/**
+ * Compute which "add node" actions should be available to the user given
+ * the current state of the argument. Implements the progressive disclosure
+ * rules from docs/argument-graph-redesign.md:
+ *
+ *   Just started (claim only)    → Evidence
+ *   Has evidence                 → Source, Warrant  (and keeps Evidence)
+ *   Has warrant                  → Counter         (and keeps above)
+ *   Has counter                  → Rebuttal, Qualifier
+ *   Complete                     → All
+ */
+export function getAvailableAddActions(nodes: ArgumentNode[]): AvailableAddActions {
+	const hasEvidence = nodes.some((n) => n.type === 'evidence');
+	const hasWarrant = nodes.some((n) => n.type === 'warrant');
+	const hasCounter = nodes.some((n) => n.type === 'counter');
+
+	return {
+		canAddClaim: true,
+		canAddEvidence: true,
+		canAddSource: hasEvidence,
+		canAddWarrant: hasEvidence,
+		canAddCounter: hasEvidence && hasWarrant,
+		canAddRebuttal: hasCounter,
+		canAddQualifier: hasCounter
+	};
+}
+
+/**
+ * For a specific target node (the one the user clicked "+ Add" on), return
+ * the node types that are most contextually useful to add as children of it.
+ * This is used to populate the inline "+ Add X" buttons on each row.
+ */
+export function getContextualAddTypesForNode(
+	target: ArgumentNode,
+	nodes: ArgumentNode[]
+): ArgumentNodeType[] {
+	const available = getAvailableAddActions(nodes);
+
+	switch (target.type) {
+		case 'claim': {
+			const actions: ArgumentNodeType[] = [];
+			if (available.canAddEvidence) actions.push('evidence');
+			if (available.canAddCounter) actions.push('counter');
+			if (available.canAddQualifier) actions.push('qualifier');
+			if (available.canAddWarrant) actions.push('warrant');
+			return actions;
+		}
+		case 'evidence': {
+			const actions: ArgumentNodeType[] = [];
+			if (available.canAddSource) actions.push('source');
+			if (available.canAddWarrant) actions.push('warrant');
+			return actions;
+		}
+		case 'counter':
+			return available.canAddRebuttal ? ['rebuttal'] : [];
+		case 'warrant':
+		case 'source':
+		case 'rebuttal':
+		case 'qualifier':
+		default:
+			return [];
+	}
 }
