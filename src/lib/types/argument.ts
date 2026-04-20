@@ -95,6 +95,33 @@ export interface Argument {
 }
 
 // ============================================
+// Derived Tree Structure (for Builder / Card views)
+// ============================================
+
+/**
+ * A node in the derived tree representation of the argument graph.
+ *
+ * The tree is rooted at the `is_root` claim and is computed via BFS
+ * following edges. Children are grouped and ordered by edge type:
+ *   supports → warrants → contradicts → qualifies → cites → rebuts → derives_from
+ *
+ * Note: the underlying graph can be a DAG (a node may be reached via
+ * multiple paths). `visitedVia` records the edge used to place the node
+ * in the tree; duplicate visits are dropped so each node appears once.
+ */
+export interface ArgumentTreeNode {
+	node: ArgumentNode;
+	/** How this node connects to its parent in the tree (null for root). */
+	edgeType: ArgumentEdgeType | null;
+	/** The edge object used to reach this node (null for root). */
+	edge: ArgumentEdge | null;
+	/** Depth from the root (root = 0). */
+	depth: number;
+	/** Children grouped & ordered by edge type. */
+	children: ArgumentTreeNode[];
+}
+
+// ============================================
 // Structural Flags (computed, not stored)
 // ============================================
 

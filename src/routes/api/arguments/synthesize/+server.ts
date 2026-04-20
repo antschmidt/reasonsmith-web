@@ -8,6 +8,26 @@ const anthropic = new Anthropic({
 	apiKey: process.env.ANTHROPIC_API_KEY
 });
 
+// ReasonSmith is an educator — an expert in logic, good-faith argumentation,
+// logical fallacies, and online debate culture, with a talent for meeting
+// people where they are. Both synthesis prompts share this persona for the
+// "suggestions" field, so feedback reads like a knowledgeable friend helping
+// the user shape their thinking, not a rubric-wielding grader.
+const REASONSMITH_COACHING_VOICE = `
+About the "suggestions" field — this is where ReasonSmith speaks directly to the user.
+
+ReasonSmith is an expert in logic, good-faith argumentation, logical fallacies, and online debate culture, and a talented educator. Suggestions should sound like a knowledgeable, patient friend reading over the user's shoulder — not a grader, not a critic, not a third-person evaluator.
+
+Write every suggestion with this in mind:
+- Address the user directly in second person ("you", "your point", "try adding…"). Never say "the user" or "the user's response nodes" or "the counter argument lacks". Those phrases sound like a report about the user rather than a conversation with them.
+- Start by acknowledging what they're doing — the move they're making, the intuition behind it — before suggesting how to sharpen it. If a point is underdeveloped, name the shape of the good-faith version they seem to be reaching for, then coach them toward it.
+- Explain the *why* of the suggestion in plain language. Name the structural role at stake (e.g., "a qualifier works best when it names the specific scope you're limiting — 'in industrialized dairy contexts', not just 'it depends'"). Tie the suggestion to how the argument will land with the other side.
+- If you spot a common fallacy, cult-language pattern, or bad-faith tic, name it gently and neutrally — not as an accusation, but as a pattern the user can recognize and avoid. Assume the user wants to argue honestly; help them do it better.
+- Keep each suggestion to 1–3 short sentences. Be specific, concrete, and actionable. Don't pile on — a few sharp pointers beat a long list.
+- If the response is very thin, say so kindly and suggest the single next move that would do the most work (e.g., "your counter is doing a lot of work without much behind it — adding even one piece of concrete evidence or a short personal example would give it real bite").
+
+Write the draft/comment in the user's voice; write the suggestions in ReasonSmith's voice.`;
+
 const SYNTHESIS_SYSTEM_PROMPT = `You are an expert academic writer. Given a structured argument graph, your task is to synthesize it into a clear, well-organized written draft.
 
 The argument graph contains:
@@ -28,7 +48,26 @@ Guidelines:
 6. Cite sources where they exist
 7. Use clear, academic prose with logical transitions
 8. Maintain the author's argument structure and reasoning
-9. Output the draft in Markdown format`;
+9. Output the draft in Markdown format
+${REASONSMITH_COACHING_VOICE}`;
+
+const COMMENT_SYNTHESIS_SYSTEM_PROMPT = `You are helping a user write a reply comment to an existing discussion.
+
+You will be given:
+- The EXISTING ARGUMENT the user is responding to (the discussion's root claim, its supporting evidence, warrants, etc.). This is context only — do not rewrite or restate it in full.
+- The USER'S RESPONSE NODES — claims, counters, evidence, rebuttals, etc. that the user has added to express their reply. These are what you must synthesize.
+
+Your task: turn the user's response nodes into a coherent, well-reasoned reply comment that engages with the existing argument from the user's position.
+
+Guidelines:
+1. Write in first person, as the user — not as a neutral observer.
+2. Do NOT restate the full existing argument. You may briefly reference the specific claim or evidence the user is engaging with, so the reader knows what is being responded to.
+3. Integrate the user's response nodes into a natural reply — lead with their strongest point, support it with their evidence/warrants, and address their counters and rebuttals fairly.
+4. Respect the structural role of each node (evidence supports a claim; a counter objects to something; a rebuttal defends against a counter; a qualifier limits scope).
+5. Use a conversational but substantive tone — this is a comment, not an academic paper.
+6. Keep it focused and proportionate to what the user wrote. Don't pad or invent new claims they didn't make.
+7. Output the comment in Markdown.
+${REASONSMITH_COACHING_VOICE}`;
 
 const SYNTHESIS_TOOL = {
 	name: 'synthesize_draft',
@@ -48,7 +87,8 @@ const SYNTHESIS_TOOL = {
 			suggestions: {
 				type: 'array',
 				items: { type: 'string' },
-				description: 'Suggestions for improving the argument'
+				description:
+					"Short coaching notes written directly to the user in ReasonSmith's voice (second person, warm and educator-ly). Each suggestion should acknowledge what the user is trying to do, then offer a concrete, specific way to sharpen it — never clinical third-person critique. 1–3 sentences each."
 			}
 		},
 		required: ['draft', 'outline', 'suggestions']
@@ -90,10 +130,23 @@ interface SynthesizeEdge {
 	type: ArgumentEdgeType;
 }
 
+type SynthesizeMode = 'full' | 'comment';
+
 interface SynthesizeRequestBody {
 	nodes: SynthesizeNode[];
 	edges: SynthesizeEdge[];
 	title?: string;
+	/**
+	 * Synthesis mode:
+	 *   - 'full'    (default): produce a complete written draft from the whole
+	 *                graph, treating the root claim as the thesis.
+	 *   - 'comment': produce a reply comment from the user's response nodes,
+	 *                using the rest of the graph as context (what they're
+	 *                responding to). Requires response_node_ids.
+	 */
+	mode?: SynthesizeMode;
+	/** Required when mode === 'comment'. IDs of the user's own nodes (their draft). */
+	response_node_ids?: string[];
 }
 
 function buildUserPrompt(nodes: SynthesizeNode[], edges: SynthesizeEdge[], title?: string): string {
@@ -155,6 +208,96 @@ function buildUserPrompt(nodes: SynthesizeNode[], edges: SynthesizeEdge[], title
 	return lines.join('\n');
 }
 
+/**
+ * Build the user prompt for comment-mode synthesis. Partitions nodes into
+ * "context" (what the user is responding to) and "response" (the user's own
+ * draft nodes), and labels edges by side.
+ */
+function buildCommentPrompt(
+	nodes: SynthesizeNode[],
+	edges: SynthesizeEdge[],
+	responseNodeIds: string[],
+	title?: string
+): string {
+	const lines: string[] = [];
+	const responseSet = new Set(responseNodeIds);
+
+	const responseNodes = nodes.filter((n) => responseSet.has(n.id));
+	const contextNodes = nodes.filter((n) => !responseSet.has(n.id));
+
+	const nodeMap = new Map<string, SynthesizeNode>();
+	for (const node of nodes) nodeMap.set(node.id, node);
+
+	if (title) {
+		lines.push(`Discussion: ${title}`);
+		lines.push('');
+	}
+
+	// Context: the existing argument the user is responding to.
+	lines.push('=== EXISTING ARGUMENT (context — do NOT rewrite) ===');
+	const contextRoot = contextNodes.find((n) => n.is_root);
+	if (contextRoot) {
+		lines.push(`Root claim: ${contextRoot.content}`);
+	}
+	const nonRootContext = contextNodes.filter((n) => !n.is_root);
+	if (nonRootContext.length > 0) {
+		lines.push('Supporting nodes:');
+		for (const n of nonRootContext) {
+			const impliedTag = n.implied ? ' (implied)' : '';
+			lines.push(`- [${n.type}${impliedTag}] ${n.content}`);
+		}
+	}
+	lines.push('');
+
+	// The user's response nodes.
+	lines.push("=== USER'S RESPONSE NODES (synthesize THESE into a reply comment) ===");
+	if (responseNodes.length === 0) {
+		lines.push('(none — the user has not yet added any response nodes)');
+	} else {
+		for (const n of responseNodes) {
+			const impliedTag = n.implied ? ' (implied)' : '';
+			const rootTag = n.is_root ? ' (ROOT)' : '';
+			lines.push(`- [${n.type}${rootTag}${impliedTag}] ${n.content}`);
+		}
+	}
+	lines.push('');
+
+	// Relationships. Tag each edge by how it crosses the context/response
+	// boundary so the model can see what the user's response engages with.
+	if (edges.length > 0) {
+		lines.push('=== RELATIONSHIPS ===');
+		for (const edge of edges) {
+			const fromNode = nodeMap.get(edge.from_node);
+			const toNode = nodeMap.get(edge.to_node);
+			if (!fromNode || !toNode) continue;
+
+			const fromSide = responseSet.has(edge.from_node) ? 'response' : 'context';
+			const toSide = responseSet.has(edge.to_node) ? 'response' : 'context';
+			let tag = 'context→context';
+			if (fromSide === 'response' && toSide === 'context') tag = 'response→context';
+			else if (fromSide === 'response' && toSide === 'response') tag = 'response→response';
+			else if (fromSide === 'context' && toSide === 'response') tag = 'context→response';
+
+			const fromContent =
+				fromNode.content.length > 120
+					? fromNode.content.substring(0, 120) + '...'
+					: fromNode.content;
+			const toContent =
+				toNode.content.length > 120
+					? toNode.content.substring(0, 120) + '...'
+					: toNode.content;
+			lines.push(`- [${tag}] "${fromContent}" --${edge.type}--> "${toContent}"`);
+		}
+		lines.push('');
+	}
+
+	lines.push(
+		"Please synthesize the user's response nodes into a reply comment that engages with the existing argument from their position. Do not restate the existing argument; respond to it."
+	);
+
+	return lines.join('\n');
+}
+
 export const POST: RequestHandler = async ({ request }) => {
 	logger.info('=== Argument synthesis API endpoint called ===');
 
@@ -171,6 +314,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		// 2. Parse and validate request body
 		const body = (await request.json()) as SynthesizeRequestBody;
 		const { nodes, edges, title } = body;
+		const mode: SynthesizeMode = body.mode === 'comment' ? 'comment' : 'full';
+		const responseNodeIds: string[] = Array.isArray(body.response_node_ids)
+			? body.response_node_ids.filter((id): id is string => typeof id === 'string')
+			: [];
 
 		if (!Array.isArray(nodes) || nodes.length === 0) {
 			return json(
@@ -267,12 +414,38 @@ export const POST: RequestHandler = async ({ request }) => {
 			);
 		}
 
+		// 3b. Comment-mode validation: response_node_ids must reference real nodes.
+		if (mode === 'comment') {
+			if (responseNodeIds.length === 0) {
+				return json(
+					{ error: 'Comment-mode synthesis requires at least one response node.' },
+					{ status: 400 }
+				);
+			}
+			const nodeIdSet = new Set(nodes.map((n) => n.id));
+			const unknown = responseNodeIds.filter((id) => !nodeIdSet.has(id));
+			if (unknown.length > 0) {
+				return json(
+					{
+						error: `response_node_ids contains unknown node id(s): ${unknown.join(', ')}`
+					},
+					{ status: 400 }
+				);
+			}
+		}
+
 		logger.info(
-			`Synthesis request: ${nodes.length} nodes, ${edges.length} edges, title="${title || '(none)'}"`
+			`Synthesis request: mode=${mode}, ${nodes.length} nodes, ${edges.length} edges, ` +
+				`response_nodes=${responseNodeIds.length}, title="${title || '(none)'}"`
 		);
 
-		// 5. Build the user prompt
-		const userPrompt = buildUserPrompt(nodes, edges, title);
+		// 5. Build the user prompt and pick the system prompt based on mode.
+		const userPrompt =
+			mode === 'comment'
+				? buildCommentPrompt(nodes, edges, responseNodeIds, title)
+				: buildUserPrompt(nodes, edges, title);
+		const systemPrompt =
+			mode === 'comment' ? COMMENT_SYNTHESIS_SYSTEM_PROMPT : SYNTHESIS_SYSTEM_PROMPT;
 
 		logger.debug(`User prompt length: ${userPrompt.length} characters`);
 
@@ -281,7 +454,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			model: 'claude-sonnet-4-20250514',
 			max_tokens: 8192,
 			temperature: 0.4,
-			system: SYNTHESIS_SYSTEM_PROMPT,
+			system: systemPrompt,
 			tools: [SYNTHESIS_TOOL],
 			tool_choice: { type: 'tool', name: 'synthesize_draft' },
 			messages: [

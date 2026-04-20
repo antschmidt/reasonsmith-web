@@ -232,12 +232,14 @@ export const SEARCH_PUBLISHED_DISCUSSIONS = gql`
 	${DISCUSSION_VERSION_FIELDS}
 `;
 
+// NOTE: tags column is [String] in Hasura (not native _text), so _overlap
+// is unavailable. Use buildTagOverlapQuery() helper for multi-tag searches.
 export const SEARCH_DISCUSSIONS_BY_TAGS = gql`
 	query SearchDiscussionsByTags($tags: [String!]!, $limit: Int = 20) {
 		discussion(
 			where: {
 				status: { _eq: "published" }
-				discussion_versions: { version_type: { _eq: "published" }, tags: { _overlap: $tags } }
+				discussion_versions: { version_type: { _eq: "published" }, tags: { _contains: $tags } }
 			}
 			order_by: { created_at: desc }
 			limit: $limit
@@ -261,6 +263,51 @@ export const SEARCH_DISCUSSIONS_BY_TAGS = gql`
 	${CONTRIBUTOR_FIELDS}
 	${DISCUSSION_VERSION_FIELDS}
 `;
+
+/**
+ * Build a dynamic query that mimics _overlap using _or + _contains for each tag.
+ * Hasura's [String] array type doesn't support _overlap, so we construct:
+ *   _or: [{ tags: { _contains: ["tag1"] } }, { tags: { _contains: ["tag2"] } }, ...]
+ */
+export function buildTagOverlapQuery(tags: string[], limit: number = 20): { query: string; variables: Record<string, any> } {
+	const tagConditions = tags.map((_, i) => `{ tags: { _contains: $tag${i} } }`).join(', ');
+	const tagParams = tags.map((_, i) => `$tag${i}: [String!]!`).join(', ');
+	const variables: Record<string, any> = { limit };
+	tags.forEach((tag, i) => { variables[`tag${i}`] = [tag]; });
+
+	const query = `
+		query SearchDiscussionsByTagsOverlap(${tagParams}, $limit: Int = 20) {
+			discussion(
+				where: {
+					status: { _eq: "published" }
+					discussion_versions: {
+						version_type: { _eq: "published" }
+						_or: [${tagConditions}]
+					}
+				}
+				order_by: { created_at: desc }
+				limit: $limit
+			) {
+				id
+				status
+				created_at
+				is_anonymous
+				contributor { id handle display_name avatar_url }
+				discussion_versions(
+					where: { version_type: { _eq: "published" } }
+					order_by: { version_number: desc }
+					limit: 1
+				) {
+					id title description tags
+					good_faith_score good_faith_label
+				}
+				posts_aggregate { aggregate { count } }
+				posts(order_by: { created_at: desc }, limit: 1) { created_at }
+			}
+		}
+	`;
+	return { query, variables };
+}
 
 export const GET_DISCUSSION_TAGS = gql`
 	query GetDiscussionTags {
@@ -296,7 +343,7 @@ export const ADVANCED_SEARCH_DISCUSSIONS = gql`
 					version_type: { _eq: "published" }
 					_and: [
 						{ _or: [{ title: { _ilike: $searchTerm } }, { description: { _ilike: $searchTerm } }] }
-						{ tags: { _overlap: $tags } }
+						{ tags: { _contains: $tags } }
 						{ good_faith_score: { _gte: $minGoodFaithScore } }
 					]
 				}

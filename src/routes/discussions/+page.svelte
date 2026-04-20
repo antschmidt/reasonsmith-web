@@ -12,6 +12,7 @@
 		LIST_DISCUSSIONS_FROM_FOLLOWING,
 		SEARCH_PUBLISHED_DISCUSSIONS,
 		SEARCH_DISCUSSIONS_BY_TAGS,
+		buildTagOverlapQuery,
 		GET_EDITORS_DESK_PICKS,
 		GET_CONTRIBUTOR,
 		DELETE_EDITORS_DESK_PICK,
@@ -21,9 +22,38 @@
 	} from '$lib/graphql/queries';
 	import { canCurateEditorsDesk } from '$lib/utils/editorsDeskUtils';
 	import OnboardingPrompt from '$lib/components/onboarding/OnboardingPrompt.svelte';
+	import FollowButton from '$lib/components/FollowButton.svelte';
 	import { contributorStore, type OnboardingState } from '$lib/stores/contributorStore';
 	import type { PageData } from './$types';
 	import { LampDesk, MessageSquare } from '@lucide/svelte';
+
+	// Build a dynamic suggestion query using _contains + _or (same pattern as buildTagOverlapQuery)
+	function buildSuggestContributorsQuery(tags: string[]) {
+		const tagConditions = tags.map((_, i) => `{ tags: { _contains: $tag${i} } }`).join(', ');
+		const tagParams = tags.map((_, i) => `$tag${i}: [String!]!`).join(', ');
+		const variables: Record<string, any> = {};
+		tags.forEach((tag, i) => { variables[`tag${i}`] = [tag]; });
+
+		const query = `
+			query SuggestContributorsByInterests(${tagParams}, $excludeIds: [uuid!]!, $limit: Int = 6) {
+				discussion(
+					where: {
+						status: { _eq: "published" }
+						discussion_versions: {
+							version_type: { _eq: "published" }
+							_or: [${tagConditions}]
+						}
+						created_by: { _nin: $excludeIds }
+					}
+					order_by: { created_at: desc }
+					limit: 20
+				) {
+					contributor { id display_name handle avatar_url }
+				}
+			}
+		`;
+		return { query, variables };
+	}
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -45,6 +75,16 @@
 	let selectedInterests = $state<string[]>([]);
 	let interestsLoaded = $state(false);
 	let savingInterests = $state(false);
+
+	// Following suggestions state
+	type SuggestedContributor = {
+		id: string;
+		display_name?: string | null;
+		handle?: string | null;
+		avatar_url?: string | null;
+	};
+	let suggestedContributors = $state<SuggestedContributor[]>([]);
+	let suggestionsLoading = $state(false);
 	type DiscussionSummary = {
 		id: string;
 		created_at: string;
@@ -153,9 +193,8 @@
 		loading = true;
 		error = null;
 		try {
-			const { data, error: gqlError } = await nhost.graphql.request(SEARCH_DISCUSSIONS_BY_TAGS, {
-				tags: selectedTags
-			});
+			const { query, variables } = buildTagOverlapQuery(selectedTags);
+			const { data, error: gqlError } = await nhost.graphql.request(query, variables);
 			if (gqlError)
 				throw Array.isArray(gqlError)
 					? new Error(gqlError.map((e: any) => e.message).join('; '))
@@ -262,11 +301,9 @@
 					loading = false;
 					return;
 				}
-				// Use tag search for interests
-				const result = await nhost.graphql.request(SEARCH_DISCUSSIONS_BY_TAGS, {
-					tags: tagsToFilter,
-					limit: PAGE_SIZE
-				});
+				// Use dynamic tag overlap query for interests
+				const { query: tagQuery, variables: tagVars } = buildTagOverlapQuery(tagsToFilter, PAGE_SIZE);
+				const result = await nhost.graphql.request(tagQuery, tagVars);
 				data = result.data;
 				gqlError = result.error;
 				// Tag search doesn't support pagination well, so disable load more
@@ -397,13 +434,52 @@
 		fetchEditorsDeskPicks();
 	}
 
+	async function fetchSuggestedContributors() {
+		if (userInterests.length === 0 || !user?.id) return;
+		suggestionsLoading = true;
+		try {
+			const excludeIds = [user.id, ...followingIds];
+			const { query, variables } = buildSuggestContributorsQuery(userInterests);
+			const { data, error: gqlError } = await nhost.graphql.request(
+				query,
+				{ ...variables, excludeIds, limit: 6 }
+			);
+			if (gqlError) throw gqlError;
+			// Dedupe contributors by id (multiple discussions may share authors)
+			const seen = new Set<string>();
+			const contributors: SuggestedContributor[] = [];
+			for (const d of (data as any)?.discussion ?? []) {
+				const c = d.contributor;
+				if (c?.id && !seen.has(c.id)) {
+					seen.add(c.id);
+					contributors.push(c);
+				}
+				if (contributors.length >= 6) break;
+			}
+			suggestedContributors = contributors;
+		} catch (e) {
+			suggestedContributors = [];
+		} finally {
+			suggestionsLoading = false;
+		}
+	}
+
 	async function setFilterMode(mode: FilterMode) {
 		filterMode = mode;
 		if (mode === 'following' && !followingLoaded) {
 			await fetchFollowingIds();
 		}
-		if (mode === 'interests' && !interestsLoaded) {
-			await fetchAllTags();
+		if (mode === 'following' && followingIds.length === 0) {
+			await fetchSuggestedContributors();
+		}
+		if (mode === 'interests') {
+			if (!interestsLoaded) {
+				await fetchAllTags();
+			}
+			// Auto-select saved interests so the user gets a personalized feed
+			if (userInterests.length > 0 && selectedInterests.length === 0) {
+				selectedInterests = [...userInterests];
+			}
 		}
 		await fetchAll(true);
 	}
@@ -437,10 +513,15 @@
 		if (!user?.id || selectedInterests.length === 0) return;
 		savingInterests = true;
 		try {
-			const { error: gqlError } = await nhost.graphql.request(UPDATE_CONTRIBUTOR_INTERESTS, {
-				userId: user.id,
-				interests: `{${selectedInterests.join(',')}}`
-			});
+			const { data: _d, error: gqlError } = await nhost.graphql.request(
+				`mutation UpdateContributorInterests($userId: uuid!, $interests: [String!]!) {
+					update_contributor_by_pk(pk_columns: { id: $userId }, _set: { interests: $interests }) {
+						id
+						interests
+					}
+				}`,
+				{ userId: user.id, interests: selectedInterests }
+			);
 			if (gqlError) throw gqlError;
 			userInterests = [...selectedInterests];
 			// Update contributor data
@@ -797,15 +878,74 @@
 			{:else if q.trim().length > 0 && !loading}
 				<p class="empty-state">No discussions match your search.</p>
 			{:else if filterMode === 'following' && followingIds.length === 0 && !loading}
-				<p class="empty-state">
-					You're not following anyone yet. Follow users to see their discussions here.
-				</p>
+				<div class="following-empty">
+					{#if suggestionsLoading}
+						<p class="empty-state">Finding contributors for you...</p>
+					{:else if userInterests.length === 0}
+						<div class="empty-nudge">
+							<p class="empty-nudge-headline">Set your interests to discover contributors</p>
+							<p class="empty-nudge-body">
+								We suggest people to follow based on what you're interested in.
+								Switch to <button class="link-button" onclick={() => setFilterMode('interests')}>Interests</button> to pick topics first.
+							</p>
+						</div>
+					{:else if suggestedContributors.length > 0}
+						<div class="suggestions-section">
+							<p class="suggestions-headline">People writing about your interests</p>
+							<div class="suggestion-cards">
+								{#each suggestedContributors as c (c.id)}
+									<div class="suggestion-card">
+										<a href={`/u/${c.handle || c.id}`} class="suggestion-identity">
+											{#if c.avatar_url}
+												<img src={c.avatar_url} alt="" class="suggestion-avatar" />
+											{:else}
+												<span class="suggestion-avatar-fallback">
+													{(c.display_name ?? '?')[0].toUpperCase()}
+												</span>
+											{/if}
+											<span class="suggestion-name">{displayName(c.display_name)}</span>
+										</a>
+										<FollowButton
+											targetUserId={c.id}
+											currentUserId={user?.id ?? ''}
+											size="sm"
+											onStatusChange={() => {
+												// Refresh following list after follow action
+												followingLoaded = false;
+												fetchFollowingIds();
+											}}
+										/>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{:else}
+						<div class="empty-nudge">
+							<p class="empty-nudge-headline">No suggestions yet</p>
+							<p class="empty-nudge-body">
+								We couldn't find contributors in your interest areas yet.
+								Check back as more people join, or browse <button class="link-button" onclick={() => setFilterMode('all')}>All</button> discussions.
+							</p>
+						</div>
+					{/if}
+				</div>
 			{:else if filterMode === 'following' && !loading}
-				<p class="empty-state">No discussions from people you follow yet.</p>
+				<p class="empty-state">No discussions from people you follow yet. Check back soon.</p>
 			{:else if filterMode === 'interests' && selectedInterests.length === 0 && !loading}
-				<p class="empty-state">Select topics above to see matching discussions.</p>
+				<div class="empty-nudge" style="padding: 2rem 0;">
+					<p class="empty-nudge-headline">Pick a few topics you care about</p>
+					<p class="empty-nudge-body">
+						Select interests above and we'll surface discussions that match.
+						Save them to personalise your feed across visits.
+					</p>
+				</div>
 			{:else if filterMode === 'interests' && !loading}
-				<p class="empty-state">No discussions match your selected interests.</p>
+				<div class="empty-nudge" style="padding: 2rem 0;">
+					<p class="empty-nudge-headline">No discussions on these topics yet</p>
+					<p class="empty-nudge-body">
+						Be the first to start a conversation, or try different topics.
+					</p>
+				</div>
 			{:else if !loading}
 				<p class="empty-state">No discussions yet.</p>
 			{/if}
@@ -870,7 +1010,7 @@
 
 	/* ── Slim header ── */
 	.page-header {
-		padding: clamp(1.5rem, 3vw, 2rem) clamp(1.5rem, 5vw, 4.5rem);
+		padding: clamp(1rem, 2.5vw, 1.5rem) clamp(1rem, 5vw, 4.5rem);
 		background: var(--color-surface);
 		border-bottom: 1px solid var(--color-border);
 	}
@@ -880,13 +1020,13 @@
 		align-items: baseline;
 		justify-content: space-between;
 		gap: 1rem;
-		margin-bottom: 1rem;
+		margin-bottom: 0.75rem;
 	}
 
 	.header-title h1 {
-		margin: 0.25rem 0 0;
+		margin: 0.15rem 0 0;
 		font-family: var(--font-family-display);
-		font-size: clamp(1.5rem, 3vw, 2rem);
+		font-size: clamp(1.25rem, 2.5vw, 1.75rem);
 		letter-spacing: -0.015em;
 	}
 
@@ -894,43 +1034,43 @@
 	.search-bar {
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
-		flex-wrap: wrap;
+		gap: 0.5rem;
 	}
 
 	.search-bar input {
-		flex: 1 1 280px;
-		padding: 0.7rem 1.2rem;
-		border-radius: 999px;
+		flex: 1 1 0;
+		min-width: 0;
+		padding: 0.55rem 1rem;
+		border-radius: 8px;
 		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
 		background: var(--color-surface-alt);
 		color: var(--color-text-primary);
-		font-size: 0.95rem;
-		transition: all 0.25s ease;
+		font-size: 0.9rem;
+		transition: border-color 0.2s ease, box-shadow 0.2s ease;
 		margin: 0;
 	}
 
 	.search-bar input:focus {
 		outline: none;
 		border-color: var(--color-primary);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
 	}
 
 	.filter-toggle {
 		display: flex;
-		gap: 0.25rem;
+		gap: 2px;
 		background: color-mix(in srgb, var(--color-border) 30%, transparent);
-		border-radius: 999px;
-		padding: 0.2rem;
+		border-radius: 8px;
+		padding: 2px;
 		flex-shrink: 0;
 	}
 
 	.filter-button {
 		background: transparent;
 		border: none;
-		padding: 0.45rem 0.9rem;
-		border-radius: 999px;
-		font-size: 0.8rem;
+		padding: 0.4rem 0.7rem;
+		border-radius: 6px;
+		font-size: 0.75rem;
 		font-weight: 500;
 		color: var(--color-text-secondary);
 		cursor: pointer;
@@ -960,7 +1100,7 @@
 	/* ── Interests picker ── */
 	.interests-picker {
 		margin-top: 0.75rem;
-		padding: 0.75rem clamp(1.5rem, 5vw, 4.5rem) 0;
+		padding: 0.75rem 0 0;
 		background: var(--color-surface);
 	}
 
@@ -968,22 +1108,25 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.4rem;
+		align-items: center;
 	}
 
 	.interest-tag {
 		background: color-mix(in srgb, var(--color-surface-alt) 80%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
 		color: var(--color-text-secondary);
-		padding: 0.35rem 0.7rem;
-		border-radius: var(--border-radius-lg);
-		font-size: 0.8rem;
+		padding: 0.3rem 0.65rem;
+		border-radius: 999px;
+		font-size: 0.78rem;
 		cursor: pointer;
-		transition: all 0.2s ease;
+		transition: all 0.15s ease;
+		white-space: nowrap;
 	}
 
 	.interest-tag:hover {
 		border-color: var(--color-primary);
 		color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
 	}
 
 	.interest-tag.selected {
@@ -993,24 +1136,25 @@
 	}
 
 	.save-interests-button {
-		margin-top: 0.75rem;
-		background: var(--color-primary);
-		color: white;
-		border: none;
-		padding: 0.45rem 0.9rem;
-		border-radius: var(--border-radius-lg);
-		font-size: 0.8rem;
-		font-weight: 500;
+		margin-top: 0.6rem;
+		background: none;
+		color: var(--color-primary);
+		border: 1px solid var(--color-primary);
+		padding: 0.35rem 0.85rem;
+		border-radius: 999px;
+		font-size: 0.78rem;
+		font-weight: 600;
 		cursor: pointer;
 		transition: all 0.2s ease;
 	}
 
 	.save-interests-button:hover:not(:disabled) {
-		opacity: 0.9;
+		background: var(--color-primary);
+		color: white;
 	}
 
 	.save-interests-button:disabled {
-		opacity: 0.6;
+		opacity: 0.5;
 		cursor: not-allowed;
 	}
 
@@ -1023,7 +1167,7 @@
 
 	/* ── Onboarding area ── */
 	.onboarding-area {
-		padding: 1.5rem clamp(1.5rem, 5vw, 4.5rem) 0;
+		padding: 1rem clamp(1rem, 5vw, 4.5rem) 0;
 	}
 
 	/* ── Editorial kicker (shared) ── */
@@ -1301,13 +1445,171 @@
 		filter: invert(1);
 	}
 
+	/* ── Following empty / suggestions ── */
+	.following-empty {
+		padding: 2rem 0;
+	}
+
+	.empty-nudge {
+		text-align: center;
+		max-width: 28rem;
+		margin: 0 auto;
+	}
+
+	.empty-nudge-headline {
+		font-family: var(--font-family-display);
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 0 0 0.5rem;
+	}
+
+	.empty-nudge-body {
+		color: var(--color-text-secondary);
+		font-size: 0.9rem;
+		line-height: 1.5;
+		margin: 0;
+	}
+
+	.link-button {
+		background: none;
+		border: none;
+		color: var(--color-primary);
+		font-weight: 600;
+		font-size: inherit;
+		cursor: pointer;
+		padding: 0;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+
+	.link-button:hover {
+		opacity: 0.8;
+	}
+
+	.suggestions-section {
+		max-width: 36rem;
+		margin: 0 auto;
+	}
+
+	.suggestions-headline {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		margin: 0 0 1rem;
+		text-align: center;
+	}
+
+	.suggestion-cards {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 0.75rem;
+	}
+
+	@media (max-width: 480px) {
+		.suggestion-cards {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	.suggestion-card {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		background: var(--color-surface);
+		border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+		border-radius: var(--border-radius-lg);
+		padding: 0.75rem 1rem;
+		transition: border-color 0.2s ease;
+	}
+
+	.suggestion-card:hover {
+		border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+	}
+
+	.suggestion-identity {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		text-decoration: none;
+		color: var(--color-text-primary);
+		min-width: 0;
+	}
+
+	.suggestion-identity:hover .suggestion-name {
+		text-decoration: underline;
+	}
+
+	.suggestion-avatar {
+		width: 2rem;
+		height: 2rem;
+		border-radius: 50%;
+		object-fit: cover;
+		flex-shrink: 0;
+	}
+
+	.suggestion-avatar-fallback {
+		width: 2rem;
+		height: 2rem;
+		border-radius: 50%;
+		background: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface-alt));
+		color: var(--color-primary);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-weight: 600;
+		font-size: 0.85rem;
+		flex-shrink: 0;
+	}
+
+	.suggestion-name {
+		font-weight: 500;
+		font-size: 0.9rem;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
 	@media (max-width: 640px) {
-		.search-bar {
-			flex-direction: column;
+		.page-header {
+			padding: 0.75rem 1rem;
 		}
 
-		.filter-toggle {
-			align-self: flex-start;
+		.header-top {
+			margin-bottom: 0.5rem;
+		}
+
+		.editorial-masthead {
+			display: none;
+		}
+
+		.search-bar {
+			gap: 0.4rem;
+		}
+
+		.search-bar input {
+			padding: 0.5rem 0.75rem;
+			font-size: 0.85rem;
+		}
+
+		.filter-button {
+			padding: 0.35rem 0.55rem;
+			font-size: 0.7rem;
+		}
+
+		.onboarding-area {
+			padding: 0.75rem 1rem 0;
+		}
+
+		.featured-section {
+			padding: 1rem;
+		}
+
+		.discussions-main {
+			padding: 1rem;
 		}
 	}
 </style>
