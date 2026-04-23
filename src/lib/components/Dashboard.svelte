@@ -309,6 +309,11 @@
 </script>
 
 <div class="dashboard-container">
+	<!-- Floating Networking panel - overlays the page, doesn't shift layout -->
+	{#if user?.id}
+		<NetworkingSection userId={user.id} />
+	{/if}
+
 	<!-- Main Content Grid -->
 	<div class="dashboard-grid">
 		<!-- Sidebar (Right Column) -->
@@ -318,11 +323,6 @@
 				<section class="card collaboration-section">
 					<CollaborationInvites onInviteResponded={loadData} />
 				</section>
-			{/if}
-
-			<!-- Networking Section - Contacts, Followers, etc. -->
-			{#if user?.id}
-				<NetworkingSection userId={user.id} />
 			{/if}
 
 			<!-- Pinned Threads, Leaderboard remain placeholders for now -->
@@ -684,9 +684,9 @@
 		.dashboard-grid {
 			grid-template-columns: 1fr;
 		}
-		/* When sidebar has content, use 2-column layout */
+		/* Sidebar appears only when it has content (e.g., CollaborationInvites) */
 		.dashboard-grid:has(.sidebar:not(:empty)) {
-			grid-template-columns: 1fr 530px;
+			grid-template-columns: 1fr 340px;
 		}
 		.main-content {
 			grid-column: 1;
@@ -698,9 +698,8 @@
 		}
 	}
 	@media (min-width: 1280px) {
-		/* Wider sidebar on larger screens */
 		.dashboard-grid:has(.sidebar:not(:empty)) {
-			grid-template-columns: 1fr 600px;
+			grid-template-columns: 1fr 380px;
 		}
 	}
 	.main-content {
