@@ -13,6 +13,7 @@
 		Users,
 		UserPlus,
 		UserMinus,
+		UserCheck,
 		Clock,
 		Check,
 		X,
@@ -214,34 +215,97 @@
 		data.pendingContactRequests.length + data.pendingFollowRequests.length
 	);
 
-	const isFullyEmpty = $derived(
-		data.pendingContactRequests.length === 0 &&
-			data.pendingFollowRequests.length === 0 &&
-			data.contacts.length === 0 &&
-			data.followers.length === 0 &&
-			data.following.length === 0 &&
-			data.blocks.length === 0
-	);
+	let isExpanded = $state(false);
+	let userToggled = $state(false);
+	let rootEl = $state<HTMLDivElement | null>(null);
+
+	// Auto-expand when there are pending requests (unless user has manually toggled)
+	$effect(() => {
+		if (!userToggled && pendingCount > 0) {
+			isExpanded = true;
+		}
+	});
+
+	// Click-outside + Escape to close when expanded
+	$effect(() => {
+		if (!isExpanded) return;
+
+		function handlePointer(event: MouseEvent) {
+			if (rootEl && !rootEl.contains(event.target as Node)) {
+				isExpanded = false;
+				userToggled = true;
+			}
+		}
+		function handleKey(event: KeyboardEvent) {
+			if (event.key === 'Escape') {
+				isExpanded = false;
+				userToggled = true;
+			}
+		}
+		document.addEventListener('mousedown', handlePointer);
+		document.addEventListener('keydown', handleKey);
+		return () => {
+			document.removeEventListener('mousedown', handlePointer);
+			document.removeEventListener('keydown', handleKey);
+		};
+	});
+
+	function toggleExpanded() {
+		isExpanded = !isExpanded;
+		userToggled = true;
+	}
 </script>
 
-{#if !isLoading && !error && isFullyEmpty}
-	<section class="networking-section networking-section-compact">
-		<div class="compact-header">
-			<h3 class="section-title-compact">Contacts &amp; Networking</h3>
-			<span class="compact-hint">No connections yet</span>
-		</div>
-	</section>
+<div class="networking-root" class:is-expanded={isExpanded} bind:this={rootEl}>
+{#if !isExpanded}
+	<button
+		type="button"
+		class="networking-icon-btn"
+		onclick={toggleExpanded}
+		aria-expanded={isExpanded}
+		aria-controls="networking-content"
+		aria-label={pendingCount > 0
+			? `Contacts & Networking — ${pendingCount} pending`
+			: 'Contacts & Networking'}
+		title="Contacts & Networking"
+	>
+		<Users size={18} />
+		{#if pendingCount > 0}
+			<span class="icon-badge" aria-hidden="true">{pendingCount}</span>
+		{/if}
+	</button>
 {:else}
 <section class="networking-section">
-	<h3 class="section-title">Contacts & Networking</h3>
+	<button
+		type="button"
+		class="section-header"
+		onclick={toggleExpanded}
+		aria-expanded={isExpanded}
+		aria-controls="networking-content"
+	>
+		<h3 class="section-title">Contacts &amp; Networking</h3>
+		<span class="header-meta">
+			{#if pendingCount > 0}
+				<span class="badge">{pendingCount}</span>
+			{/if}
+			<ChevronRight
+				size={16}
+				class={isExpanded ? 'caret caret-open' : 'caret'}
+			/>
+		</span>
+	</button>
 
+	<div id="networking-content" class="section-body">
 	<div class="tabs">
 		<button
 			class="tab"
 			class:active={activeTab === 'pending'}
 			onclick={() => (activeTab = 'pending')}
+			aria-label="Pending"
+			title="Pending"
 		>
-			Pending
+			<Clock size={16} class="tab-icon" />
+			<span class="tab-label">Pending</span>
 			{#if pendingCount > 0}
 				<span class="badge">{pendingCount}</span>
 			{/if}
@@ -250,32 +314,44 @@
 			class="tab"
 			class:active={activeTab === 'contacts'}
 			onclick={() => (activeTab = 'contacts')}
+			aria-label="Contacts"
+			title="Contacts"
 		>
-			Contacts
+			<Users size={16} class="tab-icon" />
+			<span class="tab-label">Contacts</span>
 			<span class="count">({data.contacts.length})</span>
 		</button>
 		<button
 			class="tab"
 			class:active={activeTab === 'followers'}
 			onclick={() => (activeTab = 'followers')}
+			aria-label="Followers"
+			title="Followers"
 		>
-			Followers
+			<UserPlus size={16} class="tab-icon" />
+			<span class="tab-label">Followers</span>
 			<span class="count">({data.followers.length})</span>
 		</button>
 		<button
 			class="tab"
 			class:active={activeTab === 'following'}
 			onclick={() => (activeTab = 'following')}
+			aria-label="Following"
+			title="Following"
 		>
-			Following
+			<UserCheck size={16} class="tab-icon" />
+			<span class="tab-label">Following</span>
 			<span class="count">({data.following.length})</span>
 		</button>
 		<button
 			class="tab"
 			class:active={activeTab === 'blocked'}
 			onclick={() => (activeTab = 'blocked')}
+			aria-label="Blocked"
+			title="Blocked"
 		>
-			Blocked
+			<Ban size={16} class="tab-icon" />
+			<span class="tab-label">Blocked</span>
 			<span class="count">({data.blocks.length})</span>
 		</button>
 	</div>
@@ -565,24 +641,142 @@
 			{/if}
 		{/if}
 	</div>
+	</div>
 </section>
 {/if}
+</div>
 
 <style>
+	.networking-root {
+		position: fixed;
+		top: 5rem; /* below app header */
+		right: 1rem;
+		z-index: 50;
+	}
+
+	.networking-root.is-expanded {
+		/* When expanded, the panel takes over */
+	}
+
 	.networking-section {
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
 		border-radius: var(--border-radius-lg);
 		overflow: hidden;
+		width: 480px;
+		max-width: calc(100vw - 2rem);
+		max-height: calc(100vh - 6rem);
+		display: flex;
+		flex-direction: column;
+		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+		container-type: inline-size;
+		container-name: netpanel;
+	}
+
+	@media (min-width: 1280px) {
+		.networking-section {
+			width: 600px;
+			max-height: calc(100vh - 4rem);
+		}
+	}
+
+	.networking-icon-btn {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		padding: 0;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 50%;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+			transform 0.15s ease;
+	}
+
+	.networking-icon-btn:active {
+		transform: scale(0.95);
+	}
+
+	.networking-icon-btn:hover {
+		background: var(--color-surface-alt);
+		color: var(--color-text-primary);
+		border-color: color-mix(in srgb, var(--color-border) 60%, var(--color-primary));
+	}
+
+	.networking-icon-btn:focus-visible {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 2px;
+	}
+
+	.icon-badge {
+		position: absolute;
+		top: -4px;
+		right: -4px;
+		min-width: 16px;
+		height: 16px;
+		padding: 0 4px;
+		background: var(--color-primary);
+		color: white;
+		font-size: 0.65rem;
+		font-weight: 700;
+		line-height: 16px;
+		text-align: center;
+		border-radius: 9999px;
+		border: 2px solid var(--color-surface);
+		box-sizing: content-box;
+	}
+
+	.section-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		width: 100%;
+		padding: 0.75rem 1rem;
+		background: none;
+		border: none;
+		border-bottom: 1px solid var(--color-border);
+		cursor: pointer;
+		text-align: left;
+		color: inherit;
+		font: inherit;
+		transition: background-color 0.15s ease;
+	}
+
+	.section-header:hover {
+		background: var(--color-surface-alt);
+	}
+
+	.networking-section.is-collapsed .section-header {
+		border-bottom: none;
 	}
 
 	.section-title {
-		font-size: 1rem;
+		font-size: 0.95rem;
 		font-weight: 600;
 		color: var(--color-text-primary);
-		padding: 1rem 1.25rem;
 		margin: 0;
-		border-bottom: 1px solid var(--color-border);
+	}
+
+	.header-meta {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		color: var(--color-text-secondary);
+	}
+
+	:global(.caret) {
+		transition: transform 0.2s ease;
+		color: var(--color-text-secondary);
+	}
+
+	:global(.caret-open) {
+		transform: rotate(90deg);
 	}
 
 	.tabs {
@@ -644,28 +838,12 @@
 		padding: 1rem;
 	}
 
-	.networking-section-compact {
-		/* Stays visible but compact: no tabs, no oversized empty state */
-	}
-
-	.compact-header {
+	.section-body {
 		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-		padding: 0.625rem 1rem;
-	}
-
-	.section-title-compact {
-		font-size: 0.9rem;
-		font-weight: 600;
-		color: var(--color-text-primary);
-		margin: 0;
-	}
-
-	.compact-hint {
-		font-size: 0.8rem;
-		color: var(--color-text-secondary);
+		flex-direction: column;
+		min-height: 0;
+		flex: 1;
+		overflow-y: auto;
 	}
 
 	.loading-state,
@@ -908,13 +1086,39 @@
 		}
 	}
 
-	@media (max-width: 640px) {
+	:global(.tab-icon) {
+		flex-shrink: 0;
+		color: var(--color-text-secondary);
+	}
+
+	.tab.active :global(.tab-icon) {
+		color: var(--color-primary);
+	}
+
+	.tab-label {
+		white-space: nowrap;
+	}
+
+	/* Container query: collapse tabs to icons when the panel itself gets narrow */
+	@container netpanel (max-width: 480px) {
 		.tabs {
-			padding: 0 0.5rem;
+			padding: 0 0.25rem;
 		}
 
 		.tab {
-			padding: 0.625rem 0.75rem;
+			padding: 0.625rem 0.5rem;
+			gap: 0.25rem;
+		}
+
+		.tab-label,
+		.tab .count {
+			display: none;
+		}
+	}
+
+	/* Viewport-level mobile tweaks */
+	@media (max-width: 640px) {
+		.tab {
 			font-size: 0.8rem;
 		}
 
