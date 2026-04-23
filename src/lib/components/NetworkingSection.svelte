@@ -210,10 +210,28 @@
 		return contact.requester_id === userId ? contact.target : contact.requester;
 	}
 
-	const pendingCount =
-		data.pendingContactRequests.length + data.pendingFollowRequests.length;
+	const pendingCount = $derived(
+		data.pendingContactRequests.length + data.pendingFollowRequests.length
+	);
+
+	const isFullyEmpty = $derived(
+		data.pendingContactRequests.length === 0 &&
+			data.pendingFollowRequests.length === 0 &&
+			data.contacts.length === 0 &&
+			data.followers.length === 0 &&
+			data.following.length === 0 &&
+			data.blocks.length === 0
+	);
 </script>
 
+{#if !isLoading && !error && isFullyEmpty}
+	<section class="networking-section networking-section-compact">
+		<div class="compact-header">
+			<h3 class="section-title-compact">Contacts &amp; Networking</h3>
+			<span class="compact-hint">No connections yet</span>
+		</div>
+	</section>
+{:else}
 <section class="networking-section">
 	<h3 class="section-title">Contacts & Networking</h3>
 
@@ -548,6 +566,7 @@
 		{/if}
 	</div>
 </section>
+{/if}
 
 <style>
 	.networking-section {
@@ -623,7 +642,30 @@
 
 	.tab-content {
 		padding: 1rem;
-		min-height: 200px;
+	}
+
+	.networking-section-compact {
+		/* Stays visible but compact: no tabs, no oversized empty state */
+	}
+
+	.compact-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.625rem 1rem;
+	}
+
+	.section-title-compact {
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin: 0;
+	}
+
+	.compact-hint {
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
 	}
 
 	.loading-state,
