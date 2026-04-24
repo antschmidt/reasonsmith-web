@@ -18,10 +18,20 @@
 	 * No scores, no band labels. "Characterize, don't score" — see
 	 * content-guideline-characterize-not-score.md.
 	 */
+	import { onMount } from 'svelte';
 	import VideoAnchoredAnalysis from '$lib/components/transcripts/VideoAnchoredAnalysis.svelte';
 	import { annotatedToExcerpts } from '$lib/transcripts/toExcerpts';
 	import type { Excerpt } from '$lib/transcripts/toExcerpts';
-	import type { AnnotatedAnalysis } from '$lib/transcripts/annotate';
+	import type { AnnotatedAnalysis, StructuredAnalysis } from '$lib/transcripts/annotate';
+	import {
+		listSavedRuns,
+		getSavedRun,
+		saveRun,
+		deleteSavedRun,
+		clearAllSavedRuns,
+		type SavedRunSummary
+	} from '$lib/transcripts/savedRuns';
+	import { nhost } from '$lib/nhostClient';
 
 	// ------------------------------------------------------------------
 	// Mock data — illustrative only. Swap VIDEO_ID with a real source
@@ -152,6 +162,126 @@
 	const activeVideoId = $derived(mode === 'live' ? liveVideoId : MOCK_VIDEO_ID);
 	const activeTitle = $derived(mode === 'live' ? liveTitle || 'Live analysis' : MOCK_TITLE);
 	const activeMeta = $derived(mode === 'live' ? liveMeta : MOCK_META);
+
+	// ------------------------------------------------------------------
+	// Saved runs (remote — public.prototype_video_anchored_run). Scoped
+	// to the signed-in user via Hasura permissions. We hit the DB lazily
+	// so reloads / second looks don't re-incur Claude cost.
+	// ------------------------------------------------------------------
+
+	let savedRuns = $state<SavedRunSummary[]>([]);
+	let savedRunsLoading = $state(false);
+	let savedRunsError = $state<string | null>(null);
+	let justSavedId = $state<string | null>(null);
+	let isSignedIn = $state(false);
+
+	async function refreshSavedRuns() {
+		savedRunsLoading = true;
+		savedRunsError = null;
+		try {
+			savedRuns = await listSavedRuns();
+		} catch (err) {
+			savedRunsError = err instanceof Error ? err.message : 'Failed to load saved runs';
+			savedRuns = [];
+		} finally {
+			savedRunsLoading = false;
+		}
+	}
+
+	onMount(() => {
+		isSignedIn = !!nhost.getUserSession()?.user;
+		// React to sign-in events so the list appears without a reload.
+		const unsubscribe = nhost.sessionStorage.onChange((newSession) => {
+			const nowSignedIn = !!newSession?.user;
+			if (nowSignedIn !== isSignedIn) {
+				isSignedIn = nowSignedIn;
+				if (nowSignedIn) {
+					refreshSavedRuns();
+				} else {
+					savedRuns = [];
+				}
+			}
+		});
+		if (isSignedIn) {
+			refreshSavedRuns();
+		}
+		return () => {
+			try {
+				unsubscribe?.();
+			} catch {
+				/* ignore */
+			}
+		};
+	});
+
+	async function loadSavedRun(summary: SavedRunSummary) {
+		savedRunsError = null;
+		try {
+			const run = await getSavedRun(summary.id);
+			if (!run) {
+				savedRunsError = 'Saved run not found (it may have been deleted).';
+				await refreshSavedRuns();
+				return;
+			}
+			const result = annotatedToExcerpts(run.annotated);
+			liveExcerpts = result.excerpts;
+			liveStats = {
+				aligned: result.stats.aligned,
+				failed: result.stats.failed,
+				total: result.stats.totalExamples
+			};
+			liveVideoId = run.videoId;
+			liveTitle = run.title;
+			liveMeta = run.meta;
+			mode = 'live';
+			// Rehydrate the analysis field too so the user can re-run alignment
+			// with tweaked options if they still have the transcript on hand.
+			analysisText = JSON.stringify(run.analysis, null, 2);
+			videoIdInput = run.videoId;
+			titleInput = run.title;
+			metaInput = run.meta;
+			panelOpen = false;
+			justSavedId = null;
+		} catch (err) {
+			savedRunsError = err instanceof Error ? err.message : 'Failed to load run';
+		}
+	}
+
+	async function removeSavedRun(id: string) {
+		if (!confirm('Remove this saved run? This cannot be undone.')) return;
+		savedRunsError = null;
+		try {
+			await deleteSavedRun(id);
+			await refreshSavedRuns();
+		} catch (err) {
+			savedRunsError = err instanceof Error ? err.message : 'Failed to delete run';
+		}
+	}
+
+	async function clearSavedRuns() {
+		if (!confirm(`Clear all ${savedRuns.length} saved runs?`)) return;
+		savedRunsError = null;
+		try {
+			await clearAllSavedRuns();
+			await refreshSavedRuns();
+		} catch (err) {
+			savedRunsError = err instanceof Error ? err.message : 'Failed to clear runs';
+		}
+	}
+
+	function formatSavedAt(iso: string): string {
+		try {
+			const d = new Date(iso);
+			return d.toLocaleString(undefined, {
+				month: 'short',
+				day: 'numeric',
+				hour: 'numeric',
+				minute: '2-digit'
+			});
+		} catch {
+			return iso;
+		}
+	}
 
 	// ------------------------------------------------------------------
 	// Dev loader panel — admin-gated on the server side. Here we just
@@ -314,6 +444,30 @@
 			liveMeta = metaInput.trim();
 			mode = 'live';
 			panelOpen = false;
+
+			// Persist to the DB so we don't re-pay for this analysis next time.
+			// Saves are scoped to the signed-in user; if nobody's signed in we
+			// quietly skip (the mock + live excerpts still render either way).
+			if (isSignedIn) {
+				try {
+					const saved = await saveRun({
+						videoId: liveVideoId,
+						title: liveTitle,
+						meta: liveMeta,
+						analysis: analysis as StructuredAnalysis,
+						annotated: data.analysis,
+						stats: liveStats ?? undefined
+					});
+					justSavedId = saved.id;
+					await refreshSavedRuns();
+				} catch (saveErr) {
+					console.error('[prototype] failed to save run:', saveErr);
+					savedRunsError =
+						saveErr instanceof Error
+							? `Saved to view but not to DB: ${saveErr.message}`
+							: 'Saved to view but not to DB';
+				}
+			}
 		} catch (err) {
 			panelError = err instanceof Error ? err.message : 'Unknown error';
 		} finally {
@@ -357,6 +511,66 @@
 			</span>
 		{/if}
 	</div>
+
+	{#if isSignedIn}
+		<section class="saved-panel" aria-label="Saved runs">
+			<header class="saved-header">
+				<h2>
+					Saved runs
+					{#if savedRuns.length > 0}<span class="saved-count">({savedRuns.length})</span>{/if}
+				</h2>
+				{#if savedRuns.length > 0}
+					<button type="button" class="proto-btn subtle small" onclick={clearSavedRuns}>
+						Clear all
+					</button>
+				{/if}
+			</header>
+			{#if savedRunsError}
+				<p class="saved-error" role="alert">{savedRunsError}</p>
+			{/if}
+			{#if savedRunsLoading && savedRuns.length === 0}
+				<p class="saved-empty">Loading your saved runs…</p>
+			{:else if savedRuns.length === 0}
+				<p class="saved-empty">
+					No saved runs yet. Run an analysis below — we'll auto-save it so you don't pay twice for
+					the same video.
+				</p>
+			{:else}
+				<ul class="saved-list">
+					{#each savedRuns as run (run.id)}
+						<li class="saved-item" class:just-saved={justSavedId === run.id}>
+							<button type="button" class="saved-load" onclick={() => loadSavedRun(run)}>
+								<span class="saved-title">{run.title || 'Untitled'}</span>
+								<span class="saved-meta">
+									{#if run.meta}<span>{run.meta}</span>{/if}
+									<span class="saved-time">{formatSavedAt(run.savedAt)}</span>
+									{#if run.stats}
+										<span class="saved-stats">
+											{run.stats.aligned}/{run.stats.total} aligned
+										</span>
+									{/if}
+								</span>
+							</button>
+							<button
+								type="button"
+								class="proto-btn subtle small"
+								onclick={() => removeSavedRun(run.id)}
+								aria-label="Delete saved run"
+							>
+								×
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	{:else}
+		<section class="saved-panel saved-panel--signin" aria-label="Saved runs">
+			<p class="saved-empty">
+				Sign in to save runs to the database — otherwise analyses will live only in this tab.
+			</p>
+		</section>
+	{/if}
 
 	{#if panelOpen}
 		<section class="dev-panel" aria-label="Load real transcript + analysis">
@@ -635,5 +849,125 @@
 		justify-content: flex-end;
 		gap: 0.5rem;
 		flex-wrap: wrap;
+	}
+
+	/* ---------- saved runs panel ---------- */
+
+	.saved-panel {
+		margin-top: var(--space-sm);
+		padding: var(--space-sm) var(--space-md);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		background: var(--color-surface);
+	}
+	.saved-panel--signin {
+		border-style: dashed;
+		background: transparent;
+	}
+
+	.saved-error {
+		margin: 0.25rem 0 0.5rem;
+		padding: 0.4rem 0.6rem;
+		border: 1px solid var(--color-danger, #d33);
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--color-danger, #d33) 8%, transparent);
+		color: var(--color-danger, #a00);
+		font-size: var(--font-size-sm);
+	}
+
+	.saved-empty {
+		margin: 0.25rem 0 0;
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
+	}
+
+	.saved-header {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin-bottom: 0.5rem;
+	}
+	.saved-header h2 {
+		margin: 0;
+		font-size: var(--font-size-sm);
+		font-family: var(--font-family-ui);
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--color-text-secondary);
+		font-weight: 600;
+	}
+	.saved-count {
+		color: var(--color-text-tertiary);
+		font-weight: 400;
+	}
+
+	.saved-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.saved-item {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.35rem 0.5rem;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background: var(--color-surface);
+		transition: border-color 0.15s ease, background 0.3s ease;
+	}
+	.saved-item.just-saved {
+		border-color: #10b981;
+		background: rgba(16, 185, 129, 0.06);
+	}
+	.saved-item:hover {
+		border-color: var(--color-link);
+	}
+
+	.saved-load {
+		appearance: none;
+		background: transparent;
+		border: none;
+		padding: 0.1rem 0.25rem;
+		flex: 1;
+		min-width: 0;
+		text-align: left;
+		cursor: pointer;
+		font-family: inherit;
+		color: inherit;
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+	}
+	.saved-title {
+		font-weight: 600;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-primary);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.saved-meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		font-size: var(--font-size-xs);
+		color: var(--color-text-tertiary);
+	}
+	.saved-time {
+		font-variant-numeric: tabular-nums;
+	}
+	.saved-stats {
+		color: #10b981;
+	}
+
+	.proto-btn.small {
+		padding: 0.15rem 0.5rem;
+		font-size: var(--font-size-xs);
 	}
 </style>
