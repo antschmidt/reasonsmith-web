@@ -42,12 +42,19 @@ export interface JobResult {
 	}>;
 }
 
+export interface JobUsage {
+	inputTokens: number;
+	outputTokens: number;
+	estimatedCostCents: number;
+}
+
 export interface Job {
 	jobId: string;
 	postId?: string;
 	status: JobStatus;
 	progress?: JobProgress;
 	result?: JobResult;
+	usage?: JobUsage;
 	error?: string;
 	createdAt: string;
 	startedAt?: string;
@@ -266,6 +273,7 @@ class JobQueueStore {
 				status: data.status,
 				progress: data.progress,
 				result: data.result,
+				usage: data.usage,
 				error: data.error,
 				startedAt: data.startedAt,
 				completedAt: data.completedAt

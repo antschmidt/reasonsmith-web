@@ -1114,9 +1114,10 @@
 	/**
 	 * Handle job queue completion
 	 */
-	async function handleJobComplete(result: Job['result']) {
+	async function handleJobComplete(result: Job['result'], usage?: Job['usage']) {
 		console.log('[handleJobComplete] called with:', {
 			hasResult: !!result,
+			hasUsage: !!usage,
 			queuedShowcaseItemId,
 			activeJobId,
 			isJobQueued
@@ -1126,7 +1127,14 @@
 			return;
 		}
 
-		// Convert job result to MultiPassResult format
+		// Convert job result to MultiPassResult format.
+		// `usage` comes from the jobs worker (proxied via /api/analysis/queue/status)
+		// and carries aggregated totals only — per-pass breakdowns are not returned
+		// by the worker, so pass1/pass2/pass3 are zero-filled placeholders.
+		// `estimatedCostCents` is already in cents; MultiPassResult.estimatedCost is also in cents.
+		const inputTokens = usage?.inputTokens ?? 0;
+		const outputTokens = usage?.outputTokens ?? 0;
+		const emptyPass = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
 		const multipassResult: MultiPassResult = {
 			result: result.result,
 			strategy: result.strategy,
@@ -1134,8 +1142,17 @@
 			claimsAnalyzed: result.claimsAnalyzed,
 			claimsFailed: result.claimsFailed,
 			claimAnalyses: result.claimAnalyses || [],
-			usage: { total: { inputTokens: 0, outputTokens: 0 }, byPass: {} },
-			estimatedCost: 0
+			usage: {
+				pass1: emptyPass,
+				pass2: [],
+				pass3: emptyPass,
+				total: {
+					inputTokens,
+					outputTokens,
+					totalTokens: inputTokens + outputTokens
+				}
+			},
+			estimatedCost: usage?.estimatedCostCents ?? 0
 		};
 
 		// Use existing completion handler

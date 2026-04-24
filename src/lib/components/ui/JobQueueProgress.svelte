@@ -13,7 +13,7 @@
 		/** The job ID to track */
 		jobId: string;
 		/** Callback when job completes successfully */
-		onComplete?: (result: Job['result']) => void;
+		onComplete?: (result: Job['result'], usage?: Job['usage']) => void;
 		/** Callback when job fails */
 		onError?: (error: string) => void;
 		/** Callback to cancel/abandon tracking (job continues on server) */
@@ -39,7 +39,7 @@
 			});
 			if (job.status === 'completed' && job.result) {
 				console.log('[JobQueueProgress] calling onComplete');
-				onComplete?.(job.result);
+				onComplete?.(job.result, job.usage);
 			} else if (job.status === 'failed' && job.error) {
 				console.log('[JobQueueProgress] calling onError');
 				onError?.(job.error);
