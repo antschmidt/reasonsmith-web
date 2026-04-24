@@ -17,7 +17,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 				"font-src 'self' https:", // Allow fonts from self and HTTPS
 				"media-src 'self' https://*.nhost.run https://storage.reasonsmith.com", // Allow audio/video from Nhost storage
 				"connect-src 'self' https://*.nhost.run wss://*.nhost.run https://hasura.reasonsmith.com https://auth.reasonsmith.com https://storage.reasonsmith.com https://functions.reasonsmith.com wss://graphql.reasonsmith.com https://api.vercel.com", // API connections (Nhost subdomain + custom domains + WebSocket)
-				"frame-src 'none'", // No frames
+				"frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com", // Allow YouTube embeds (prototype video-anchored analysis)
 				"object-src 'none'" // No objects
 			].join('; ')
 		);
@@ -34,7 +34,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 				"font-src 'self' https: data:",
 				"media-src 'self' https: blob:", // Allow audio/video in development
 				"connect-src 'self' ws: wss: https: http:", // Allow WebSocket for HMR
-				"frame-src 'none'",
+				"frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com", // Allow YouTube embeds (prototype video-anchored analysis)
 				"object-src 'none'"
 			].join('; ')
 		);
