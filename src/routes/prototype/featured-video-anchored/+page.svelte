@@ -2,18 +2,16 @@
 	/**
 	 * PROTOTYPE — Video-anchored featured analysis view
 	 *
-	 * Split in two:
+	 * Data source is the `prototype_video_anchored_run` table (scoped
+	 * per-user via Hasura permissions). On mount we fetch the list of
+	 * saved runs for the signed-in user and auto-load the most recent
+	 * one into the viewer. The dev loader at the top of the page lets
+	 * an admin paste a Scribe transcript + structured analysis, POSTs
+	 * to `/api/transcripts/annotate`, saves the result, and re-renders.
 	 *
-	 * 1. A hardcoded mock (kept intact for design iteration and for
-	 *    reviewers who don't have admin credentials) — this is what
-	 *    renders by default.
-	 *
-	 * 2. A "Dev: load real data" panel that lets an admin paste a
-	 *    Scribe transcript JSON + a structured analysis JSON, POSTs
-	 *    them to `/api/transcripts/annotate`, and swaps the returned
-	 *    annotated analysis through `annotatedToExcerpts()` into the
-	 *    same renderer. This is the first end-to-end exercise of the
-	 *    transcript alignment pipeline.
+	 * No mock fallback — when there are no saved runs the page shows an
+	 * empty state pointing the user at the loader. Signed-out visitors
+	 * see a sign-in prompt.
 	 *
 	 * No scores, no band labels. "Characterize, don't score" — see
 	 * content-guideline-characterize-not-score.md.
@@ -34,134 +32,24 @@
 	import { nhost } from '$lib/nhostClient';
 
 	// ------------------------------------------------------------------
-	// Mock data — illustrative only. Swap VIDEO_ID with a real source
-	// once the pipeline is producing real annotated analyses.
+	// View state — populated from `prototype_video_anchored_run` rows,
+	// either on initial load (most recent run) or when the user picks
+	// a different run from the saved-runs panel, or after running the
+	// dev loader to produce + save a fresh analysis.
 	// ------------------------------------------------------------------
 
-	const MOCK_VIDEO_ID = 'dQw4w9WgXcQ';
-	const MOCK_TITLE = 'Trump Speaks at TPUSA Event';
-	const MOCK_META = 'Turning Point USA — Charlie Kirk Tribute · October 2025';
-	const MOCK_BLURB = 'Excerpt-anchored walkthrough. Click any finding to jump to that moment in the video.';
-
-	const mockExcerpts: Excerpt[] = [
-		{
-			id: 'e1',
-			category: 'good_faith',
-			findingTitle: 'Acknowledgment of specific individuals',
-			quote:
-				'Thank you, Erika — you are an incredible woman, and Charlie would be so proud of the strength you are showing.',
-			highlight: 'Charlie would be so proud',
-			startSec: 42,
-			endSec: 58,
-			whyItMatters:
-				'Naming and addressing real people grounds the remarks in concrete relationships rather than pure abstraction — a signal of good-faith engagement.'
-		},
-		{
-			id: 'e2',
-			category: 'cultish',
-			findingTitle: 'In-group / out-group dichotomy',
-			quote:
-				'We love our country and they hate our country. It is really that simple — they hate everything we stand for.',
-			highlight: 'they hate everything we stand for',
-			startSec: 127,
-			endSec: 141,
-			whyItMatters:
-				'Collapsing a diverse opposition into a single group that "hates" what "we" love is the classic in-group / out-group frame. It short-circuits policy disagreement into identity conflict.'
-		},
-		{
-			id: 'e3',
-			category: 'fallacy',
-			findingTitle: 'Appeal to emotion',
-			quote:
-				'If we do not act now, everything your parents built — everything your grandparents fought for — will be gone. Gone forever.',
-			highlight: 'will be gone. Gone forever',
-			startSec: 214,
-			endSec: 228,
-			whyItMatters:
-				'The argument moves by emotional stakes (loss of heritage) rather than evidence about what any specific policy would do. The feeling is the premise.'
-		},
-		{
-			id: 'e4',
-			category: 'fact',
-			findingTitle: 'Claim: "crime is at a record high"',
-			quote: 'Crime in our cities is at a record high — the highest it has ever been in American history.',
-			highlight: 'highest it has ever been',
-			startSec: 305,
-			endSec: 316,
-			whyItMatters:
-				'FBI UCR data for the most recent reporting period shows violent crime trending down from its 2020 peak, not at a historic high. The framing is contradicted by the primary source the claim implicitly invokes.'
-		},
-		{
-			id: 'e5',
-			category: 'cultish',
-			findingTitle: 'Loaded / sacred language',
-			quote:
-				'This is a movement — a righteous movement — and nothing, nothing, can stop what is coming.',
-			highlight: 'nothing, nothing, can stop what is coming',
-			startSec: 402,
-			endSec: 415,
-			whyItMatters:
-				'Language borrowed from prophetic / inevitabilist registers ("righteous movement", "what is coming") treats the political project as a matter of destiny rather than choice. That frame makes disagreement feel like apostasy.'
-		},
-		{
-			id: 'e6',
-			category: 'fallacy',
-			findingTitle: 'Ad hominem',
-			quote:
-				'These are not serious people. They are low-IQ, they are corrupt, and frankly most of them are not very smart.',
-			highlight: 'low-IQ',
-			startSec: 488,
-			endSec: 499,
-			whyItMatters:
-				'The argument against the opposing position is replaced with an attack on the people holding it. The listener is given no reason to reject the underlying idea — only the speaker.'
-		},
-		{
-			id: 'e7',
-			category: 'good_faith',
-			findingTitle: 'Concession of limits',
-			quote:
-				'I do not have all the answers on this one — nobody does. But we have to try something, because what we are doing now is not working.',
-			highlight: 'I do not have all the answers',
-			startSec: 573,
-			endSec: 588,
-			whyItMatters:
-				'Admitting uncertainty about a difficult question is a good-faith move — it invites the audience into the problem rather than demanding trust in a fixed answer.'
-		},
-		{
-			id: 'e8',
-			category: 'fallacy',
-			findingTitle: 'False dichotomy',
-			quote: 'You either stand with us, or you stand with the people who want to destroy this country.',
-			highlight: 'either stand with us, or',
-			startSec: 651,
-			endSec: 662,
-			whyItMatters:
-				'Two options are presented as the only options, but the space of actual positions — disagreement on specific policy, partial agreement, indifference, different priorities — is much larger. The construction pressures the listener past reasoning.'
-		}
-	];
-
-	// ------------------------------------------------------------------
-	// Live data state — populated when the admin panel successfully
-	// fetches /api/transcripts/annotate. Falls back to the mock.
-	// ------------------------------------------------------------------
-
-	type Mode = 'mock' | 'live';
-
-	let mode = $state<Mode>('mock');
-	let liveVideoId = $state('');
-	let liveTitle = $state('');
-	let liveMeta = $state('');
-	let liveExcerpts = $state<Excerpt[]>([]);
-	let liveStats = $state<{
+	let loadedRunId = $state<string | null>(null);
+	let viewVideoId = $state('');
+	let viewTitle = $state('');
+	let viewMeta = $state('');
+	let viewExcerpts = $state<Excerpt[]>([]);
+	let viewStats = $state<{
 		aligned: number;
 		failed: number;
 		total: number;
 	} | null>(null);
 
-	const activeExcerpts = $derived(mode === 'live' ? liveExcerpts : mockExcerpts);
-	const activeVideoId = $derived(mode === 'live' ? liveVideoId : MOCK_VIDEO_ID);
-	const activeTitle = $derived(mode === 'live' ? liveTitle || 'Live analysis' : MOCK_TITLE);
-	const activeMeta = $derived(mode === 'live' ? liveMeta : MOCK_META);
+	const hasLoadedRun = $derived(viewExcerpts.length > 0);
 
 	// ------------------------------------------------------------------
 	// Saved runs (remote — public.prototype_video_anchored_run). Scoped
@@ -175,35 +63,51 @@
 	let justSavedId = $state<string | null>(null);
 	let isSignedIn = $state(false);
 
-	async function refreshSavedRuns() {
+	async function refreshSavedRuns(): Promise<SavedRunSummary[]> {
 		savedRunsLoading = true;
 		savedRunsError = null;
 		try {
 			savedRuns = await listSavedRuns();
+			return savedRuns;
 		} catch (err) {
 			savedRunsError = err instanceof Error ? err.message : 'Failed to load saved runs';
 			savedRuns = [];
+			return [];
 		} finally {
 			savedRunsLoading = false;
 		}
 	}
 
+	function clearView() {
+		loadedRunId = null;
+		viewExcerpts = [];
+		viewStats = null;
+		viewVideoId = '';
+		viewTitle = '';
+		viewMeta = '';
+	}
+
 	onMount(() => {
 		isSignedIn = !!nhost.getUserSession()?.user;
 		// React to sign-in events so the list appears without a reload.
-		const unsubscribe = nhost.sessionStorage.onChange((newSession) => {
+		const unsubscribe = nhost.sessionStorage.onChange(async (newSession) => {
 			const nowSignedIn = !!newSession?.user;
 			if (nowSignedIn !== isSignedIn) {
 				isSignedIn = nowSignedIn;
 				if (nowSignedIn) {
-					refreshSavedRuns();
+					const rows = await refreshSavedRuns();
+					if (rows[0]) await loadSavedRun(rows[0]);
 				} else {
 					savedRuns = [];
+					clearView();
 				}
 			}
 		});
 		if (isSignedIn) {
-			refreshSavedRuns();
+			// Auto-load the most recent run so the page isn't blank on arrival.
+			refreshSavedRuns().then((rows) => {
+				if (rows[0] && !loadedRunId) void loadSavedRun(rows[0]);
+			});
 		}
 		return () => {
 			try {
@@ -224,16 +128,16 @@
 				return;
 			}
 			const result = annotatedToExcerpts(run.annotated);
-			liveExcerpts = result.excerpts;
-			liveStats = {
+			viewExcerpts = result.excerpts;
+			viewStats = {
 				aligned: result.stats.aligned,
 				failed: result.stats.failed,
 				total: result.stats.totalExamples
 			};
-			liveVideoId = run.videoId;
-			liveTitle = run.title;
-			liveMeta = run.meta;
-			mode = 'live';
+			viewVideoId = run.videoId;
+			viewTitle = run.title;
+			viewMeta = run.meta;
+			loadedRunId = run.id;
 			// Rehydrate the analysis field too so the user can re-run alignment
 			// with tweaked options if they still have the transcript on hand.
 			analysisText = JSON.stringify(run.analysis, null, 2);
@@ -252,7 +156,13 @@
 		savedRunsError = null;
 		try {
 			await deleteSavedRun(id);
-			await refreshSavedRuns();
+			const rows = await refreshSavedRuns();
+			// If we just deleted what was on screen, advance to the next most
+			// recent run (or clear the view entirely if there's nothing left).
+			if (loadedRunId === id) {
+				if (rows[0]) await loadSavedRun(rows[0]);
+				else clearView();
+			}
 		} catch (err) {
 			savedRunsError = err instanceof Error ? err.message : 'Failed to delete run';
 		}
@@ -264,6 +174,7 @@
 		try {
 			await clearAllSavedRuns();
 			await refreshSavedRuns();
+			clearView();
 		} catch (err) {
 			savedRunsError = err instanceof Error ? err.message : 'Failed to clear runs';
 		}
@@ -433,39 +344,39 @@
 			const data = (await res.json()) as { analysis: AnnotatedAnalysis };
 			const result = annotatedToExcerpts(data.analysis);
 
-			liveExcerpts = result.excerpts;
-			liveStats = {
+			viewExcerpts = result.excerpts;
+			viewStats = {
 				aligned: result.stats.aligned,
 				failed: result.stats.failed,
 				total: result.stats.totalExamples
 			};
-			liveVideoId = videoIdInput.trim();
-			liveTitle = titleInput.trim();
-			liveMeta = metaInput.trim();
-			mode = 'live';
+			viewVideoId = videoIdInput.trim();
+			viewTitle = titleInput.trim();
+			viewMeta = metaInput.trim();
 			panelOpen = false;
 
 			// Persist to the DB so we don't re-pay for this analysis next time.
-			// Saves are scoped to the signed-in user; if nobody's signed in we
-			// quietly skip (the mock + live excerpts still render either way).
+			// Saves are scoped to the signed-in user; if nobody's signed in the
+			// call falls through without a row, but the view still renders.
 			if (isSignedIn) {
 				try {
 					const saved = await saveRun({
-						videoId: liveVideoId,
-						title: liveTitle,
-						meta: liveMeta,
+						videoId: viewVideoId,
+						title: viewTitle,
+						meta: viewMeta,
 						analysis: analysis as StructuredAnalysis,
 						annotated: data.analysis,
-						stats: liveStats ?? undefined
+						stats: viewStats ?? undefined
 					});
 					justSavedId = saved.id;
+					loadedRunId = saved.id;
 					await refreshSavedRuns();
 				} catch (saveErr) {
 					console.error('[prototype] failed to save run:', saveErr);
 					savedRunsError =
 						saveErr instanceof Error
-							? `Saved to view but not to DB: ${saveErr.message}`
-							: 'Saved to view but not to DB';
+							? `Rendered but not saved: ${saveErr.message}`
+							: 'Rendered but not saved';
 				}
 			}
 		} catch (err) {
@@ -473,11 +384,6 @@
 		} finally {
 			loading = false;
 		}
-	}
-
-	function resetToMock() {
-		mode = 'mock';
-		liveStats = null;
 	}
 </script>
 
@@ -488,9 +394,6 @@
 <div class="proto-shell">
 	<div class="proto-strip">
 		<span class="proto-label">PROTOTYPE</span>
-		<span class="mode-indicator" class:live={mode === 'live'}>
-			{mode === 'live' ? 'LIVE data' : 'MOCK data'}
-		</span>
 		<button
 			type="button"
 			class="proto-btn"
@@ -499,14 +402,11 @@
 		>
 			{panelOpen ? 'Hide dev loader' : 'Dev: load real data'}
 		</button>
-		{#if mode === 'live'}
-			<button type="button" class="proto-btn subtle" onclick={resetToMock}>Back to mock</button>
-		{/if}
-		{#if liveStats}
+		{#if viewStats}
 			<span class="stats" aria-live="polite">
-				{liveStats.aligned} aligned / {liveStats.total} examples
-				{#if liveStats.failed > 0}
-					<span class="warn">({liveStats.failed} unaligned, hidden)</span>
+				{viewStats.aligned} aligned / {viewStats.total} examples
+				{#if viewStats.failed > 0}
+					<span class="warn">({viewStats.failed} unaligned, hidden)</span>
 				{/if}
 			</span>
 		{/if}
@@ -658,15 +558,26 @@
 	{/if}
 </div>
 
-{#key mode + liveExcerpts.length}
-	<VideoAnchoredAnalysis
-		excerpts={activeExcerpts}
-		videoId={activeVideoId}
-		sourceTitle={activeTitle}
-		sourceMeta={activeMeta}
-		blurb={mode === 'mock' ? MOCK_BLURB : ''}
-	/>
-{/key}
+{#if hasLoadedRun}
+	{#key loadedRunId ?? viewExcerpts.length}
+		<VideoAnchoredAnalysis
+			excerpts={viewExcerpts}
+			videoId={viewVideoId}
+			sourceTitle={viewTitle || 'Analysis'}
+			sourceMeta={viewMeta}
+			blurb=""
+		/>
+	{/key}
+{:else if isSignedIn && savedRunsLoading}
+	<p class="empty-view">Loading your analyses…</p>
+{:else if isSignedIn}
+	<p class="empty-view">
+		No analyses saved yet. Open the <strong>Dev: load real data</strong> panel above to run your
+		first one — it'll be saved automatically so you won't re-pay for the same video.
+	</p>
+{:else}
+	<p class="empty-view">Sign in to view saved analyses, or to run a new one.</p>
+{/if}
 
 <style>
 	.proto-shell {
@@ -697,20 +608,6 @@
 		border: 1px dashed var(--color-border);
 		border-radius: 4px;
 		color: var(--color-text-tertiary);
-	}
-
-	.mode-indicator {
-		font-size: var(--font-size-xs);
-		font-weight: 600;
-		padding: 0.15rem 0.5rem;
-		border-radius: 999px;
-		background: var(--color-surface);
-		color: var(--color-text-secondary);
-		letter-spacing: 0.05em;
-	}
-	.mode-indicator.live {
-		background: rgba(16, 185, 129, 0.12);
-		color: #10b981;
 	}
 
 	.proto-btn {
@@ -969,5 +866,20 @@
 	.proto-btn.small {
 		padding: 0.15rem 0.5rem;
 		font-size: var(--font-size-xs);
+	}
+
+	.empty-view {
+		max-width: 1280px;
+		margin: var(--space-md) auto;
+		padding: var(--space-lg) var(--space-fluid-sm);
+		border: 1px dashed var(--color-border);
+		border-radius: 8px;
+		background: var(--color-surface-alt);
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
+		text-align: center;
+	}
+	.empty-view strong {
+		color: var(--color-text-primary);
 	}
 </style>
