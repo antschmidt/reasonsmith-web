@@ -246,6 +246,15 @@ export {
 	GET_NEXT_VERSION_NUMBER
 } from './analysis-versions';
 
+// Prototype — Video-Anchored Analysis Runs
+export {
+	LIST_PROTOTYPE_VIDEO_RUNS,
+	GET_PROTOTYPE_VIDEO_RUN,
+	UPSERT_PROTOTYPE_VIDEO_RUN,
+	DELETE_PROTOTYPE_VIDEO_RUN,
+	DELETE_ALL_PROTOTYPE_VIDEO_RUNS
+} from './prototype-video-runs';
+
 // Arguments (Argument Graph)
 export {
 	// Fragments
